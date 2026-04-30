@@ -1,0 +1,544 @@
+# ============================================================================
+# API Conventions — Microsoft Outlook Clone
+# ============================================================================
+# Standards for all FastAPI endpoints. Covers REST design, universal
+# endpoints (required by RL environment spec), and error handling.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# General REST Conventions
+# ----------------------------------------------------------------------------
+rest:
+  base_url: "/api/v1"
+  format: JSON
+  auth:
+    type: Bearer token (JWT)
+    header: "Authorization: Bearer <token>"
+    active_user: "Resolved from token; role from seed permission_profile."
+
+  naming:
+    resources: plural lowercase (e.g., /messages, /folders, /events)
+    actions: use HTTP verbs, not URL verbs
+    nesting: max 2 levels (e.g., /folders/{id}/messages)
+
+  pagination:
+    style: cursor-based
+    params:
+      cursor: "Opaque cursor string"
+      limit: "Items per page (default 50, max 200)"
+    response:
+      items: "Array of resources"
+      next_cursor: "Cursor for next page, null if last"
+      total_count: "Optional total count"
+
+  filtering:
+    style: query parameters
+    examples:
+      - "GET /messages?folder_id=xxx&is_read=false&importance=high"
+      - "GET /events?start_after=2026-05-01T00:00:00Z&start_before=2026-05-08T00:00:00Z"
+      - "GET /contacts?search=john&company=Acme"
+
+  sorting:
+    param: "sort"
+    format: "field:asc|desc"
+    examples:
+      - "GET /messages?sort=received_at:desc"
+      - "GET /contacts?sort=display_name:asc"
+
+  errors:
+    format:
+      error:
+        code: "string (machine-readable)"
+        message: "string (human-readable)"
+        details: "object (optional, structured diagnostics)"
+    codes:
+      400: "Bad Request — validation failure"
+      401: "Unauthorized — missing/invalid token"
+      403: "Forbidden — insufficient permissions"
+      404: "Not Found — resource does not exist"
+      409: "Conflict — state conflict (e.g., duplicate)"
+      422: "Unprocessable Entity — semantic validation failure"
+      429: "Too Many Requests"
+      500: "Internal Server Error"
+
+# ----------------------------------------------------------------------------
+# Application Endpoints
+# ----------------------------------------------------------------------------
+endpoints:
+
+  # Auth
+  auth:
+    - method: POST
+      path: /auth/login
+      description: "Authenticate user, return JWT."
+      body: { email: string, password: string }
+      response: { token: string, user: User }
+
+    - method: POST
+      path: /auth/logout
+      description: "Invalidate current token."
+
+    - method: GET
+      path: /auth/me
+      description: "Get current authenticated user."
+      response: User
+
+  # Messages
+  messages:
+    - method: GET
+      path: /messages
+      description: "List messages with filters."
+      params: [folder_id, conversation_id, is_read, is_flagged, importance, search, sort, cursor, limit]
+      response: "Paginated<Message>"
+
+    - method: GET
+      path: /messages/{id}
+      description: "Get single message with full body."
+      response: Message
+
+    - method: POST
+      path: /messages
+      description: "Create draft or send message."
+      body: { to, cc, bcc, subject, body_html, attachments, importance, sensitivity, is_draft, scheduled_send_at, signature_id }
+      response: Message
+
+    - method: PATCH
+      path: /messages/{id}
+      description: "Update message (read state, flag, pin, folder, importance, categories)."
+      body: "Partial<Message>"
+      response: Message
+
+    - method: DELETE
+      path: /messages/{id}
+      description: "Move to Deleted Items (soft delete)."
+
+    - method: DELETE
+      path: /messages/{id}/permanent
+      description: "Permanently delete from Deleted Items."
+
+    - method: POST
+      path: /messages/{id}/reply
+      description: "Reply to message."
+      body: { body_html, reply_all: boolean }
+      response: Message
+
+    - method: POST
+      path: /messages/{id}/forward
+      description: "Forward message."
+      body: { to, cc, body_html }
+      response: Message
+
+    - method: POST
+      path: /messages/{id}/move
+      description: "Move message to folder."
+      body: { folder_id: uuid }
+
+    - method: POST
+      path: /messages/bulk
+      description: "Bulk operations (mark read, delete, move, flag, categorize)."
+      body: { message_ids: uuid[], action: string, params: object }
+
+    - method: GET
+      path: /messages/search
+      description: "Full-text search with filters."
+      params: [q, from, to, subject, has_attachment, date_from, date_to, folder_id]
+      response: "Paginated<Message>"
+
+  # Folders
+  folders:
+    - method: GET
+      path: /folders
+      description: "List all folders (flat or tree)."
+      params: [tree: boolean]
+      response: "Folder[]"
+
+    - method: POST
+      path: /folders
+      description: "Create folder."
+      body: { name, parent_id }
+      response: Folder
+
+    - method: PATCH
+      path: /folders/{id}
+      description: "Rename folder."
+      body: { name }
+
+    - method: DELETE
+      path: /folders/{id}
+      description: "Delete folder (not system folders)."
+
+    - method: GET
+      path: /folders/{id}/messages
+      description: "List messages in folder."
+      params: [sort, cursor, limit, is_read]
+      response: "Paginated<Message>"
+
+  # Conversations
+  conversations:
+    - method: GET
+      path: /conversations
+      description: "List conversations."
+      params: [folder_id, cursor, limit]
+      response: "Paginated<Conversation>"
+
+    - method: GET
+      path: /conversations/{id}
+      description: "Get conversation with all messages."
+      response: "{ conversation: Conversation, messages: Message[] }"
+
+  # Contacts
+  contacts:
+    - method: GET
+      path: /contacts
+      description: "List contacts."
+      params: [search, company, is_favorite, sort, cursor, limit]
+      response: "Paginated<Contact>"
+
+    - method: GET
+      path: /contacts/{id}
+      description: "Get contact detail."
+      response: Contact
+
+    - method: POST
+      path: /contacts
+      description: "Create contact."
+      body: { first_name, last_name, email, phone, company, job_title, address, notes }
+      response: Contact
+
+    - method: PATCH
+      path: /contacts/{id}
+      description: "Update contact."
+      body: "Partial<Contact>"
+
+    - method: DELETE
+      path: /contacts/{id}
+      description: "Delete contact."
+
+    - method: GET
+      path: /contacts/autocomplete
+      description: "Autocomplete for compose to/cc/bcc fields."
+      params: [q]
+      response: "Contact[] (max 10)"
+
+  # Calendars
+  calendars:
+    - method: GET
+      path: /calendars
+      description: "List user's calendars (owned + shared)."
+      response: "Calendar[]"
+
+    - method: POST
+      path: /calendars
+      description: "Create calendar."
+      body: { name, color }
+      response: Calendar
+
+    - method: PATCH
+      path: /calendars/{id}
+      description: "Update calendar settings."
+
+    - method: DELETE
+      path: /calendars/{id}
+      description: "Delete calendar (not default)."
+
+  # Events
+  events:
+    - method: GET
+      path: /events
+      description: "List events in date range."
+      params: [calendar_id, start_after, start_before, cursor, limit]
+      response: "Paginated<Event>"
+
+    - method: GET
+      path: /events/{id}
+      description: "Get event detail with attendees."
+      response: "{ event: Event, attendees: EventAttendee[] }"
+
+    - method: POST
+      path: /events
+      description: "Create event."
+      body: { calendar_id, title, description, location, start_time, end_time, all_day, recurrence_rule, reminder_minutes, attendees }
+      response: Event
+
+    - method: PATCH
+      path: /events/{id}
+      description: "Update event."
+      params: [scope: "this_occurrence|this_and_following|all_in_series"]
+      body: "Partial<Event>"
+
+    - method: DELETE
+      path: /events/{id}
+      description: "Cancel/delete event."
+      params: [scope, notify_attendees: boolean]
+
+    - method: POST
+      path: /events/{id}/respond
+      description: "Respond to meeting invite."
+      body: { response: "accepted|tentative|declined", message: string }
+
+    - method: POST
+      path: /events/{id}/propose-time
+      description: "Propose new meeting time."
+      body: { start_time, end_time }
+
+    - method: GET
+      path: /events/availability
+      description: "Get free/busy for attendees (scheduling assistant)."
+      params: [attendee_emails, start, end]
+      response: "{ attendee: string, slots: {start, end, status}[] }[]"
+
+  # Tasks
+  tasks:
+    - method: GET
+      path: /tasks
+      description: "List tasks."
+      params: [list_id, is_completed, due_before, due_after, importance, sort, cursor, limit]
+      response: "Paginated<Task>"
+
+    - method: POST
+      path: /tasks
+      description: "Create task."
+      body: { title, body, due_date, reminder_at, importance, list_id, source_message_id }
+      response: Task
+
+    - method: PATCH
+      path: /tasks/{id}
+      description: "Update task."
+      body: "Partial<Task>"
+
+    - method: DELETE
+      path: /tasks/{id}
+      description: "Delete task."
+
+    - method: POST
+      path: /tasks/{id}/complete
+      description: "Mark task complete."
+
+    - method: POST
+      path: /tasks/{id}/uncomplete
+      description: "Mark task incomplete."
+
+  # Task Lists
+  task_lists:
+    - method: GET
+      path: /task-lists
+      response: "TaskList[]"
+
+    - method: POST
+      path: /task-lists
+      body: { name, color }
+      response: TaskList
+
+    - method: PATCH
+      path: /task-lists/{id}
+
+    - method: DELETE
+      path: /task-lists/{id}
+
+  # Rules
+  rules:
+    - method: GET
+      path: /rules
+      response: "Rule[]"
+
+    - method: POST
+      path: /rules
+      body: { name, conditions, actions, stop_processing, apply_to }
+      response: Rule
+
+    - method: PATCH
+      path: /rules/{id}
+
+    - method: DELETE
+      path: /rules/{id}
+
+    - method: POST
+      path: /rules/{id}/run
+      description: "Run rule on existing folder."
+      body: { folder_id }
+
+    - method: PATCH
+      path: /rules/reorder
+      description: "Reorder rule priorities."
+      body: { rule_ids: uuid[] }
+
+  # Signatures
+  signatures:
+    - method: GET
+      path: /signatures
+      response: "Signature[]"
+
+    - method: POST
+      path: /signatures
+      body: { name, body_html, is_default_new, is_default_reply }
+      response: Signature
+
+    - method: PATCH
+      path: /signatures/{id}
+
+    - method: DELETE
+      path: /signatures/{id}
+
+  # Categories
+  categories:
+    - method: GET
+      path: /categories
+      response: "Category[]"
+
+    - method: POST
+      path: /categories
+      body: { name, color }
+      response: Category
+
+    - method: PATCH
+      path: /categories/{id}
+
+    - method: DELETE
+      path: /categories/{id}
+
+  # Settings
+  settings:
+    - method: GET
+      path: /settings
+      description: "Get all user settings."
+      response: "{ mail: object, calendar: object, general: object }"
+
+    - method: PATCH
+      path: /settings
+      description: "Update settings."
+      body: "Partial<Settings>"
+
+    - method: GET
+      path: /settings/oof
+      description: "Get out-of-office config."
+
+    - method: PATCH
+      path: /settings/oof
+      description: "Update out-of-office config."
+      body: { enabled, start, end, internal_message, external_message }
+
+  # Attachments
+  attachments:
+    - method: GET
+      path: /messages/{message_id}/attachments
+      response: "Attachment[]"
+
+    - method: GET
+      path: /attachments/{id}/download
+      description: "Download attachment file."
+      response: "binary stream"
+
+    - method: POST
+      path: /messages/{message_id}/attachments
+      description: "Upload attachment to draft."
+      body: "multipart/form-data"
+      response: Attachment
+
+# ----------------------------------------------------------------------------
+# Universal RL Environment Endpoints
+# ----------------------------------------------------------------------------
+universal_endpoints:
+
+  health:
+    - method: GET
+      path: /health
+      description: "Liveness probe. Returns 200 if process is up."
+      response: { status: "ok" }
+
+    - method: GET
+      path: /ready
+      description: "Readiness probe. Returns 200 only after seed loaded."
+      response: { status: "ready", seed_version: string }
+
+  seeding:
+    - method: POST
+      path: /seed
+      description: "Load seed JSON. Validates schema, loads data, becomes ready."
+      body: "Seed JSON"
+      response: { status: "seeded", entity_counts: object }
+
+    - method: GET
+      path: /seed/error
+      description: "Get last seed validation error."
+      response: { error: object }
+
+  state:
+    - method: POST
+      path: /reset
+      description: "Reset to last-seeded state. Sub-second."
+      response: { status: "reset" }
+
+    - method: GET
+      path: /snapshot
+      description: "Full state as JSON. Round-trippable."
+      response: "State JSON"
+
+    - method: POST
+      path: /restore
+      description: "Load snapshot JSON. Replaces current state atomically."
+      body: "Snapshot JSON"
+      response: { status: "restored" }
+
+    - method: GET
+      path: /snapshot/diff
+      description: "Delta since last snapshot (P1)."
+      params: [since: snapshot_id]
+
+  clock:
+    - method: GET
+      path: /clock
+      description: "Get current virtual clock time."
+      response: { time: "ISO 8601" }
+
+    - method: POST
+      path: /clock/advance
+      description: "Advance virtual clock by duration."
+      body: { duration: "ISO 8601 duration (e.g., PT1H, P1D)" }
+      response: { time: "ISO 8601 (new time)" }
+
+  verification:
+    - method: POST
+      path: /verify
+      description: "Check predicate against current state. Used for reward signals."
+      body: { path: string, operator: string, expected: any }
+      response: { result: boolean, actual: any, diagnostic: string }
+
+  events_log:
+    - method: GET
+      path: /events
+      description: "Ordered event log since cursor."
+      params: [cursor, limit]
+      response: "{ events: Event[], next_cursor: string }"
+
+  episode:
+    - method: POST
+      path: /episode/start
+      description: "Mark episode boundary start (P1)."
+
+    - method: POST
+      path: /episode/end
+      description: "Mark episode boundary end (P1)."
+
+  chaos:
+    - method: POST
+      path: /chaos/latency
+      description: "Inject latency on endpoints (requires CHAOS_ENABLED=1)."
+    - method: POST
+      path: /chaos/errors
+      description: "Inject errors on endpoints."
+    - method: POST
+      path: /chaos/stale
+      description: "Simulate concurrent edits."
+    - method: POST
+      path: /chaos/permissions
+      description: "Downgrade active user permissions mid-episode."
+
+# ----------------------------------------------------------------------------
+# Response Envelope
+# ----------------------------------------------------------------------------
+response_conventions:
+  single_resource: "Return the resource object directly."
+  list_resource: "{ items: T[], next_cursor: string | null, total_count?: number }"
+  mutation: "Return the created/updated resource."
+  deletion: "Return 204 No Content."
+  error: "{ error: { code: string, message: string, details?: object } }"

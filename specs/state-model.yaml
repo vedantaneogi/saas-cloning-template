@@ -1,0 +1,293 @@
+# ============================================================================
+# State Model — Microsoft Outlook Clone
+# ============================================================================
+# State machines for key entities. Defines valid states, transitions,
+# and side effects. Used for determinism guarantees and /verify predicates.
+# ============================================================================
+
+state_machines:
+
+  # --------------------------------------------------------------------------
+  # Message Lifecycle
+  # --------------------------------------------------------------------------
+  - entity: Message
+    initial_state: draft
+    states:
+      - draft
+      - queued          # Scheduled send waiting
+      - sent
+      - received
+      - read
+      - archived
+      - deleted
+      - permanently_deleted
+
+    transitions:
+      - from: draft
+        to: sent
+        action: send
+        side_effects:
+          - Create copy in Sent Items folder
+          - Deliver to recipients' Inbox
+          - Update conversation thread
+          - Run outgoing rules
+
+      - from: draft
+        to: queued
+        action: schedule_send
+        condition: "scheduled_send_at is set"
+        side_effects:
+          - Store in Drafts with scheduled_send_at
+
+      - from: queued
+        to: sent
+        action: send_scheduled
+        trigger: "virtual clock >= scheduled_send_at"
+        side_effects:
+          - Same as send
+
+      - from: draft
+        to: permanently_deleted
+        action: discard
+        side_effects:
+          - Remove from Drafts
+
+      - from: received
+        to: read
+        action: mark_read
+        side_effects:
+          - Decrement folder unread_count
+
+      - from: read
+        to: received
+        action: mark_unread
+        side_effects:
+          - Increment folder unread_count
+
+      - from: [received, read]
+        to: archived
+        action: archive
+        side_effects:
+          - Move to Archive folder
+
+      - from: [received, read, archived]
+        to: deleted
+        action: delete
+        side_effects:
+          - Move to Deleted Items folder
+
+      - from: deleted
+        to: [received, read]
+        action: restore
+        side_effects:
+          - Move back to original folder
+
+      - from: deleted
+        to: permanently_deleted
+        action: permanent_delete
+        side_effects:
+          - Remove from database
+
+      - from: [received, read]
+        to: [received, read]
+        action: move
+        params: [target_folder_id]
+        side_effects:
+          - Update folder_id
+          - Update source/target folder counts
+
+      - from: [received, read]
+        to: [received, read]
+        action: flag
+        side_effects:
+          - Set is_flagged = true
+          - Create linked Task if due date specified
+
+      - from: [received, read]
+        to: [received, read]
+        action: unflag
+        side_effects:
+          - Set is_flagged = false
+          - Remove linked Task if exists
+
+      - from: [received, read]
+        to: [received, read]
+        action: pin
+        side_effects:
+          - Set is_pinned = true
+
+      - from: [received, read]
+        to: [received, read]
+        action: snooze
+        params: [snooze_until]
+        side_effects:
+          - Set snooze_until
+          - Hide from inbox until time
+
+  # --------------------------------------------------------------------------
+  # Event Lifecycle
+  # --------------------------------------------------------------------------
+  - entity: Event
+    initial_state: draft
+    states:
+      - draft
+      - confirmed
+      - tentative
+      - cancelled
+      - completed       # Past event, virtual clock has passed end_time
+
+    transitions:
+      - from: draft
+        to: confirmed
+        action: save
+        side_effects:
+          - Create event on calendar
+          - Send invites to attendees
+          - Create reminder
+
+      - from: [confirmed, tentative]
+        to: confirmed
+        action: update
+        params: [scope]  # "this_occurrence" | "this_and_following" | "all_in_series"
+        side_effects:
+          - Update event fields
+          - Send update notification to attendees
+
+      - from: [confirmed, tentative]
+        to: cancelled
+        action: cancel
+        params: [scope, message]
+        side_effects:
+          - Send cancellation to attendees
+          - Remove from calendar grid
+
+      - from: confirmed
+        to: completed
+        action: complete
+        trigger: "virtual clock >= end_time"
+
+  # --------------------------------------------------------------------------
+  # Event Attendee Response
+  # --------------------------------------------------------------------------
+  - entity: EventAttendee
+    initial_state: none
+    states:
+      - none
+      - accepted
+      - tentative
+      - declined
+
+    transitions:
+      - from: none
+        to: accepted
+        action: accept
+        side_effects:
+          - Add event to attendee's calendar
+          - Send response to organizer
+
+      - from: none
+        to: tentative
+        action: tentatively_accept
+        side_effects:
+          - Add event to attendee's calendar (tentative marker)
+          - Send response to organizer
+
+      - from: none
+        to: declined
+        action: decline
+        params: [message]
+        side_effects:
+          - Send decline response to organizer
+
+      - from: [accepted, tentative, declined]
+        to: [accepted, tentative, declined]
+        action: change_response
+        side_effects:
+          - Update calendar accordingly
+          - Notify organizer
+
+      - from: [none, accepted, tentative, declined]
+        to: none
+        action: propose_new_time
+        params: [proposed_start, proposed_end]
+        side_effects:
+          - Send proposal to organizer
+
+  # --------------------------------------------------------------------------
+  # Task Lifecycle
+  # --------------------------------------------------------------------------
+  - entity: Task
+    initial_state: pending
+    states:
+      - pending
+      - in_progress
+      - completed
+      - deleted
+
+    transitions:
+      - from: pending
+        to: completed
+        action: complete
+        side_effects:
+          - Set completed_at
+          - If linked to message, clear message flag
+
+      - from: completed
+        to: pending
+        action: uncomplete
+        side_effects:
+          - Clear completed_at
+          - If linked to message, re-set message flag
+
+      - from: [pending, in_progress]
+        to: deleted
+        action: delete
+        side_effects:
+          - If linked to message, clear message flag
+
+  # --------------------------------------------------------------------------
+  # Rule Lifecycle
+  # --------------------------------------------------------------------------
+  - entity: Rule
+    initial_state: enabled
+    states:
+      - enabled
+      - disabled
+
+    transitions:
+      - from: enabled
+        to: disabled
+        action: disable
+
+      - from: disabled
+        to: enabled
+        action: enable
+
+  # --------------------------------------------------------------------------
+  # Folder Operations
+  # --------------------------------------------------------------------------
+  - entity: Folder
+    initial_state: active
+    states:
+      - active
+      - deleted
+
+    transitions:
+      - from: active
+        to: deleted
+        action: delete
+        condition: "is_system == false"
+        side_effects:
+          - Move contained messages to Deleted Items
+          - Move child folders to Deleted Items
+          - Update parent folder counts
+
+# ----------------------------------------------------------------------------
+# Determinism Rules
+# ----------------------------------------------------------------------------
+determinism:
+  clock: "All time-dependent transitions use virtual clock, never wall clock."
+  rng: "All randomness seeded from seed JSON rng_seed field."
+  ordering: >
+    Actions applied in FIFO order. Given identical (seed, action_trace,
+    clock_advances), final state is byte-identical across runs.

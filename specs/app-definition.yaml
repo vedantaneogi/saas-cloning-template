@@ -1,0 +1,171 @@
+# ============================================================================
+# App Definition — Microsoft Outlook Clone
+# ============================================================================
+# Target: Microsoft Outlook (Web — outlook.office.com)
+# Purpose: Email + Calendar + Contacts + Tasks environment for AI agent
+#          training and evaluation.
+# ============================================================================
+
+app:
+  name: outlook-clone
+  display_name: "Microsoft Outlook"
+  description: >
+    Email + calendar + contacts + tasks. Universal substrate for office work.
+    Tasks span triage, scheduling, composition, rule maintenance — and most
+    cross-app workflows pass through Outlook.
+  version: "0.1.0"
+  target_url: "https://outlook.office.com"
+  category: productivity
+
+# ----------------------------------------------------------------------------
+# Stack
+# ----------------------------------------------------------------------------
+stack:
+  backend:
+    framework: FastAPI
+    language: Python 3.12
+    orm: SQLAlchemy 2.0+
+    database: PostgreSQL 16
+    migrations: Alembic
+  frontend:
+    framework: Next.js 15 (App Router)
+    language: TypeScript 5.6+
+    ui_library: React 19
+    styling: Tailwind CSS
+    state_management: Zustand
+  testing:
+    unit: pytest
+    e2e: Playwright
+    visual: pixelmatch / visual-diff
+  packaging:
+    container: Docker (OCI, multi-arch linux/amd64 + linux/arm64)
+    desktop: Electron
+    orchestration: docker-compose
+
+# ----------------------------------------------------------------------------
+# Feature Counts
+# ----------------------------------------------------------------------------
+feature_summary:
+  p0_count: 28
+  p1_count: 27
+  total: 55
+  categories:
+    - Mail layout
+    - Mail actions
+    - Mail search
+    - Compose
+    - Attachments
+    - Calendar
+    - Contacts
+    - Tasks
+    - Settings & accounts
+    - Rules / automation
+    - Categories & flags
+    - Sweep / clean up
+    - Scheduling assistant
+    - Shared / delegated
+    - Groups
+    - Inbox modes
+    - Schedule send / snooze
+    - Pinning
+    - Mentions
+    - Encryption
+    - Calendar sharing
+    - To Do integration
+    - Quick steps
+    - Add-ins
+    - Follow-ups
+
+# ----------------------------------------------------------------------------
+# Core Entities
+# ----------------------------------------------------------------------------
+core_entities:
+  - Message
+  - Folder
+  - Conversation
+  - Contact
+  - Calendar
+  - Event
+  - Task
+  - Rule
+  - Category
+  - Signature
+
+# ----------------------------------------------------------------------------
+# Agent Task Surfaces
+# ----------------------------------------------------------------------------
+agent_tasks:
+  easy: >
+    Find the most recent email from 'Acme' with an attachment and save
+    the attachment to a new folder 'Vendor Docs'.
+  medium: >
+    Process inbox triage: archive newsletters, flag anything from your
+    manager as high importance, schedule a 30m meeting with anyone who
+    asked 'do you have time to chat?' using the scheduling assistant.
+  hard: >
+    Set up a vacation: out-of-office for next week, rule forwarding urgent
+    emails to a coworker, decline all non-recurring meetings during the
+    period with a polite note, reschedule any 1:1s to the following week.
+
+# ----------------------------------------------------------------------------
+# Failure Modes & State Hazards
+# ----------------------------------------------------------------------------
+failure_modes:
+  - id: 1
+    hazard: "Recipient autocomplete picks wrong person with similar name."
+  - id: 2
+    hazard: "Reply-all to a large distribution list."
+  - id: 3
+    hazard: "Send-without-attachment when 'attached' is in body."
+  - id: 4
+    hazard: "Rule loops or shadows another rule."
+  - id: 5
+    hazard: "Recurring meeting series edit applied to wrong scope."
+  - id: 6
+    hazard: "Time zone mishandling for cross-region meetings."
+  - id: 7
+    hazard: "Mailbox quota near full."
+
+# ----------------------------------------------------------------------------
+# Ports & Config
+# ----------------------------------------------------------------------------
+ports:
+  api: 8000
+  web: 3000
+  database: 5432
+
+environment:
+  NODE_ENV: development
+  NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+  DATABASE_URL: "postgresql://app:app@db:5432/outlook"
+  API_PORT: 8000
+  WEB_PORT: 3000
+  POSTGRES_DB: outlook
+  POSTGRES_USER: app
+  POSTGRES_PASSWORD: app
+
+# ----------------------------------------------------------------------------
+# Timeline & Milestones
+# ----------------------------------------------------------------------------
+milestones:
+  day_1:
+    - Database schema + migrations for all 10 entities
+    - FastAPI CRUD endpoints for Message, Folder, Contact, Event, Task
+    - Seed data loader (JSON boot + HTTP POST /seed)
+    - Three-pane mail layout (folders / message list / reading pane)
+    - Basic compose modal (to/cc/bcc, subject, body, send/save/discard)
+  day_2:
+    - Calendar views (day/week/month) + event CRUD
+    - Contact list + search + create/edit
+    - Task list + create from message
+    - Mail actions (reply/forward/delete/archive/flag/pin)
+    - Search bar with filters
+    - Settings (OOO, signatures, account switch)
+    - Universal endpoints (/health, /ready, /reset, /snapshot, /restore, /verify, /events, /clock)
+    - Playwright E2E tests for all P0 features
+    - Docker image build + validation
+  day_3_plus:
+    - P1 features (rules, categories, sweep, scheduling assistant, etc.)
+    - Visual diff QA against real Outlook
+    - Failure mode injection
+    - Electron packaging

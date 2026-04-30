@@ -1,0 +1,261 @@
+# ============================================================================
+# Seed Plan — Microsoft Outlook Clone
+# ============================================================================
+# Defines the canonical seed JSON structure, data generation strategy,
+# and realistic data profiles for Outlook environments.
+# ============================================================================
+
+seed_schema:
+  version: "rl-env/v1"
+  app: outlook-clone
+
+# ----------------------------------------------------------------------------
+# Seed JSON Top-Level Structure
+# ----------------------------------------------------------------------------
+structure:
+  $schema: "rl-env/v1"
+  rng_seed: 42
+  feature_flags: {}
+  permission_profile: {}
+  world: {}
+  app_data: {}
+
+# ----------------------------------------------------------------------------
+# World Object (shared across apps)
+# ----------------------------------------------------------------------------
+world:
+  description: >
+    Shared identity pool. Mounted as read-only world.json. All contacts,
+    senders, and attendees reference these by global ID.
+  entities:
+    people:
+      count: 50
+      fields:
+        - id              # Global stable UUID
+        - first_name
+        - last_name
+        - email
+        - phone
+        - company
+        - job_title
+        - department
+        - avatar_url
+        - timezone
+    companies:
+      count: 10
+      fields:
+        - id
+        - name
+        - domain
+        - industry
+        - logo_url
+
+# ----------------------------------------------------------------------------
+# App Data Seed Sections
+# ----------------------------------------------------------------------------
+app_data:
+
+  active_user:
+    description: "The user whose mailbox is being simulated."
+    fields:
+      world_id: "Reference to world.people[].id"
+      role: "worker | manager | admin"
+      timezone: "America/New_York"
+      locale: "en-US"
+
+  folders:
+    description: "System folders auto-created. User folders defined here."
+    system_auto_created: true
+    custom_folders:
+      - { name: "Projects", parent: null }
+      - { name: "Project Alpha", parent: "Projects" }
+      - { name: "Project Beta", parent: "Projects" }
+      - { name: "Newsletters", parent: null }
+      - { name: "Receipts", parent: null }
+
+  messages:
+    description: "Seeded email messages across folders."
+    target_count: 500
+    distribution:
+      inbox: 50
+      sent: 100
+      drafts: 5
+      archive: 200
+      junk: 20
+      deleted: 25
+      custom_folders: 100
+    properties:
+      - Realistic subjects from business/team context
+      - Mix of read (70%) and unread (30%) in inbox
+      - 15% have attachments
+      - 10% are flagged
+      - 5% are high importance
+      - 20% are part of multi-message conversations (3-8 messages each)
+      - Some contain "attached" in body without attachments (hazard #3)
+      - Some from similar-named senders (hazard #1)
+
+  conversations:
+    description: "Thread groupings for messages."
+    target_count: 150
+    properties:
+      - Average 3.3 messages per conversation
+      - Some single-message threads
+      - Some long threads (8+ messages)
+
+  contacts:
+    description: "User's address book, derived from world people."
+    target_count: 40
+    properties:
+      - All world people who appear in messages
+      - 5 marked as favorites
+      - Mix of internal (same company) and external
+
+  calendars:
+    description: "User's calendars."
+    items:
+      - { name: "Calendar", is_default: true, color: "#0078D4" }
+      - { name: "Personal", is_default: false, color: "#107C10" }
+
+  events:
+    description: "Calendar events spread across current and next 2 weeks."
+    target_count: 30
+    distribution:
+      past_week: 8
+      current_week: 12
+      next_week: 10
+    properties:
+      - Mix of 30m, 1h, and 2h meetings
+      - 3 all-day events
+      - 5 recurring events (weekly 1:1s, daily standups, monthly reviews)
+      - 60% have 2-5 attendees
+      - Mix of response statuses (accepted, tentative, declined, none)
+      - 2 events with room bookings
+      - Some overlapping time slots for scheduling assistant testing
+
+  event_attendees:
+    description: "Attendees for seeded events."
+    target_count: 80
+    properties:
+      - Reference world people by ID
+      - Mix of required and optional
+      - Realistic response status distribution
+
+  tasks:
+    description: "To-do items and flagged email tasks."
+    target_count: 15
+    distribution:
+      standalone: 8
+      from_flagged_email: 7
+    properties:
+      - Mix of completed (40%) and pending (60%)
+      - Due dates spread across current and next week
+      - 3 marked high importance
+      - Linked to source messages where applicable
+
+  task_lists:
+    description: "Task list containers."
+    items:
+      - { name: "Tasks", is_default: true }
+      - { name: "Work Projects", is_default: false }
+
+  rules:
+    description: "Pre-configured mail automation rules."
+    items:
+      - name: "Move newsletters"
+        conditions: [{ field: from, operator: contains, value: "newsletter" }]
+        actions: [{ type: move_to_folder, params: { folder: "Newsletters" } }]
+        enabled: true
+      - name: "Flag manager emails"
+        conditions: [{ field: from, operator: equals, value: "{manager_email}" }]
+        actions: [{ type: flag }, { type: set_importance, params: { level: high } }]
+        enabled: true
+      - name: "Delete spam keywords"
+        conditions: [{ field: subject, operator: contains, value: "win a prize" }]
+        actions: [{ type: delete }]
+        enabled: false
+
+  categories:
+    description: "Predefined color categories."
+    use_defaults: true
+    additional: []
+
+  signatures:
+    description: "Email signatures."
+    items:
+      - name: "Work"
+        is_default_new: true
+        is_default_reply: false
+        body_html: |
+          <p>Best regards,<br>
+          {user.display_name}<br>
+          {user.job_title} | {user.company}<br>
+          {user.email} | {user.phone}</p>
+      - name: "Brief"
+        is_default_new: false
+        is_default_reply: true
+        body_html: |
+          <p>— {user.first_name}</p>
+
+  out_of_office:
+    description: "OOO configuration (disabled by default)."
+    enabled: false
+    start: null
+    end: null
+    internal_message: ""
+    external_message: ""
+
+# ----------------------------------------------------------------------------
+# Feature Flags
+# ----------------------------------------------------------------------------
+feature_flags:
+  description: "Toggle features per episode."
+  defaults:
+    focused_inbox: true
+    schedule_send: true
+    snooze: true
+    encryption_labels: false
+    groups: false
+    add_ins: false
+    scheduling_assistant: true
+    quick_steps: true
+    follow_ups: true
+    sweep: true
+
+# ----------------------------------------------------------------------------
+# Permission Profiles
+# ----------------------------------------------------------------------------
+permission_profiles:
+  worker:
+    description: "Standard employee access."
+    role: worker
+  manager:
+    description: "Manager with delegate access."
+    role: manager
+    delegates: ["world_person_id_1"]
+  admin:
+    description: "Full administrative access."
+    role: admin
+
+# ----------------------------------------------------------------------------
+# Bulk Size Limits (per universal requirements)
+# ----------------------------------------------------------------------------
+bulk_limits:
+  max_messages: 50000
+  max_contacts: 5000
+  max_events: 10000
+  max_tasks: 5000
+  max_rules: 100
+  max_folders: 500
+
+# ----------------------------------------------------------------------------
+# Generative Seeding (P1)
+# ----------------------------------------------------------------------------
+generative:
+  description: >
+    When seed JSON includes a generator block, the container expands it
+    deterministically. Uses rng_seed for all randomness.
+  example:
+    generator:
+      seed_hash: "abc123"
+      messages: { count: 1000, distribution: "realistic" }
+      events: { count: 50, spread_days: 30 }

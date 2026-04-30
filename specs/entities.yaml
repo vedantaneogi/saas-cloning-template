@@ -1,0 +1,773 @@
+# ============================================================================
+# Entity Definitions — Microsoft Outlook Clone
+# ============================================================================
+# Canonical data model. Each entity maps to a SQLAlchemy model and a
+# PostgreSQL table. Relations use global IDs from the shared world object.
+# ============================================================================
+
+entities:
+
+  # --------------------------------------------------------------------------
+  # User / Account
+  # --------------------------------------------------------------------------
+  - name: User
+    table: users
+    description: "Application user account. Maps to a world identity."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+        default: gen_random_uuid()
+      - name: world_id
+        type: string
+        description: "Global identity ID from world.json"
+        nullable: false
+        unique: true
+      - name: email
+        type: string
+        nullable: false
+        unique: true
+      - name: display_name
+        type: string
+        nullable: false
+      - name: avatar_url
+        type: string
+        nullable: true
+      - name: timezone
+        type: string
+        default: "UTC"
+      - name: locale
+        type: string
+        default: "en-US"
+      - name: role
+        type: enum(worker, manager, admin)
+        default: worker
+      - name: is_active
+        type: boolean
+        default: true
+      - name: out_of_office_enabled
+        type: boolean
+        default: false
+      - name: out_of_office_start
+        type: datetime
+        nullable: true
+      - name: out_of_office_end
+        type: datetime
+        nullable: true
+      - name: out_of_office_message_internal
+        type: text
+        nullable: true
+      - name: out_of_office_message_external
+        type: text
+        nullable: true
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+
+  # --------------------------------------------------------------------------
+  # Folder
+  # --------------------------------------------------------------------------
+  - name: Folder
+    table: folders
+    description: "Mail folders. System folders (Inbox, Sent, Drafts, etc.) plus user-created. Supports nesting."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: name
+        type: string
+        nullable: false
+      - name: slug
+        type: string
+        description: "URL-safe identifier (e.g., inbox, sent, drafts)"
+      - name: parent_id
+        type: uuid
+        foreign_key: folders.id
+        nullable: true
+        description: "Self-referencing for nested folders"
+      - name: is_system
+        type: boolean
+        default: false
+        description: "System folders cannot be renamed/deleted"
+      - name: icon
+        type: string
+        nullable: true
+      - name: sort_order
+        type: integer
+        default: 0
+      - name: unread_count
+        type: integer
+        default: 0
+      - name: total_count
+        type: integer
+        default: 0
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+    system_defaults:
+      - { name: Inbox, slug: inbox, icon: inbox }
+      - { name: Drafts, slug: drafts, icon: file-text }
+      - { name: Sent Items, slug: sent, icon: send }
+      - { name: Archive, slug: archive, icon: archive }
+      - { name: Junk Email, slug: junk, icon: alert-triangle }
+      - { name: Deleted Items, slug: deleted, icon: trash-2 }
+
+  # --------------------------------------------------------------------------
+  # Category
+  # --------------------------------------------------------------------------
+  - name: Category
+    table: categories
+    description: "Colored labels applied to messages and events."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: name
+        type: string
+        nullable: false
+      - name: color
+        type: string
+        nullable: false
+        description: "Hex color code"
+      - name: created_at
+        type: datetime
+        default: now()
+    defaults:
+      - { name: Blue Category, color: "#0078D4" }
+      - { name: Green Category, color: "#107C10" }
+      - { name: Orange Category, color: "#FF8C00" }
+      - { name: Purple Category, color: "#5C2D91" }
+      - { name: Red Category, color: "#D13438" }
+      - { name: Yellow Category, color: "#FFB900" }
+
+  # --------------------------------------------------------------------------
+  # Message
+  # --------------------------------------------------------------------------
+  - name: Message
+    table: messages
+    description: "Email message. Core entity."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+        description: "Mailbox owner"
+      - name: conversation_id
+        type: uuid
+        foreign_key: conversations.id
+        nullable: true
+      - name: folder_id
+        type: uuid
+        foreign_key: folders.id
+        nullable: false
+      - name: from_address
+        type: string
+        nullable: false
+      - name: from_name
+        type: string
+        nullable: true
+      - name: to_addresses
+        type: json
+        description: "Array of {email, name}"
+        nullable: false
+      - name: cc_addresses
+        type: json
+        description: "Array of {email, name}"
+        default: "[]"
+      - name: bcc_addresses
+        type: json
+        description: "Array of {email, name}"
+        default: "[]"
+      - name: subject
+        type: string
+        nullable: false
+        default: ""
+      - name: body_text
+        type: text
+        nullable: true
+      - name: body_html
+        type: text
+        nullable: true
+      - name: is_read
+        type: boolean
+        default: false
+      - name: is_flagged
+        type: boolean
+        default: false
+      - name: is_pinned
+        type: boolean
+        default: false
+      - name: is_draft
+        type: boolean
+        default: false
+      - name: importance
+        type: enum(low, normal, high)
+        default: normal
+      - name: sensitivity
+        type: enum(normal, personal, private, confidential)
+        default: normal
+      - name: has_attachments
+        type: boolean
+        default: false
+      - name: in_reply_to_id
+        type: uuid
+        foreign_key: messages.id
+        nullable: true
+      - name: reply_type
+        type: enum(none, reply, reply_all, forward)
+        default: none
+      - name: snooze_until
+        type: datetime
+        nullable: true
+      - name: scheduled_send_at
+        type: datetime
+        nullable: true
+      - name: sent_at
+        type: datetime
+        nullable: true
+      - name: received_at
+        type: datetime
+        nullable: true
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+    indexes:
+      - { columns: [user_id, folder_id], name: idx_messages_user_folder }
+      - { columns: [conversation_id], name: idx_messages_conversation }
+      - { columns: [user_id, is_read], name: idx_messages_unread }
+      - { columns: [user_id, is_flagged], name: idx_messages_flagged }
+
+  # --------------------------------------------------------------------------
+  # Attachment
+  # --------------------------------------------------------------------------
+  - name: Attachment
+    table: attachments
+    description: "File attached to a message."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: message_id
+        type: uuid
+        foreign_key: messages.id
+        nullable: false
+      - name: filename
+        type: string
+        nullable: false
+      - name: content_type
+        type: string
+        nullable: false
+      - name: size_bytes
+        type: integer
+        nullable: false
+      - name: storage_path
+        type: string
+        nullable: true
+        description: "Path or stub reference"
+      - name: is_inline
+        type: boolean
+        default: false
+      - name: created_at
+        type: datetime
+        default: now()
+
+  # --------------------------------------------------------------------------
+  # Conversation
+  # --------------------------------------------------------------------------
+  - name: Conversation
+    table: conversations
+    description: "Thread of related messages grouped by subject/references."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: subject
+        type: string
+        nullable: false
+      - name: last_message_at
+        type: datetime
+        nullable: true
+      - name: message_count
+        type: integer
+        default: 1
+      - name: has_attachments
+        type: boolean
+        default: false
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+
+  # --------------------------------------------------------------------------
+  # Contact
+  # --------------------------------------------------------------------------
+  - name: Contact
+    table: contacts
+    description: "Person record in the user's address book."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: world_id
+        type: string
+        nullable: true
+        description: "Global identity reference"
+      - name: first_name
+        type: string
+        nullable: false
+      - name: last_name
+        type: string
+        nullable: true
+      - name: display_name
+        type: string
+        nullable: false
+      - name: email
+        type: string
+        nullable: false
+      - name: phone
+        type: string
+        nullable: true
+      - name: company
+        type: string
+        nullable: true
+      - name: job_title
+        type: string
+        nullable: true
+      - name: address
+        type: json
+        nullable: true
+        description: "{street, city, state, zip, country}"
+      - name: notes
+        type: text
+        nullable: true
+      - name: avatar_url
+        type: string
+        nullable: true
+      - name: is_favorite
+        type: boolean
+        default: false
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+    indexes:
+      - { columns: [user_id, email], name: idx_contacts_user_email, unique: true }
+
+  # --------------------------------------------------------------------------
+  # Calendar
+  # --------------------------------------------------------------------------
+  - name: Calendar
+    table: calendars
+    description: "Owned or shared calendar. Contains events."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: name
+        type: string
+        nullable: false
+        default: "Calendar"
+      - name: color
+        type: string
+        default: "#0078D4"
+      - name: is_default
+        type: boolean
+        default: false
+      - name: is_shared
+        type: boolean
+        default: false
+      - name: shared_by_user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: true
+      - name: permission_level
+        type: enum(none, free_busy, read, write, delegate)
+        default: write
+      - name: is_visible
+        type: boolean
+        default: true
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+
+  # --------------------------------------------------------------------------
+  # Event
+  # --------------------------------------------------------------------------
+  - name: Event
+    table: events
+    description: "Calendar event or meeting."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: calendar_id
+        type: uuid
+        foreign_key: calendars.id
+        nullable: false
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: title
+        type: string
+        nullable: false
+      - name: description
+        type: text
+        nullable: true
+      - name: location
+        type: string
+        nullable: true
+      - name: start_time
+        type: datetime
+        nullable: false
+      - name: end_time
+        type: datetime
+        nullable: false
+      - name: all_day
+        type: boolean
+        default: false
+      - name: is_recurring
+        type: boolean
+        default: false
+      - name: recurrence_rule
+        type: json
+        nullable: true
+        description: "{frequency, interval, end_date, count, days_of_week}"
+      - name: recurrence_parent_id
+        type: uuid
+        foreign_key: events.id
+        nullable: true
+      - name: reminder_minutes
+        type: integer
+        default: 15
+      - name: is_online_meeting
+        type: boolean
+        default: false
+      - name: meeting_url
+        type: string
+        nullable: true
+      - name: status
+        type: enum(free, tentative, busy, out_of_office, working_elsewhere)
+        default: busy
+      - name: sensitivity
+        type: enum(normal, personal, private, confidential)
+        default: normal
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+    indexes:
+      - { columns: [calendar_id, start_time, end_time], name: idx_events_time_range }
+      - { columns: [user_id, start_time], name: idx_events_user_time }
+
+  # --------------------------------------------------------------------------
+  # EventAttendee
+  # --------------------------------------------------------------------------
+  - name: EventAttendee
+    table: event_attendees
+    description: "Attendee of a calendar event."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: event_id
+        type: uuid
+        foreign_key: events.id
+        nullable: false
+      - name: email
+        type: string
+        nullable: false
+      - name: display_name
+        type: string
+        nullable: true
+      - name: response_status
+        type: enum(none, accepted, tentative, declined)
+        default: none
+      - name: is_organizer
+        type: boolean
+        default: false
+      - name: is_required
+        type: boolean
+        default: true
+      - name: proposed_new_time
+        type: json
+        nullable: true
+        description: "{start_time, end_time}"
+
+  # --------------------------------------------------------------------------
+  # Task
+  # --------------------------------------------------------------------------
+  - name: Task
+    table: tasks
+    description: "To-do item. Can be created standalone or from a flagged message."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: list_id
+        type: uuid
+        foreign_key: task_lists.id
+        nullable: true
+      - name: title
+        type: string
+        nullable: false
+      - name: body
+        type: text
+        nullable: true
+      - name: is_completed
+        type: boolean
+        default: false
+      - name: completed_at
+        type: datetime
+        nullable: true
+      - name: due_date
+        type: date
+        nullable: true
+      - name: reminder_at
+        type: datetime
+        nullable: true
+      - name: importance
+        type: enum(low, normal, high)
+        default: normal
+      - name: source_message_id
+        type: uuid
+        foreign_key: messages.id
+        nullable: true
+        description: "If created from a flagged email"
+      - name: sort_order
+        type: integer
+        default: 0
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+
+  # --------------------------------------------------------------------------
+  # TaskList
+  # --------------------------------------------------------------------------
+  - name: TaskList
+    table: task_lists
+    description: "Grouping container for tasks (To Do integration)."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: name
+        type: string
+        nullable: false
+      - name: is_default
+        type: boolean
+        default: false
+      - name: color
+        type: string
+        nullable: true
+      - name: sort_order
+        type: integer
+        default: 0
+      - name: created_at
+        type: datetime
+        default: now()
+
+  # --------------------------------------------------------------------------
+  # Rule
+  # --------------------------------------------------------------------------
+  - name: Rule
+    table: rules
+    description: "Mail automation rule: when condition → action."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: name
+        type: string
+        nullable: false
+      - name: is_enabled
+        type: boolean
+        default: true
+      - name: priority
+        type: integer
+        default: 0
+        description: "Lower number = higher priority"
+      - name: conditions
+        type: json
+        nullable: false
+        description: >
+          Array of {field, operator, value}.
+          Fields: from, to, subject, body, has_attachment, importance.
+          Operators: contains, equals, starts_with, ends_with.
+      - name: actions
+        type: json
+        nullable: false
+        description: >
+          Array of {type, params}.
+          Types: move_to_folder, mark_as_read, flag, forward_to, delete,
+                 set_category, set_importance.
+      - name: stop_processing
+        type: boolean
+        default: false
+        description: "If true, no further rules run after this one matches."
+      - name: apply_to
+        type: enum(incoming, outgoing, both)
+        default: incoming
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+
+  # --------------------------------------------------------------------------
+  # Signature
+  # --------------------------------------------------------------------------
+  - name: Signature
+    table: signatures
+    description: "Saved email signature blocks."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: name
+        type: string
+        nullable: false
+      - name: body_html
+        type: text
+        nullable: false
+      - name: is_default_new
+        type: boolean
+        default: false
+        description: "Use for new messages"
+      - name: is_default_reply
+        type: boolean
+        default: false
+        description: "Use for replies/forwards"
+      - name: created_at
+        type: datetime
+        default: now()
+      - name: updated_at
+        type: datetime
+        default: now()
+
+  # --------------------------------------------------------------------------
+  # MessageCategory (join table)
+  # --------------------------------------------------------------------------
+  - name: MessageCategory
+    table: message_categories
+    description: "Many-to-many: messages ↔ categories."
+    fields:
+      - name: message_id
+        type: uuid
+        foreign_key: messages.id
+        primary_key: true
+      - name: category_id
+        type: uuid
+        foreign_key: categories.id
+        primary_key: true
+
+  # --------------------------------------------------------------------------
+  # EventCategory (join table)
+  # --------------------------------------------------------------------------
+  - name: EventCategory
+    table: event_categories
+    description: "Many-to-many: events ↔ categories."
+    fields:
+      - name: event_id
+        type: uuid
+        foreign_key: events.id
+        primary_key: true
+      - name: category_id
+        type: uuid
+        foreign_key: categories.id
+        primary_key: true
+
+  # --------------------------------------------------------------------------
+  # QuickStep (P1)
+  # --------------------------------------------------------------------------
+  - name: QuickStep
+    table: quick_steps
+    description: "One-click multi-action macro."
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+      - name: user_id
+        type: uuid
+        foreign_key: users.id
+        nullable: false
+      - name: name
+        type: string
+        nullable: false
+      - name: icon
+        type: string
+        nullable: true
+      - name: actions
+        type: json
+        nullable: false
+        description: "Array of {type, params} — same action types as rules."
+      - name: shortcut_key
+        type: string
+        nullable: true
+      - name: sort_order
+        type: integer
+        default: 0
+      - name: created_at
+        type: datetime
+        default: now()

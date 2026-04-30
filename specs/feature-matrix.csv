@@ -1,0 +1,56 @@
+Category,Feature,Priority,CRUD,UI,API,Tests,Seed,Status,Notes
+Mail layout,Three-pane: folders / messages / reading,P0,N/A,Yes,N/A,Yes,N/A,pending,Standard mail UI with resizable splitters
+Mail layout,Folder navigation + CRUD + nesting,P0,Yes,Yes,Yes,Yes,Yes,pending,System folders + user folders + nesting
+Mail layout,Conversation grouping toggle,P0,N/A,Yes,Yes,Yes,Yes,pending,Threaded vs flat view toggle
+Mail layout,Read / unread states + mark all read,P0,Yes,Yes,Yes,Yes,Yes,pending,Read tracking with bulk mark-all-read
+Mail actions,Reply / reply all / forward,P0,Yes,Yes,Yes,Yes,N/A,pending,Standard response actions
+Mail actions,Delete / archive / move,P0,Yes,Yes,Yes,Yes,N/A,pending,Message triage operations
+Mail actions,Flag / mark unread / pin / snooze,P0,Yes,Yes,Yes,Yes,Yes,pending,Inbox productivity tools
+Mail search,Search bar with filters,P0,N/A,Yes,Yes,Yes,Yes,pending,"Filters: from, subject, date, has attachment, folder"
+Compose,To/cc/bcc with autocomplete,P0,N/A,Yes,Yes,Yes,N/A,pending,Autocomplete from contacts
+Compose,"Subject, rich body, attachments, embedded images",P0,Yes,Yes,Yes,Yes,N/A,pending,Full compose form
+Compose,Signature insertion,P0,N/A,Yes,Yes,Yes,Yes,pending,Insert saved signature
+Compose,Drafts auto-saved,P0,Yes,Yes,Yes,Yes,Yes,pending,Auto-save every 30s
+Compose,Send / Save / Discard,P0,Yes,Yes,Yes,Yes,N/A,pending,Compose action buttons
+Attachments,Open / save / download,P0,Yes,Yes,Yes,Yes,Yes,pending,Attachment handling
+Calendar,Day / Week / Work Week / Month views,P0,N/A,Yes,N/A,Yes,N/A,pending,Calendar view modes
+Calendar,"Create event with attendees, location, time, body, reminder",P0,Yes,Yes,Yes,Yes,Yes,pending,Event composer
+Calendar,Recurrence editor,P0,Yes,Yes,Yes,Yes,Yes,pending,"Daily / weekly / monthly nth weekday / end"
+Calendar,Edit / delete (single vs series),P0,Yes,Yes,Yes,Yes,N/A,pending,Scope-aware event edits
+Calendar,Accept / tentative / decline / propose new time,P0,Yes,Yes,Yes,Yes,Yes,pending,Invite response actions
+Calendar,Today + date jump,P0,N/A,Yes,N/A,Yes,N/A,pending,Calendar navigation
+Contacts,Contact list + search,P0,N/A,Yes,Yes,Yes,Yes,pending,People directory
+Contacts,Create / edit contact,P0,Yes,Yes,Yes,Yes,N/A,pending,"Name, email, phone, company, address, notes"
+Contacts,Contact card popover,P0,N/A,Yes,N/A,Yes,N/A,pending,Popover from any email address
+Tasks,Create task from message,P0,Yes,Yes,Yes,Yes,N/A,pending,Flag for follow-up creates task
+Tasks,Flagged items as task list,P0,N/A,Yes,Yes,Yes,Yes,pending,Due dates on flagged items
+Settings & accounts,Switch account / mailbox,P0,N/A,Yes,Yes,Yes,N/A,pending,Multi-account support
+Settings & accounts,Out-of-office,P0,Yes,Yes,Yes,Yes,N/A,pending,Schedule + internal/external messages
+Settings & accounts,Signature management,P0,Yes,Yes,Yes,Yes,Yes,pending,Multiple signatures CRUD
+Rules / automation,Create rule (when X -> action),P1,Yes,Yes,Yes,Yes,Yes,pending,"Move, mark read, forward, delete, flag"
+Rules / automation,Run rules on existing folder,P1,N/A,Yes,Yes,Yes,N/A,pending,Apply retroactively
+Rules / automation,Rule order and priority,P1,Yes,Yes,Yes,Yes,N/A,pending,Conflict resolution via ordering
+Categories & flags,Define categories,P1,Yes,Yes,Yes,Yes,Yes,pending,Color + name
+Categories & flags,Apply to messages and events,P1,Yes,Yes,Yes,Yes,N/A,pending,Cross-domain tagging
+Categories & flags,Filter by category,P1,N/A,Yes,Yes,Yes,N/A,pending,View slicing
+Sweep / clean up,"Sweep (keep latest, move all from sender)",P1,Yes,Yes,Yes,Yes,N/A,pending,Bulk sender cleanup
+Sweep / clean up,Clean up redundant in thread,P1,Yes,Yes,Yes,Yes,N/A,pending,Conversation trim
+Scheduling assistant,Attendees availability grid,P1,N/A,Yes,Yes,Yes,N/A,pending,Free/busy grid
+Scheduling assistant,Find a time helper,P1,N/A,Yes,Yes,Yes,N/A,pending,Suggested available slots
+Scheduling assistant,Room finder,P1,N/A,Yes,Yes,Yes,N/A,pending,Bookable room search
+Shared / delegated,Add another person's calendar,P1,N/A,Yes,Yes,Yes,N/A,pending,Calendar overlay
+Shared / delegated,Delegate mailbox/calendar,P1,Yes,Yes,Yes,Yes,N/A,pending,Permission level management
+Groups,M365 group inbox / calendar / files,P1,Yes,Yes,Yes,Yes,Yes,pending,Group surfaces
+Groups,Join / leave,P1,Yes,Yes,Yes,Yes,N/A,pending,Membership management
+Inbox modes,Focused vs Other,P1,N/A,Yes,Yes,Yes,Yes,pending,ML-sorted inbox
+Schedule send / snooze,Schedule send for later,P1,Yes,Yes,Yes,Yes,N/A,pending,Delayed delivery
+Schedule send / snooze,Snooze message until time,P1,Yes,Yes,Yes,Yes,N/A,pending,Resurface later
+Pinning,Pin important messages,P1,Yes,Yes,Yes,Yes,N/A,pending,Pinned section at top of inbox
+Mentions,@ in body,P1,N/A,Yes,Yes,Yes,N/A,pending,Flag attention + mentions filter
+Encryption,Sensitivity labels (confidential / encrypt),P1,N/A,Yes,Yes,Yes,N/A,pending,DLP labels
+Encryption,DLP warnings,P1,N/A,Yes,Yes,Yes,N/A,pending,Pre-send checks
+Calendar sharing,Publish calendar (availability or full),P1,Yes,Yes,Yes,Yes,N/A,pending,External link sharing
+To Do integration,"Lists, sublists, due, reminders, recurrence",P1,Yes,Yes,Yes,Yes,Yes,pending,Full task UI
+Quick steps,One-click multi-action macros,P1,Yes,Yes,Yes,Yes,Yes,pending,"E.g., Reply and delete"
+Add-ins,"Sidebar add-ins (Zoom, Salesforce, Asana stubs)",P1,N/A,Yes,N/A,Yes,N/A,pending,Third-party stub panels
+Follow-ups,"If no reply in N days, surface",P1,Yes,Yes,Yes,Yes,N/A,pending,Boomerang-like follow-up

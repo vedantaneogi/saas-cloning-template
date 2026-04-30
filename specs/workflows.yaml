@@ -1,0 +1,347 @@
+# ============================================================================
+# Workflow Definitions — Microsoft Outlook Clone
+# ============================================================================
+# User journeys and multi-step workflows that the app must support.
+# Each workflow defines the steps, entities involved, and expected outcomes.
+# ============================================================================
+
+workflows:
+
+  # --------------------------------------------------------------------------
+  # Mail Workflows
+  # --------------------------------------------------------------------------
+
+  - id: wf-mail-compose-send
+    name: "Compose and Send Email"
+    category: Mail
+    priority: P0
+    description: "User composes a new email and sends it."
+    steps:
+      - Click 'New message' button
+      - Type recipient in To field → autocomplete suggests contacts
+      - Select recipient(s), optionally add CC/BCC
+      - Enter subject line
+      - Write body using rich text editor
+      - Optionally attach files via drag-drop or browse
+      - Optionally insert saved signature
+      - Optionally set importance (low/normal/high)
+      - Click Send
+    entities: [Message, Contact, Attachment, Signature]
+    outcome: "Message appears in Sent Items. Recipients see it in Inbox."
+
+  - id: wf-mail-reply
+    name: "Reply / Reply All / Forward"
+    category: Mail
+    priority: P0
+    description: "User responds to an existing message."
+    steps:
+      - Select message in reading pane
+      - Click Reply, Reply All, or Forward
+      - Compose form opens pre-filled (recipients, quoted body)
+      - Edit body / add recipients
+      - Click Send
+    entities: [Message, Conversation]
+    outcome: "New message linked to conversation. Thread grows."
+
+  - id: wf-mail-triage
+    name: "Inbox Triage"
+    category: Mail
+    priority: P0
+    description: "User processes inbox messages with bulk actions."
+    steps:
+      - Open Inbox folder
+      - Scan message list (unread highlighted)
+      - For each message, choose action — read / flag / archive / delete / move to folder
+      - Use multi-select + toolbar for bulk operations
+      - Mark all read on remaining
+    entities: [Message, Folder]
+    outcome: "Inbox organized. Messages in appropriate folders."
+
+  - id: wf-mail-search
+    name: "Search and Filter Mail"
+    category: Mail
+    priority: P0
+    description: "User searches for specific messages."
+    steps:
+      - Click search bar (top toolbar)
+      - Type query (subject, sender name, keyword)
+      - Search results appear in message list
+      - Apply filters (from, date range, has attachment, folder)
+      - Click result to open in reading pane
+    entities: [Message, Folder]
+    outcome: "Matching messages displayed. Filters narrow results."
+
+  - id: wf-mail-folder-management
+    name: "Create and Organize Folders"
+    category: Mail
+    priority: P0
+    description: "User creates folder hierarchy and moves messages."
+    steps:
+      - Right-click folder tree → 'New folder'
+      - Name folder, choose parent (nesting)
+      - Drag messages from message list to new folder
+      - Rename/delete folders via right-click context menu
+    entities: [Folder, Message]
+    outcome: "Custom folder structure. Messages organized."
+
+  - id: wf-mail-draft
+    name: "Save and Resume Draft"
+    category: Mail
+    priority: P0
+    description: "User starts composing, saves as draft, resumes later."
+    steps:
+      - Open compose form
+      - Begin writing (auto-saves every 30s)
+      - Close compose form without sending
+      - Navigate to Drafts folder
+      - Click draft to resume editing
+      - Complete and send
+    entities: [Message]
+    outcome: "Draft persisted and resumable. Sent after completion."
+
+  - id: wf-mail-flag-followup
+    name: "Flag for Follow-up"
+    category: Mail
+    priority: P0
+    description: "User flags a message which creates a task."
+    steps:
+      - Right-click message or click flag icon
+      - Choose due date (Today, Tomorrow, This Week, custom)
+      - Message appears in Flagged items
+      - Task auto-created in Tasks with due date
+      - Complete task → flag cleared
+    entities: [Message, Task]
+    outcome: "Message flagged. Corresponding task created with due date."
+
+  # --------------------------------------------------------------------------
+  # Calendar Workflows
+  # --------------------------------------------------------------------------
+
+  - id: wf-cal-create-event
+    name: "Create Calendar Event"
+    category: Calendar
+    priority: P0
+    description: "User creates a new calendar event with attendees."
+    steps:
+      - Click on time slot in calendar grid (or 'New event' button)
+      - Enter title, location
+      - Set start/end time (or all-day)
+      - Add attendees via autocomplete
+      - Set reminder (15m, 30m, 1h, etc.)
+      - Optionally set recurrence
+      - Click Save
+    entities: [Event, Calendar, EventAttendee, Contact]
+    outcome: "Event on calendar. Invites sent to attendees."
+
+  - id: wf-cal-respond-invite
+    name: "Respond to Meeting Invite"
+    category: Calendar
+    priority: P0
+    description: "User accepts, declines, or tentatively accepts an invite."
+    steps:
+      - Receive meeting invite email in Inbox
+      - Open message → see Accept / Tentative / Decline / Propose New Time
+      - Click response
+      - Optionally add message to organizer
+      - Event appears on calendar (if accepted/tentative)
+    entities: [Event, EventAttendee, Message]
+    outcome: "Response recorded. Calendar updated accordingly."
+
+  - id: wf-cal-edit-recurring
+    name: "Edit Recurring Event"
+    category: Calendar
+    priority: P0
+    description: "User modifies a recurring event (single or series)."
+    steps:
+      - Click on recurring event instance
+      - Prompt: 'Edit this occurrence' or 'Edit the series'
+      - Modify fields (time, location, attendees)
+      - Save
+    entities: [Event]
+    outcome: "Single occurrence or entire series updated."
+
+  - id: wf-cal-navigate-views
+    name: "Navigate Calendar Views"
+    category: Calendar
+    priority: P0
+    description: "User switches between Day/Week/Work Week/Month views."
+    steps:
+      - Use view switcher tabs (Day / Week / Work Week / Month)
+      - Use date navigator arrows to move forward/backward
+      - Click 'Today' to jump to current date
+      - Click specific date in mini calendar sidebar
+    entities: [Calendar, Event]
+    outcome: "View changes. Events render in appropriate grid layout."
+
+  # --------------------------------------------------------------------------
+  # Contact Workflows
+  # --------------------------------------------------------------------------
+
+  - id: wf-contact-create
+    name: "Create New Contact"
+    category: Contacts
+    priority: P0
+    description: "User adds a new person to address book."
+    steps:
+      - Navigate to Contacts
+      - Click 'New contact'
+      - Fill in name, email, phone, company, address, notes
+      - Save
+    entities: [Contact]
+    outcome: "Contact saved. Available in compose autocomplete."
+
+  - id: wf-contact-from-email
+    name: "Add Contact from Email"
+    category: Contacts
+    priority: P0
+    description: "User adds sender/recipient as a contact from reading pane."
+    steps:
+      - Open message in reading pane
+      - Hover over sender name → contact card popover
+      - Click 'Add to contacts'
+      - Pre-filled form opens with email and name
+      - Complete and save
+    entities: [Contact, Message]
+    outcome: "New contact created from email metadata."
+
+  # --------------------------------------------------------------------------
+  # Task Workflows
+  # --------------------------------------------------------------------------
+
+  - id: wf-task-create
+    name: "Create Task"
+    category: Tasks
+    priority: P0
+    description: "User creates a standalone task."
+    steps:
+      - Navigate to Tasks
+      - Click 'Add a task' input
+      - Enter title
+      - Optionally set due date, reminder, importance
+      - Press Enter
+    entities: [Task, TaskList]
+    outcome: "Task created in selected list."
+
+  - id: wf-task-from-message
+    name: "Create Task from Email"
+    category: Tasks
+    priority: P0
+    description: "User flags an email to create a follow-up task."
+    steps:
+      - Right-click message → 'Flag' → choose due date
+      - Task auto-created with message subject as title
+      - Task links back to original message
+      - View in Tasks → Flagged Email list
+    entities: [Task, Message]
+    outcome: "Task created from email. Bidirectional link maintained."
+
+  # --------------------------------------------------------------------------
+  # Settings Workflows
+  # --------------------------------------------------------------------------
+
+  - id: wf-settings-ooo
+    name: "Set Out-of-Office"
+    category: Settings
+    priority: P0
+    description: "User configures automatic out-of-office replies."
+    steps:
+      - Navigate to Settings → Out of Office
+      - Toggle on automatic replies
+      - Set date range (start/end)
+      - Write internal message (within org)
+      - Write external message (outside org)
+      - Save
+    entities: [User]
+    outcome: "OOO auto-replies active for date range."
+
+  - id: wf-settings-signature
+    name: "Manage Signatures"
+    category: Settings
+    priority: P0
+    description: "User creates and configures email signatures."
+    steps:
+      - Navigate to Settings → Signatures
+      - Click 'New signature'
+      - Name the signature
+      - Edit body using rich text editor
+      - Set as default for new messages and/or replies
+      - Save
+    entities: [Signature]
+    outcome: "Signature saved and auto-inserted in compose."
+
+  # --------------------------------------------------------------------------
+  # P1 Workflows
+  # --------------------------------------------------------------------------
+
+  - id: wf-rule-create
+    name: "Create Mail Rule"
+    category: Rules
+    priority: P1
+    description: "User creates an automation rule for incoming mail."
+    steps:
+      - Navigate to Settings → Rules
+      - Click 'Add new rule'
+      - Name the rule
+      - Add condition(s) — from contains, subject contains, has attachment, etc.
+      - Add action(s) — move to folder, mark as read, forward, delete, flag, categorize
+      - Set 'stop processing more rules' toggle
+      - Save
+      - Optionally 'Run rule now' on existing folder
+    entities: [Rule, Folder, Category]
+    outcome: "Rule active. Matching incoming mail processed automatically."
+
+  - id: wf-schedule-send
+    name: "Schedule Email for Later"
+    category: Mail
+    priority: P1
+    description: "User composes an email and schedules it for future delivery."
+    steps:
+      - Compose email normally
+      - Click dropdown arrow next to Send
+      - Select 'Schedule send'
+      - Pick date and time
+      - Confirm
+    entities: [Message]
+    outcome: "Message saved with scheduled_send_at. Sent at specified time."
+
+  - id: wf-vacation-setup
+    name: "Full Vacation Setup"
+    category: Cross-feature
+    priority: P1
+    description: "Complex workflow combining OOO, rules, and calendar actions."
+    steps:
+      - Set out-of-office for date range
+      - Create rule forwarding urgent emails to delegate
+      - Decline all non-recurring meetings during period with note
+      - Reschedule 1:1 meetings to following week
+    entities: [User, Rule, Event, EventAttendee, Message]
+    outcome: "Complete vacation coverage configured."
+
+  - id: wf-sweep
+    name: "Sweep / Bulk Cleanup"
+    category: Mail
+    priority: P1
+    description: "User bulk-processes messages from a specific sender."
+    steps:
+      - Right-click message from a sender
+      - Select 'Sweep'
+      - Choose option — keep latest, move all, always move future
+      - Confirm
+    entities: [Message, Folder]
+    outcome: "Bulk action applied to all messages from sender."
+
+  - id: wf-scheduling-assistant
+    name: "Find Meeting Time with Scheduling Assistant"
+    category: Calendar
+    priority: P1
+    description: "User finds available time slot across attendees."
+    steps:
+      - Open new event form
+      - Add required attendees
+      - Click 'Scheduling Assistant'
+      - View availability grid (free/busy per attendee)
+      - Use 'Find a time' suggestions
+      - Select available slot
+      - Save event
+    entities: [Event, EventAttendee, Calendar]
+    outcome: "Meeting scheduled at mutually available time."

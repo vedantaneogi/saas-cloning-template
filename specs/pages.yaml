@@ -1,0 +1,268 @@
+# ============================================================================
+# Page Definitions — Microsoft Outlook Clone
+# ============================================================================
+# Every route in the frontend application. Groups map to Next.js route groups.
+# ============================================================================
+
+route_groups:
+
+  # --------------------------------------------------------------------------
+  # (public) — No auth required
+  # --------------------------------------------------------------------------
+  - group: "(public)"
+    pages:
+      - path: /
+        name: Landing
+        description: "Redirect to /mail/inbox or /login"
+        components: []
+
+  # --------------------------------------------------------------------------
+  # (auth) — Login / signup
+  # --------------------------------------------------------------------------
+  - group: "(auth)"
+    pages:
+      - path: /login
+        name: Login
+        description: "Email + password login form. Multi-account support."
+        components:
+          - LoginForm
+          - AccountSwitcher
+
+      - path: /signup
+        name: Signup
+        description: "Account creation form."
+        components:
+          - SignupForm
+
+  # --------------------------------------------------------------------------
+  # (app) — Protected pages (requires auth)
+  # --------------------------------------------------------------------------
+  - group: "(app)"
+    layout:
+      description: "App shell with left sidebar navigation + top toolbar."
+      components:
+        - AppSidebar          # Navigation: Mail, Calendar, Contacts, Tasks
+        - TopToolbar           # Search bar, account avatar, settings gear
+        - NotificationToast    # Transient notifications
+
+    pages:
+
+      # ---- Mail ----
+      - path: /mail
+        name: MailRedirect
+        description: "Redirects to /mail/inbox"
+
+      - path: /mail/:folder
+        name: MailFolder
+        description: "Three-pane mail view: folder tree | message list | reading pane."
+        params:
+          folder: "Folder slug (inbox, sent, drafts, archive, junk, deleted, or user folder ID)"
+        components:
+          - FolderTree           # Left: nested folder list with unread counts
+          - MessageList          # Center: scrollable message/conversation list
+          - MessageListToolbar   # Actions: new, reply, delete, archive, filter, sort
+          - ReadingPane          # Right: selected message detail
+          - MessageHeader        # From, to, cc, date, subject, importance badge
+          - MessageBody          # HTML body renderer
+          - AttachmentBar        # Attachment chips with download/preview
+          - ConversationThread   # Expanded thread view (when grouping on)
+          - QuickActionBar       # Reply, reply-all, forward inline buttons
+        features:
+          - Three-pane layout with resizable splitters
+          - Conversation grouping toggle
+          - Read/unread states + mark all read
+          - Sort by date, from, subject, size
+          - Right-click context menu (move, flag, categorize, etc.)
+          - Drag-and-drop messages between folders
+          - Focused vs Other inbox toggle (P1)
+          - Pinned messages section (P1)
+
+      - path: /mail/compose
+        name: ComposeModal
+        description: "New message composer. Opens as modal overlay or full page."
+        components:
+          - ComposeForm          # To/cc/bcc fields with autocomplete
+          - RichTextEditor       # Formatting toolbar + body
+          - AttachmentUploader   # Drag/drop or browse files
+          - SignatureSelector    # Insert saved signature
+          - ImportanceSelector   # Low / normal / high
+          - ScheduleSendPicker   # Send later date/time (P1)
+          - SensitivitySelector  # Confidential/encrypt labels (P1)
+        features:
+          - Recipient autocomplete from contacts
+          - Rich text editing (bold, italic, lists, links, images)
+          - Inline image embedding
+          - Auto-save to Drafts every 30s
+          - Send / Save Draft / Discard buttons
+          - Reply/Reply-all/Forward prefill
+          - Attachment missing warning when body mentions "attached" (P1)
+
+      - path: /mail/search
+        name: MailSearch
+        description: "Search results page with filter sidebar."
+        components:
+          - SearchBar            # Query input with suggestion dropdown
+          - SearchFilters        # From, date range, has attachment, folder, category
+          - SearchResults        # Message list matching query
+        features:
+          - Full-text search across subject and body
+          - Filter chips (from, to, date, has:attachment, folder)
+          - Result highlighting
+
+      # ---- Calendar ----
+      - path: /calendar
+        name: CalendarRedirect
+        description: "Redirects to /calendar/month (default view)"
+
+      - path: /calendar/:view
+        name: CalendarView
+        description: "Calendar with switchable views."
+        params:
+          view: "day | week | work-week | month"
+        components:
+          - CalendarSidebar      # Mini month picker + calendar list + shared calendars
+          - CalendarGrid         # Day/week/month grid with events
+          - EventCard            # Event block on grid (color-coded by calendar)
+          - DayHeader            # Date + all-day events
+          - TimeGutter           # Hour labels on left
+          - TodayButton          # Jump to today
+          - DateNavigator        # Previous / next arrows + date range label
+          - ViewSwitcher         # Day / Week / Work Week / Month tabs
+        features:
+          - Day, Week, Work Week, Month views
+          - Today button + date jump
+          - Click-to-create event on time slot
+          - Drag to resize event duration
+          - Drag to move event
+          - Color-coded by calendar
+          - Overlay shared calendars (P1)
+          - Scheduling assistant grid (P1)
+
+      - path: /calendar/event/new
+        name: EventComposer
+        description: "Create/edit event modal."
+        components:
+          - EventForm            # Title, location, start/end, all-day toggle
+          - AttendeePicker       # Add attendees with autocomplete
+          - RecurrenceEditor     # Daily/weekly/monthly/yearly + end conditions
+          - ReminderPicker       # Minutes before
+          - LocationInput        # Room finder integration (P1)
+          - OnlineMeetingToggle  # Add Teams/Zoom link
+          - ResponseButtons      # Accept / Tentative / Decline / Propose new time
+        features:
+          - Date/time pickers with timezone awareness
+          - Recurrence patterns (daily, weekly, monthly nth weekday, yearly)
+          - Edit single occurrence vs entire series
+          - Attendee availability check (P1)
+
+      - path: /calendar/event/:id
+        name: EventDetail
+        description: "View/edit existing event."
+        components:
+          - EventForm
+          - AttendeeList         # Who accepted/declined/tentative
+          - ResponseButtons
+
+      # ---- Contacts ----
+      - path: /contacts
+        name: ContactList
+        description: "People directory with search."
+        components:
+          - ContactSidebar       # Alphabetical jump list + favorites
+          - ContactTable         # Sortable contact list
+          - ContactSearch        # Search by name, email, company
+          - ContactCard          # Detail view of selected contact
+        features:
+          - Search by name, email, company
+          - Alphabetical grouping
+          - Favorites section
+          - Click to compose email to contact
+          - Contact card popover from any email address
+
+      - path: /contacts/new
+        name: ContactCreate
+        description: "New contact form."
+        components:
+          - ContactForm          # Name, email, phone, company, address, notes
+
+      - path: /contacts/:id
+        name: ContactDetail
+        description: "View/edit existing contact."
+        components:
+          - ContactForm
+          - ContactHistory       # Recent emails with this contact
+
+      # ---- Tasks / To Do ----
+      - path: /tasks
+        name: TaskList
+        description: "To Do integration: task lists and items."
+        components:
+          - TaskSidebar          # Lists (My Day, Important, Planned, Flagged, custom)
+          - TaskListView         # Tasks in selected list
+          - TaskItem             # Checkbox + title + due date + importance
+          - TaskDetail           # Expanded task editing panel
+          - AddTaskInput         # Quick add at top of list
+        features:
+          - Create task from message (flag → task)
+          - Flagged emails appear as tasks
+          - Due dates + reminders
+          - My Day / Important / Planned smart lists
+          - Custom lists (P1)
+          - Subtasks (P1)
+          - Recurrence (P1)
+
+      - path: /tasks/:listId
+        name: TaskListFiltered
+        description: "Tasks filtered by specific list."
+        components:
+          - TaskListView
+          - TaskDetail
+
+      # ---- Settings ----
+      - path: /settings
+        name: Settings
+        description: "Settings page with tab navigation."
+        components:
+          - SettingsSidebar      # Category nav
+          - SettingsPanel        # Active settings section
+        sections:
+          - path: /settings/accounts
+            name: AccountSettings
+            description: "Account management, connected accounts."
+          - path: /settings/mail
+            name: MailSettings
+            description: "Layout, compose defaults, reading pane position."
+          - path: /settings/calendar
+            name: CalendarSettings
+            description: "Default view, work hours, timezone."
+          - path: /settings/signatures
+            name: SignatureSettings
+            description: "Create/edit/delete signatures. Set defaults."
+            components:
+              - SignatureList
+              - SignatureEditor    # Rich text editor for signature body
+          - path: /settings/rules
+            name: RuleSettings
+            description: "Create/edit/delete/reorder mail rules."
+            components:
+              - RuleList           # Ordered list with enable/disable toggles
+              - RuleEditor         # Condition builder + action picker
+          - path: /settings/categories
+            name: CategorySettings
+            description: "Define/edit/delete categories with colors."
+          - path: /settings/oof
+            name: OutOfOfficeSettings
+            description: "Out-of-office auto-reply configuration."
+            components:
+              - OOFToggle
+              - OOFDateRange
+              - OOFMessageEditor   # Internal + external message
+
+# ----------------------------------------------------------------------------
+# Total Page Count
+# ----------------------------------------------------------------------------
+summary:
+  total_routes: 28
+  protected_routes: 24
+  public_routes: 2
+  auth_routes: 2

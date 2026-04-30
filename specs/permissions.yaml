@@ -1,0 +1,141 @@
+# ============================================================================
+# Permission Definitions — Microsoft Outlook Clone
+# ============================================================================
+# Role-based access control. The active user's role is set in the seed JSON.
+# ============================================================================
+
+roles:
+  - name: worker
+    description: "Standard employee. Full access to own mailbox, calendar, contacts, tasks."
+    level: 1
+
+  - name: manager
+    description: "Manager. Same as worker plus can view direct reports' calendars and delegate access."
+    level: 2
+
+  - name: admin
+    description: "IT administrator. Full access plus user management, org-wide rules, and audit logs."
+    level: 3
+
+# ----------------------------------------------------------------------------
+# Resource Permissions Matrix
+# ----------------------------------------------------------------------------
+permissions:
+
+  # Mail
+  mail:
+    own_mailbox:
+      read:    [worker, manager, admin]
+      write:   [worker, manager, admin]
+      delete:  [worker, manager, admin]
+    delegated_mailbox:
+      read:    [manager, admin]
+      write:   [manager, admin]
+      delete:  [admin]
+    send_as:
+      description: "Send email on behalf of another user"
+      allowed:  [manager, admin]
+    send_on_behalf:
+      description: "Send email showing 'on behalf of' header"
+      allowed:  [manager, admin]
+
+  # Folders
+  folders:
+    own_folders:
+      create:  [worker, manager, admin]
+      rename:  [worker, manager, admin]
+      delete:  [worker, manager, admin]
+      description: "System folders (Inbox, Sent, etc.) cannot be renamed/deleted by any role."
+    shared_folders:
+      read:    [manager, admin]
+      write:   [admin]
+
+  # Calendar
+  calendar:
+    own_calendar:
+      read:    [worker, manager, admin]
+      write:   [worker, manager, admin]
+      delete:  [worker, manager, admin]
+    other_calendar:
+      view_free_busy: [worker, manager, admin]
+      view_details:   [manager, admin]
+      edit:           [admin]
+    delegate_calendar:
+      description: "Full delegate access to another user's calendar"
+      allowed: [manager, admin]
+    room_booking:
+      book:    [worker, manager, admin]
+      manage:  [admin]
+
+  # Contacts
+  contacts:
+    own_contacts:
+      read:    [worker, manager, admin]
+      write:   [worker, manager, admin]
+      delete:  [worker, manager, admin]
+    directory:
+      description: "Organization-wide people directory"
+      read:    [worker, manager, admin]
+      write:   [admin]
+
+  # Tasks
+  tasks:
+    own_tasks:
+      read:    [worker, manager, admin]
+      write:   [worker, manager, admin]
+      delete:  [worker, manager, admin]
+
+  # Rules
+  rules:
+    own_rules:
+      create:  [worker, manager, admin]
+      edit:    [worker, manager, admin]
+      delete:  [worker, manager, admin]
+    org_rules:
+      description: "Organization-wide transport rules"
+      create:  [admin]
+      edit:    [admin]
+      delete:  [admin]
+
+  # Settings
+  settings:
+    own_settings:
+      read:    [worker, manager, admin]
+      write:   [worker, manager, admin]
+    org_settings:
+      description: "Organization-level settings (retention, DLP, etc.)"
+      read:    [admin]
+      write:   [admin]
+
+  # Groups (P1)
+  groups:
+    join:      [worker, manager, admin]
+    leave:     [worker, manager, admin]
+    create:    [manager, admin]
+    delete:    [admin]
+    manage_members: [manager, admin]
+
+  # Sensitivity / Encryption (P1)
+  sensitivity:
+    apply_labels:    [worker, manager, admin]
+    define_labels:   [admin]
+    view_encrypted:  [worker, manager, admin]
+
+# ----------------------------------------------------------------------------
+# Permission Enforcement Rules
+# ----------------------------------------------------------------------------
+enforcement:
+  - rule: "Users can only access their own mailbox unless delegated."
+    scope: mail
+  - rule: "System folders cannot be renamed, moved, or deleted."
+    scope: folders
+  - rule: "Calendar free/busy is visible to all by default."
+    scope: calendar
+  - rule: "Contacts directory is read-only for non-admins."
+    scope: contacts
+  - rule: "Rules apply only to the owning user's mailbox."
+    scope: rules
+  - rule: "Permission checks return 403 with structured error body."
+    scope: global
+  - rule: "Active user role is set via seed JSON permission_profile field."
+    scope: global

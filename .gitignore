@@ -249,3 +249,10 @@ deployment/environments/**/.env.*
 # Always allow placeholder keep files
 # ------------------------------------------------------------------------------
 !**/.gitkeep
+
+# ------------------------------------------------------------------------------
+# Local / private files — never commit
+# ------------------------------------------------------------------------------
+Clone Environments __ 10 Apps - Outlook.csv
+Clone Environments __ 10 Apps - Universal Requirements.csv
+WhatsApp Chat with TechBrig  Vikram.txt
