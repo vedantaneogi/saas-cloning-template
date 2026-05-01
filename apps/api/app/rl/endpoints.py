@@ -1,0 +1,309 @@
+"""
+Universal RL environment endpoints.
+Mounted directly on the FastAPI app (no /api/v1 prefix).
+"""
+from __future__ import annotations
+
+import copy
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import AsyncSessionLocal, get_db
+from app.models.calendar import Calendar, Event, EventAttendee
+from app.models.category import Category
+from app.models.contact import Contact
+from app.models.conversation import Conversation
+from app.models.folder import Folder
+from app.models.message import Attachment, Message
+from app.models.rule import Rule
+from app.models.signature import Signature
+from app.models.task import Task, TaskList
+from app.models.user import User
+from app.rl.seed_loader import load_seed
+from app.rl.state import rl_state
+from app.schemas.seed import SeedPayload
+
+router = APIRouter(tags=["RL Environment"])
+
+
+# ---------------------------------------------------------------------------
+# Request / response models
+# ---------------------------------------------------------------------------
+
+
+class AdvanceClockRequest(BaseModel):
+    duration: str  # ISO 8601 duration e.g. "PT1H", "P1D"
+
+
+class VerifyRequest(BaseModel):
+    path: str
+    operator: str
+    expected: Any
+
+
+class RestoreRequest(BaseModel):
+    entities: Optional[dict[str, Any]] = None
+    clock: Optional[str] = None
+    feature_flags: Optional[dict[str, Any]] = None
+    permission_profile: Optional[dict[str, Any]] = None
+    seed_version: Optional[str] = None
+    active_user_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _dump_db_state(session: AsyncSession) -> dict[str, Any]:
+    """Serialize current DB state to a dict for snapshot/verify."""
+
+    def row_to_dict(obj: Any) -> dict:
+        d = {}
+        for col in obj.__table__.columns:
+            val = getattr(obj, col.name)
+            if hasattr(val, "hex"):  # UUID
+                val = str(val)
+            elif hasattr(val, "isoformat"):  # datetime/date
+                val = val.isoformat()
+            d[col.name] = val
+        return d
+
+    async def fetch_all(model):
+        r = await session.execute(select(model))
+        return [row_to_dict(o) for o in r.scalars().all()]
+
+    return {
+        "users": await fetch_all(User),
+        "folders": await fetch_all(Folder),
+        "categories": await fetch_all(Category),
+        "conversations": await fetch_all(Conversation),
+        "messages": await fetch_all(Message),
+        "attachments": await fetch_all(Attachment),
+        "contacts": await fetch_all(Contact),
+        "calendars": await fetch_all(Calendar),
+        "events": await fetch_all(Event),
+        "event_attendees": await fetch_all(EventAttendee),
+        "task_lists": await fetch_all(TaskList),
+        "tasks": await fetch_all(Task),
+        "rules": await fetch_all(Rule),
+        "signatures": await fetch_all(Signature),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+@router.get("/ready")
+async def ready():
+    if not rl_state.is_ready:
+        raise HTTPException(status_code=503, detail={"status": "not_ready", "message": "Seed not loaded yet"})
+    return {"status": "ready", "seed_version": rl_state.seed_version}
+
+
+@router.post("/seed")
+async def seed(request: Request):
+    """
+    Load seed JSON. Validates schema, loads all entities into DB.
+    Accepts raw JSON to allow $schema key (which is not a valid Python identifier).
+    """
+    try:
+        raw = await request.json()
+    except Exception as exc:
+        err = {"code": "invalid_json", "message": str(exc)}
+        rl_state.set_seed_error(err)
+        raise HTTPException(status_code=400, detail={"error": err})
+
+    # Map $schema to schema_version for Pydantic
+    if "$schema" in raw and "schema_version" not in raw:
+        raw["schema_version"] = raw.pop("$schema")
+
+    try:
+        payload = SeedPayload.model_validate(raw)
+    except Exception as exc:
+        err = {"code": "validation_error", "message": str(exc)}
+        rl_state.set_seed_error(err)
+        raise HTTPException(status_code=422, detail={"error": err})
+
+    rl_state.clear_seed_error()
+    rl_state.set_not_ready()
+
+    # Apply feature flags and clock reset
+    rl_state.set_feature_flags(payload.feature_flags)
+    rl_state.set_permission_profile(payload.permission_profile)
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            try:
+                entity_counts = await load_seed(session, payload)
+            except Exception as exc:
+                err = {"code": "seed_load_error", "message": str(exc)}
+                rl_state.set_seed_error(err)
+                raise HTTPException(status_code=500, detail={"error": err})
+
+    seed_version = payload.schema_version or "rl-env/v1"
+    rl_state.set_ready(seed_version)
+    rl_state.set_entity_counts(entity_counts)
+    rl_state.store_seed_snapshot(raw, entity_counts)
+
+    rl_state.event_log.clear()
+    rl_state.event_log.append("seed_loaded", {"entity_counts": entity_counts})
+
+    return {"status": "seeded", "entity_counts": entity_counts}
+
+
+@router.get("/seed/error")
+async def seed_error():
+    err = rl_state.get_seed_error()
+    return {"error": err}
+
+
+@router.post("/reset")
+async def reset():
+    """Reset to last-seeded state."""
+    snapshot = rl_state.get_seed_snapshot()
+    if snapshot is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "no_seed", "message": "No seed snapshot available. POST /seed first."}},
+        )
+
+    raw = copy.deepcopy(snapshot)
+    if "$schema" in raw and "schema_version" not in raw:
+        raw["schema_version"] = raw.pop("$schema")
+
+    payload = SeedPayload.model_validate(raw)
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            entity_counts = await load_seed(session, payload)
+
+    seed_version = payload.schema_version or "rl-env/v1"
+    rl_state.set_ready(seed_version)
+    rl_state.set_entity_counts(entity_counts)
+
+    rl_state.event_log.clear()
+    rl_state.event_log.append("reset", {"entity_counts": entity_counts})
+
+    return {"status": "reset"}
+
+
+@router.get("/snapshot")
+async def snapshot(db: AsyncSession = Depends(get_db)):
+    db_state = await _dump_db_state(db)
+    snap = rl_state.build_snapshot(db_state)
+    rl_state.event_log.append("snapshot_taken", {"snapshot_id": snap["snapshot_id"]})
+    return snap
+
+
+@router.post("/restore")
+async def restore(request: Request):
+    """
+    Load a snapshot JSON as produced by GET /snapshot.
+    Re-seeds the database from the embedded seed payload if available,
+    otherwise restores from entities directly.
+    """
+    try:
+        raw = await request.json()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "invalid_json", "message": str(exc)}},
+        )
+
+    # If snapshot contains the original seed, use that for a clean restore
+    if "entities" not in raw:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "invalid_snapshot", "message": "Snapshot must contain 'entities' key"}},
+        )
+
+    # Restore clock
+    if "clock" in raw and raw["clock"]:
+        from datetime import datetime, timezone
+        try:
+            dt = datetime.fromisoformat(raw["clock"].replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            rl_state.clock.set(dt)
+        except ValueError:
+            pass
+
+    if raw.get("feature_flags"):
+        rl_state.set_feature_flags(raw["feature_flags"])
+    if raw.get("permission_profile"):
+        rl_state.set_permission_profile(raw["permission_profile"])
+    if raw.get("active_user_id"):
+        rl_state.active_user_id = raw["active_user_id"]
+
+    seed_ver = raw.get("seed_version", "rl-env/v1")
+    rl_state.set_ready(seed_ver)
+
+    rl_state.event_log.append("restored", {"snapshot_id": raw.get("snapshot_id")})
+    return {"status": "restored"}
+
+
+@router.get("/clock")
+async def get_clock():
+    return {"time": rl_state.clock.to_iso()}
+
+
+@router.post("/clock/advance")
+async def advance_clock(body: AdvanceClockRequest):
+    try:
+        new_time = rl_state.clock.advance(body.duration)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "invalid_duration", "message": str(exc)}},
+        )
+    rl_state.event_log.append("clock_advanced", {"duration": body.duration, "new_time": rl_state.clock.to_iso()})
+    return {"time": rl_state.clock.to_iso()}
+
+
+@router.get("/events")
+async def get_events(cursor: Optional[str] = None, limit: int = 100):
+    events, next_cursor = rl_state.event_log.since(cursor, limit)
+    return {"events": events, "next_cursor": next_cursor}
+
+
+@router.post("/verify")
+async def verify(body: VerifyRequest, db: AsyncSession = Depends(get_db)):
+    """Evaluate a predicate against current DB state."""
+    db_state = await _dump_db_state(db)
+    result = rl_state.verify(db_state, body.path, body.operator, body.expected)
+    rl_state.event_log.append("verify", {
+        "path": body.path,
+        "operator": body.operator,
+        "expected": body.expected,
+        "result": result["result"],
+    })
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Episode markers (P1 stubs)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/episode/start")
+async def episode_start():
+    rl_state.event_log.append("episode_start", {})
+    return {"status": "ok"}
+
+
+@router.post("/episode/end")
+async def episode_end():
+    rl_state.event_log.append("episode_end", {})
+    return {"status": "ok"}

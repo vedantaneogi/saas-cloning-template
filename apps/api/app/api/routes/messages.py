@@ -1,0 +1,637 @@
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File as FastAPIFile, status
+from sqlalchemy import and_, cast, desc, func, or_, select, String
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user
+from app.db.session import get_db
+from app.models.category import Category
+from app.models.folder import Folder
+from app.models.message import Attachment, Message, MessageCategory
+from app.models.user import User
+from app.rl.state import rl_state
+from app.schemas.message import (
+    AttachmentOut,
+    BulkRequest,
+    CategoryOut,
+    ForwardRequest,
+    MessageCreate,
+    MessageList,
+    MessageOut,
+    MessageUpdate,
+    MoveRequest,
+    ReplyRequest,
+)
+
+router = APIRouter(prefix="/messages", tags=["Messages"])
+
+
+def _err(code: str, message: str, status_code: int = 400):
+    raise HTTPException(
+        status_code=status_code,
+        detail={"error": {"code": code, "message": message}},
+    )
+
+
+async def _get_message_or_404(db: AsyncSession, message_id: uuid.UUID, user_id: uuid.UUID) -> Message:
+    result = await db.execute(
+        select(Message).where(Message.id == message_id, Message.user_id == user_id)
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        _err("not_found", "Message not found", 404)
+    return msg
+
+
+async def _get_folder_by_slug(db: AsyncSession, slug: str, user_id: uuid.UUID) -> Optional[Folder]:
+    result = await db.execute(
+        select(Folder).where(Folder.slug == slug, Folder.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _update_folder_counts(db: AsyncSession, folder_id: uuid.UUID):
+    result = await db.execute(select(Folder).where(Folder.id == folder_id))
+    folder = result.scalar_one_or_none()
+    if folder:
+        total_result = await db.execute(select(func.count()).where(Message.folder_id == folder_id))
+        unread_result = await db.execute(
+            select(func.count()).where(Message.folder_id == folder_id, Message.is_read == False)  # noqa: E712
+        )
+        folder.total_count = total_result.scalar() or 0
+        folder.unread_count = unread_result.scalar() or 0
+
+
+@router.get("", response_model=MessageList)
+async def list_messages(
+    folder_id: Optional[uuid.UUID] = None,
+    conversation_id: Optional[uuid.UUID] = None,
+    is_read: Optional[bool] = None,
+    is_flagged: Optional[bool] = None,
+    importance: Optional[str] = None,
+    search: Optional[str] = None,
+    sort: str = "received_at:desc",
+    cursor: Optional[str] = None,
+    limit: int = Query(default=50, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    filters = [Message.user_id == current_user.id]
+    if folder_id:
+        filters.append(Message.folder_id == folder_id)
+    if conversation_id:
+        filters.append(Message.conversation_id == conversation_id)
+    if is_read is not None:
+        filters.append(Message.is_read == is_read)
+    if is_flagged is not None:
+        filters.append(Message.is_flagged == is_flagged)
+    if importance:
+        filters.append(Message.importance == importance)
+    if search:
+        term = f"%{search}%"
+        filters.append(
+            or_(
+                Message.subject.ilike(term),
+                Message.from_address.ilike(term),
+                Message.from_name.ilike(term),
+                Message.body_text.ilike(term),
+            )
+        )
+
+    # Exclude snoozed messages (snooze_until is in the future)
+    now = rl_state.clock.now()
+    filters.append(or_(Message.snooze_until.is_(None), Message.snooze_until <= now))
+
+    # Cursor-based pagination: cursor is the last message id
+    if cursor:
+        try:
+            cursor_id = uuid.UUID(cursor)
+            cursor_msg_result = await db.execute(select(Message).where(Message.id == cursor_id))
+            cursor_msg = cursor_msg_result.scalar_one_or_none()
+            if cursor_msg:
+                filters.append(Message.received_at < cursor_msg.received_at)
+        except ValueError:
+            pass
+
+    # Build sort
+    sort_field, sort_dir = (sort.split(":") + ["desc"])[:2]
+    sort_col = getattr(Message, sort_field, Message.received_at)
+    order = desc(sort_col) if sort_dir == "desc" else sort_col
+
+    total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
+    total = total_result.scalar() or 0
+
+    result = await db.execute(select(Message).where(*filters).order_by(order).limit(limit + 1))
+    messages = result.scalars().all()
+
+    has_more = len(messages) > limit
+    items = list(messages[:limit])
+    next_cursor = str(items[-1].id) if has_more else None
+
+    # Batch-load categories for all returned messages
+    msg_ids = [m.id for m in items]
+    cats_map: dict[uuid.UUID, list[CategoryOut]] = {}
+    if msg_ids:
+        cats_result = await db.execute(
+            select(MessageCategory.message_id, Category)
+            .join(Category, Category.id == MessageCategory.category_id)
+            .where(MessageCategory.message_id.in_(msg_ids))
+        )
+        for row in cats_result.all():
+            mid, cat = row
+            cats_map.setdefault(mid, []).append(CategoryOut.model_validate(cat))
+
+    msg_outs = []
+    for m in items:
+        out = MessageOut.model_validate(m)
+        out.categories = cats_map.get(m.id, [])
+        msg_outs.append(out)
+
+    return MessageList(
+        items=msg_outs,
+        next_cursor=next_cursor,
+        total_count=total,
+    )
+
+
+@router.get("/search", response_model=MessageList)
+async def search_messages(
+    q: Optional[str] = None,
+    from_addr: Optional[str] = Query(None, alias="from"),
+    to_addr: Optional[str] = Query(None, alias="to"),
+    subject: Optional[str] = None,
+    has_attachment: Optional[bool] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    folder_id: Optional[uuid.UUID] = None,
+    cursor: Optional[str] = None,
+    limit: int = Query(default=50, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    filters = [Message.user_id == current_user.id]
+    if q:
+        term = f"%{q}%"
+        filters.append(
+            or_(
+                Message.subject.ilike(term),
+                Message.body_text.ilike(term),
+                Message.from_address.ilike(term),
+            )
+        )
+    if from_addr:
+        filters.append(Message.from_address.ilike(f"%{from_addr}%"))
+    if to_addr:
+        filters.append(cast(Message.to_addresses, String).ilike(f"%{to_addr}%"))
+    if subject:
+        filters.append(Message.subject.ilike(f"%{subject}%"))
+    if has_attachment is not None:
+        filters.append(Message.has_attachments == has_attachment)
+    if date_from:
+        filters.append(Message.received_at >= date_from)
+    if date_to:
+        filters.append(Message.received_at <= date_to)
+    if folder_id:
+        filters.append(Message.folder_id == folder_id)
+
+    total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
+    total = total_result.scalar() or 0
+
+    result = await db.execute(
+        select(Message).where(*filters).order_by(desc(Message.received_at)).limit(limit)
+    )
+    items = list(result.scalars().all())
+
+    return MessageList(
+        items=[MessageOut.model_validate(m) for m in items],
+        next_cursor=None,
+        total_count=total,
+    )
+
+
+async def _load_message_categories(db: AsyncSession, message_id: uuid.UUID) -> list[CategoryOut]:
+    result = await db.execute(
+        select(Category)
+        .join(MessageCategory, Category.id == MessageCategory.category_id)
+        .where(MessageCategory.message_id == message_id)
+    )
+    return [CategoryOut.model_validate(c) for c in result.scalars().all()]
+
+
+@router.get("/{message_id}", response_model=MessageOut)
+async def get_message(
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    out = MessageOut.model_validate(msg)
+    out.categories = await _load_message_categories(db, msg.id)
+    return out
+
+
+@router.post("", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
+async def create_message(
+    body: MessageCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    now = rl_state.clock.now()
+
+    # Resolve folder
+    if body.folder_id:
+        folder_id = body.folder_id
+    elif body.is_draft:
+        folder = await _get_folder_by_slug(db, "drafts", current_user.id)
+        folder_id = folder.id if folder else None
+    else:
+        folder = await _get_folder_by_slug(db, "sent", current_user.id)
+        folder_id = folder.id if folder else None
+
+    if not folder_id:
+        _err("folder_required", "Could not resolve folder", 400)
+
+    msg = Message(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        folder_id=folder_id,
+        conversation_id=body.conversation_id,
+        from_address=current_user.email,
+        from_name=current_user.display_name,
+        to_addresses=body.to_addresses,
+        cc_addresses=body.cc_addresses,
+        bcc_addresses=body.bcc_addresses,
+        subject=body.subject,
+        body_html=body.body_html,
+        body_text=body.body_text,
+        importance=body.importance,
+        sensitivity=body.sensitivity,
+        is_draft=body.is_draft,
+        is_flagged=body.is_flagged,
+        scheduled_send_at=body.scheduled_send_at,
+        sent_at=None if body.is_draft else now,
+        received_at=None if body.is_draft else now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(msg)
+    await db.flush()
+    await _update_folder_counts(db, folder_id)
+
+    rl_state.event_log.append("message_created", {"id": str(msg.id), "is_draft": msg.is_draft})
+
+    # OOF auto-reply: when sending (not draft), check if any recipient has OOF enabled
+    if not body.is_draft:
+        all_recipients = list(body.to_addresses or []) + list(body.cc_addresses or [])
+        for recipient in all_recipients:
+            rec_email = recipient.get("email", "") if isinstance(recipient, dict) else ""
+            if not rec_email:
+                continue
+            oof_result = await db.execute(
+                select(User).where(
+                    User.email == rec_email,
+                    User.out_of_office_enabled.is_(True),
+                )
+            )
+            oof_user = oof_result.scalar_one_or_none()
+            if not oof_user:
+                continue
+            if oof_user.out_of_office_start and now < oof_user.out_of_office_start:
+                continue
+            if oof_user.out_of_office_end and now > oof_user.out_of_office_end:
+                continue
+            oof_body = (
+                oof_user.out_of_office_message_external
+                or oof_user.out_of_office_message_internal
+                or "I am currently out of office."
+            )
+            inbox_folder = await _get_folder_by_slug(db, "inbox", current_user.id)
+            if not inbox_folder:
+                continue
+            oof_msg = Message(
+                id=uuid.uuid4(),
+                user_id=current_user.id,
+                folder_id=inbox_folder.id,
+                from_address=oof_user.email,
+                from_name=oof_user.display_name,
+                to_addresses=[{"email": current_user.email, "name": current_user.display_name}],
+                cc_addresses=[],
+                bcc_addresses=[],
+                subject=f"Automatic reply: {body.subject or '(no subject)'}",
+                body_html=f"<p>{oof_body}</p>",
+                is_read=False,
+                is_draft=False,
+                sent_at=now,
+                received_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(oof_msg)
+            await db.flush()
+            await _update_folder_counts(db, inbox_folder.id)
+            rl_state.event_log.append("oof_auto_reply", {"from": rec_email, "to": current_user.email})
+
+    return MessageOut.model_validate(msg)
+
+
+@router.patch("/{message_id}", response_model=MessageOut)
+async def update_message(
+    message_id: uuid.UUID,
+    body: MessageUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    now = rl_state.clock.now()
+
+    old_folder_id = msg.folder_id
+    old_is_read = msg.is_read
+
+    if body.folder_id is not None:
+        msg.folder_id = body.folder_id
+    if body.is_read is not None:
+        msg.is_read = body.is_read
+    if body.is_flagged is not None:
+        msg.is_flagged = body.is_flagged
+    if body.is_pinned is not None:
+        msg.is_pinned = body.is_pinned
+    if body.importance is not None:
+        msg.importance = body.importance
+    if body.sensitivity is not None:
+        msg.sensitivity = body.sensitivity
+    if body.subject is not None:
+        msg.subject = body.subject
+    if body.body_html is not None:
+        msg.body_html = body.body_html
+    if body.body_text is not None:
+        msg.body_text = body.body_text
+    if body.snooze_until is not None:
+        msg.snooze_until = body.snooze_until
+    if body.scheduled_send_at is not None:
+        msg.scheduled_send_at = body.scheduled_send_at
+
+    msg.updated_at = now
+
+    # Handle categories
+    if body.category_ids is not None:
+        await db.execute(
+            MessageCategory.__table__.delete().where(MessageCategory.message_id == msg.id)
+        )
+        for cat_id in body.category_ids:
+            db.add(MessageCategory(message_id=msg.id, category_id=cat_id))
+
+    await db.flush()
+
+    # Update folder counts if folder changed
+    if body.folder_id and body.folder_id != old_folder_id:
+        await _update_folder_counts(db, old_folder_id)
+        await _update_folder_counts(db, body.folder_id)
+    elif body.is_read is not None and body.is_read != old_is_read:
+        await _update_folder_counts(db, msg.folder_id)
+
+    rl_state.event_log.append("message_updated", {"id": str(msg.id)})
+    out = MessageOut.model_validate(msg)
+    out.categories = await _load_message_categories(db, msg.id)
+    return out
+
+
+@router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_message(
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft delete — move to Deleted Items."""
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    deleted_folder = await _get_folder_by_slug(db, "deleted", current_user.id)
+    if deleted_folder:
+        old_folder_id = msg.folder_id
+        msg.folder_id = deleted_folder.id
+        msg.updated_at = rl_state.clock.now()
+        await db.flush()
+        await _update_folder_counts(db, old_folder_id)
+        await _update_folder_counts(db, deleted_folder.id)
+    rl_state.event_log.append("message_deleted", {"id": str(msg.id)})
+
+
+@router.delete("/{message_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def permanently_delete_message(
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    folder_id = msg.folder_id
+    await db.delete(msg)
+    await db.flush()
+    await _update_folder_counts(db, folder_id)
+    rl_state.event_log.append("message_permanently_deleted", {"id": str(message_id)})
+
+
+@router.post("/{message_id}/reply", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
+async def reply_message(
+    message_id: uuid.UUID,
+    body: ReplyRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    original = await _get_message_or_404(db, message_id, current_user.id)
+    now = rl_state.clock.now()
+
+    sent_folder = await _get_folder_by_slug(db, "sent", current_user.id)
+    folder_id = sent_folder.id if sent_folder else original.folder_id
+
+    to_addresses = [{"email": original.from_address, "name": original.from_name}]
+    cc_addresses = []
+    if body.reply_all:
+        cc_addresses = [a for a in (original.to_addresses or []) if a.get("email") != current_user.email]
+        cc_addresses += original.cc_addresses or []
+
+    reply = Message(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        folder_id=folder_id,
+        conversation_id=original.conversation_id,
+        in_reply_to_id=original.id,
+        reply_type="reply_all" if body.reply_all else "reply",
+        from_address=current_user.email,
+        from_name=current_user.display_name,
+        to_addresses=to_addresses,
+        cc_addresses=cc_addresses,
+        bcc_addresses=[],
+        subject=f"Re: {original.subject}" if not original.subject.startswith("Re:") else original.subject,
+        body_html=body.body_html,
+        is_draft=False,
+        sent_at=now,
+        received_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(reply)
+    await db.flush()
+    await _update_folder_counts(db, folder_id)
+
+    rl_state.event_log.append("message_replied", {"id": str(reply.id), "original_id": str(original.id)})
+    return MessageOut.model_validate(reply)
+
+
+@router.post("/{message_id}/forward", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
+async def forward_message(
+    message_id: uuid.UUID,
+    body: ForwardRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    original = await _get_message_or_404(db, message_id, current_user.id)
+    now = rl_state.clock.now()
+
+    sent_folder = await _get_folder_by_slug(db, "sent", current_user.id)
+    folder_id = sent_folder.id if sent_folder else original.folder_id
+
+    fwd = Message(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        folder_id=folder_id,
+        conversation_id=original.conversation_id,
+        in_reply_to_id=original.id,
+        reply_type="forward",
+        from_address=current_user.email,
+        from_name=current_user.display_name,
+        to_addresses=body.to_addresses,
+        cc_addresses=body.cc_addresses,
+        bcc_addresses=[],
+        subject=f"Fwd: {original.subject}" if not original.subject.startswith("Fwd:") else original.subject,
+        body_html=body.body_html or original.body_html,
+        has_attachments=original.has_attachments,
+        is_draft=False,
+        sent_at=now,
+        received_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(fwd)
+    await db.flush()
+    await _update_folder_counts(db, folder_id)
+
+    rl_state.event_log.append("message_forwarded", {"id": str(fwd.id), "original_id": str(original.id)})
+    return MessageOut.model_validate(fwd)
+
+
+@router.post("/{message_id}/move", status_code=status.HTTP_204_NO_CONTENT)
+async def move_message(
+    message_id: uuid.UUID,
+    body: MoveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    old_folder_id = msg.folder_id
+    msg.folder_id = body.folder_id
+    msg.updated_at = rl_state.clock.now()
+    await db.flush()
+    await _update_folder_counts(db, old_folder_id)
+    await _update_folder_counts(db, body.folder_id)
+    rl_state.event_log.append("message_moved", {"id": str(msg.id), "to_folder": str(body.folder_id)})
+
+
+@router.post("/bulk")
+async def bulk_action(
+    body: BulkRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    now = rl_state.clock.now()
+    affected = 0
+
+    for msg_id in body.message_ids:
+        result = await db.execute(
+            select(Message).where(Message.id == msg_id, Message.user_id == current_user.id)
+        )
+        msg = result.scalar_one_or_none()
+        if not msg:
+            continue
+
+        old_folder_id = msg.folder_id
+
+        if body.action == "mark_read":
+            msg.is_read = True
+        elif body.action == "mark_unread":
+            msg.is_read = False
+        elif body.action == "flag":
+            msg.is_flagged = True
+        elif body.action == "unflag":
+            msg.is_flagged = False
+        elif body.action == "delete":
+            deleted_folder = await _get_folder_by_slug(db, "deleted", current_user.id)
+            if deleted_folder:
+                msg.folder_id = deleted_folder.id
+        elif body.action == "move":
+            folder_id = (body.params or {}).get("folder_id")
+            if folder_id:
+                msg.folder_id = uuid.UUID(str(folder_id))
+        elif body.action == "categorize":
+            cat_ids = (body.params or {}).get("category_ids", [])
+            await db.execute(
+                MessageCategory.__table__.delete().where(MessageCategory.message_id == msg.id)
+            )
+            for cat_id in cat_ids:
+                db.add(MessageCategory(message_id=msg.id, category_id=uuid.UUID(str(cat_id))))
+
+        msg.updated_at = now
+        await db.flush()
+
+        if msg.folder_id != old_folder_id:
+            await _update_folder_counts(db, old_folder_id)
+            await _update_folder_counts(db, msg.folder_id)
+
+        affected += 1
+
+    rl_state.event_log.append("bulk_action", {"action": body.action, "affected": affected})
+    return {"affected": affected}
+
+
+# ---------------------------------------------------------------------------
+# Attachments sub-resource
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{message_id}/attachments", response_model=list[AttachmentOut])
+async def list_attachments(
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _get_message_or_404(db, message_id, current_user.id)
+    result = await db.execute(select(Attachment).where(Attachment.message_id == message_id))
+    return [AttachmentOut.model_validate(a) for a in result.scalars().all()]
+
+
+@router.post("/{message_id}/attachments", response_model=AttachmentOut, status_code=status.HTTP_201_CREATED)
+async def upload_attachment(
+    message_id: uuid.UUID,
+    file: UploadFile = FastAPIFile(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    content = await file.read()
+    now = rl_state.clock.now()
+    attachment = Attachment(
+        id=uuid.uuid4(),
+        message_id=message_id,
+        filename=file.filename or "unnamed",
+        content_type=file.content_type or "application/octet-stream",
+        size_bytes=len(content),
+        storage_path=None,
+        is_inline=False,
+        created_at=now,
+    )
+    db.add(attachment)
+    msg.has_attachments = True
+    msg.updated_at = now
+    await db.flush()
+    rl_state.event_log.append("attachment_uploaded", {"message_id": str(message_id), "filename": attachment.filename})
+    return AttachmentOut.model_validate(attachment)

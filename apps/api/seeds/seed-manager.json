@@ -1,0 +1,2238 @@
+{
+  "$schema": "rl-env/v1",
+  "rng_seed": 43,
+  "feature_flags": {
+    "focused_inbox": true,
+    "schedule_send": true,
+    "snooze": true,
+    "scheduling_assistant": true,
+    "quick_steps": true,
+    "sweep": true,
+    "encryption_labels": false,
+    "groups": false,
+    "add_ins": false
+  },
+  "permission_profile": {
+    "role": "manager",
+    "delegates": [
+      "person-001"
+    ]
+  },
+  "world": {
+    "people": [
+      {
+        "id": "person-001",
+        "first_name": "Alice",
+        "last_name": "Johnson",
+        "email": "alice.johnson@acmecorp.com",
+        "phone": "+1-555-0101",
+        "company": "Acme Corp",
+        "job_title": "Product Manager",
+        "department": "Product"
+      },
+      {
+        "id": "person-002",
+        "first_name": "Bob",
+        "last_name": "Smith",
+        "email": "bob.smith@acmecorp.com",
+        "phone": "+1-555-0102",
+        "company": "Acme Corp",
+        "job_title": "Engineering Manager",
+        "department": "Engineering"
+      },
+      {
+        "id": "person-003",
+        "first_name": "Carol",
+        "last_name": "Williams",
+        "email": "carol.williams@vendor.com",
+        "phone": "+1-555-0103",
+        "company": "Vendor Inc",
+        "job_title": "Account Executive",
+        "department": "Sales"
+      },
+      {
+        "id": "person-004",
+        "first_name": "David",
+        "last_name": "Brown",
+        "email": "david.brown@acmecorp.com",
+        "phone": "+1-555-0104",
+        "company": "Acme Corp",
+        "job_title": "Designer",
+        "department": "Design"
+      },
+      {
+        "id": "person-005",
+        "first_name": "Emma",
+        "last_name": "Davis",
+        "email": "newsletter@techdigest.com",
+        "phone": null,
+        "company": "Tech Digest",
+        "job_title": "Editor",
+        "department": null
+      },
+      {
+        "id": "person-006",
+        "first_name": "Frank",
+        "last_name": "Miller",
+        "email": "frank.miller@acmecorp.com",
+        "phone": "+1-555-0106",
+        "company": "Acme Corp",
+        "job_title": "Software Engineer",
+        "department": "Engineering"
+      },
+      {
+        "id": "person-007",
+        "first_name": "Grace",
+        "last_name": "Wilson",
+        "email": "grace.wilson@acmecorp.com",
+        "phone": "+1-555-0107",
+        "company": "Acme Corp",
+        "job_title": "QA Engineer",
+        "department": "Engineering"
+      },
+      {
+        "id": "person-008",
+        "first_name": "Henry",
+        "last_name": "Moore",
+        "email": "henry.moore@partner.com",
+        "phone": "+1-555-0108",
+        "company": "Partner LLC",
+        "job_title": "Director",
+        "department": "Business"
+      },
+      {
+        "id": "person-009",
+        "first_name": "Isabella",
+        "last_name": "Taylor",
+        "email": "isabella.taylor@acmecorp.com",
+        "phone": "+1-555-0109",
+        "company": "Acme Corp",
+        "job_title": "HR Manager",
+        "department": "HR"
+      },
+      {
+        "id": "person-010",
+        "first_name": "James",
+        "last_name": "Anderson",
+        "email": "james.anderson@acmecorp.com",
+        "phone": "+1-555-0110",
+        "company": "Acme Corp",
+        "job_title": "CFO",
+        "department": "Finance"
+      }
+    ],
+    "companies": [
+      {
+        "id": "company-001",
+        "name": "Acme Corp",
+        "domain": "acmecorp.com",
+        "industry": "Technology"
+      },
+      {
+        "id": "company-002",
+        "name": "Vendor Inc",
+        "domain": "vendor.com",
+        "industry": "Services"
+      },
+      {
+        "id": "company-003",
+        "name": "Partner LLC",
+        "domain": "partner.com",
+        "industry": "Consulting"
+      },
+      {
+        "id": "company-004",
+        "name": "Tech Digest",
+        "domain": "techdigest.com",
+        "industry": "Media"
+      }
+    ]
+  },
+  "app_data": {
+    "active_user": {
+      "world_id": "person-002",
+      "email": "bob.smith@acmecorp.com",
+      "display_name": "Bob Smith",
+      "role": "manager",
+      "timezone": "America/New_York",
+      "locale": "en-US"
+    },
+    "custom_folders": [
+      {
+        "name": "Projects"
+      },
+      {
+        "name": "Project Alpha",
+        "parent": "Projects"
+      },
+      {
+        "name": "Newsletters"
+      },
+      {
+        "name": "Receipts"
+      }
+    ],
+    "messages": [
+      {
+        "id": "4aaa74a7-14b1-46cb-abf4-1347d6006c0d",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Project Alpha update",
+        "body_html": "<p>Hi,</p><p>Project Alpha update. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nProject Alpha update. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": false,
+        "is_flagged": true,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": true,
+        "received_at": "2026-05-01T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "a4fe923f-8730-4c42-ad81-85254c4b5786",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Meeting tomorrow at 3pm",
+        "body_html": "<p>Hi,</p><p>Meeting tomorrow at 3pm. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nMeeting tomorrow at 3pm. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-29T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "2ff7fa1d-18b8-4d94-9a8d-fcee9467dce5",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Quick question about the proposal",
+        "body_html": "<p>Hi,</p><p>Quick question about the proposal. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nQuick question about the proposal. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-27T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "8629dc9d-843a-4360-a357-62082677417c",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Invoice #1042 attached",
+        "body_html": "<p>Hi,</p><p>Invoice #1042 attached. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nInvoice #1042 attached. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-25T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "ea9df6f2-09b1-444a-a1bc-494cff453980",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter",
+        "body_html": "<p>Hi,</p><p>Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nWelcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-23T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "0739557d-c924-4f45-8746-650ace6b3afe",
+        "from_address": "grace.wilson@acmecorp.com",
+        "from_name": "Grace Wilson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Action required: review Q3 report",
+        "body_html": "<p>Hi,</p><p>Action required: review Q3 report. Please let me know your thoughts.</p><p>Best regards,<br>Grace</p>",
+        "body_text": "Hi,\n\nAction required: review Q3 report. Please let me know your thoughts.\n\nBest regards,\nGrace",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-21T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "8e3ec838-d7b1-4110-88c1-612109984c42",
+        "from_address": "henry.moore@partner.com",
+        "from_name": "Henry Moore",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Re: design feedback",
+        "body_html": "<p>Hi,</p><p>Re: design feedback. Please let me know your thoughts.</p><p>Best regards,<br>Henry</p>",
+        "body_text": "Hi,\n\nRe: design feedback. Please let me know your thoughts.\n\nBest regards,\nHenry",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-19T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "07615e9f-0715-4608-873a-03ff5ce6c071",
+        "from_address": "isabella.taylor@acmecorp.com",
+        "from_name": "Isabella Taylor",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Team lunch Friday?",
+        "body_html": "<p>Hi,</p><p>Team lunch Friday?. Please let me know your thoughts.</p><p>Best regards,<br>Isabella</p>",
+        "body_text": "Hi,\n\nTeam lunch Friday?. Please let me know your thoughts.\n\nBest regards,\nIsabella",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": true,
+        "received_at": "2026-04-17T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "9c8551ce-6347-4954-96cf-a43581766b24",
+        "from_address": "james.anderson@acmecorp.com",
+        "from_name": "James Anderson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Follow up from our call",
+        "body_html": "<p>Hi,</p><p>Follow up from our call. Please let me know your thoughts.</p><p>Best regards,<br>James</p>",
+        "body_text": "Hi,\n\nFollow up from our call. Please let me know your thoughts.\n\nBest regards,\nJames",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-15T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "8f3ca027-f49d-4b1f-9e08-809afd1b61dc",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "New feature request from customer",
+        "body_html": "<p>Hi,</p><p>New feature request from customer. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nNew feature request from customer. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": false,
+        "is_flagged": true,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-13T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "b0706fc0-2fb1-4a66-9a50-0d44aa52de27",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Quarterly review prep",
+        "body_html": "<p>Hi,</p><p>Quarterly review prep. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nQuarterly review prep. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-11T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "f24f5c8e-39b7-4fd4-91ca-353b105c5d47",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Onboarding checklist",
+        "body_html": "<p>Hi,</p><p>Onboarding checklist. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nOnboarding checklist. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-09T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "5f50168e-613a-4b60-b406-9c1ae4021842",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Budget approval needed",
+        "body_html": "<p>Hi,</p><p>Budget approval needed. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nBudget approval needed. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": false,
+        "received_at": "2026-04-07T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "874b6493-ff6b-4894-bb44-79f1b372225e",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Security alert: new sign-in",
+        "body_html": "<p>Hi,</p><p>Security alert: new sign-in. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nSecurity alert: new sign-in. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-05T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "80518212-2e27-4200-b714-1943a32f4340",
+        "from_address": "grace.wilson@acmecorp.com",
+        "from_name": "Grace Wilson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Your order has shipped",
+        "body_html": "<p>Hi,</p><p>Your order has shipped. Please let me know your thoughts.</p><p>Best regards,<br>Grace</p>",
+        "body_text": "Hi,\n\nYour order has shipped. Please let me know your thoughts.\n\nBest regards,\nGrace",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": true,
+        "received_at": "2026-04-03T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "f496bbe0-7916-4389-b628-bc3609e1f0c2",
+        "from_address": "henry.moore@partner.com",
+        "from_name": "Henry Moore",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Reminder: standup in 15 minutes",
+        "body_html": "<p>Hi,</p><p>Reminder: standup in 15 minutes. Please let me know your thoughts.</p><p>Best regards,<br>Henry</p>",
+        "body_text": "Hi,\n\nReminder: standup in 15 minutes. Please let me know your thoughts.\n\nBest regards,\nHenry",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-01T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "3331fc31-4317-4fa5-8eff-2c84c4ca8c63",
+        "from_address": "isabella.taylor@acmecorp.com",
+        "from_name": "Isabella Taylor",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "FWD: Partnership opportunity",
+        "body_html": "<p>Hi,</p><p>FWD: Partnership opportunity. Please let me know your thoughts.</p><p>Best regards,<br>Isabella</p>",
+        "body_text": "Hi,\n\nFWD: Partnership opportunity. Please let me know your thoughts.\n\nBest regards,\nIsabella",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-30T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "53793802-4ad0-4754-8145-ca92a0476e76",
+        "from_address": "james.anderson@acmecorp.com",
+        "from_name": "James Anderson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Out of office this week",
+        "body_html": "<p>Hi,</p><p>Out of office this week. Please let me know your thoughts.</p><p>Best regards,<br>James</p>",
+        "body_text": "Hi,\n\nOut of office this week. Please let me know your thoughts.\n\nBest regards,\nJames",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-28T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "b00a76ad-8c80-4a14-ba8f-d06b04d6f223",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Please review attached document",
+        "body_html": "<p>Hi,</p><p>Please review attached document. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nPlease review attached document. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": false,
+        "is_flagged": true,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-26T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "144a2efa-c26f-4889-b043-c85c1dc65394",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Happy to help with that",
+        "body_html": "<p>Hi,</p><p>Happy to help with that. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nHappy to help with that. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-24T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "61779d06-a7eb-4d5c-b9e6-7503cdaf9e30",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Project Alpha update",
+        "body_html": "<p>Hi,</p><p>Project Alpha update. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nProject Alpha update. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-22T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "15e9f91e-d4e4-418b-ae38-59e5008e91d3",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Meeting tomorrow at 3pm",
+        "body_html": "<p>Hi,</p><p>Meeting tomorrow at 3pm. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nMeeting tomorrow at 3pm. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": true,
+        "received_at": "2026-03-20T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "34af3c22-50d1-4638-89ec-db7590661ab7",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Quick question about the proposal",
+        "body_html": "<p>Hi,</p><p>Quick question about the proposal. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nQuick question about the proposal. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-18T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "724b4e2e-0630-419d-b5ea-515ab5cb8a4f",
+        "from_address": "grace.wilson@acmecorp.com",
+        "from_name": "Grace Wilson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Invoice #1042 attached",
+        "body_html": "<p>Hi,</p><p>Invoice #1042 attached. Please let me know your thoughts.</p><p>Best regards,<br>Grace</p>",
+        "body_text": "Hi,\n\nInvoice #1042 attached. Please let me know your thoughts.\n\nBest regards,\nGrace",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-16T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "e72cff9e-a130-410a-a6a0-42ff27b707d5",
+        "from_address": "henry.moore@partner.com",
+        "from_name": "Henry Moore",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter",
+        "body_html": "<p>Hi,</p><p>Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.</p><p>Best regards,<br>Henry</p>",
+        "body_text": "Hi,\n\nWelcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.\n\nBest regards,\nHenry",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": false,
+        "received_at": "2026-03-14T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "ec2105b0-e37a-4528-a8e3-d4a6d511bae2",
+        "from_address": "isabella.taylor@acmecorp.com",
+        "from_name": "Isabella Taylor",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Action required: review Q3 report",
+        "body_html": "<p>Hi,</p><p>Action required: review Q3 report. Please let me know your thoughts.</p><p>Best regards,<br>Isabella</p>",
+        "body_text": "Hi,\n\nAction required: review Q3 report. Please let me know your thoughts.\n\nBest regards,\nIsabella",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-12T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "299095b2-ac5b-4b1b-9580-1e266a52643d",
+        "from_address": "james.anderson@acmecorp.com",
+        "from_name": "James Anderson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Re: design feedback",
+        "body_html": "<p>Hi,</p><p>Re: design feedback. Please let me know your thoughts.</p><p>Best regards,<br>James</p>",
+        "body_text": "Hi,\n\nRe: design feedback. Please let me know your thoughts.\n\nBest regards,\nJames",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-10T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "e72e15ff-85a2-4c0f-8c25-c9502808c2cc",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Team lunch Friday?",
+        "body_html": "<p>Hi,</p><p>Team lunch Friday?. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nTeam lunch Friday?. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": false,
+        "is_flagged": true,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-08T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "93db7b37-4c2e-4145-ae32-a5ab6b3c1504",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Follow up from our call",
+        "body_html": "<p>Hi,</p><p>Follow up from our call. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nFollow up from our call. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": true,
+        "received_at": "2026-03-06T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "0859d4bf-3d79-4d59-ac99-c2302f1daff0",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "New feature request from customer",
+        "body_html": "<p>Hi,</p><p>New feature request from customer. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nNew feature request from customer. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-04T03:56:19.975Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "e9867c56-231e-476c-8c33-918bb569383a",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Project Alpha update",
+        "body_html": "<p>Hi,</p><p>Project Alpha update. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nProject Alpha update. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": true,
+        "received_at": "2026-05-01T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "70a9ef14-7b8e-477f-8c2a-26bd9e7a6af1",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Meeting tomorrow at 3pm",
+        "body_html": "<p>Hi,</p><p>Meeting tomorrow at 3pm. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nMeeting tomorrow at 3pm. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-29T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "3ca1af27-30e5-4423-b98c-2567338f9738",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Quick question about the proposal",
+        "body_html": "<p>Hi,</p><p>Quick question about the proposal. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nQuick question about the proposal. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-27T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "31c18413-c8b5-4ffd-8a91-10784eb520e7",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Invoice #1042 attached",
+        "body_html": "<p>Hi,</p><p>Invoice #1042 attached. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nInvoice #1042 attached. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-25T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "133049fa-3056-43ce-8a4a-d7387351c729",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter",
+        "body_html": "<p>Hi,</p><p>Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nWelcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-23T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "0616cde6-4a94-4517-9cda-707500f02da1",
+        "from_address": "grace.wilson@acmecorp.com",
+        "from_name": "Grace Wilson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Action required: review Q3 report",
+        "body_html": "<p>Hi,</p><p>Action required: review Q3 report. Please let me know your thoughts.</p><p>Best regards,<br>Grace</p>",
+        "body_text": "Hi,\n\nAction required: review Q3 report. Please let me know your thoughts.\n\nBest regards,\nGrace",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-21T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "7c1b73e0-d9d7-4fb5-8b1b-f251ddb67882",
+        "from_address": "henry.moore@partner.com",
+        "from_name": "Henry Moore",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Re: design feedback",
+        "body_html": "<p>Hi,</p><p>Re: design feedback. Please let me know your thoughts.</p><p>Best regards,<br>Henry</p>",
+        "body_text": "Hi,\n\nRe: design feedback. Please let me know your thoughts.\n\nBest regards,\nHenry",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-19T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "653289ce-df0a-451b-9440-1b794359a647",
+        "from_address": "isabella.taylor@acmecorp.com",
+        "from_name": "Isabella Taylor",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Team lunch Friday?",
+        "body_html": "<p>Hi,</p><p>Team lunch Friday?. Please let me know your thoughts.</p><p>Best regards,<br>Isabella</p>",
+        "body_text": "Hi,\n\nTeam lunch Friday?. Please let me know your thoughts.\n\nBest regards,\nIsabella",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": true,
+        "received_at": "2026-04-17T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "c1afc129-7537-422c-9a42-2c5357fb4ae1",
+        "from_address": "james.anderson@acmecorp.com",
+        "from_name": "James Anderson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Follow up from our call",
+        "body_html": "<p>Hi,</p><p>Follow up from our call. Please let me know your thoughts.</p><p>Best regards,<br>James</p>",
+        "body_text": "Hi,\n\nFollow up from our call. Please let me know your thoughts.\n\nBest regards,\nJames",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-15T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "e18f6222-7cd8-48f5-bffb-d4209f65e7ed",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "New feature request from customer",
+        "body_html": "<p>Hi,</p><p>New feature request from customer. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nNew feature request from customer. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-13T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "045a2e7d-a021-4059-a44b-d5ef6d543247",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Quarterly review prep",
+        "body_html": "<p>Hi,</p><p>Quarterly review prep. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nQuarterly review prep. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-11T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "d5f19364-80e7-4605-bd37-8beba4e86dcd",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Onboarding checklist",
+        "body_html": "<p>Hi,</p><p>Onboarding checklist. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nOnboarding checklist. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-09T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "0152083c-5da6-46f9-b51a-63dc9aefc8ab",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Budget approval needed",
+        "body_html": "<p>Hi,</p><p>Budget approval needed. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nBudget approval needed. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": false,
+        "received_at": "2026-04-07T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "28bfbd61-9954-4338-9b4c-f69e7742d6c5",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Security alert: new sign-in",
+        "body_html": "<p>Hi,</p><p>Security alert: new sign-in. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nSecurity alert: new sign-in. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-05T03:56:19.975Z",
+        "folder": "sent"
+      },
+      {
+        "id": "4d015918-318d-4695-8e07-dd60ef009478",
+        "from_address": "grace.wilson@acmecorp.com",
+        "from_name": "Grace Wilson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Your order has shipped",
+        "body_html": "<p>Hi,</p><p>Your order has shipped. Please let me know your thoughts.</p><p>Best regards,<br>Grace</p>",
+        "body_text": "Hi,\n\nYour order has shipped. Please let me know your thoughts.\n\nBest regards,\nGrace",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": true,
+        "received_at": "2026-04-03T03:56:19.977Z",
+        "folder": "sent"
+      },
+      {
+        "id": "717ef69a-f54d-4152-81c6-8b13445fb837",
+        "from_address": "henry.moore@partner.com",
+        "from_name": "Henry Moore",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Reminder: standup in 15 minutes",
+        "body_html": "<p>Hi,</p><p>Reminder: standup in 15 minutes. Please let me know your thoughts.</p><p>Best regards,<br>Henry</p>",
+        "body_text": "Hi,\n\nReminder: standup in 15 minutes. Please let me know your thoughts.\n\nBest regards,\nHenry",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-01T03:56:19.977Z",
+        "folder": "sent"
+      },
+      {
+        "id": "f10c3a59-ff89-4924-8f94-d1afe083e192",
+        "from_address": "isabella.taylor@acmecorp.com",
+        "from_name": "Isabella Taylor",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "FWD: Partnership opportunity",
+        "body_html": "<p>Hi,</p><p>FWD: Partnership opportunity. Please let me know your thoughts.</p><p>Best regards,<br>Isabella</p>",
+        "body_text": "Hi,\n\nFWD: Partnership opportunity. Please let me know your thoughts.\n\nBest regards,\nIsabella",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-30T03:56:19.977Z",
+        "folder": "sent"
+      },
+      {
+        "id": "07b50000-c736-49dc-87b4-7e53ba61ad9e",
+        "from_address": "james.anderson@acmecorp.com",
+        "from_name": "James Anderson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Out of office this week",
+        "body_html": "<p>Hi,</p><p>Out of office this week. Please let me know your thoughts.</p><p>Best regards,<br>James</p>",
+        "body_text": "Hi,\n\nOut of office this week. Please let me know your thoughts.\n\nBest regards,\nJames",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-28T03:56:19.977Z",
+        "folder": "sent"
+      },
+      {
+        "id": "cb46a2ac-00d1-4d2b-b91f-afc847020dc1",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Please review attached document",
+        "body_html": "<p>Hi,</p><p>Please review attached document. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nPlease review attached document. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-26T03:56:19.977Z",
+        "folder": "sent"
+      },
+      {
+        "id": "c8bc4b12-bdaf-4b7a-b2a1-90a833ff4183",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Happy to help with that",
+        "body_html": "<p>Hi,</p><p>Happy to help with that. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nHappy to help with that. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-03-24T03:56:19.977Z",
+        "folder": "sent"
+      },
+      {
+        "id": "df733cf2-f97b-459f-8446-26629b068b64",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Project Alpha update",
+        "body_html": "<p>Hi,</p><p>Project Alpha update. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nProject Alpha update. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": true,
+        "importance": "high",
+        "has_attachments": true,
+        "received_at": "2026-05-01T03:56:19.977Z",
+        "folder": "drafts"
+      },
+      {
+        "id": "ccbf4d56-aa1c-4fa5-8686-39f6620ca180",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Meeting tomorrow at 3pm",
+        "body_html": "<p>Hi,</p><p>Meeting tomorrow at 3pm. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nMeeting tomorrow at 3pm. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": true,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-29T03:56:19.977Z",
+        "folder": "drafts"
+      },
+      {
+        "id": "881e9463-3328-4532-83fc-bbef990dcf02",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Quick question about the proposal",
+        "body_html": "<p>Hi,</p><p>Quick question about the proposal. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nQuick question about the proposal. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": true,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-27T03:56:19.977Z",
+        "folder": "drafts"
+      },
+      {
+        "id": "815158e5-f5cb-45b8-b009-2c75c016ea73",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Project Alpha update",
+        "body_html": "<p>Hi,</p><p>Project Alpha update. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nProject Alpha update. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": true,
+        "received_at": "2026-05-01T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "a798b02b-3f15-4bf0-9613-1aac366b2fbb",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Meeting tomorrow at 3pm",
+        "body_html": "<p>Hi,</p><p>Meeting tomorrow at 3pm. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nMeeting tomorrow at 3pm. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-29T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "df9a4acc-3df8-40e1-8ac5-8c39c6de3b9c",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Quick question about the proposal",
+        "body_html": "<p>Hi,</p><p>Quick question about the proposal. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nQuick question about the proposal. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-27T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "9ba70771-d7d7-4c6a-8f40-c5408741f548",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Invoice #1042 attached",
+        "body_html": "<p>Hi,</p><p>Invoice #1042 attached. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nInvoice #1042 attached. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-25T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "a84b1191-9770-4964-a65e-262fece6ac9c",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter",
+        "body_html": "<p>Hi,</p><p>Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nWelcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-23T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "4e7e1db2-8dc5-4750-b998-41402f17d8e9",
+        "from_address": "grace.wilson@acmecorp.com",
+        "from_name": "Grace Wilson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Action required: review Q3 report",
+        "body_html": "<p>Hi,</p><p>Action required: review Q3 report. Please let me know your thoughts.</p><p>Best regards,<br>Grace</p>",
+        "body_text": "Hi,\n\nAction required: review Q3 report. Please let me know your thoughts.\n\nBest regards,\nGrace",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-21T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "bd62a6da-cccf-4c21-8a7f-59356de18a7d",
+        "from_address": "henry.moore@partner.com",
+        "from_name": "Henry Moore",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Re: design feedback",
+        "body_html": "<p>Hi,</p><p>Re: design feedback. Please let me know your thoughts.</p><p>Best regards,<br>Henry</p>",
+        "body_text": "Hi,\n\nRe: design feedback. Please let me know your thoughts.\n\nBest regards,\nHenry",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-19T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "207dae45-7123-43ce-987e-0384b86713cc",
+        "from_address": "isabella.taylor@acmecorp.com",
+        "from_name": "Isabella Taylor",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Team lunch Friday?",
+        "body_html": "<p>Hi,</p><p>Team lunch Friday?. Please let me know your thoughts.</p><p>Best regards,<br>Isabella</p>",
+        "body_text": "Hi,\n\nTeam lunch Friday?. Please let me know your thoughts.\n\nBest regards,\nIsabella",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": true,
+        "received_at": "2026-04-17T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "fcc6a2d9-3bd5-4acb-a93d-b6b1fab5de66",
+        "from_address": "james.anderson@acmecorp.com",
+        "from_name": "James Anderson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Follow up from our call",
+        "body_html": "<p>Hi,</p><p>Follow up from our call. Please let me know your thoughts.</p><p>Best regards,<br>James</p>",
+        "body_text": "Hi,\n\nFollow up from our call. Please let me know your thoughts.\n\nBest regards,\nJames",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-15T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "ab22c0dd-52ff-496d-bb3e-3f8d9ab3798e",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "New feature request from customer",
+        "body_html": "<p>Hi,</p><p>New feature request from customer. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nNew feature request from customer. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-13T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "a6c7480b-5ae3-447c-bdd3-16ae6034576d",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Quarterly review prep",
+        "body_html": "<p>Hi,</p><p>Quarterly review prep. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nQuarterly review prep. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-11T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "fe161766-047d-4939-a898-11018dca03a5",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Onboarding checklist",
+        "body_html": "<p>Hi,</p><p>Onboarding checklist. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nOnboarding checklist. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-09T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "8323f67e-7a0a-458d-98a8-a20bc5ab0e5d",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Budget approval needed",
+        "body_html": "<p>Hi,</p><p>Budget approval needed. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nBudget approval needed. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": false,
+        "received_at": "2026-04-07T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "cfc1172f-3740-4ad3-82b3-d7d20aed8a6c",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Security alert: new sign-in",
+        "body_html": "<p>Hi,</p><p>Security alert: new sign-in. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nSecurity alert: new sign-in. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-05T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "10d79ccd-0456-4c1b-afa2-52d9f85e36ef",
+        "from_address": "grace.wilson@acmecorp.com",
+        "from_name": "Grace Wilson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Your order has shipped",
+        "body_html": "<p>Hi,</p><p>Your order has shipped. Please let me know your thoughts.</p><p>Best regards,<br>Grace</p>",
+        "body_text": "Hi,\n\nYour order has shipped. Please let me know your thoughts.\n\nBest regards,\nGrace",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": true,
+        "received_at": "2026-04-03T03:56:19.977Z",
+        "folder": "archive"
+      },
+      {
+        "id": "d24c78ba-4ec7-4c4f-9d97-cec1eb8b8a67",
+        "from_address": "alice.johnson@acmecorp.com",
+        "from_name": "Alice Johnson",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Project Alpha update",
+        "body_html": "<p>Hi,</p><p>Project Alpha update. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
+        "body_text": "Hi,\n\nProject Alpha update. Please let me know your thoughts.\n\nBest regards,\nAlice",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": true,
+        "received_at": "2026-05-01T03:56:19.977Z",
+        "folder": "junk"
+      },
+      {
+        "id": "ce8c9a9c-09e6-41c5-8290-3eb66142fc01",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Meeting tomorrow at 3pm",
+        "body_html": "<p>Hi,</p><p>Meeting tomorrow at 3pm. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nMeeting tomorrow at 3pm. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-29T03:56:19.977Z",
+        "folder": "junk"
+      },
+      {
+        "id": "56e60a16-fb84-4457-a7fb-92b5b5a5d3a4",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Quick question about the proposal",
+        "body_html": "<p>Hi,</p><p>Quick question about the proposal. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nQuick question about the proposal. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-27T03:56:19.977Z",
+        "folder": "junk"
+      },
+      {
+        "id": "51e9b157-d73b-43ae-ab31-87cd4a012952",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Invoice #1042 attached",
+        "body_html": "<p>Hi,</p><p>Invoice #1042 attached. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nInvoice #1042 attached. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-25T03:56:19.977Z",
+        "folder": "junk"
+      },
+      {
+        "id": "e487c672-e452-441a-8090-2ce253b7ca3a",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "frank.miller@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter",
+        "body_html": "<p>Hi,</p><p>Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nWelcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-23T03:56:19.977Z",
+        "folder": "junk"
+      }
+    ],
+    "calendars": [
+      {
+        "id": "35c2adb9-6fbb-4222-a122-63979d75cafb",
+        "name": "Calendar",
+        "is_default": true,
+        "color": "#0078D4"
+      },
+      {
+        "id": "8d7f1cf9-4edc-4c8e-a705-460b3d85eff3",
+        "name": "Personal",
+        "is_default": false,
+        "color": "#107C10"
+      }
+    ],
+    "events": [
+      {
+        "id": "bf550a2e-4c3b-4512-b33f-d4af3dc495e2",
+        "title": "Weekly Team Standup",
+        "start_time": "2026-05-02T03:30:00.000Z",
+        "end_time": "2026-05-02T04:00:00.000Z",
+        "is_recurring": true,
+        "recurrence_rule": {
+          "frequency": "WEEKLY",
+          "days_of_week": [
+            "MO",
+            "TU",
+            "WE",
+            "TH",
+            "FR"
+          ]
+        },
+        "attendees": [
+          {
+            "email": "bob.smith@acmecorp.com",
+            "display_name": "Bob Smith",
+            "response_status": "accepted",
+            "is_required": true
+          },
+          {
+            "email": "frank.miller@acmecorp.com",
+            "display_name": "Frank Miller",
+            "response_status": "accepted",
+            "is_required": true
+          }
+        ],
+        "location": "Teams Meeting",
+        "reminder_minutes": 5,
+        "calendar": "35c2adb9-6fbb-4222-a122-63979d75cafb"
+      },
+      {
+        "id": "6424f3b5-2890-4773-a735-938cdd1c747b",
+        "title": "Product Review with Alice",
+        "start_time": "2026-05-03T08:30:00.000Z",
+        "end_time": "2026-05-03T09:30:00.000Z",
+        "is_recurring": false,
+        "attendees": [
+          {
+            "email": "alice.johnson@acmecorp.com",
+            "display_name": "Alice Johnson",
+            "response_status": "accepted",
+            "is_required": true
+          }
+        ],
+        "location": "Conference Room B",
+        "reminder_minutes": 15,
+        "calendar": "35c2adb9-6fbb-4222-a122-63979d75cafb"
+      },
+      {
+        "id": "d343934c-4e8f-4165-a4a0-6c51619e600a",
+        "title": "Vendor Call \u00e2\u20ac\u201d Carol Williams",
+        "start_time": "2026-05-04T05:30:00.000Z",
+        "end_time": "2026-05-04T06:00:00.000Z",
+        "is_recurring": false,
+        "attendees": [
+          {
+            "email": "carol.williams@vendor.com",
+            "display_name": "Carol Williams",
+            "response_status": "none",
+            "is_required": true
+          }
+        ],
+        "location": "Zoom",
+        "reminder_minutes": 10,
+        "calendar": "35c2adb9-6fbb-4222-a122-63979d75cafb"
+      },
+      {
+        "id": "bf2f7d25-d1f1-4466-ad8f-32d9c00bb62b",
+        "title": "Q3 Planning",
+        "start_time": "2026-05-06T04:30:00.000Z",
+        "end_time": "2026-05-06T06:30:00.000Z",
+        "is_recurring": false,
+        "attendees": [
+          {
+            "email": "alice.johnson@acmecorp.com",
+            "display_name": "Alice Johnson",
+            "response_status": "accepted",
+            "is_required": true
+          },
+          {
+            "email": "bob.smith@acmecorp.com",
+            "display_name": "Bob Smith",
+            "response_status": "accepted",
+            "is_required": true
+          },
+          {
+            "email": "carol.williams@vendor.com",
+            "display_name": "Carol Williams",
+            "response_status": "accepted",
+            "is_required": true
+          },
+          {
+            "email": "david.brown@acmecorp.com",
+            "display_name": "David Brown",
+            "response_status": "accepted",
+            "is_required": true
+          },
+          {
+            "email": "newsletter@techdigest.com",
+            "display_name": "Emma Davis",
+            "response_status": "accepted",
+            "is_required": true
+          }
+        ],
+        "location": "Main Conference Room",
+        "reminder_minutes": 30,
+        "calendar": "35c2adb9-6fbb-4222-a122-63979d75cafb"
+      },
+      {
+        "id": "2c1f0679-b09e-4b61-a48a-3da81717bda0",
+        "title": "Design Review",
+        "start_time": "2026-04-30T09:30:00.000Z",
+        "end_time": "2026-04-30T10:30:00.000Z",
+        "is_recurring": false,
+        "attendees": [
+          {
+            "email": "david.brown@acmecorp.com",
+            "display_name": "David Brown",
+            "response_status": "accepted",
+            "is_required": true
+          }
+        ],
+        "location": "Design Studio",
+        "reminder_minutes": 15,
+        "calendar": "35c2adb9-6fbb-4222-a122-63979d75cafb"
+      },
+      {
+        "id": "f7b217da-65df-4b46-94fc-01c91f31024c",
+        "title": "All-hands",
+        "start_time": "2026-05-08T03:30:00.000Z",
+        "end_time": "2026-05-08T04:30:00.000Z",
+        "all_day": false,
+        "is_recurring": false,
+        "attendees": [],
+        "location": "Auditorium",
+        "reminder_minutes": 30,
+        "calendar": "35c2adb9-6fbb-4222-a122-63979d75cafb"
+      }
+    ],
+    "contacts": [
+      {
+        "world_id": "person-001",
+        "first_name": "Alice",
+        "last_name": "Johnson",
+        "email": "alice.johnson@acmecorp.com",
+        "phone": "+1-555-0101",
+        "company": "Acme Corp",
+        "job_title": "Product Manager",
+        "is_favorite": true
+      },
+      {
+        "world_id": "person-002",
+        "first_name": "Bob",
+        "last_name": "Smith",
+        "email": "bob.smith@acmecorp.com",
+        "phone": "+1-555-0102",
+        "company": "Acme Corp",
+        "job_title": "Engineering Manager",
+        "is_favorite": true
+      },
+      {
+        "world_id": "person-003",
+        "first_name": "Carol",
+        "last_name": "Williams",
+        "email": "carol.williams@vendor.com",
+        "phone": "+1-555-0103",
+        "company": "Vendor Inc",
+        "job_title": "Account Executive",
+        "is_favorite": false
+      },
+      {
+        "world_id": "person-004",
+        "first_name": "David",
+        "last_name": "Brown",
+        "email": "david.brown@acmecorp.com",
+        "phone": "+1-555-0104",
+        "company": "Acme Corp",
+        "job_title": "Designer",
+        "is_favorite": false
+      },
+      {
+        "world_id": "person-005",
+        "first_name": "Emma",
+        "last_name": "Davis",
+        "email": "newsletter@techdigest.com",
+        "phone": null,
+        "company": "Tech Digest",
+        "job_title": "Editor",
+        "is_favorite": false
+      },
+      {
+        "world_id": "person-007",
+        "first_name": "Grace",
+        "last_name": "Wilson",
+        "email": "grace.wilson@acmecorp.com",
+        "phone": "+1-555-0107",
+        "company": "Acme Corp",
+        "job_title": "QA Engineer",
+        "is_favorite": false
+      },
+      {
+        "world_id": "person-008",
+        "first_name": "Henry",
+        "last_name": "Moore",
+        "email": "henry.moore@partner.com",
+        "phone": "+1-555-0108",
+        "company": "Partner LLC",
+        "job_title": "Director",
+        "is_favorite": false
+      },
+      {
+        "world_id": "person-009",
+        "first_name": "Isabella",
+        "last_name": "Taylor",
+        "email": "isabella.taylor@acmecorp.com",
+        "phone": "+1-555-0109",
+        "company": "Acme Corp",
+        "job_title": "HR Manager",
+        "is_favorite": false
+      },
+      {
+        "world_id": "person-010",
+        "first_name": "James",
+        "last_name": "Anderson",
+        "email": "james.anderson@acmecorp.com",
+        "phone": "+1-555-0110",
+        "company": "Acme Corp",
+        "job_title": "CFO",
+        "is_favorite": false
+      }
+    ],
+    "task_lists": [
+      {
+        "name": "Tasks",
+        "is_default": true
+      },
+      {
+        "name": "Work Projects",
+        "is_default": false
+      }
+    ],
+    "tasks": [
+      {
+        "title": "Review Q3 report",
+        "due_date": "2026-05-02",
+        "importance": "high",
+        "is_completed": false
+      },
+      {
+        "title": "Respond to Carol re: proposal",
+        "due_date": "2026-05-03",
+        "importance": "normal",
+        "is_completed": false
+      },
+      {
+        "title": "Update project timeline",
+        "due_date": "2026-05-04",
+        "importance": "normal",
+        "is_completed": false
+      },
+      {
+        "title": "Book travel for conference",
+        "due_date": null,
+        "importance": "low",
+        "is_completed": false
+      },
+      {
+        "title": "Send meeting notes",
+        "importance": "normal",
+        "is_completed": true
+      }
+    ],
+    "rules": [
+      {
+        "name": "Move newsletters",
+        "conditions": [
+          {
+            "field": "from",
+            "operator": "contains",
+            "value": "newsletter"
+          }
+        ],
+        "actions": [
+          {
+            "type": "move_to_folder",
+            "params": {
+              "folder_slug": "newsletters"
+            }
+          }
+        ],
+        "is_enabled": true,
+        "priority": 0
+      },
+      {
+        "name": "Flag emails from Bob (manager)",
+        "conditions": [
+          {
+            "field": "from",
+            "operator": "equals",
+            "value": "bob.smith@acmecorp.com"
+          }
+        ],
+        "actions": [
+          {
+            "type": "flag"
+          },
+          {
+            "type": "set_importance",
+            "params": {
+              "level": "high"
+            }
+          }
+        ],
+        "is_enabled": true,
+        "priority": 1
+      }
+    ],
+    "categories": [
+      {
+        "name": "Blue Category",
+        "color": "#0078D4"
+      },
+      {
+        "name": "Green Category",
+        "color": "#107C10"
+      },
+      {
+        "name": "Orange Category",
+        "color": "#FF8C00"
+      },
+      {
+        "name": "Red Category",
+        "color": "#D13438"
+      },
+      {
+        "name": "Yellow Category",
+        "color": "#FFB900"
+      }
+    ],
+    "signatures": [
+      {
+        "name": "Work",
+        "body_html": "<p>Best regards,<br><strong>Frank Miller</strong><br>Software Engineer | Acme Corp<br>frank.miller@acmecorp.com</p>",
+        "is_default_new": true,
+        "is_default_reply": false
+      },
+      {
+        "name": "Brief",
+        "body_html": "<p>\u00e2\u20ac\u201d Frank</p>",
+        "is_default_new": false,
+        "is_default_reply": true
+      }
+    ],
+    "out_of_office": {
+      "enabled": false,
+      "start": null,
+      "end": null,
+      "internal_message": "",
+      "external_message": ""
+    }
+  }
+}

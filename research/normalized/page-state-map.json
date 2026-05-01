@@ -1,0 +1,126 @@
+{
+  "generatedAt": "2026-04-30T21:23:30.097Z",
+  "navigationGroups": [
+    {
+      "group": "Mail",
+      "pages": [
+        "mail-inbox",
+        "mail-reading-pane",
+        "mail-compose",
+        "mail-sent",
+        "mail-drafts",
+        "mail-search",
+        "mail-folders-sidebar"
+      ]
+    },
+    {
+      "group": "Calendar",
+      "pages": [
+        "calendar-month",
+        "calendar-week",
+        "calendar-day",
+        "calendar-workweek",
+        "calendar-new-event"
+      ]
+    },
+    {
+      "group": "Contacts",
+      "pages": [
+        "contacts-list",
+        "contacts-detail"
+      ]
+    },
+    {
+      "group": "Tasks",
+      "pages": [
+        "tasks-list"
+      ]
+    },
+    {
+      "group": "Settings",
+      "pages": [
+        "settings-general",
+        "settings-mail",
+        "settings-signatures",
+        "settings-rules",
+        "settings-oof",
+        "settings-categories"
+      ]
+    }
+  ],
+  "sharedState": [
+    {
+      "state": "active_user",
+      "usedBy": "all"
+    },
+    {
+      "state": "folder_list",
+      "usedBy": [
+        "mail-inbox",
+        "mail-reading-pane",
+        "mail-compose",
+        "mail-sent",
+        "mail-drafts",
+        "mail-search",
+        "mail-folders-sidebar"
+      ]
+    },
+    {
+      "state": "contacts",
+      "usedBy": [
+        "mail-compose",
+        "contacts-list",
+        "contacts-detail",
+        "calendar-new-event"
+      ]
+    },
+    {
+      "state": "categories",
+      "usedBy": [
+        "mail-inbox",
+        "mail-reading-pane",
+        "calendar-month",
+        "settings-categories"
+      ]
+    },
+    {
+      "state": "signatures",
+      "usedBy": [
+        "mail-compose",
+        "settings-signatures"
+      ]
+    }
+  ],
+  "interactionLinks": [
+    {
+      "from": "mail-inbox",
+      "to": "mail-reading-pane",
+      "trigger": "click message"
+    },
+    {
+      "from": "mail-inbox",
+      "to": "mail-compose",
+      "trigger": "click new mail"
+    },
+    {
+      "from": "mail-reading-pane",
+      "to": "mail-compose",
+      "trigger": "click reply/forward"
+    },
+    {
+      "from": "calendar-month",
+      "to": "calendar-new-event",
+      "trigger": "click new event / click time slot"
+    },
+    {
+      "from": "contacts-list",
+      "to": "contacts-detail",
+      "trigger": "click contact"
+    },
+    {
+      "from": "contacts-detail",
+      "to": "mail-compose",
+      "trigger": "click send email"
+    }
+  ]
+}

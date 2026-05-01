@@ -1,0 +1,275 @@
+[
+  {
+    "page": "mail-inbox",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/messages?folder_id=inbox"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/folders"
+      }
+    ]
+  },
+  {
+    "page": "mail-reading-pane",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/messages/{id}"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/messages/{id}/attachments"
+      }
+    ]
+  },
+  {
+    "page": "mail-compose",
+    "inferredEndpoints": [
+      {
+        "method": "POST",
+        "path": "/api/v1/messages"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/contacts/autocomplete?q={q}"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/signatures"
+      }
+    ]
+  },
+  {
+    "page": "mail-sent",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/messages?folder_id=sent"
+      }
+    ]
+  },
+  {
+    "page": "mail-drafts",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/messages?folder_id=drafts&is_draft=true"
+      }
+    ]
+  },
+  {
+    "page": "mail-search",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/messages/search?q={q}"
+      }
+    ]
+  },
+  {
+    "page": "mail-folders-sidebar",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/folders?tree=true"
+      }
+    ]
+  },
+  {
+    "page": "calendar-month",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/events?start_after={date}&start_before={date}"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/calendars"
+      }
+    ]
+  },
+  {
+    "page": "calendar-week",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/events?start_after={date}&start_before={date}"
+      }
+    ]
+  },
+  {
+    "page": "calendar-day",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/events?start_after={date}&start_before={date}"
+      }
+    ]
+  },
+  {
+    "page": "calendar-workweek",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/events?start_after={date}&start_before={date}"
+      }
+    ]
+  },
+  {
+    "page": "calendar-new-event",
+    "inferredEndpoints": [
+      {
+        "method": "POST",
+        "path": "/api/v1/events"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/events/availability"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/contacts/autocomplete?q={q}"
+      }
+    ]
+  },
+  {
+    "page": "contacts-list",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/contacts"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/contacts?search={q}"
+      }
+    ]
+  },
+  {
+    "page": "contacts-detail",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/contacts/{id}"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/v1/contacts/{id}"
+      }
+    ]
+  },
+  {
+    "page": "tasks-list",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/tasks"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/task-lists"
+      }
+    ]
+  },
+  {
+    "page": "settings-general",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/settings"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/v1/settings"
+      }
+    ]
+  },
+  {
+    "page": "settings-mail",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/settings"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/v1/settings"
+      }
+    ]
+  },
+  {
+    "page": "settings-signatures",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/signatures"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/signatures"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/v1/signatures/{id}"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/v1/signatures/{id}"
+      }
+    ]
+  },
+  {
+    "page": "settings-rules",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/rules"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/rules"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/v1/rules/{id}"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/v1/rules/{id}"
+      }
+    ]
+  },
+  {
+    "page": "settings-oof",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/settings/oof"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/v1/settings/oof"
+      }
+    ]
+  },
+  {
+    "page": "settings-categories",
+    "inferredEndpoints": [
+      {
+        "method": "GET",
+        "path": "/api/v1/categories"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/categories"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/v1/categories/{id}"
+      }
+    ]
+  }
+]

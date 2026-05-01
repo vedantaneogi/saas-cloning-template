@@ -11,13 +11,33 @@
   "dependencies": {
     "next": "^15.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zustand": "^4.5.2",
+    "@tanstack/react-query": "^5.56.2",
+    "react-hook-form": "^7.53.0",
+    "@hookform/resolvers": "^3.9.0",
+    "zod": "^3.23.8",
+    "date-fns": "^3.6.0",
+    "react-resizable-panels": "^2.1.3",
+    "lucide-react": "^0.441.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.2",
+    "@tiptap/react": "^2.7.1",
+    "@tiptap/starter-kit": "^2.7.1",
+    "@tiptap/extension-placeholder": "^2.7.1",
+    "@tiptap/extension-link": "^2.7.1",
+    "@tiptap/extension-text-align": "^2.7.1",
+    "@tiptap/extension-underline": "^2.7.1",
+    "tailwindcss": "^3.4.11",
+    "@tailwindcss/typography": "^0.5.15"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47"
   }
 }

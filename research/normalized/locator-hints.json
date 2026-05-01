@@ -1,0 +1,3398 @@
+{
+  "generatedAt": "2026-04-30T21:23:30.083Z",
+  "totalLocators": 675,
+  "byPage": [
+    {
+      "page": "mail-inbox",
+      "locators": [
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "input",
+          "selector": "[aria-label=\"Search for email, meetings, files and more.\"]",
+          "role": "combobox",
+          "text": "Search for email, meetings, files and more."
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"New mail\"]",
+          "text": "\nNew mail\nCreate a new email message. (N)"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Delete\"]",
+          "text": "\nthis message. (Delete)"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see delete options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Archive\"]",
+          "text": "\nMove this message to your archive folder. (E)"
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Report\"]",
+          "text": "\nthis message as phishing."
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more report options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Sweep\"]",
+          "text": "\nMake a rule around the selected email authors."
+        },
+        {
+          "page": "mail-inbox",
+          "tag": "button",
+          "selector": "[aria-label=\"Move to\"]",
+          "text": "\na folder. (V)\n"
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search for email, meetings, files and more.",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "mail-reading-pane",
+      "locators": [
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "input",
+          "selector": "[aria-label=\"Search for email, meetings, files and more.\"]",
+          "role": "combobox",
+          "text": "Search for email, meetings, files and more."
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Chat\"]",
+          "role": "button",
+          "text": "Chat"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"New mail\"]",
+          "text": "\nNew mail\nCreate a new email message. (N)"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Delete\"]",
+          "text": "\nthis message. (Delete)"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see delete options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Archive\"]",
+          "text": "\nMove this message to your archive folder. (E)"
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Report\"]",
+          "text": "\nthis message as phishing."
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more report options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-reading-pane",
+          "tag": "button",
+          "selector": "[aria-label=\"Sweep\"]",
+          "text": "\nMake a rule around the selected email authors."
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search for email, meetings, files and more.",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "mail-compose",
+      "locators": [
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "input",
+          "selector": "[aria-label=\"Search for email, meetings, files and more.\"]",
+          "role": "combobox",
+          "text": "Search for email, meetings, files and more."
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Undo\"]",
+          "text": "\n(Ctrl+Z)"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\" Undo\"]",
+          "text": "More options\n"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Paste\"]",
+          "text": "\nAdd content on the Clipboard to your message. (Ctrl+V)"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\" Paste\"]",
+          "text": "More paste options\n"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "button",
+          "selector": "[aria-label=\"Format painter\"]",
+          "text": "\nSelect the content with the formatting you want to copy an"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "input",
+          "selector": "[aria-label=\"Font\"]",
+          "role": "combobox",
+          "text": "Font"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "span",
+          "selector": "[aria-label=\"Open Font\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-compose",
+          "tag": "input",
+          "selector": "[aria-label=\"Font size\"]",
+          "role": "combobox",
+          "text": "Font size"
+        },
+        {
+          "page": "mail-compose",
+          "tag": "span",
+          "selector": "[aria-label=\"Open Font size\"]",
+          "role": "button",
+          "text": ""
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search for email, meetings, files and more.",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "mail-sent",
+      "locators": [
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "input",
+          "selector": "[aria-label=\"Search for email, meetings, files and more.\"]",
+          "role": "combobox",
+          "text": "Search for email, meetings, files and more."
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"New mail\"]",
+          "text": "\nNew mail\nCreate a new email message. (N)"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Delete\"]",
+          "text": "\nthis message. (Delete)"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see delete options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Archive\"]",
+          "text": "\nMove this message to your archive folder. (E)"
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Report\"]",
+          "text": "\nthis message as phishing."
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more report options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Sweep\"]",
+          "text": "\nMake a rule around the selected email authors."
+        },
+        {
+          "page": "mail-sent",
+          "tag": "button",
+          "selector": "[aria-label=\"Move to\"]",
+          "text": "\na folder. (V)\n"
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search for email, meetings, files and more.",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "mail-drafts",
+      "locators": [
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "input",
+          "selector": "[aria-label=\"Search for email, meetings, files and more.\"]",
+          "role": "combobox",
+          "text": "Search for email, meetings, files and more."
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"New mail\"]",
+          "text": "\nNew mail\nCreate a new email message. (N)"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Delete\"]",
+          "text": "\nthis message. (Delete)"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see delete options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Archive\"]",
+          "text": "\nMove this message to your archive folder. (E)"
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Report\"]",
+          "text": "\nthis message as phishing."
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more report options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Sweep\"]",
+          "text": "\nMake a rule around the selected email authors."
+        },
+        {
+          "page": "mail-drafts",
+          "tag": "button",
+          "selector": "[aria-label=\"Move to\"]",
+          "text": "\na folder. (V)\n"
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search for email, meetings, files and more.",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "mail-search",
+      "locators": [
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "mail-search",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "mail-search",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "mail-search",
+          "tag": "input",
+          "selector": "[aria-label=\"Search for email, meetings, files and more.\"]",
+          "role": "combobox",
+          "text": "Search for email, meetings, files and more."
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "mail-search",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"New mail\"]",
+          "text": "\nNew mail\nCreate a new email message. (N)"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Delete\"]",
+          "text": "\nthis message. (Delete)"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see delete options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Archive\"]",
+          "text": "\nMove this message to your archive folder. (E)"
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Report\"]",
+          "text": "\nthis message as phishing."
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more report options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Sweep\"]",
+          "text": "\nMake a rule around the selected email authors."
+        },
+        {
+          "page": "mail-search",
+          "tag": "button",
+          "selector": "[aria-label=\"Move to\"]",
+          "text": "\na folder. (V)\n"
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search for email, meetings, files and more.",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "mail-folders-sidebar",
+      "locators": [
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "input",
+          "selector": "[aria-label=\"Search for email, meetings, files and more.\"]",
+          "role": "combobox",
+          "text": "Search for email, meetings, files and more."
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"New mail\"]",
+          "text": "\nNew mail\nCreate a new email message. (N)"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Delete\"]",
+          "text": "\nthis message. (Delete)"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see delete options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Archive\"]",
+          "text": "\nMove this message to your archive folder. (E)"
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Report\"]",
+          "text": "\nthis message as phishing."
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more report options\"]",
+          "text": ""
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Sweep\"]",
+          "text": "\nMake a rule around the selected email authors."
+        },
+        {
+          "page": "mail-folders-sidebar",
+          "tag": "button",
+          "selector": "[aria-label=\"Move to\"]",
+          "text": "\na folder. (V)\n"
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search for email, meetings, files and more.",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "calendar-month",
+      "locators": [
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "input",
+          "selector": "[aria-label=\"Search\"]",
+          "role": "combobox",
+          "text": "Search"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"New event\"]",
+          "text": "\nNew event\nCreate a new event. (Alt+N)"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Day\"]",
+          "text": "\nDay\nToggle button off."
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more Day options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Work week\"]",
+          "text": "\nWork week\nOnly show days in the work week. (Alt+Shift+2)"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Week\"]",
+          "text": "\nWeek\nShow the weekly view. (Alt+Shift+3)"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Month\"]",
+          "text": "\nMonth\nShow the monthly view. (Alt+Shift+4)"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Split view\"]",
+          "text": "\nSplit view\nShow in side-by-side mode."
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Filter applied\"]",
+          "text": "\nFilter applied\nApply or remove calendar event filters.\n"
+        },
+        {
+          "page": "calendar-month",
+          "tag": "button",
+          "selector": "[aria-label=\"Share\"]",
+          "text": "\nShare\na calendar with others."
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Ribbon",
+        "Hide navigation pane",
+        "Ribbon tabs",
+        "New",
+        "New event",
+        " Expand to see more New options"
+      ]
+    },
+    {
+      "page": "calendar-week",
+      "locators": [
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "input",
+          "selector": "[aria-label=\"Search\"]",
+          "role": "combobox",
+          "text": "Search"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Chat\"]",
+          "role": "button",
+          "text": "Chat"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"New event\"]",
+          "text": "\nNew event\nCreate a new event. (Alt+N)"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Day\"]",
+          "text": "\nDay\nToggle button off."
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more Day options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Work week\"]",
+          "text": "\nWork week\nOnly show days in the work week. (Alt+Shift+2)"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Week\"]",
+          "text": "\nWeek\nShow the weekly view. (Alt+Shift+3)"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Month\"]",
+          "text": "\nMonth\nShow the monthly view. (Alt+Shift+4)"
+        },
+        {
+          "page": "calendar-week",
+          "tag": "button",
+          "selector": "[aria-label=\"Split view\"]",
+          "text": "\nSplit view\nShow in side-by-side mode."
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "calendar-day",
+      "locators": [
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "input",
+          "selector": "[aria-label=\"Search\"]",
+          "role": "combobox",
+          "text": "Search"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"New event\"]",
+          "text": "\nNew event\nCreate a new event. (Alt+N)"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Day\"]",
+          "text": "\nDay\nToggle button off."
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more Day options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Work week\"]",
+          "text": "\nWork week\nOnly show days in the work week. (Alt+Shift+2)"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Week\"]",
+          "text": "\nWeek\nShow the weekly view. (Alt+Shift+3)"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Month\"]",
+          "text": "\nMonth\nShow the monthly view. (Alt+Shift+4)"
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Split view\"]",
+          "text": "\nSplit view\nShow in side-by-side mode."
+        },
+        {
+          "page": "calendar-day",
+          "tag": "button",
+          "selector": "[aria-label=\"Filter\"]",
+          "text": "\nFilter\nApply or remove calendar event filters.\n"
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "calendar-workweek",
+      "locators": [
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "input",
+          "selector": "[aria-label=\"Search\"]",
+          "role": "combobox",
+          "text": "Search"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"New event\"]",
+          "text": "\nNew event\nCreate a new event. (Alt+N)"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Day\"]",
+          "text": "\nDay\nToggle button off."
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more Day options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Work week\"]",
+          "text": "\nWork week\nOnly show days in the work week. (Alt+Shift+2)"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Week\"]",
+          "text": "\nWeek\nShow the weekly view. (Alt+Shift+3)"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Month\"]",
+          "text": "\nMonth\nShow the monthly view. (Alt+Shift+4)"
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Split view\"]",
+          "text": "\nSplit view\nShow in side-by-side mode."
+        },
+        {
+          "page": "calendar-workweek",
+          "tag": "button",
+          "selector": "[aria-label=\"Filter\"]",
+          "text": "\nFilter\nApply or remove calendar event filters.\n"
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive"
+      ]
+    },
+    {
+      "page": "calendar-new-event",
+      "locators": [
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Skip to main content\"]",
+          "role": "link",
+          "text": "Skip to main content"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "input",
+          "selector": "[aria-label=\"Search\"]",
+          "role": "combobox",
+          "text": "Search"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Chat\"]",
+          "role": "button",
+          "text": "Chat"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"New event\"]",
+          "text": "\nNew event\nCreate a new event. (Alt+N)"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more New options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Day\"]",
+          "text": "\nDay\nToggle button off."
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\" Expand to see more Day options\"]",
+          "text": ""
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Work week\"]",
+          "text": "\nWork week\nOnly show days in the work week. (Alt+Shift+2)"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Week\"]",
+          "text": "\nWeek\nShow the weekly view. (Alt+Shift+3)"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Month\"]",
+          "text": "\nMonth\nShow the monthly view. (Alt+Shift+4)"
+        },
+        {
+          "page": "calendar-new-event",
+          "tag": "button",
+          "selector": "[aria-label=\"Split view\"]",
+          "text": "\nSplit view\nShow in side-by-side mode."
+        }
+      ],
+      "ariaLandmarks": [
+        "Skip to main content",
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search",
+        "Chat",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer"
+      ]
+    },
+    {
+      "page": "contacts-list",
+      "locators": [
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Chat\"]",
+          "role": "button",
+          "text": "Chat"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"New contact\"]",
+          "text": "\nNew contact\nCreate a new contact. (Shift+N)"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\" Create new contact or contact list\"]",
+          "text": ""
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Edit\"]",
+          "text": "\nEdit"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Delete\"]",
+          "text": "\nDelete"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Restore\"]",
+          "text": "\nRestore"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Add to contacts\"]",
+          "text": "\nAdd to contacts\nAdd to your contacts."
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Add to favorites\"]",
+          "text": "\nAdd to favorites\nAdd this group to your favorites."
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Add to list\"]",
+          "text": "\nAdd to list\nAdd this contact to a contact list.\n"
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Add members\"]",
+          "text": "\nto this group."
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Invite others\"]",
+          "text": "\nGet a link to this group and invite others."
+        },
+        {
+          "page": "contacts-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Leave group\"]",
+          "text": "\nLeave this group."
+        }
+      ],
+      "ariaLandmarks": [
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive",
+        "Ribbon"
+      ]
+    },
+    {
+      "page": "contacts-detail",
+      "locators": [
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"App launcher\"]",
+          "role": "button",
+          "text": "App launcher"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "a",
+          "selector": "[aria-label=\"Axiom Global Technologies\"]",
+          "text": "Axiom Global Technologies"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "a",
+          "selector": "[aria-label=\"Go to Outlook\"]",
+          "role": "link",
+          "text": "Outlook"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"OneNote feed\"]",
+          "role": "button",
+          "text": "OneNote feed"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"My Day\"]",
+          "role": "button",
+          "text": "My Day"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Notifications\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Settings\"]",
+          "role": "button",
+          "text": ""
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Account manager for TechBrig Alerts\"]",
+          "role": "button",
+          "text": "TA"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in\"]",
+          "role": "button",
+          "text": "Sign in"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Mail\"]",
+          "role": "button",
+          "text": "Mail"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Calendar\"]",
+          "role": "button",
+          "text": "Calendar"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Copilot\"]",
+          "role": "button",
+          "text": "Copilot"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"People\"]",
+          "role": "button",
+          "text": "People"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"To Do\"]",
+          "role": "button",
+          "text": "To Do"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Newsletters\"]",
+          "role": "button",
+          "text": "Newsletters"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Org Explorer\"]",
+          "role": "button",
+          "text": "Org Explorer"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"OneDrive\"]",
+          "role": "button",
+          "text": "OneDrive"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"More apps\"]",
+          "text": ""
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Hide navigation pane\"]",
+          "text": ""
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"New contact\"]",
+          "text": "\nNew contact\nCreate a new contact. (Shift+N)"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\" Create new contact or contact list\"]",
+          "text": ""
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Edit\"]",
+          "text": "\nEdit"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Delete\"]",
+          "text": "\nDelete"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Restore\"]",
+          "text": "\nRestore"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Add to contacts\"]",
+          "text": "\nAdd to contacts\nAdd to your contacts."
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Add to favorites\"]",
+          "text": "\nAdd to favorites\nAdd this group to your favorites."
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Add to list\"]",
+          "text": "\nAdd to list\nAdd this contact to a contact list.\n"
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Add members\"]",
+          "text": "\nto this group."
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Invite others\"]",
+          "text": "\nGet a link to this group and invite others."
+        },
+        {
+          "page": "contacts-detail",
+          "tag": "button",
+          "selector": "[aria-label=\"Leave group\"]",
+          "text": "\nLeave this group."
+        }
+      ],
+      "ariaLandmarks": [
+        "App launcher",
+        "Axiom Global Technologies",
+        "Go to Outlook",
+        "Search",
+        "OneNote feed",
+        "My Day",
+        "Notifications",
+        "Settings",
+        "Account manager for TechBrig Alerts",
+        "Sign in",
+        "left-rail-appbar",
+        "Mail",
+        "Calendar",
+        "Copilot",
+        "People",
+        "To Do",
+        "Newsletters",
+        "Org Explorer",
+        "OneDrive",
+        "More apps"
+      ]
+    },
+    {
+      "page": "tasks-list",
+      "locators": [
+        {
+          "page": "tasks-list",
+          "tag": "button",
+          "selector": "[aria-label=\"No thanks\"]",
+          "text": "No thanks"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Try Edge\"]",
+          "text": "Try Edge"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "button",
+          "selector": "[aria-label=\"All Microsoft expand to see list of Microsoft products and services\"]",
+          "text": "All Microsoft expand to see list of Microsoft products and s"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Close search\"]",
+          "text": "Close search"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Microsoft\"]",
+          "text": "Microsoft"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "button",
+          "selector": "[aria-label=\"See more menu options\"]",
+          "text": "See more menu options"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "button",
+          "selector": "[aria-label=\"See more menu options\"]",
+          "text": "See more menu options"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "button",
+          "selector": "[aria-label=\"More\"]",
+          "text": "More"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "input",
+          "selector": "[aria-label=\"Search Expanded\"]",
+          "role": "combobox",
+          "text": "Search Expanded"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Search or ask a question\"]",
+          "text": "Search"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "button",
+          "selector": "[aria-label=\"Cancel Search\"]",
+          "text": "Cancel"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"0 items in shopping cart\"]",
+          "text": "Cart"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Sign in to your account\"]",
+          "text": "Sign in to your account\nSign in"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Download  for Android\"]",
+          "text": "Download  for Android"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Download  for Windows\"]",
+          "text": "Download  for Windows"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Download  for iOS\"]",
+          "text": "Download  for iOS"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Surface Pro What's new\"]",
+          "text": "Surface Pro"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Surface Laptop What's new\"]",
+          "text": "Surface Laptop"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Surface Laptop Studio 2 What's new\"]",
+          "text": "Surface Laptop Studio 2"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Copilot for organizations What's new\"]",
+          "text": "Copilot for organizations"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Copilot for personal use What's new\"]",
+          "text": "Copilot for personal use"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"AI in Windows What's new\"]",
+          "text": "AI in Windows"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Explore Microsoft products What's new\"]",
+          "text": "Explore Microsoft products"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Windows 11 apps What's new\"]",
+          "text": "Windows 11 apps"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Account profile Microsoft Store\"]",
+          "text": "Account profile"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Download Center Microsoft Store\"]",
+          "text": "Download Center"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Microsoft Store support Microsoft Store\"]",
+          "text": "Microsoft Store support"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Returns Microsoft Store\"]",
+          "text": "Returns"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Order tracking Microsoft Store\"]",
+          "text": "Order tracking"
+        },
+        {
+          "page": "tasks-list",
+          "tag": "a",
+          "selector": "[aria-label=\"Certified Refurbished Microsoft Store\"]",
+          "text": "Certified Refurbished"
+        }
+      ],
+      "ariaLandmarks": [
+        "Promotional Banner",
+        "No thanks",
+        "Try Edge",
+        "All Microsoft expand to see list of Microsoft products and services",
+        "Close search",
+        "Microsoft",
+        "See more menu options",
+        "Contextual menu",
+        "More",
+        "All Microsoft menu",
+        "Search Expanded",
+        "Search or ask a question",
+        "Search Suggestions",
+        "No results",
+        "Cancel Search",
+        "0 items in shopping cart",
+        "Sign in to your account",
+        "Download  for Android",
+        "Download  for Windows",
+        "Download  for iOS"
+      ]
+    },
+    {
+      "page": "settings-general",
+      "locators": [],
+      "ariaLandmarks": []
+    },
+    {
+      "page": "settings-mail",
+      "locators": [],
+      "ariaLandmarks": []
+    },
+    {
+      "page": "settings-signatures",
+      "locators": [],
+      "ariaLandmarks": []
+    },
+    {
+      "page": "settings-rules",
+      "locators": [],
+      "ariaLandmarks": []
+    },
+    {
+      "page": "settings-oof",
+      "locators": [],
+      "ariaLandmarks": []
+    },
+    {
+      "page": "settings-categories",
+      "locators": [],
+      "ariaLandmarks": []
+    }
+  ]
+}

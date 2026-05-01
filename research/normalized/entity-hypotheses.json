@@ -1,0 +1,136 @@
+{
+  "generatedAt": "2026-04-30T21:23:30.094Z",
+  "source": "dom-analysis",
+  "entities": [
+    {
+      "name": "Message",
+      "confidence": "high",
+      "evidence": [
+        "Message list observed in inbox",
+        "Reading pane with from/to/subject/body",
+        "Compose form with recipient fields"
+      ],
+      "fields": [
+        "from",
+        "to",
+        "cc",
+        "bcc",
+        "subject",
+        "body",
+        "attachments",
+        "is_read",
+        "is_flagged",
+        "importance",
+        "received_at"
+      ]
+    },
+    {
+      "name": "Folder",
+      "confidence": "high",
+      "evidence": [
+        "Folder tree in sidebar",
+        "System folders (Inbox, Sent, Drafts, Archive, Junk, Deleted)",
+        "User-created folders visible"
+      ],
+      "fields": [
+        "name",
+        "parent_id",
+        "is_system",
+        "unread_count"
+      ]
+    },
+    {
+      "name": "Event",
+      "confidence": "high",
+      "evidence": [
+        "Calendar grid with event blocks",
+        "New event form with title/time/attendees",
+        "Recurrence options visible"
+      ],
+      "fields": [
+        "title",
+        "start_time",
+        "end_time",
+        "location",
+        "attendees",
+        "recurrence_rule",
+        "reminder_minutes",
+        "all_day"
+      ]
+    },
+    {
+      "name": "Contact",
+      "confidence": "high",
+      "evidence": [
+        "People directory with search",
+        "Contact detail card",
+        "Autocomplete in compose"
+      ],
+      "fields": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "company",
+        "job_title"
+      ]
+    },
+    {
+      "name": "Task",
+      "confidence": "medium",
+      "evidence": [
+        "Tasks section visible",
+        "Flagged email creates task"
+      ],
+      "fields": [
+        "title",
+        "due_date",
+        "is_completed",
+        "importance",
+        "source_message_id"
+      ]
+    },
+    {
+      "name": "Rule",
+      "confidence": "high",
+      "evidence": [
+        "Rules settings page captured",
+        "Condition + action builder observed"
+      ],
+      "fields": [
+        "name",
+        "conditions",
+        "actions",
+        "priority",
+        "is_enabled"
+      ]
+    },
+    {
+      "name": "Signature",
+      "confidence": "high",
+      "evidence": [
+        "Signatures settings page captured",
+        "Rich text editor for body",
+        "Default for new/reply toggle"
+      ],
+      "fields": [
+        "name",
+        "body_html",
+        "is_default_new",
+        "is_default_reply"
+      ]
+    },
+    {
+      "name": "Category",
+      "confidence": "high",
+      "evidence": [
+        "Categories settings page captured",
+        "Color + name configuration"
+      ],
+      "fields": [
+        "name",
+        "color"
+      ]
+    }
+  ]
+}

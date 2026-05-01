@@ -1,0 +1,277 @@
+{
+  "$schema": "rl-env/v1",
+  "rng_seed": 1,
+  "feature_flags": {
+    "focused_inbox": false,
+    "schedule_send": true,
+    "snooze": false,
+    "scheduling_assistant": false,
+    "quick_steps": false,
+    "sweep": false
+  },
+  "permission_profile": {
+    "role": "worker"
+  },
+  "world": {
+    "people": [
+      {
+        "id": "person-001",
+        "first_name": "Alice",
+        "last_name": "Johnson",
+        "email": "alice.johnson@acmecorp.com",
+        "phone": "+1-555-0101",
+        "company": "Acme Corp",
+        "job_title": "Product Manager",
+        "department": "Product"
+      },
+      {
+        "id": "person-002",
+        "first_name": "Bob",
+        "last_name": "Smith",
+        "email": "bob.smith@acmecorp.com",
+        "phone": "+1-555-0102",
+        "company": "Acme Corp",
+        "job_title": "Engineering Manager",
+        "department": "Engineering"
+      },
+      {
+        "id": "person-003",
+        "first_name": "Carol",
+        "last_name": "Williams",
+        "email": "carol.williams@vendor.com",
+        "phone": "+1-555-0103",
+        "company": "Vendor Inc",
+        "job_title": "Account Executive",
+        "department": "Sales"
+      }
+    ],
+    "companies": [
+      {
+        "id": "company-001",
+        "name": "Acme Corp",
+        "domain": "acmecorp.com",
+        "industry": "Technology"
+      }
+    ]
+  },
+  "app_data": {
+    "active_user": {
+      "world_id": "person-001",
+      "email": "alice.johnson@acmecorp.com",
+      "display_name": "Alice Johnson",
+      "role": "worker",
+      "timezone": "America/New_York",
+      "locale": "en-US"
+    },
+    "custom_folders": [],
+    "messages": [
+      {
+        "id": "4c2d9515-7162-42c1-ac03-e3b806c671e1",
+        "from_address": "bob.smith@acmecorp.com",
+        "from_name": "Bob Smith",
+        "to_addresses": [
+          {
+            "email": "alice.johnson@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [
+          {
+            "email": "carol.williams@vendor.com",
+            "name": "Carol Williams"
+          }
+        ],
+        "subject": "Project Alpha update",
+        "body_html": "<p>Hi,</p><p>Project Alpha update. Please let me know your thoughts.</p><p>Best regards,<br>Bob</p>",
+        "body_text": "Hi,\n\nProject Alpha update. Please let me know your thoughts.\n\nBest regards,\nBob",
+        "is_read": false,
+        "is_flagged": true,
+        "is_draft": false,
+        "importance": "high",
+        "has_attachments": true,
+        "received_at": "2026-05-01T03:56:19.978Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "2df448e7-4a69-4f48-90ad-50d4257ee3c6",
+        "from_address": "carol.williams@vendor.com",
+        "from_name": "Carol Williams",
+        "to_addresses": [
+          {
+            "email": "alice.johnson@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Meeting tomorrow at 3pm",
+        "body_html": "<p>Hi,</p><p>Meeting tomorrow at 3pm. Please let me know your thoughts.</p><p>Best regards,<br>Carol</p>",
+        "body_text": "Hi,\n\nMeeting tomorrow at 3pm. Please let me know your thoughts.\n\nBest regards,\nCarol",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-29T03:56:19.978Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "6c9d01b6-5258-4f18-bc15-2e1b1f31a2e6",
+        "from_address": "david.brown@acmecorp.com",
+        "from_name": "David Brown",
+        "to_addresses": [
+          {
+            "email": "alice.johnson@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Quick question about the proposal",
+        "body_html": "<p>Hi,</p><p>Quick question about the proposal. Please let me know your thoughts.</p><p>Best regards,<br>David</p>",
+        "body_text": "Hi,\n\nQuick question about the proposal. Please let me know your thoughts.\n\nBest regards,\nDavid",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-27T03:56:19.978Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "78120321-80fc-42ef-a1db-32f60c9cd914",
+        "from_address": "newsletter@techdigest.com",
+        "from_name": "Emma Davis",
+        "to_addresses": [
+          {
+            "email": "alice.johnson@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Invoice #1042 attached",
+        "body_html": "<p>Hi,</p><p>Invoice #1042 attached. Please let me know your thoughts.</p><p>Best regards,<br>Emma</p>",
+        "body_text": "Hi,\n\nInvoice #1042 attached. Please let me know your thoughts.\n\nBest regards,\nEmma",
+        "is_read": false,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-25T03:56:19.978Z",
+        "folder": "inbox"
+      },
+      {
+        "id": "2e003b17-9824-4ce3-9b77-40a0d47d7a06",
+        "from_address": "frank.miller@acmecorp.com",
+        "from_name": "Frank Miller",
+        "to_addresses": [
+          {
+            "email": "alice.johnson@acmecorp.com",
+            "name": "Me"
+          }
+        ],
+        "cc_addresses": [],
+        "subject": "Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter",
+        "body_html": "<p>Hi,</p><p>Welcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.</p><p>Best regards,<br>Frank</p>",
+        "body_text": "Hi,\n\nWelcome to Tech Digest \u00e2\u20ac\u201d your weekly newsletter. Please let me know your thoughts.\n\nBest regards,\nFrank",
+        "is_read": true,
+        "is_flagged": false,
+        "is_draft": false,
+        "importance": "normal",
+        "has_attachments": false,
+        "received_at": "2026-04-23T03:56:19.978Z",
+        "folder": "inbox"
+      }
+    ],
+    "calendars": [
+      {
+        "id": "625080d6-35e6-47e0-ba46-f0acc7a64d3c",
+        "name": "Calendar",
+        "is_default": true,
+        "color": "#0078D4"
+      }
+    ],
+    "events": [
+      {
+        "id": "027326c7-dbdd-4ee0-9e44-1b22231128ed",
+        "title": "Weekly Team Standup",
+        "start_time": "2026-05-02T03:30:00.000Z",
+        "end_time": "2026-05-02T04:00:00.000Z",
+        "is_recurring": true,
+        "recurrence_rule": {
+          "frequency": "WEEKLY",
+          "days_of_week": [
+            "MO",
+            "TU",
+            "WE",
+            "TH",
+            "FR"
+          ]
+        },
+        "attendees": [
+          {
+            "email": "bob.smith@acmecorp.com",
+            "display_name": "Bob Smith",
+            "response_status": "accepted",
+            "is_required": true
+          },
+          {
+            "email": "frank.miller@acmecorp.com",
+            "display_name": "Frank Miller",
+            "response_status": "accepted",
+            "is_required": true
+          }
+        ],
+        "location": "Teams Meeting",
+        "reminder_minutes": 5,
+        "calendar": "625080d6-35e6-47e0-ba46-f0acc7a64d3c"
+      }
+    ],
+    "contacts": [
+      {
+        "world_id": "person-002",
+        "first_name": "Bob",
+        "last_name": "Smith",
+        "email": "bob.smith@acmecorp.com",
+        "company": "Acme Corp",
+        "job_title": "Engineering Manager"
+      },
+      {
+        "world_id": "person-003",
+        "first_name": "Carol",
+        "last_name": "Williams",
+        "email": "carol.williams@vendor.com",
+        "company": "Vendor Inc",
+        "job_title": "Account Executive"
+      }
+    ],
+    "task_lists": [
+      {
+        "name": "Tasks",
+        "is_default": true
+      }
+    ],
+    "tasks": [
+      {
+        "title": "Test task",
+        "importance": "normal",
+        "is_completed": false
+      }
+    ],
+    "rules": [],
+    "categories": [],
+    "signatures": [
+      {
+        "name": "Default",
+        "body_html": "<p>\u00e2\u20ac\u201d Alice</p>",
+        "is_default_new": true,
+        "is_default_reply": true
+      }
+    ],
+    "out_of_office": {
+      "enabled": false,
+      "start": null,
+      "end": null,
+      "internal_message": "",
+      "external_message": ""
+    }
+  }
+}

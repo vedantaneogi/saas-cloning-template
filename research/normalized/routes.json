@@ -1,0 +1,200 @@
+[
+  {
+    "label": "mail-inbox",
+    "url": "https://outlook.office.com/mail/inbox",
+    "title": "Mail - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "mail-reading-pane",
+    "url": "https://outlook.office.com/mail/inbox",
+    "title": "Mail - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "mail-compose",
+    "url": "https://outlook.office.com/mail/inbox",
+    "title": "Mail - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "mail-sent",
+    "url": "https://outlook.office.com/mail/sentitems",
+    "title": "Mail - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "mail-drafts",
+    "url": "https://outlook.office.com/mail/drafts",
+    "title": "Mail - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "mail-search",
+    "url": "https://outlook.office.com/mail/inbox",
+    "title": "Mail - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "mail-folders-sidebar",
+    "url": "https://outlook.office.com/mail/inbox",
+    "title": "Mail - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "calendar-month",
+    "url": "https://outlook.office.com/calendar/view/Month",
+    "title": "Calendar - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "calendar-week",
+    "url": "https://outlook.office.com/calendar/view/Week",
+    "title": "Calendar - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "calendar-day",
+    "url": "https://outlook.office.com/calendar/view/Day",
+    "title": "Calendar - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "calendar-workweek",
+    "url": "https://outlook.office.com/calendar/view/WorkWeek",
+    "title": "Calendar - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "calendar-new-event",
+    "url": "https://outlook.office.com/calendar/view/Month",
+    "title": "Calendar - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "contacts-list",
+    "url": "https://outlook.office.com/people",
+    "title": "People - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "contacts-detail",
+    "url": "https://outlook.office.com/people",
+    "title": "People - TechBrig Alerts - Outlook",
+    "discoveredLinks": [
+      "/mail/favicon.ico",
+      "//res.public.onecdn.static.microsoft/assets/mail/pwa/v4/pngs/apple-touch-icon.png",
+      "/mail/manifests/pwa.json",
+      "https://outlook.office.com/mail/"
+    ]
+  },
+  {
+    "label": "tasks-list",
+    "url": "https://outlook.office.com/tasks",
+    "title": "Welcome to To Do",
+    "discoveredLinks": [
+      "/tasks/manifest.json",
+      "/tasks/",
+      "https://outlook.office.com/tasks"
+    ]
+  },
+  {
+    "label": "settings-general",
+    "url": "https://outlook.office.com/options/general",
+    "title": "outlook.office.com",
+    "discoveredLinks": []
+  },
+  {
+    "label": "settings-mail",
+    "url": "https://outlook.office.com/options/mail/layout",
+    "title": "outlook.office.com",
+    "discoveredLinks": []
+  },
+  {
+    "label": "settings-signatures",
+    "url": "https://outlook.office.com/options/mail/emailsignature",
+    "title": "outlook.office.com",
+    "discoveredLinks": []
+  },
+  {
+    "label": "settings-rules",
+    "url": "https://outlook.office.com/options/mail/rules",
+    "title": "outlook.office.com",
+    "discoveredLinks": []
+  },
+  {
+    "label": "settings-oof",
+    "url": "https://outlook.office.com/options/mail/automaticReplies",
+    "title": "outlook.office.com",
+    "discoveredLinks": []
+  },
+  {
+    "label": "settings-categories",
+    "url": "https://outlook.office.com/options/general/categories",
+    "title": "outlook.office.com",
+    "discoveredLinks": []
+  }
+]

@@ -1,3 +1,5 @@
-export default function HomePage() {
-  return <main style={{ padding: 24 }}>Clone factory web app</main>;
+import { redirect } from 'next/navigation'
+
+export default function RootPage() {
+  redirect('/mail/inbox')
 }

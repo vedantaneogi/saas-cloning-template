@@ -1,0 +1,36 @@
+{
+  "$schema": "rl-env/v1",
+  "rng_seed": 42,
+  "feature_flags": {
+    "focused_inbox": true,
+    "schedule_send": true,
+    "snooze": true,
+    "scheduling_assistant": true,
+    "quick_steps": true,
+    "sweep": true
+  },
+  "permission_profile": {
+    "role": "worker"
+  },
+  "world": {
+    "people": [
+      { "id": "person-001", "first_name": "Alice", "last_name": "Johnson", "email": "alice.johnson@acmecorp.com", "phone": "+1-555-0101", "company": "Acme Corp", "job_title": "Product Manager" },
+      { "id": "person-002", "first_name": "Bob", "last_name": "Smith", "email": "bob.smith@acmecorp.com", "phone": "+1-555-0102", "company": "Acme Corp", "job_title": "Engineering Manager" },
+      { "id": "person-003", "first_name": "Carol", "last_name": "Williams", "email": "carol.williams@vendor.com", "phone": "+1-555-0103", "company": "Vendor Inc", "job_title": "Account Executive" },
+      { "id": "person-004", "first_name": "David", "last_name": "Brown", "email": "david.brown@acmecorp.com", "phone": "+1-555-0104", "company": "Acme Corp", "job_title": "Designer" },
+      { "id": "person-005", "first_name": "Emma", "last_name": "Davis", "email": "emma.davis@newsletter.com", "phone": null, "company": "NewsletterCo", "job_title": "Marketing" }
+    ],
+    "companies": [
+      { "id": "company-001", "name": "Acme Corp", "domain": "acmecorp.com" },
+      { "id": "company-002", "name": "Vendor Inc", "domain": "vendor.com" }
+    ]
+  },
+  "app_data": {
+    "active_user": {
+      "world_id": "person-001",
+      "role": "worker",
+      "timezone": "America/New_York",
+      "locale": "en-US"
+    }
+  }
+}

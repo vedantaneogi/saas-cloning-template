@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto',
+      'Helvetica Neue', sans-serif;
+    font-size: 14px;
+    color: #323130;
+    background-color: #ffffff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .outlook-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #d2d0ce transparent;
+  }
+
+  .outlook-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .outlook-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .outlook-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #d2d0ce;
+    border-radius: 3px;
+  }
+
+  .outlook-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #a19f9d;
+  }
+
+  .tiptap-editor .ProseMirror {
+    outline: none;
+    min-height: 200px;
+    padding: 12px;
+  }
+
+  .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+    color: #a19f9d;
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .tiptap-editor .ProseMirror a {
+    color: #0078D4;
+    text-decoration: underline;
+  }
+
+  .tiptap-editor .ProseMirror ul,
+  .tiptap-editor .ProseMirror ol {
+    padding-left: 1.5rem;
+  }
+
+  .tiptap-editor .ProseMirror blockquote {
+    border-left: 3px solid #EDEBE9;
+    padding-left: 1rem;
+    color: #605E5C;
+  }
+}

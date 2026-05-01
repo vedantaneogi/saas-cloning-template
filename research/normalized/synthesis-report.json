@@ -1,0 +1,121 @@
+{
+  "generatedAt": "2026-04-30T21:25:08.571Z",
+  "app": "outlook-clone",
+  "summary": {
+    "capturedPages": 21,
+    "normalizedWorkflows": 5,
+    "inferredEntities": 8,
+    "entitiesConfirmedInSpec": 8,
+    "featuresInMatrix": {
+      "p0": 28,
+      "p1": 27,
+      "total": 55
+    },
+    "inferredApiEndpoints": 27,
+    "inferredComponents": 12,
+    "locatorHints": 675
+  },
+  "coverage": {
+    "capturedPages": [
+      "mail-inbox",
+      "mail-reading-pane",
+      "mail-compose",
+      "mail-sent",
+      "mail-drafts",
+      "mail-search",
+      "mail-folders-sidebar",
+      "calendar-month",
+      "calendar-week",
+      "calendar-day",
+      "calendar-workweek",
+      "calendar-new-event",
+      "contacts-list",
+      "contacts-detail",
+      "tasks-list",
+      "settings-general",
+      "settings-mail",
+      "settings-signatures",
+      "settings-rules",
+      "settings-oof",
+      "settings-categories"
+    ],
+    "inferredEntities": [
+      "Message",
+      "Folder",
+      "Event",
+      "Contact",
+      "Task",
+      "Rule",
+      "Signature",
+      "Category"
+    ],
+    "specConfirmedEntities": [
+      "Message",
+      "Folder",
+      "Event",
+      "Contact",
+      "Task",
+      "Rule",
+      "Signature",
+      "Category"
+    ],
+    "inferredComponents": [
+      "SearchBar",
+      "ComposeButton",
+      "FolderTree",
+      "MessageList",
+      "CalendarGrid",
+      "ContactList",
+      "SubjectField",
+      "CalendarView",
+      "AttendeePicker",
+      "ContactsView",
+      "TasksView",
+      "SettingsPanel"
+    ],
+    "uniqueApiPaths": [
+      "/api/v1/messages?folder_id=inbox",
+      "/api/v1/folders",
+      "/api/v1/messages/{id}",
+      "/api/v1/messages/{id}/attachments",
+      "/api/v1/messages",
+      "/api/v1/contacts/autocomplete?q={q}",
+      "/api/v1/signatures",
+      "/api/v1/messages?folder_id=sent",
+      "/api/v1/messages?folder_id=drafts&is_draft=true",
+      "/api/v1/messages/search?q={q}",
+      "/api/v1/folders?tree=true",
+      "/api/v1/events?start_after={date}&start_before={date}",
+      "/api/v1/calendars",
+      "/api/v1/events",
+      "/api/v1/events/availability",
+      "/api/v1/contacts",
+      "/api/v1/contacts?search={q}",
+      "/api/v1/contacts/{id}",
+      "/api/v1/tasks",
+      "/api/v1/task-lists",
+      "/api/v1/settings",
+      "/api/v1/signatures/{id}",
+      "/api/v1/rules",
+      "/api/v1/rules/{id}",
+      "/api/v1/settings/oof",
+      "/api/v1/categories",
+      "/api/v1/categories/{id}"
+    ]
+  },
+  "specStatus": {
+    "specs/app-definition.yaml": "populated",
+    "specs/entities.yaml": "populated",
+    "specs/pages.yaml": "populated",
+    "specs/api-conventions.yaml": "populated",
+    "specs/feature-matrix.csv": "populated"
+  },
+  "readyForGeneration": true,
+  "notes": [
+    "28 P0 features and 27 P1 features tracked in feature matrix.",
+    "8 entities inferred from DOM, 8 confirmed in spec.",
+    "21 pages captured from real Outlook.",
+    "27 API endpoints inferred from page structure.",
+    "All spec files populated — ready for code generation."
+  ]
+}

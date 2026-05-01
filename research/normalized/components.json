@@ -1,0 +1,707 @@
+[
+  {
+    "page": "mail-inbox",
+    "url": "https://outlook.office.com/mail/inbox",
+    "inferredComponents": [
+      "SearchBar",
+      "ComposeButton",
+      "FolderTree",
+      "MessageList",
+      "CalendarGrid",
+      "ContactList"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "NavigationPane",
+      "MessageList",
+      "virtuoso-scroller",
+      "virtuoso-item-list",
+      "MailReadCompose"
+    ],
+    "interactiveCount": 114
+  },
+  {
+    "page": "mail-reading-pane",
+    "url": "https://outlook.office.com/mail/inbox",
+    "inferredComponents": [
+      "SearchBar",
+      "ComposeButton",
+      "FolderTree",
+      "MessageList",
+      "CalendarGrid",
+      "ContactList"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "local-computer-filein",
+      "CopilotDabRibbon",
+      "NavigationPane",
+      "MessageList",
+      "virtuoso-scroller",
+      "virtuoso-item-list",
+      "MailReadCompose",
+      "NotificationPane"
+    ],
+    "interactiveCount": 121
+  },
+  {
+    "page": "mail-compose",
+    "url": "https://outlook.office.com/mail/inbox",
+    "inferredComponents": [
+      "SearchBar",
+      "FolderTree",
+      "MessageList",
+      "CalendarGrid",
+      "ContactList",
+      "SubjectField"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "local-computer-filein",
+      "CopilotDabRibbon",
+      "NavigationPane",
+      "MessageList",
+      "virtuoso-scroller",
+      "virtuoso-item-list",
+      "MailReadCompose",
+      "ComposeSendButton",
+      "NotificationPane"
+    ],
+    "interactiveCount": 163
+  },
+  {
+    "page": "mail-sent",
+    "url": "https://outlook.office.com/mail/sentitems",
+    "inferredComponents": [
+      "SearchBar",
+      "ComposeButton",
+      "FolderTree",
+      "CalendarGrid",
+      "ContactList"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "NavigationPane",
+      "MessageList",
+      "MailReadCompose"
+    ],
+    "interactiveCount": 58
+  },
+  {
+    "page": "mail-drafts",
+    "url": "https://outlook.office.com/mail/drafts",
+    "inferredComponents": [
+      "SearchBar",
+      "ComposeButton",
+      "FolderTree",
+      "CalendarGrid",
+      "ContactList"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "NavigationPane",
+      "MessageList",
+      "MailReadCompose"
+    ],
+    "interactiveCount": 60
+  },
+  {
+    "page": "mail-search",
+    "url": "https://outlook.office.com/mail/inbox",
+    "inferredComponents": [
+      "SearchBar",
+      "ComposeButton",
+      "FolderTree",
+      "MessageList",
+      "CalendarGrid",
+      "ContactList"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "local-computer-filein",
+      "CopilotDabRibbon",
+      "NavigationPane",
+      "MessageList",
+      "virtuoso-scroller",
+      "virtuoso-item-list",
+      "MailReadCompose",
+      "NotificationPane"
+    ],
+    "interactiveCount": 121
+  },
+  {
+    "page": "mail-folders-sidebar",
+    "url": "https://outlook.office.com/mail/inbox",
+    "inferredComponents": [
+      "SearchBar",
+      "ComposeButton",
+      "FolderTree",
+      "MessageList",
+      "CalendarGrid",
+      "ContactList"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "NavigationPane",
+      "MessageList",
+      "virtuoso-scroller",
+      "virtuoso-item-list",
+      "MailReadCompose"
+    ],
+    "interactiveCount": 115
+  },
+  {
+    "page": "calendar-month",
+    "url": "https://outlook.office.com/calendar/view/Month",
+    "inferredComponents": [
+      "SearchBar",
+      "CalendarGrid",
+      "ContactList",
+      "CalendarView"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Ribbon",
+      "Hide navigation pane",
+      "Ribbon tabs",
+      "New event",
+      " Expand to see more New options",
+      " Expand to see more Day options"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "CopilotDabRibbon",
+      "CalendarModule",
+      "CalendarSurfaceNavigationToolbar",
+      "CalendarModuleSurface",
+      "Surface_WorkWeek",
+      "calendar-view-header-0",
+      "calendar-view-0"
+    ],
+    "interactiveCount": 111
+  },
+  {
+    "page": "calendar-week",
+    "url": "https://outlook.office.com/calendar/view/Week",
+    "inferredComponents": [
+      "SearchBar",
+      "CalendarGrid",
+      "ContactList",
+      "CalendarView"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "CopilotDabRibbon",
+      "CalendarModule",
+      "CalendarSurfaceNavigationToolbar",
+      "CalendarModuleSurface",
+      "Surface_WorkWeek",
+      "calendar-view-header-0",
+      "calendar-view-0",
+      "NotificationPane"
+    ],
+    "interactiveCount": 112
+  },
+  {
+    "page": "calendar-day",
+    "url": "https://outlook.office.com/calendar/view/Day",
+    "inferredComponents": [
+      "SearchBar",
+      "CalendarGrid",
+      "ContactList",
+      "CalendarView"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "CopilotDabRibbon",
+      "CalendarModule",
+      "CalendarSurfaceNavigationToolbar",
+      "CalendarModuleSurface",
+      "Surface_WorkWeek",
+      "calendar-view-header-0",
+      "calendar-view-0",
+      "NotificationPane"
+    ],
+    "interactiveCount": 111
+  },
+  {
+    "page": "calendar-workweek",
+    "url": "https://outlook.office.com/calendar/view/WorkWeek",
+    "inferredComponents": [
+      "SearchBar",
+      "CalendarGrid",
+      "ContactList",
+      "CalendarView"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "CopilotDabRibbon",
+      "CalendarModule",
+      "CalendarSurfaceNavigationToolbar",
+      "CalendarModuleSurface",
+      "Surface_WorkWeek",
+      "calendar-view-header-0",
+      "calendar-view-0",
+      "NotificationPane"
+    ],
+    "interactiveCount": 111
+  },
+  {
+    "page": "calendar-new-event",
+    "url": "https://outlook.office.com/calendar/view/Month",
+    "inferredComponents": [
+      "SearchBar",
+      "CalendarGrid",
+      "ContactList",
+      "AttendeePicker",
+      "CalendarView"
+    ],
+    "ariaLandmarks": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search",
+      "Chat",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "Ribbon",
+      "CopilotDabRibbon",
+      "CalendarModule",
+      "CalendarSurfaceNavigationToolbar",
+      "CalendarModuleSurface",
+      "Surface_WorkWeek",
+      "calendar-view-header-0",
+      "calendar-view-0",
+      "Toolbar",
+      "Form_Content",
+      "NotificationPane"
+    ],
+    "interactiveCount": 143
+  },
+  {
+    "page": "contacts-list",
+    "url": "https://outlook.office.com/people",
+    "inferredComponents": [
+      "SearchBar",
+      "CalendarGrid",
+      "ContactList",
+      "ContactsView"
+    ],
+    "ariaLandmarks": [
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive",
+      "Ribbon"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "NotificationPane"
+    ],
+    "interactiveCount": 52
+  },
+  {
+    "page": "contacts-detail",
+    "url": "https://outlook.office.com/people",
+    "inferredComponents": [
+      "SearchBar",
+      "CalendarGrid",
+      "ContactList",
+      "ContactsView"
+    ],
+    "ariaLandmarks": [
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in",
+      "left-rail-appbar",
+      "Mail",
+      "Calendar",
+      "Copilot",
+      "People",
+      "To Do",
+      "Newsletters",
+      "Org Explorer",
+      "OneDrive",
+      "More apps"
+    ],
+    "automationIds": [
+      "splitbuttonprimary",
+      "NotificationPane"
+    ],
+    "interactiveCount": 49
+  },
+  {
+    "page": "tasks-list",
+    "url": "https://outlook.office.com/tasks",
+    "inferredComponents": [
+      "SearchBar",
+      "TasksView"
+    ],
+    "ariaLandmarks": [
+      "Promotional Banner",
+      "No thanks",
+      "Try Edge",
+      "Close search",
+      "Microsoft",
+      "See more menu options",
+      "Contextual menu",
+      "More",
+      "All Microsoft menu",
+      "Search Expanded",
+      "Search or ask a question",
+      "Search Suggestions",
+      "No results",
+      "Cancel Search",
+      "0 items in shopping cart",
+      "Sign in to your account",
+      "Download  for Android",
+      "Download  for Windows",
+      "Download  for iOS",
+      "Footer Resource links"
+    ],
+    "automationIds": [],
+    "interactiveCount": 145
+  },
+  {
+    "page": "settings-general",
+    "url": "https://outlook.office.com/options/general",
+    "inferredComponents": [
+      "SettingsPanel"
+    ],
+    "ariaLandmarks": [],
+    "automationIds": [],
+    "interactiveCount": 1
+  },
+  {
+    "page": "settings-mail",
+    "url": "https://outlook.office.com/options/mail/layout",
+    "inferredComponents": [
+      "SettingsPanel"
+    ],
+    "ariaLandmarks": [],
+    "automationIds": [],
+    "interactiveCount": 1
+  },
+  {
+    "page": "settings-signatures",
+    "url": "https://outlook.office.com/options/mail/emailsignature",
+    "inferredComponents": [
+      "SettingsPanel"
+    ],
+    "ariaLandmarks": [],
+    "automationIds": [],
+    "interactiveCount": 1
+  },
+  {
+    "page": "settings-rules",
+    "url": "https://outlook.office.com/options/mail/rules",
+    "inferredComponents": [
+      "SettingsPanel"
+    ],
+    "ariaLandmarks": [],
+    "automationIds": [],
+    "interactiveCount": 1
+  },
+  {
+    "page": "settings-oof",
+    "url": "https://outlook.office.com/options/mail/automaticReplies",
+    "inferredComponents": [
+      "SettingsPanel"
+    ],
+    "ariaLandmarks": [],
+    "automationIds": [],
+    "interactiveCount": 1
+  },
+  {
+    "page": "settings-categories",
+    "url": "https://outlook.office.com/options/general/categories",
+    "inferredComponents": [
+      "SettingsPanel"
+    ],
+    "ariaLandmarks": [],
+    "automationIds": [],
+    "interactiveCount": 1
+  }
+]

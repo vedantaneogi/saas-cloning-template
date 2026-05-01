@@ -1,0 +1,94 @@
+[
+  {
+    "id": "compose-send",
+    "label": "Compose and Send Email",
+    "pages": [
+      "mail-inbox",
+      "mail-compose"
+    ],
+    "keyElements": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts"
+    ]
+  },
+  {
+    "id": "mail-triage",
+    "label": "Inbox Triage",
+    "pages": [
+      "mail-inbox",
+      "mail-reading-pane"
+    ],
+    "keyElements": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search for email, meetings, files and more.",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts"
+    ]
+  },
+  {
+    "id": "calendar-event",
+    "label": "Create Calendar Event",
+    "pages": [
+      "calendar-month",
+      "calendar-new-event"
+    ],
+    "keyElements": [
+      "Skip to main content",
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Search",
+      "Chat",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings"
+    ]
+  },
+  {
+    "id": "contact-manage",
+    "label": "Contact Management",
+    "pages": [
+      "contacts-list",
+      "contacts-detail"
+    ],
+    "keyElements": [
+      "App launcher",
+      "Axiom Global Technologies",
+      "Go to Outlook",
+      "Chat",
+      "OneNote feed",
+      "My Day",
+      "Notifications",
+      "Settings",
+      "Account manager for TechBrig Alerts",
+      "Sign in"
+    ]
+  },
+  {
+    "id": "settings-configure",
+    "label": "Configure Settings",
+    "pages": [
+      "settings-general",
+      "settings-mail",
+      "settings-signatures",
+      "settings-rules",
+      "settings-oof"
+    ],
+    "keyElements": []
+  }
+]
