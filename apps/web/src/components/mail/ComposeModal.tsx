@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -21,6 +22,7 @@ import {
   AlertCircle,
   FileText,
   Clock,
+  ShieldAlert,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -42,6 +44,7 @@ interface ComposeModalProps {
 }
 
 export function ComposeModal({ open, onClose }: ComposeModalProps) {
+  const router = useRouter()
   const composerDraft = useUIStore((s) => s.composerDraft)
   const setComposerDraft = useUIStore((s) => s.setComposerDraft)
   const showNotification = useUIStore((s) => s.showNotification)
@@ -59,10 +62,15 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [sigMenuOpen, setSigMenuOpen] = useState(false)
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false)
+  const [sensitivityMenuOpen, setSensitivityMenuOpen] = useState(false)
+  const [sensitivity, setSensitivity] = useState<'normal' | 'personal' | 'private' | 'confidential'>('normal')
+  const [sensitivityWarningPending, setSensitivityWarningPending] = useState<false | 'send' | { scheduled: string }>(false)
+  const [dlpViolations, setDlpViolations] = useState<string[]>([])
   const [scheduledSendAt, setScheduledSendAt] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scheduleMenuRef = useRef<HTMLDivElement>(null)
   const sigMenuRef = useRef<HTMLDivElement>(null)
+  const sensitivityMenuRef = useRef<HTMLDivElement>(null)
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { data: signatureList = [] } = useQuery({
@@ -107,6 +115,7 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
         subject,
         body_html: bodyHtml,
         is_draft: draft,
+        sensitivity,
         in_reply_to_id: composerDraft.replyToMessageId,
         reply_type: (composerDraft.replyType ?? 'none') as 'none' | 'reply' | 'reply_all' | 'forward',
         ...(scheduled ? { scheduled_send_at: new Date(scheduled).toISOString() } : {}),
@@ -122,8 +131,11 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
       queryClient.invalidateQueries({ queryKey: ['folders'] })
       if (scheduled) {
         showNotification('Message scheduled')
+      } else if (draft) {
+        showNotification('Draft saved')
       } else {
-        showNotification(draft ? 'Draft saved' : 'Message sent')
+        showNotification('Message sent')
+        router.push('/mail/sent')
       }
       onClose()
     },
@@ -152,6 +164,18 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [scheduleMenuOpen])
+
+  // Close sensitivity menu on outside click
+  useEffect(() => {
+    if (!sensitivityMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (sensitivityMenuRef.current && !sensitivityMenuRef.current.contains(e.target as Node)) {
+        setSensitivityMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [sensitivityMenuOpen])
 
   const insertSignature = (sigId: string) => {
     const sig = signatureList.find((s) => s.id === sigId)
@@ -187,6 +211,47 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject, bodyHtml, to])
+
+  const SENSITIVITY_OPTIONS = [
+    { value: 'normal', label: 'Normal', description: 'No restrictions' },
+    { value: 'personal', label: 'Personal', description: 'Personal message' },
+    { value: 'private', label: 'Private', description: 'Do not forward' },
+    { value: 'confidential', label: 'Confidential', description: 'Handle with care' },
+  ] as const
+
+  const SENSITIVITY_COLORS: Record<string, string> = {
+    normal: '',
+    personal: '#0078D4',
+    private: '#8B5CF6',
+    confidential: '#D13438',
+  }
+
+  const requiresWarning = sensitivity === 'private' || sensitivity === 'confidential'
+
+  const handleSend = (scheduled?: string) => {
+    if (requiresWarning) {
+      // DLP checks
+      const violations: string[] = []
+      const senderDomain = currentUser?.email?.split('@')[1] ?? ''
+      const allRecipients = [...to, ...cc, ...bcc]
+      const externalRecipients = senderDomain
+        ? allRecipients.filter((r) => {
+            const domain = r.split('@')[1] ?? ''
+            return domain && domain !== senderDomain
+          })
+        : []
+      if (externalRecipients.length > 0 && sensitivity === 'confidential') {
+        violations.push(`Sending to ${externalRecipients.length} external recipient${externalRecipients.length !== 1 ? 's' : ''} outside ${senderDomain}`)
+      }
+      if (attachedFiles.length > 0 && sensitivity === 'confidential') {
+        violations.push(`${attachedFiles.length} attachment${attachedFiles.length !== 1 ? 's' : ''} will be sent without encryption`)
+      }
+      setDlpViolations(violations)
+      setSensitivityWarningPending(scheduled ? { scheduled } : 'send')
+    } else {
+      sendMutation.mutate({ draft: false, ...(scheduled ? { scheduled } : {}) })
+    }
+  }
 
   if (!open) return null
 
@@ -251,7 +316,7 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
 
       {/* Form */}
       <form
-        onSubmit={handleSubmit(() => sendMutation.mutate({ draft: false }))}
+        onSubmit={handleSubmit(() => handleSend())}
         className="flex flex-col flex-1 overflow-hidden"
       >
         {/* Recipients */}
@@ -313,6 +378,14 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
               className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none py-0.5"
               {...register('subject')}
             />
+            {sensitivity !== 'normal' && (
+              <span
+                className="text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0"
+                style={{ color: SENSITIVITY_COLORS[sensitivity], backgroundColor: `${SENSITIVITY_COLORS[sensitivity]}18` }}
+              >
+                {sensitivity.charAt(0).toUpperCase() + sensitivity.slice(1)}
+              </span>
+            )}
           </div>
         </div>
 
@@ -356,7 +429,7 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
           <div className="flex items-center gap-1">
             <button
               type="submit"
-              disabled={sendMutation.isPending || to.length === 0}
+              disabled={sendMutation.isPending}
               data-automation-id="ComposeSendButton"
               aria-label="Send message"
               className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-sm font-medium px-4 py-1.5 rounded-l transition-colors"
@@ -396,7 +469,7 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
                     type="button"
                     disabled={!scheduledSendAt || to.length === 0 || sendMutation.isPending}
                     onClick={() => {
-                      sendMutation.mutate({ draft: false, scheduled: scheduledSendAt })
+                      handleSend(scheduledSendAt)
                       setScheduleMenuOpen(false)
                     }}
                     aria-label="Send at scheduled time"
@@ -487,6 +560,59 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
           </div>
 
           <div className="flex items-center gap-1">
+            {/* Sensitivity picker */}
+            <div className="relative" ref={sensitivityMenuRef}>
+              <button
+                type="button"
+                aria-label="Set sensitivity"
+                aria-expanded={sensitivityMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setSensitivityMenuOpen((v) => !v)}
+                title="Set sensitivity label"
+                className={cn(
+                  'p-1.5 hover:bg-[#EDEBE9] rounded transition-colors',
+                  sensitivity !== 'normal' ? '' : 'text-[#605E5C]'
+                )}
+                style={sensitivity !== 'normal' ? { color: SENSITIVITY_COLORS[sensitivity] } : {}}
+              >
+                <ShieldAlert size={15} />
+              </button>
+              {sensitivityMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute bottom-9 right-0 z-50 w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1"
+                >
+                  <div className="px-3 py-1 text-xs font-semibold text-[#605E5C] border-b border-[#EDEBE9] mb-1">
+                    Sensitivity
+                  </div>
+                  {SENSITIVITY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setSensitivity(opt.value); setSensitivityMenuOpen(false) }}
+                      className={cn(
+                        'w-full text-left px-3 py-2 hover:bg-[#F3F2F1] transition-colors flex items-center justify-between gap-2'
+                      )}
+                    >
+                      <div>
+                        <p
+                          className="text-sm font-medium"
+                          style={{ color: opt.value !== 'normal' ? SENSITIVITY_COLORS[opt.value] : '#323130' }}
+                        >
+                          {opt.label}
+                        </p>
+                        <p className="text-xs text-[#A19F9D]">{opt.description}</p>
+                      </div>
+                      {sensitivity === opt.value && (
+                        <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#0078D4]" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {sendMutation.isError && (
               <span className="text-xs text-[#D13438] flex items-center gap-1">
                 <AlertCircle size={12} />
@@ -504,6 +630,69 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
           </div>
         </div>
       </form>
+
+      {/* Pre-send sensitivity warning dialog */}
+      {sensitivityWarningPending !== false && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="sensitivity-warning-title"
+          className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 rounded-t"
+        >
+          <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
+            <div className="flex items-start gap-3 mb-3">
+              <ShieldAlert size={20} style={{ color: SENSITIVITY_COLORS[sensitivity] }} className="flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 id="sensitivity-warning-title" className="text-sm font-semibold text-[#323130]">
+                  Send {sensitivity} message?
+                </h3>
+                <p className="text-xs text-[#605E5C] mt-1">
+                  {sensitivity === 'confidential'
+                    ? 'This message is marked Confidential. Recipients should handle it with strict discretion.'
+                    : 'This message is marked Private. Please ensure recipients are authorised before sending.'}
+                </p>
+              </div>
+            </div>
+            {dlpViolations.length > 0 && (
+              <div className="mb-3 bg-[#FFF4CE] border border-[#F7C948] rounded px-3 py-2">
+                <p className="text-xs font-semibold text-[#7A5900] mb-1">DLP policy warnings</p>
+                <ul className="space-y-0.5">
+                  {dlpViolations.map((v, i) => (
+                    <li key={i} className="text-xs text-[#7A5900] flex items-start gap-1">
+                      <span className="flex-shrink-0 mt-0.5">⚠</span> {v}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSensitivityWarningPending(false)}
+                className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = sensitivityWarningPending
+                  setSensitivityWarningPending(false)
+                  if (pending === 'send') {
+                    sendMutation.mutate({ draft: false })
+                  } else if (typeof pending === 'object') {
+                    sendMutation.mutate({ draft: false, scheduled: pending.scheduled })
+                  }
+                }}
+                className="text-sm font-medium text-white px-3 py-1.5 rounded transition-colors"
+                style={{ backgroundColor: SENSITIVITY_COLORS[sensitivity] }}
+              >
+                Send anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

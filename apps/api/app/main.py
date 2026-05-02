@@ -2,15 +2,52 @@
 Microsoft Outlook Clone — FastAPI Application
 RL training environment backend.
 """
+import asyncio
 import json
+import logging
 import os
 import signal
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+# ── Structured JSON logging ───────────────────────────────────────────────────
+# We define episode_id_var here (before the middleware class) so the log filter
+# can reference it.  The middleware sets it per-request.
+from contextvars import ContextVar  # noqa: E402 (moved up for log filter)
+
+episode_id_var: ContextVar[str | None] = ContextVar("episode_id", default=None)
+
+
+class _EpisodeIDFilter(logging.Filter):
+    """Injects the current request's X-Episode-ID into every log record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.episode_id = episode_id_var.get()  # type: ignore[attr-defined]
+        return True
+
+
+try:
+    from pythonjsonlogger import jsonlogger  # type: ignore
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        jsonlogger.JsonFormatter(
+            fmt="%(asctime)s %(levelname)s %(name)s %(episode_id)s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        )
+    )
+    handler.addFilter(_EpisodeIDFilter())
+    logging.root.handlers = [handler]
+except ImportError:
+    # pythonjsonlogger not installed — fall back to plain text with filter
+    logging.basicConfig(level=logging.INFO)
+    logging.root.addFilter(_EpisodeIDFilter())
+
+logging.root.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 from app.api.router import api_router
 from app.core.config import settings
@@ -94,6 +131,71 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# X-Episode-ID propagation + X-Response-Time middleware
+# ---------------------------------------------------------------------------
+import time  # noqa: E402
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
+
+
+class EpisodeIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        episode_id = request.headers.get("X-Episode-ID")
+        token = episode_id_var.set(episode_id)
+        response = await call_next(request)
+        if episode_id:
+            response.headers["X-Episode-ID"] = episode_id
+        episode_id_var.reset(token)
+        return response
+
+
+app.add_middleware(EpisodeIDMiddleware)
+
+
+class ResponseTimeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        response.headers["X-Response-Time"] = f"{elapsed_ms:.2f}ms"
+        return response
+
+
+app.add_middleware(ResponseTimeMiddleware)
+
+# ---------------------------------------------------------------------------
+# Chaos middleware — latency + error injection on /api/v1/* routes only
+# ---------------------------------------------------------------------------
+
+
+class ChaosMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        from app.rl.state import rl_state  # local import to avoid circular
+
+        # Only apply chaos to application API routes, not RL control plane
+        is_api = request.url.path.startswith("/api/v1/")
+
+        if is_api:
+            rl_state.inc_request_count()
+
+            # Chaos injection only when CHAOS_ENABLED=true
+            if settings.CHAOS_ENABLED:
+                # Error injection
+                if rl_state.should_inject_error():
+                    return JSONResponse(
+                        status_code=rl_state.chaos_error_status,
+                        content={"error": {"code": "chaos_injected", "message": "Chaos error injection"}},
+                    )
+
+                # Latency injection
+                if rl_state.chaos_latency_enabled and rl_state.chaos_latency_ms > 0:
+                    await asyncio.sleep(rl_state.chaos_latency_ms / 1000)
+
+        return await call_next(request)
+
+
+app.add_middleware(ChaosMiddleware)
 
 # ---------------------------------------------------------------------------
 # Global exception handler — ensures all errors use { error: { code, message } }

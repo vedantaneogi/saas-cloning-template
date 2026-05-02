@@ -10,6 +10,8 @@ test.describe('Settings — P0 Features', () => {
     await page.click('[type="submit"]');
     await page.waitForURL(`${BASE}/mail/inbox`);
     await page.goto(`${BASE}/settings`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('[aria-label="Settings navigation"]').waitFor({ timeout: 10000 });
   });
 
   test('Settings page loads', async ({ page }) => {

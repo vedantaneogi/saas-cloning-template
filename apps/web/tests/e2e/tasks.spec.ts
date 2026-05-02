@@ -10,6 +10,8 @@ test.describe('Tasks — P0 Features', () => {
     await page.click('[type="submit"]');
     await page.waitForURL(`${BASE}/mail/inbox`);
     await page.goto(`${BASE}/tasks`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('[aria-label="Task list"]').waitFor({ timeout: 10000 });
   });
 
   test('Task list loads', async ({ page }) => {

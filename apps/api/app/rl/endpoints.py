@@ -8,8 +8,9 @@ import copy
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal, get_db
@@ -105,6 +106,33 @@ async def health():
     return {"status": "ok"}
 
 
+# ---------------------------------------------------------------------------
+# Screenshot stub (vision-based RL agents)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/screenshot")
+async def screenshot():
+    """
+    Screenshot stub for vision-based RL agents.
+    Returns a 501 with a clear message so agents know the endpoint exists
+    but requires a real browser-automation sidecar to populate.
+    Override this endpoint in a derived environment that has Playwright/Puppeteer.
+    """
+    raise HTTPException(
+        status_code=501,
+        detail={
+            "error": {
+                "code": "not_implemented",
+                "message": (
+                    "Screenshot capture requires a browser-automation sidecar "
+                    "(e.g. Playwright). This stub confirms the endpoint contract."
+                ),
+            }
+        },
+    )
+
+
 @router.get("/ready")
 async def ready():
     if not rl_state.is_ready:
@@ -156,6 +184,7 @@ async def seed(request: Request):
     rl_state.set_ready(seed_version)
     rl_state.set_entity_counts(entity_counts)
     rl_state.store_seed_snapshot(raw, entity_counts)
+    rl_state.inc_seed_count()
 
     rl_state.event_log.clear()
     rl_state.event_log.append("seed_loaded", {"entity_counts": entity_counts})
@@ -262,7 +291,7 @@ async def get_clock():
 @router.post("/clock/advance")
 async def advance_clock(body: AdvanceClockRequest):
     try:
-        new_time = rl_state.clock.advance(body.duration)
+        rl_state.clock.advance(body.duration)
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
@@ -283,6 +312,7 @@ async def verify(body: VerifyRequest, db: AsyncSession = Depends(get_db)):
     """Evaluate a predicate against current DB state."""
     db_state = await _dump_db_state(db)
     result = rl_state.verify(db_state, body.path, body.operator, body.expected)
+    rl_state.inc_verify_count()
     rl_state.event_log.append("verify", {
         "path": body.path,
         "operator": body.operator,
@@ -307,3 +337,166 @@ async def episode_start():
 async def episode_end():
     rl_state.event_log.append("episode_end", {})
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Metrics (Prometheus text format)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/metrics", response_class=PlainTextResponse)
+async def metrics():
+    return PlainTextResponse(
+        content=rl_state.get_metrics_text(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Snapshot diff
+# ---------------------------------------------------------------------------
+
+
+class SnapshotDiffRequest(BaseModel):
+    before: dict
+    after: dict
+
+
+def _deep_diff(before: Any, after: Any, path: str = "") -> list[dict[str, Any]]:
+    """Recursively diff two JSON-serialisable structures. Returns a flat list of changes."""
+    diffs: list[dict[str, Any]] = []
+    if type(before) != type(after):
+        diffs.append({"path": path, "op": "changed", "before": before, "after": after})
+        return diffs
+    if isinstance(before, dict):
+        all_keys = set(before) | set(after)
+        for k in sorted(all_keys):
+            child = f"{path}.{k}" if path else k
+            if k not in before:
+                diffs.append({"path": child, "op": "added", "before": None, "after": after[k]})
+            elif k not in after:
+                diffs.append({"path": child, "op": "removed", "before": before[k], "after": None})
+            else:
+                diffs.extend(_deep_diff(before[k], after[k], child))
+    elif isinstance(before, list):
+        # Diff by index; flag length changes
+        for i, (b, a) in enumerate(zip(before, after)):
+            diffs.extend(_deep_diff(b, a, f"{path}[{i}]"))
+        if len(before) > len(after):
+            for i in range(len(after), len(before)):
+                diffs.append({"path": f"{path}[{i}]", "op": "removed", "before": before[i], "after": None})
+        elif len(after) > len(before):
+            for i in range(len(before), len(after)):
+                diffs.append({"path": f"{path}[{i}]", "op": "added", "before": None, "after": after[i]})
+    else:
+        if before != after:
+            diffs.append({"path": path, "op": "changed", "before": before, "after": after})
+    return diffs
+
+
+@router.post("/snapshot/diff")
+async def snapshot_diff(body: SnapshotDiffRequest):
+    """Return a structured diff between two snapshot objects."""
+    before_entities = body.before.get("entities", body.before)
+    after_entities = body.after.get("entities", body.after)
+    changes = _deep_diff(before_entities, after_entities)
+    return {
+        "change_count": len(changes),
+        "changes": changes,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Reward checkpoint
+# ---------------------------------------------------------------------------
+
+
+class RewardCheckpointRequest(BaseModel):
+    name: str
+    score: float = 1.0
+    data: dict[str, Any] = {}
+
+
+@router.post("/reward/checkpoint", status_code=201)
+async def reward_checkpoint(body: RewardCheckpointRequest):
+    rl_state.add_reward_checkpoint(body.name, body.score, body.data)
+    rl_state.event_log.append("reward_checkpoint", {
+        "name": body.name,
+        "score": body.score,
+        "data": body.data,
+    })
+    return {"status": "recorded", "name": body.name, "score": body.score}
+
+
+@router.get("/reward/checkpoints")
+async def list_reward_checkpoints():
+    return {"checkpoints": rl_state._reward_checkpoints}
+
+
+# ---------------------------------------------------------------------------
+# Chaos injection
+# ---------------------------------------------------------------------------
+
+
+class ChaosLatencyRequest(BaseModel):
+    ms: int = 500
+    enabled: bool = True
+
+
+class ChaosErrorRequest(BaseModel):
+    rate: float = 0.1   # 0.0–1.0
+    status_code: int = 500
+    enabled: bool = True
+
+
+class ChaosStaleRequest(BaseModel):
+    enabled: bool = True
+
+
+class ChaosPermissionsRequest(BaseModel):
+    profile: dict[str, Any]
+
+
+@router.post("/chaos/latency")
+async def chaos_latency(body: ChaosLatencyRequest):
+    rl_state.set_chaos_latency(body.ms, body.enabled)
+    rl_state.event_log.append("chaos_latency", {"ms": body.ms, "enabled": body.enabled})
+    return {"status": "ok", "ms": body.ms, "enabled": body.enabled}
+
+
+@router.post("/chaos/errors")
+async def chaos_errors(body: ChaosErrorRequest):
+    rl_state.set_chaos_errors(body.rate, body.status_code, body.enabled)
+    rl_state.event_log.append("chaos_errors", {
+        "rate": body.rate, "status_code": body.status_code, "enabled": body.enabled,
+    })
+    return {"status": "ok", "rate": body.rate, "status_code": body.status_code, "enabled": body.enabled}
+
+
+@router.post("/chaos/stale")
+async def chaos_stale(body: ChaosStaleRequest):
+    rl_state.set_chaos_stale(body.enabled)
+    rl_state.event_log.append("chaos_stale", {"enabled": body.enabled})
+    return {"status": "ok", "enabled": body.enabled}
+
+
+@router.post("/chaos/permissions")
+async def chaos_permissions(body: ChaosPermissionsRequest):
+    rl_state.set_permission_profile(body.profile)
+    rl_state.event_log.append("chaos_permissions", {"profile": body.profile})
+    return {"status": "ok", "profile": body.profile}
+
+
+@router.get("/chaos")
+async def chaos_status():
+    """Return current chaos configuration."""
+    return {
+        "latency": {"ms": rl_state.chaos_latency_ms, "enabled": rl_state.chaos_latency_enabled},
+        "errors": {
+            "rate": rl_state.chaos_error_rate,
+            "status_code": rl_state.chaos_error_status,
+            "enabled": rl_state.chaos_error_enabled,
+        },
+        "stale": {"enabled": rl_state.chaos_stale_enabled},
+        "permissions": rl_state.permission_profile,
+    }

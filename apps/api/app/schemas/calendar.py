@@ -15,6 +15,7 @@ class CalendarUpdate(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
     is_visible: Optional[bool] = None
+    is_shared: Optional[bool] = None
     permission_level: Optional[str] = None
 
 

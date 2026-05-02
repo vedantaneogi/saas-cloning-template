@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
-import { messages, folders, categories, conversations } from '@/lib/api'
+import { messages, folders, categories, conversations, tasks, quickSteps } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
@@ -13,7 +13,7 @@ import { EmailLink } from './EmailLink'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
-import { formatFullDate, formatMessageDate, stripHtml, truncate } from '@/lib/utils'
+import { formatFullDate, formatMessageDate, stripHtml, truncate, trimQuotedReply, cn } from '@/lib/utils'
 import {
   Reply,
   ReplyAll,
@@ -35,6 +35,11 @@ import {
   Maximize2,
   X,
   MessagesSquare,
+  Pin,
+  CheckSquare,
+  Zap,
+  Puzzle,
+  ExternalLink,
 } from 'lucide-react'
 
 function MessageHeader({ message }: { message: Message }) {
@@ -87,6 +92,10 @@ export function ReadingPane() {
 
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [moveMenuOpen, setMoveMenuOpen] = useState(false)
+  const [qsMenuOpen, setQsMenuOpen] = useState(false)
+  const [sweepMenuOpen, setSweepMenuOpen] = useState(false)
+  const [sweepMoveTarget, setSweepMoveTarget] = useState('')
+  const [activeAddin, setActiveAddin] = useState<string | null>(null)
   const [catMenuOpen, setCatMenuOpen] = useState(false)
   const [snoozeOpen, setSnoozeOpen] = useState(false)
   const [threadExpanded, setThreadExpanded] = useState(false)
@@ -102,7 +111,7 @@ export function ReadingPane() {
   const snoozeRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!moreMenuOpen) { setMoveMenuOpen(false); return }
+    if (!moreMenuOpen) { setMoveMenuOpen(false); setQsMenuOpen(false); setSweepMenuOpen(false); return }
     const handler = (e: MouseEvent) => {
       if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
         setMoreMenuOpen(false)
@@ -146,6 +155,22 @@ export function ReadingPane() {
   const { data: categoryList = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: () => categories.list(),
+  })
+
+  const { data: quickStepList = [] } = useQuery({
+    queryKey: ['quick-steps'],
+    queryFn: () => quickSteps.list(),
+  })
+
+  const runQuickStepMutation = useMutation({
+    mutationFn: (qsId: string) => quickSteps.run(qsId, selectedMessageId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      setMoreMenuOpen(false)
+      showNotification('Quick step applied')
+    },
   })
 
   const { data: folderList = [] } = useQuery({
@@ -192,6 +217,24 @@ export function ReadingPane() {
     },
   })
 
+  const flagAsTaskMutation = useMutation({
+    mutationFn: () =>
+      tasks.create({
+        title: message?.subject || 'Follow up',
+        source_message_id: selectedMessageId!,
+        is_flagged: true,
+      } as never),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+  })
+
+  const pinMutation = useMutation({
+    mutationFn: () => messages.update(selectedMessageId!, { is_pinned: !message?.is_pinned }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+    },
+  })
+
   const markReadMutation = useMutation({
     mutationFn: (isRead: boolean) => messages.update(selectedMessageId!, { is_read: isRead }),
     onSuccess: () => {
@@ -217,6 +260,50 @@ export function ReadingPane() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
       queryClient.invalidateQueries({ queryKey: ['messages'] })
+    },
+  })
+
+  const createTaskMutation = useMutation({
+    mutationFn: () =>
+      tasks.create({
+        title: message?.subject || '(no subject)',
+        notes: `From: ${message?.from_address}`,
+      } as never),
+    onSuccess: () => {
+      showNotification('Task created')
+      setMoreMenuOpen(false)
+    },
+  })
+
+  const cleanupThreadMutation = useMutation({
+    mutationFn: () => messages.cleanupThread(message!.conversation_id!),
+    onSuccess: (data) => {
+      const count = (data as { cleaned: number }).cleaned
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['conversation', message?.conversation_id] })
+      setMoreMenuOpen(false)
+      showNotification(count > 0 ? `Cleaned up ${count} redundant message${count !== 1 ? 's' : ''}` : 'No redundant messages found')
+    },
+  })
+
+  const sweepKeepLatestMutation = useMutation({
+    mutationFn: () => messages.sweepKeepLatest(message!.from_address),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      setMoreMenuOpen(false)
+      showNotification(`Sweep: kept 1, removed ${(data as { deleted: number }).deleted}`)
+    },
+  })
+
+  const sweepMoveAllMutation = useMutation({
+    mutationFn: (targetFolderId: string) =>
+      messages.sweepMoveAll(message!.from_address, targetFolderId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      setMoreMenuOpen(false)
+      showNotification(`Moved ${(data as { moved: number }).moved} messages`)
     },
   })
 
@@ -301,9 +388,34 @@ export function ReadingPane() {
 
   if (!message) return null
 
+  const ADDINS = [
+    {
+      id: 'zoom',
+      name: 'Zoom',
+      icon: '🎥',
+      description: 'Join or schedule a Zoom meeting from this message.',
+      actions: ['Join meeting', 'Schedule meeting', 'View recordings'],
+    },
+    {
+      id: 'salesforce',
+      name: 'Salesforce',
+      icon: '☁️',
+      description: 'View related CRM records for contacts in this message.',
+      actions: ['View contact', 'Log email as activity', 'Create opportunity'],
+    },
+    {
+      id: 'asana',
+      name: 'Asana',
+      icon: '📋',
+      description: 'Create or link an Asana task from this message.',
+      actions: ['Create task', 'Add to project', 'View related tasks'],
+    },
+  ]
+
   return (
+    <div className="flex h-full">
     <div
-      className="flex flex-col h-full bg-white"
+      className="flex flex-col flex-1 min-w-0 bg-white"
       data-automation-id="MailReadCompose"
       aria-label="Reading pane"
     >
@@ -365,6 +477,18 @@ export function ReadingPane() {
           className={message.is_flagged ? 'text-[#D13438]' : ''}>
           <Flag size={14} className={message.is_flagged ? 'fill-[#D13438]' : ''} />
         </Button>
+        <Button variant="ghost" size="sm"
+          onClick={() => flagAsTaskMutation.mutate()}
+          disabled={flagAsTaskMutation.isPending}
+          aria-label="Flag as task"
+          title="Add to Tasks">
+          <CheckSquare size={14} />
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => pinMutation.mutate()}
+          aria-label={message.is_pinned ? 'Unpin message' : 'Pin message'}
+          className={message.is_pinned ? 'text-[#0078D4]' : ''}>
+          <Pin size={14} className={message.is_pinned ? 'fill-[#0078D4]' : ''} />
+        </Button>
         <Button variant="ghost" size="sm" onClick={() => markReadMutation.mutate(!message.is_read)}
           aria-label={message.is_read ? 'Mark as unread' : 'Mark as read'}>
           {message.is_read ? <Mail size={14} /> : <MailOpen size={14} />}
@@ -420,7 +544,28 @@ export function ReadingPane() {
                   </div>
                 )}
               </div>
-              <div className="h-px bg-[#EDEBE9]" />
+              {quickStepList.length > 0 && (
+                <>
+                  <div className="relative" onMouseEnter={() => setQsMenuOpen(true)} onMouseLeave={() => setQsMenuOpen(false)}>
+                    <button role="menuitem" className="flex items-center justify-between w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors">
+                      <span className="flex items-center gap-2"><Zap size={14} /> Quick steps</span>
+                      <ChevronRight size={12} className="text-[#605E5C]" />
+                    </button>
+                    {qsMenuOpen && (
+                      <div className="absolute left-full top-0 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg">
+                        {quickStepList.map((qs) => (
+                          <button key={qs.id} role="menuitem" onClick={() => runQuickStepMutation.mutate(qs.id)}
+                            className="w-full text-left text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors truncate flex items-center gap-2">
+                            <Zap size={12} className="text-[#0078D4] flex-shrink-0" />
+                            {qs.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="h-px bg-[#EDEBE9]" />
+                </>
+              )}
               <button role="menuitem" onClick={() => { markReadMutation.mutate(!message.is_read); setMoreMenuOpen(false) }}
                 className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors">
                 {message.is_read ? <Mail size={14} /> : <MailOpen size={14} />}
@@ -430,6 +575,80 @@ export function ReadingPane() {
                 className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors">
                 <Printer size={14} /> Print
               </button>
+              <button
+                role="menuitem"
+                aria-label="Create task from message"
+                onClick={() => createTaskMutation.mutate()}
+                className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors"
+              >
+                <CheckSquare size={14} /> Create task
+              </button>
+              {message?.conversation_id && (
+                <button
+                  role="menuitem"
+                  aria-label="Clean up conversation"
+                  onClick={() => cleanupThreadMutation.mutate()}
+                  disabled={cleanupThreadMutation.isPending}
+                  className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors disabled:opacity-50"
+                >
+                  <MessagesSquare size={14} /> Clean up conversation
+                </button>
+              )}
+              <div className="h-px bg-[#EDEBE9]" />
+              <div
+                className="relative"
+                onMouseEnter={() => { setSweepMenuOpen(true); setSweepMoveTarget(folderList[0]?.id ?? '') }}
+                onMouseLeave={() => setSweepMenuOpen(false)}
+              >
+                <button
+                  role="menuitem"
+                  aria-label="Sweep — manage messages from this sender"
+                  className="flex items-center justify-between w-full text-sm text-[#D13438] px-3 py-2 hover:bg-[#FDE7E9] transition-colors"
+                >
+                  <span className="flex items-center gap-2"><Trash2 size={14} /> Sweep</span>
+                  <ChevronRight size={12} />
+                </button>
+                {sweepMenuOpen && (
+                  <div className="absolute left-full top-0 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg z-50">
+                    <p className="px-3 py-2 text-xs font-semibold text-[#605E5C] border-b border-[#EDEBE9]">
+                      Messages from {message?.from_address}
+                    </p>
+                    <button
+                      role="menuitem"
+                      onClick={() => sweepKeepLatestMutation.mutate()}
+                      disabled={sweepKeepLatestMutation.isPending}
+                      className="flex items-start gap-2 w-full text-left px-3 py-2.5 hover:bg-[#F3F2F1] transition-colors"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-[#323130]">Keep latest, delete rest</p>
+                        <p className="text-xs text-[#605E5C]">Keep only the most recent message</p>
+                      </div>
+                    </button>
+                    <div className="h-px bg-[#EDEBE9]" />
+                    <div className="px-3 py-2">
+                      <p className="text-sm font-medium text-[#323130] mb-1.5">Move all to folder</p>
+                      <select
+                        value={sweepMoveTarget}
+                        onChange={(e) => setSweepMoveTarget(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-[#0078D4]"
+                      >
+                        {folderList.map((f) => (
+                          <option key={f.id} value={f.id}>{f.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        role="menuitem"
+                        onClick={() => sweepMoveTarget && sweepMoveAllMutation.mutate(sweepMoveTarget)}
+                        disabled={!sweepMoveTarget || sweepMoveAllMutation.isPending}
+                        className="w-full text-xs font-medium bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white px-2 py-1.5 rounded transition-colors"
+                      >
+                        {sweepMoveAllMutation.isPending ? 'Moving…' : 'Move all'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -486,7 +705,9 @@ export function ReadingPane() {
                       {expandedThreadMsgId === msg.id && (
                         <div
                           className="px-4 py-3 text-sm text-[#323130] prose prose-sm max-w-none bg-white border-t border-[#EDEBE9]"
-                          dangerouslySetInnerHTML={{ __html: msg.body_html ?? msg.body_text?.replace(/\n/g, '<br/>') ?? '' }}
+                          dangerouslySetInnerHTML={{
+                            __html: trimQuotedReply(msg.body_html ?? msg.body_text?.replace(/\n/g, '<br/>') ?? '')
+                          }}
                         />
                       )}
                     </div>
@@ -608,6 +829,86 @@ export function ReadingPane() {
           </Button>
         </div>
       )}
+    </div>
+
+    {/* Add-ins rail */}
+    <div className="flex flex-shrink-0 border-l border-[#EDEBE9]">
+      {/* Icon buttons */}
+      <div className="w-9 flex flex-col items-center py-2 gap-1 bg-[#FAF9F8]">
+        {ADDINS.map((addin) => (
+          <button
+            key={addin.id}
+            type="button"
+            title={addin.name}
+            aria-label={addin.name}
+            aria-pressed={activeAddin === addin.id}
+            onClick={() => setActiveAddin(activeAddin === addin.id ? null : addin.id)}
+            className={cn(
+              'w-7 h-7 flex items-center justify-center rounded text-base transition-colors',
+              activeAddin === addin.id
+                ? 'bg-[#EBF3FB] ring-1 ring-[#0078D4]'
+                : 'hover:bg-[#EDEBE9]'
+            )}
+          >
+            {addin.icon}
+          </button>
+        ))}
+        <div className="mt-auto">
+          <button
+            type="button"
+            title="Get more add-ins"
+            aria-label="Get more add-ins"
+            className="w-7 h-7 flex items-center justify-center rounded text-[#A19F9D] hover:bg-[#EDEBE9] transition-colors"
+          >
+            <Puzzle size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded add-in panel */}
+      {activeAddin && (() => {
+        const addin = ADDINS.find((a) => a.id === activeAddin)!
+        return (
+          <div className="w-52 flex flex-col border-l border-[#EDEBE9] bg-white overflow-y-auto outlook-scrollbar">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8]">
+              <span className="text-sm font-semibold text-[#323130] flex items-center gap-1.5">
+                <span>{addin.icon}</span> {addin.name}
+              </span>
+              <button
+                type="button"
+                aria-label={`Close ${addin.name}`}
+                onClick={() => setActiveAddin(null)}
+                className="text-[#605E5C] hover:text-[#323130]"
+              >
+                <X size={13} />
+              </button>
+            </div>
+            <div className="p-3 flex-1">
+              <p className="text-xs text-[#605E5C] mb-3">{addin.description}</p>
+              <div className="space-y-1.5">
+                {addin.actions.map((action) => (
+                  <button
+                    key={action}
+                    type="button"
+                    aria-label={action}
+                    className="w-full text-left text-xs text-[#0078D4] hover:bg-[#EBF3FB] px-2 py-1.5 rounded flex items-center gap-1.5 transition-colors"
+                    onClick={() => showNotification(`${addin.name}: ${action} (stub)`)}
+                  >
+                    <ExternalLink size={11} className="flex-shrink-0" />
+                    {action}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="px-3 py-2 border-t border-[#EDEBE9]">
+              <p className="text-[10px] text-[#A19F9D]">
+                This is a demo stub. Connect your {addin.name} account in Settings.
+              </p>
+            </div>
+          </div>
+        )
+      })()}
+    </div>
     </div>
   )
 }

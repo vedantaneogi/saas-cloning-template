@@ -9,6 +9,7 @@ from app.models.task import Task, TaskList
 from app.models.rule import Rule
 from app.models.signature import Signature
 from app.models.quick_step import QuickStep
+from app.models.group import Group, GroupMember
 
 __all__ = [
     "User",
@@ -28,4 +29,6 @@ __all__ = [
     "Rule",
     "Signature",
     "QuickStep",
+    "Group",
+    "GroupMember",
 ]

@@ -52,14 +52,14 @@ export default function CalendarPage() {
 
   const { start, end } = getDateRange()
 
-  const { data: eventList = [] } = useQuery({
-    queryKey: ['events', view, start, end],
-    queryFn: () => events.list({ start, end }),
-  })
-
   const { data: calendarList = [] } = useQuery({
     queryKey: ['calendars'],
     queryFn: () => calendars.list(),
+  })
+
+  const { data: eventList = [] } = useQuery({
+    queryKey: ['events', view, start, end],
+    queryFn: () => events.list({ start, end }),
   })
 
   const handleSlotClick = (date: Date) => {

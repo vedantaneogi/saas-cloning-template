@@ -8,6 +8,8 @@ import { OOFSettings } from '@/components/settings/OOFSettings'
 import { CategorySettings } from '@/components/settings/CategorySettings'
 import { GeneralSettings } from '@/components/settings/GeneralSettings'
 import { MailSettings } from '@/components/settings/MailSettings'
+import { QuickStepSettings } from '@/components/settings/QuickStepSettings'
+import { DelegateSettings } from '@/components/settings/DelegateSettings'
 
 export default function SettingsPage() {
   const params = useParams()
@@ -25,6 +27,10 @@ export default function SettingsPage() {
         return <CategorySettings />
       case 'mail':
         return <MailSettings />
+      case 'quick-steps':
+        return <QuickStepSettings />
+      case 'delegates':
+        return <DelegateSettings />
       case 'general':
       default:
         return <GeneralSettings />

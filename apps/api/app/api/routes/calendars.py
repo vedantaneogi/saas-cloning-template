@@ -78,6 +78,8 @@ async def update_calendar(
         cal.color = body.color
     if body.is_visible is not None:
         cal.is_visible = body.is_visible
+    if body.is_shared is not None:
+        cal.is_shared = body.is_shared
     if body.permission_level is not None:
         cal.permission_level = body.permission_level
 
@@ -102,3 +104,68 @@ async def delete_calendar(
     await db.delete(cal)
     await db.flush()
     rl_state.event_log.append("calendar_deleted", {"id": str(calendar_id)})
+
+
+from pydantic import BaseModel  # noqa: E402
+
+
+class SubscribeRequest(BaseModel):
+    email: str
+
+
+@router.post("/subscribe", response_model=CalendarOut, status_code=status.HTTP_201_CREATED)
+async def subscribe_calendar(
+    body: SubscribeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Subscribe to another user's default calendar (overlay it on your grid)."""
+    # Find the target user by email
+    owner_result = await db.execute(select(User).where(User.email == body.email))
+    owner = owner_result.scalar_one_or_none()
+    if not owner:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_found", "message": f"No user with email {body.email!r}"}},
+        )
+    if owner.id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "invalid", "message": "Cannot subscribe to your own calendar"}},
+        )
+
+    # Check not already subscribed
+    existing = await db.execute(
+        select(Calendar).where(
+            Calendar.user_id == current_user.id,
+            Calendar.shared_by_user_id == owner.id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail={"error": {"code": "already_subscribed", "message": "Already subscribed to this calendar"}},
+        )
+
+    now = rl_state.clock.now()
+    cal = Calendar(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        name=f"{owner.display_name}'s calendar",
+        color="#8764B8",
+        is_default=False,
+        is_shared=False,
+        shared_by_user_id=owner.id,
+        permission_level="read",
+        is_visible=True,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(cal)
+    await db.flush()
+    rl_state.event_log.append("calendar_subscribed", {
+        "id": str(cal.id),
+        "owner_id": str(owner.id),
+        "owner_email": body.email,
+    })
+    return CalendarOut.model_validate(cal)

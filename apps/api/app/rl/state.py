@@ -175,6 +175,18 @@ class RLState:
         self._seed_entity_counts: dict[str, int] = {}
         # Active user id (set after seed loads user into DB)
         self.active_user_id: Optional[str] = None
+        # Chaos configuration
+        self.chaos_latency_ms: int = 0
+        self.chaos_latency_enabled: bool = False
+        self.chaos_error_rate: float = 0.0
+        self.chaos_error_status: int = 500
+        self.chaos_error_enabled: bool = False
+        self.chaos_stale_enabled: bool = False
+        # Metrics counters
+        self._request_count: int = 0
+        self._seed_count: int = 0
+        self._verify_count: int = 0
+        self._reward_checkpoints: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Readiness
@@ -277,6 +289,96 @@ class RLState:
                 "actual": None,
                 "diagnostic": f"Error resolving path {path!r}: {exc}",
             }
+
+
+    # ------------------------------------------------------------------
+    # Chaos helpers
+    # ------------------------------------------------------------------
+
+    def set_chaos_latency(self, ms: int, enabled: bool) -> None:
+        self.chaos_latency_ms = ms
+        self.chaos_latency_enabled = enabled
+
+    def set_chaos_errors(self, rate: float, status_code: int, enabled: bool) -> None:
+        self.chaos_error_rate = max(0.0, min(1.0, rate))
+        self.chaos_error_status = status_code
+        self.chaos_error_enabled = enabled
+
+    def set_chaos_stale(self, enabled: bool) -> None:
+        self.chaos_stale_enabled = enabled
+
+    def should_inject_error(self) -> bool:
+        if not self.chaos_error_enabled or self.chaos_error_rate <= 0:
+            return False
+        import random
+        return random.random() < self.chaos_error_rate
+
+    # ------------------------------------------------------------------
+    # Metrics helpers
+    # ------------------------------------------------------------------
+
+    def inc_request_count(self) -> None:
+        self._request_count += 1
+
+    def inc_seed_count(self) -> None:
+        self._seed_count += 1
+
+    def inc_verify_count(self) -> None:
+        self._verify_count += 1
+
+    def add_reward_checkpoint(self, name: str, score: float, data: dict[str, Any]) -> None:
+        self._reward_checkpoints.append({
+            "id": str(uuid.uuid4()),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "name": name,
+            "score": score,
+            "data": data,
+        })
+
+    def get_metrics_text(self) -> str:
+        """Return Prometheus text-format metrics."""
+        lines = [
+            "# HELP outlook_clone_requests_total Total HTTP requests handled",
+            "# TYPE outlook_clone_requests_total counter",
+            f"outlook_clone_requests_total {self._request_count}",
+            "",
+            "# HELP outlook_clone_seed_loads_total Total POST /seed calls",
+            "# TYPE outlook_clone_seed_loads_total counter",
+            f"outlook_clone_seed_loads_total {self._seed_count}",
+            "",
+            "# HELP outlook_clone_verify_calls_total Total POST /verify calls",
+            "# TYPE outlook_clone_verify_calls_total counter",
+            f"outlook_clone_verify_calls_total {self._verify_count}",
+            "",
+            "# HELP outlook_clone_events_total Total RL events logged",
+            "# TYPE outlook_clone_events_total counter",
+            f"outlook_clone_events_total {self.event_log._counter}",
+            "",
+            "# HELP outlook_clone_reward_checkpoints_total Total reward checkpoints recorded",
+            "# TYPE outlook_clone_reward_checkpoints_total counter",
+            f"outlook_clone_reward_checkpoints_total {len(self._reward_checkpoints)}",
+            "",
+            "# HELP outlook_clone_entity_count Number of seeded entities by type",
+            "# TYPE outlook_clone_entity_count gauge",
+        ]
+        for entity, count in self._seed_entity_counts.items():
+            lines.append(f'outlook_clone_entity_count{{entity="{entity}"}} {count}')
+        lines += [
+            "",
+            "# HELP outlook_clone_chaos_latency_ms Active chaos latency injection in milliseconds",
+            "# TYPE outlook_clone_chaos_latency_ms gauge",
+            f"outlook_clone_chaos_latency_ms {self.chaos_latency_ms if self.chaos_latency_enabled else 0}",
+            "",
+            "# HELP outlook_clone_chaos_error_rate Active chaos error injection rate",
+            "# TYPE outlook_clone_chaos_error_rate gauge",
+            f"outlook_clone_chaos_error_rate {self.chaos_error_rate if self.chaos_error_enabled else 0}",
+            "",
+            "# HELP outlook_clone_ready Whether the environment is ready (1=yes 0=no)",
+            "# TYPE outlook_clone_ready gauge",
+            f"outlook_clone_ready {1 if self._is_ready else 0}",
+            "",
+        ]
+        return "\n".join(lines)
 
 
 # Global singleton

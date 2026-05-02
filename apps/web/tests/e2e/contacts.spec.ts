@@ -10,6 +10,8 @@ test.describe('Contacts — P0 Features', () => {
     await page.click('[type="submit"]');
     await page.waitForURL(`${BASE}/mail/inbox`);
     await page.goto(`${BASE}/contacts`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('[aria-label="Contact list"]').waitFor({ timeout: 10000 });
   });
 
   test('Contact list loads', async ({ page }) => {

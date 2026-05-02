@@ -122,3 +122,18 @@ class BulkRequest(BaseModel):
     message_ids: list[uuid.UUID]
     action: str  # mark_read, mark_unread, delete, move, flag, unflag, categorize
     params: Optional[dict[str, Any]] = None
+
+
+class SweepKeepLatestRequest(BaseModel):
+    sender_email: str
+    folder_id: Optional[uuid.UUID] = None  # None = search all folders
+
+
+class SweepMoveAllRequest(BaseModel):
+    sender_email: str
+    target_folder_id: uuid.UUID
+    source_folder_id: Optional[uuid.UUID] = None  # None = all folders
+
+
+class CleanUpThreadRequest(BaseModel):
+    conversation_id: uuid.UUID

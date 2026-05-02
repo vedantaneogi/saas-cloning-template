@@ -1,8 +1,9 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File as FastAPIFile, status
+from fastapi.responses import Response
 from sqlalchemy import and_, cast, desc, func, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,9 @@ from app.schemas.message import (
     MessageUpdate,
     MoveRequest,
     ReplyRequest,
+    CleanUpThreadRequest,
+    SweepKeepLatestRequest,
+    SweepMoveAllRequest,
 )
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
@@ -73,6 +77,7 @@ async def list_messages(
     is_flagged: Optional[bool] = None,
     importance: Optional[str] = None,
     search: Optional[str] = None,
+    from_addr: Optional[str] = None,
     sort: str = "received_at:desc",
     cursor: Optional[str] = None,
     limit: int = Query(default=50, le=200),
@@ -90,6 +95,8 @@ async def list_messages(
         filters.append(Message.is_flagged == is_flagged)
     if importance:
         filters.append(Message.importance == importance)
+    if from_addr:
+        filters.append(Message.from_address.ilike(f"%{from_addr}%"))
     if search:
         term = f"%{search}%"
         filters.append(
@@ -155,6 +162,68 @@ async def list_messages(
         next_cursor=next_cursor,
         total_count=total,
     )
+
+
+@router.get("/needs-followup", response_model=MessageList)
+async def needs_followup(
+    days: int = Query(default=3, ge=1, le=90),
+    limit: int = Query(default=50, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return sent messages with no reply received after `days` days."""
+    cutoff = rl_state.clock.now() - timedelta(days=days)
+
+    # Find the sent folder
+    sent_folder = await _get_folder_by_slug(db, "sent", current_user.id)
+    if not sent_folder:
+        return MessageList(items=[], next_cursor=None, total_count=0)
+
+    # Subquery: message IDs that have at least one reply
+    replied_subq = (
+        select(Message.in_reply_to_id)
+        .where(
+            Message.user_id == current_user.id,
+            Message.in_reply_to_id.is_not(None),
+        )
+        .scalar_subquery()
+    )
+
+    filters = [
+        Message.user_id == current_user.id,
+        Message.folder_id == sent_folder.id,
+        Message.sent_at.is_not(None),
+        Message.sent_at <= cutoff,
+        Message.id.not_in(replied_subq),
+    ]
+
+    total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
+    total = total_result.scalar() or 0
+
+    result = await db.execute(
+        select(Message).where(*filters).order_by(desc(Message.sent_at)).limit(limit)
+    )
+    items = list(result.scalars().all())
+
+    msg_ids = [m.id for m in items]
+    cats_map: dict[uuid.UUID, list[CategoryOut]] = {}
+    if msg_ids:
+        cats_result = await db.execute(
+            select(MessageCategory.message_id, Category)
+            .join(Category, Category.id == MessageCategory.category_id)
+            .where(MessageCategory.message_id.in_(msg_ids))
+        )
+        for row in cats_result.all():
+            mid, cat = row
+            cats_map.setdefault(mid, []).append(CategoryOut.model_validate(cat))
+
+    msg_outs = []
+    for m in items:
+        out = MessageOut.model_validate(m)
+        out.categories = cats_map.get(m.id, [])
+        msg_outs.append(out)
+
+    return MessageList(items=msg_outs, next_cursor=None, total_count=total)
 
 
 @router.get("/search", response_model=MessageList)
@@ -609,6 +678,31 @@ async def list_attachments(
     return [AttachmentOut.model_validate(a) for a in result.scalars().all()]
 
 
+@router.get("/{message_id}/attachments/{attachment_id}/download")
+async def download_attachment(
+    message_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _get_message_or_404(db, message_id, current_user.id)
+    result = await db.execute(
+        select(Attachment).where(
+            Attachment.id == attachment_id,
+            Attachment.message_id == message_id,
+        )
+    )
+    att = result.scalar_one_or_none()
+    if not att:
+        raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "Attachment not found"}})
+    # Return empty body with correct content-disposition — real content would come from storage
+    return Response(
+        content=b"",
+        media_type=att.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{att.filename}"'},
+    )
+
+
 @router.post("/{message_id}/attachments", response_model=AttachmentOut, status_code=status.HTTP_201_CREATED)
 async def upload_attachment(
     message_id: uuid.UUID,
@@ -635,3 +729,143 @@ async def upload_attachment(
     await db.flush()
     rl_state.event_log.append("attachment_uploaded", {"message_id": str(message_id), "filename": attachment.filename})
     return AttachmentOut.model_validate(attachment)
+
+
+# ---------------------------------------------------------------------------
+# Sweep endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/sweep/keep-latest")
+async def sweep_keep_latest(
+    body: SweepKeepLatestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Keep only the most recent message from a sender; move the rest to Deleted Items."""
+    q = select(Message).where(
+        Message.user_id == current_user.id,
+        Message.from_address.ilike(body.sender_email),
+    )
+    if body.folder_id:
+        q = q.where(Message.folder_id == body.folder_id)
+    q = q.order_by(desc(Message.received_at))
+
+    result = await db.execute(q)
+    msgs = result.scalars().all()
+
+    if not msgs:
+        return {"deleted": 0, "kept": 0}
+
+    deleted_result = await db.execute(
+        select(Folder).where(Folder.user_id == current_user.id, Folder.slug == "deleted")
+    )
+    deleted_folder = deleted_result.scalar_one_or_none()
+
+    kept = msgs[0]  # most recent — keep as-is
+    deleted_count = 0
+    for msg in msgs[1:]:
+        if deleted_folder:
+            msg.folder_id = deleted_folder.id
+        else:
+            await db.delete(msg)
+        deleted_count += 1
+
+    await db.flush()
+    rl_state.event_log.append("sweep_keep_latest", {
+        "sender": body.sender_email,
+        "kept": str(kept.id),
+        "deleted": deleted_count,
+    })
+    return {"deleted": deleted_count, "kept": 1}
+
+
+@router.post("/sweep/move-all")
+async def sweep_move_all(
+    body: SweepMoveAllRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Move all messages from a sender to a target folder."""
+    # Validate target folder belongs to user
+    tf_result = await db.execute(
+        select(Folder).where(Folder.id == body.target_folder_id, Folder.user_id == current_user.id)
+    )
+    if not tf_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_found", "message": "Target folder not found"}},
+        )
+
+    q = select(Message).where(
+        Message.user_id == current_user.id,
+        Message.from_address.ilike(body.sender_email),
+    )
+    if body.source_folder_id:
+        q = q.where(Message.folder_id == body.source_folder_id)
+
+    result = await db.execute(q)
+    msgs = result.scalars().all()
+
+    for msg in msgs:
+        msg.folder_id = body.target_folder_id
+
+    await db.flush()
+    rl_state.event_log.append("sweep_move_all", {
+        "sender": body.sender_email,
+        "target_folder_id": str(body.target_folder_id),
+        "moved": len(msgs),
+    })
+    return {"moved": len(msgs)}
+
+
+@router.post("/cleanup-thread")
+async def cleanup_thread(
+    body: CleanUpThreadRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Clean Up Conversation: delete messages whose full body text is already
+    quoted (contained) in a later message in the same thread.
+    Redundant messages are moved to Deleted Items.
+    """
+    result = await db.execute(
+        select(Message)
+        .where(
+            Message.conversation_id == body.conversation_id,
+            Message.user_id == current_user.id,
+        )
+        .order_by(Message.received_at)
+    )
+    msgs = result.scalars().all()
+
+    if len(msgs) <= 1:
+        return {"cleaned": 0}
+
+    deleted_folder_result = await db.execute(
+        select(Folder).where(Folder.user_id == current_user.id, Folder.slug == "deleted")
+    )
+    deleted_folder = deleted_folder_result.scalar_one_or_none()
+
+    cleaned = 0
+    # For each message (oldest first), check if its plain-text body is fully
+    # contained within any later message's body — if so it is redundant.
+    for i, msg in enumerate(msgs[:-1]):  # never delete the newest
+        body_text = (msg.body_text or "").strip()
+        if not body_text:
+            continue
+        later_bodies = " ".join((m.body_text or "") for m in msgs[i + 1:])
+        if body_text in later_bodies:
+            if deleted_folder:
+                msg.folder_id = deleted_folder.id
+            else:
+                await db.delete(msg)
+            cleaned += 1
+
+    await db.flush()
+    rl_state.event_log.append("cleanup_thread", {
+        "conversation_id": str(body.conversation_id),
+        "cleaned": cleaned,
+    })
+    return {"cleaned": cleaned}

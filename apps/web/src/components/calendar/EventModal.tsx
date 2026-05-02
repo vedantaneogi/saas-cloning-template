@@ -6,12 +6,12 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { events, calendars } from '@/lib/api'
-import type { Event } from '@/lib/api'
+import { events, calendars, contacts } from '@/lib/api'
+import type { Event, Contact } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon } from 'lucide-react'
+import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const schema = z.object({
@@ -158,6 +158,10 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     mutationFn: ({ data, scope }: { data: FormValues; scope?: 'single' | 'series' }) => {
       const payload = buildPayload(data)
       if (event) {
+        // For single-occurrence edits, target the parent and pass the occurrence start time
+        if (scope === 'single' && event.recurrence_parent_id) {
+          return events.update(event.recurrence_parent_id, payload, scope, event.start_time)
+        }
         return events.update(event.id, payload, scope)
       }
       return events.create(payload)
@@ -170,7 +174,12 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (scope?: 'single' | 'series') => events.delete(event!.id, scope),
+    mutationFn: (scope?: 'single' | 'series') => {
+      if (scope === 'single' && event!.recurrence_parent_id) {
+        return events.delete(event!.recurrence_parent_id, scope, event!.start_time)
+      }
+      return events.delete(event!.id, scope)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] })
       setScopeDialog(null)
@@ -185,6 +194,20 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
       queryClient.invalidateQueries({ queryKey: ['events'] })
     },
   })
+
+  const proposeMutation = useMutation({
+    mutationFn: ({ start_time, end_time }: { start_time: string; end_time: string }) =>
+      events.proposeTime(event!.id, start_time, end_time),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      setProposeOpen(false)
+    },
+  })
+
+  const [proposeOpen, setProposeOpen] = useState(false)
+  const [proposeStart, setProposeStart] = useState('')
+  const [proposeEnd, setProposeEnd] = useState('')
+
 
   const handleSaveClick = (data: FormValues) => {
     if (event?.is_recurring) {
@@ -204,6 +227,74 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
 
   const attendees = event?.attendees ?? []
   const myAttendee = attendees.find((a) => !a.is_organizer)
+
+  // Attendees invite field
+  const [inviteQuery, setInviteQuery] = useState('')
+  const [inviteResults, setInviteResults] = useState<Contact[]>([])
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [invitedAttendees, setInvitedAttendees] = useState<{ email: string; name: string }[]>([])
+
+  const handleInviteSearch = async (q: string) => {
+    setInviteQuery(q)
+    if (q.trim().length < 2) { setInviteResults([]); setInviteOpen(false); return }
+    try {
+      const res = await contacts.autocomplete(q)
+      setInviteResults(res)
+      setInviteOpen(res.length > 0)
+    } catch { setInviteResults([]); setInviteOpen(false) }
+  }
+
+  const addInvitee = (contact: Contact) => {
+    if (!invitedAttendees.find((a) => a.email === contact.email)) {
+      setInvitedAttendees((prev) => [...prev, { email: contact.email, name: contact.display_name }])
+    }
+    setInviteQuery('')
+    setInviteResults([])
+    setInviteOpen(false)
+  }
+
+  const removeInvitee = (email: string) => {
+    setInvitedAttendees((prev) => prev.filter((a) => a.email !== email))
+  }
+
+  // Room finder
+  const [roomFinderOpen, setRoomFinderOpen] = useState(false)
+  const [roomQuery, setRoomQuery] = useState('')
+
+  const ROOMS = [
+    { id: 'r1', name: 'Boardroom A', building: 'HQ – Floor 3', capacity: 20, features: ['Projector', 'Video conf'] },
+    { id: 'r2', name: 'Boardroom B', building: 'HQ – Floor 3', capacity: 12, features: ['Whiteboard', 'Video conf'] },
+    { id: 'r3', name: 'Focus Room 1', building: 'HQ – Floor 2', capacity: 4, features: ['TV screen'] },
+    { id: 'r4', name: 'Focus Room 2', building: 'HQ – Floor 2', capacity: 4, features: ['TV screen'] },
+    { id: 'r5', name: 'Training Room', building: 'HQ – Floor 1', capacity: 30, features: ['Projector', 'Whiteboard'] },
+    { id: 'r6', name: 'East Wing Conf', building: 'East Wing – Floor 1', capacity: 8, features: ['Video conf'] },
+    { id: 'r7', name: 'West Wing Conf', building: 'West Wing – Floor 2', capacity: 10, features: ['Whiteboard', 'Video conf'] },
+  ]
+
+  const filteredRooms = roomQuery.trim()
+    ? ROOMS.filter(
+        (r) =>
+          r.name.toLowerCase().includes(roomQuery.toLowerCase()) ||
+          r.building.toLowerCase().includes(roomQuery.toLowerCase()) ||
+          r.features.some((f) => f.toLowerCase().includes(roomQuery.toLowerCase()))
+      )
+    : ROOMS
+
+  // Scheduling assistant
+  const [schedulerOpen, setSchedulerOpen] = useState(false)
+  const startVal = watch('start_time')
+  const endVal = watch('end_time')
+  const attendeeEmails = attendees.map((a) => a.email).filter(Boolean)
+
+  const { data: availabilityData, refetch: fetchAvailability, isFetching: availabilityLoading } = useQuery({
+    queryKey: ['availability', attendeeEmails, startVal, endVal],
+    queryFn: () => events.getAvailability(
+      attendeeEmails,
+      startVal ? new Date(startVal).toISOString() : new Date().toISOString(),
+      endVal ? new Date(endVal).toISOString() : new Date().toISOString(),
+    ),
+    enabled: false,
+  })
 
   return (
     <Modal
@@ -308,6 +399,67 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           >
             <XIcon size={11} /> Decline
           </button>
+          <button
+            type="button"
+            aria-label="Propose new time"
+            onClick={() => {
+              setProposeStart(event ? formatDateTimeLocal(new Date(event.start_time)) : '')
+              setProposeEnd(event ? formatDateTimeLocal(new Date(event.end_time)) : '')
+              setProposeOpen(true)
+            }}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-[#D2D0CE] text-[#323130] hover:bg-[#F3F2F1] transition-colors"
+          >
+            <Clock size={11} /> Propose new time
+          </button>
+        </div>
+      )}
+
+      {/* Propose new time dialog */}
+      {proposeOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Propose new time"
+          className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 rounded"
+        >
+          <div className="bg-white rounded shadow-outlook-lg border border-[#EDEBE9] p-6 max-w-sm w-full mx-4">
+            <h3 className="text-base font-semibold text-[#323130] mb-4">Propose new time</h3>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-[#605E5C] mb-1">Start</label>
+                <input
+                  type="datetime-local"
+                  value={proposeStart}
+                  onChange={(e) => setProposeStart(e.target.value)}
+                  className="w-full border border-[#8A8886] rounded px-3 py-1.5 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#605E5C] mb-1">End</label>
+                <input
+                  type="datetime-local"
+                  value={proposeEnd}
+                  onChange={(e) => setProposeEnd(e.target.value)}
+                  className="w-full border border-[#8A8886] rounded px-3 py-1.5 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                loading={proposeMutation.isPending}
+                onClick={() => proposeMutation.mutate({
+                  start_time: new Date(proposeStart).toISOString(),
+                  end_time: new Date(proposeEnd).toISOString(),
+                })}
+              >
+                Send proposal
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setProposeOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -328,6 +480,50 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           {errors.title && (
             <p className="text-xs text-[#D13438] mt-1">{errors.title.message}</p>
           )}
+        </div>
+
+        {/* Attendees */}
+        <div className="flex items-start gap-3">
+          <span className="w-5 text-[#605E5C] pt-2">
+            <Users size={16} />
+          </span>
+          <div className="flex-1 relative">
+            <div className="flex flex-wrap gap-1 min-h-[34px] border border-[#EDEBE9] rounded px-2 py-1 focus-within:ring-2 focus-within:ring-[#0078D4] bg-white">
+              {invitedAttendees.map((a) => (
+                <span key={a.email} className="flex items-center gap-1 bg-[#EBF3FB] text-[#0078D4] text-xs px-1.5 py-0.5 rounded">
+                  {a.name || a.email}
+                  <button type="button" onClick={() => removeInvitee(a.email)} aria-label={`Remove ${a.name}`} className="hover:text-[#D13438]">
+                    <XIcon size={10} />
+                  </button>
+                </span>
+              ))}
+              <input
+                type="text"
+                value={inviteQuery}
+                onChange={(e) => handleInviteSearch(e.target.value)}
+                onFocus={() => inviteResults.length > 0 && setInviteOpen(true)}
+                onBlur={() => setTimeout(() => setInviteOpen(false), 150)}
+                placeholder={invitedAttendees.length === 0 ? 'Invite required attendees' : ''}
+                aria-label="Invite required attendees"
+                className="flex-1 min-w-[160px] text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent py-0.5"
+              />
+            </div>
+            {inviteOpen && inviteResults.length > 0 && (
+              <div className="absolute left-0 top-full mt-0.5 z-50 w-full bg-white border border-[#EDEBE9] rounded shadow-outlook-lg max-h-48 overflow-y-auto">
+                {inviteResults.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={() => addInvitee(c)}
+                    className="w-full text-left px-3 py-2 hover:bg-[#F3F2F1] transition-colors"
+                  >
+                    <p className="text-sm font-medium text-[#323130]">{c.display_name}</p>
+                    <p className="text-xs text-[#605E5C]">{c.email}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Calendar */}
@@ -493,20 +689,124 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           />
         </div>
 
-        {/* Online meeting */}
+        {/* Room finder */}
+        <div className="flex items-start gap-3">
+          <span className="w-5 text-[#605E5C] pt-1">
+            <Building2 size={16} />
+          </span>
+          <div className="flex-1">
+            <button
+              type="button"
+              aria-label="Find a room"
+              aria-expanded={roomFinderOpen}
+              onClick={() => setRoomFinderOpen((v) => !v)}
+              className={cn(
+                'text-sm px-2 py-1 rounded border transition-colors flex items-center gap-1.5',
+                roomFinderOpen
+                  ? 'border-[#0078D4] text-[#0078D4] bg-[#EBF3FB]'
+                  : 'border-[#D2D0CE] text-[#605E5C] hover:bg-[#F3F2F1]'
+              )}
+            >
+              <Building2 size={13} /> Find a room
+            </button>
+
+            {roomFinderOpen && (
+              <div className="mt-2 border border-[#EDEBE9] rounded overflow-hidden">
+                {/* Search */}
+                <div className="flex items-center gap-2 px-2 py-1.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
+                  <Search size={12} className="text-[#A19F9D] flex-shrink-0" />
+                  <input
+                    type="text"
+                    value={roomQuery}
+                    onChange={(e) => setRoomQuery(e.target.value)}
+                    placeholder="Search rooms…"
+                    aria-label="Search rooms"
+                    className="flex-1 text-xs text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent"
+                  />
+                  {roomQuery && (
+                    <button type="button" onClick={() => setRoomQuery('')} className="text-[#A19F9D] hover:text-[#323130]">
+                      <XIcon size={11} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Room list */}
+                <div className="max-h-48 overflow-y-auto outlook-scrollbar">
+                  {filteredRooms.length === 0 ? (
+                    <p className="text-xs text-[#A19F9D] px-3 py-3">No rooms match your search.</p>
+                  ) : (
+                    filteredRooms.map((room) => (
+                      <button
+                        key={room.id}
+                        type="button"
+                        aria-label={`Select ${room.name}`}
+                        onClick={() => {
+                          setValue('location', `${room.name}, ${room.building}`)
+                          setRoomFinderOpen(false)
+                          setRoomQuery('')
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-[#F3F2F1] transition-colors border-b border-[#EDEBE9] last:border-0"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-[#323130] truncate">{room.name}</p>
+                            <p className="text-xs text-[#605E5C] truncate">{room.building}</p>
+                          </div>
+                          <div className="flex-shrink-0 text-right">
+                            <p className="text-xs text-[#605E5C]">Cap. {room.capacity}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {room.features.map((f) => (
+                            <span key={f} className="text-xs bg-[#EDEBE9] text-[#605E5C] px-1.5 py-0.5 rounded">
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Online meeting — Teams toggle */}
         <div className="flex items-center gap-3">
-          <span className="w-5 text-[#605E5C]">
+          <span className="w-5 text-[#6264A7]">
             <Video size={16} />
           </span>
-          <label className="flex items-center gap-2 text-sm text-[#323130]">
-            <input
-              type="checkbox"
-              aria-label="Online meeting"
-              className="rounded border-[#D2D0CE]"
-              {...register('is_online_meeting')}
-            />
-            Add online meeting
-          </label>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={watch('is_online_meeting')}
+              aria-label="Teams meeting toggle"
+              onClick={() => setValue('is_online_meeting', !watch('is_online_meeting'))}
+              className={cn(
+                'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#6264A7] focus:ring-offset-1',
+                watch('is_online_meeting') ? 'bg-[#6264A7]' : 'bg-[#D2D0CE]'
+              )}
+            >
+              <span
+                className={cn(
+                  'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200',
+                  watch('is_online_meeting') ? 'translate-x-4' : 'translate-x-0'
+                )}
+              />
+            </button>
+            <span className="text-sm text-[#323130]">
+              {watch('is_online_meeting') ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="font-semibold text-[#6264A7]">Teams</span>
+                  <span className="text-[#605E5C]">meeting link will be included</span>
+                </span>
+              ) : (
+                <span className="text-[#605E5C]">Add a Teams meeting</span>
+              )}
+            </span>
+          </div>
         </div>
 
         {/* Reminder */}
@@ -535,16 +835,138 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
         {/* Description */}
         <div className="flex items-start gap-3">
           <span className="w-5 text-[#605E5C] pt-1.5">
-            <Users size={16} />
+            <AlignLeft size={16} />
           </span>
           <textarea
-            placeholder="Add a description"
+            placeholder="Add a description or attach documents"
             aria-label="Description"
-            rows={3}
-            className="flex-1 text-sm border border-[#EDEBE9] rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0078D4] text-[#323130] placeholder:text-[#A19F9D] resize-none"
+            rows={6}
+            className="flex-1 text-sm border border-[#EDEBE9] rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0078D4] text-[#323130] placeholder:text-[#A19F9D] resize-y"
             {...register('description')}
           />
         </div>
+
+        {/* Scheduling assistant */}
+        {attendeeEmails.length > 0 && (
+          <div className="border border-[#EDEBE9] rounded">
+            <button
+              type="button"
+              aria-label="Scheduling assistant"
+              aria-expanded={schedulerOpen}
+              onClick={() => {
+                setSchedulerOpen((v) => !v)
+                if (!schedulerOpen) fetchAvailability()
+              }}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[#0078D4] hover:bg-[#F3F2F1] transition-colors rounded"
+            >
+              <CalendarSearch size={14} />
+              Scheduling assistant
+              {schedulerOpen ? <span className="ml-auto text-[#605E5C] text-xs">▲</span> : <span className="ml-auto text-[#605E5C] text-xs">▼</span>}
+            </button>
+            {schedulerOpen && (
+              <div className="border-t border-[#EDEBE9] px-3 py-3 space-y-3">
+                {availabilityLoading ? (
+                  <p className="text-xs text-[#605E5C] animate-pulse">Checking availability…</p>
+                ) : availabilityData ? (
+                  <>
+                    {/* Free/busy grid — one row per attendee, one cell per hour */}
+                    {(() => {
+                      const rangeStart = startVal ? new Date(startVal) : new Date()
+                      const rangeEnd = endVal ? new Date(endVal) : new Date(rangeStart.getTime() + 3600_000)
+                      const totalMs = rangeEnd.getTime() - rangeStart.getTime()
+                      const totalHours = Math.max(1, Math.ceil(totalMs / 3600_000))
+                      const hours = Array.from({ length: Math.min(totalHours, 24) }, (_, i) => i)
+
+                      const isBusy = (attendeeRow: { attendee: string; slots: Array<{ start: string; end: string; status: string }> }, hourOffset: number) => {
+                        const slotStart = new Date(rangeStart.getTime() + hourOffset * 3600_000)
+                        const slotEnd = new Date(slotStart.getTime() + 3600_000)
+                        return attendeeRow.slots.some((s) => {
+                          const bs = new Date(s.start), be = new Date(s.end)
+                          return bs < slotEnd && be > slotStart
+                        })
+                      }
+
+                      // Find suggested free slots: hours where all attendees are free
+                      const suggestedHours = hours.filter((h) =>
+                        availabilityData.every((row) => !isBusy(row, h))
+                      ).slice(0, 3)
+
+                      return (
+                        <>
+                          <div>
+                            <p className="text-xs font-semibold text-[#323130] mb-1.5">
+                              Free/busy grid
+                            </p>
+                            {/* Hour labels */}
+                            <div className="flex items-center gap-0 mb-1 ml-32">
+                              {hours.map((h) => (
+                                <div key={h} className="flex-1 text-center text-[9px] text-[#A19F9D]">
+                                  {format(new Date(rangeStart.getTime() + h * 3600_000), 'h')}
+                                </div>
+                              ))}
+                            </div>
+                            {availabilityData.map((row) => (
+                              <div key={row.attendee} className="flex items-center gap-0 mb-0.5">
+                                <span className="w-32 flex-shrink-0 text-xs text-[#323130] truncate pr-1">
+                                  {row.attendee.split('@')[0]}
+                                </span>
+                                {hours.map((h) => (
+                                  <div
+                                    key={h}
+                                    title={`${row.attendee} – ${format(new Date(rangeStart.getTime() + h * 3600_000), 'h:mm a')}: ${isBusy(row, h) ? 'Busy' : 'Free'}`}
+                                    className={cn(
+                                      'flex-1 h-4 border border-white',
+                                      isBusy(row, h) ? 'bg-[#D13438]' : 'bg-[#107C10]/30'
+                                    )}
+                                  />
+                                ))}
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <span className="flex items-center gap-1 text-[10px] text-[#605E5C]">
+                                <span className="w-3 h-3 bg-[#107C10]/30 inline-block rounded-sm" /> Free
+                              </span>
+                              <span className="flex items-center gap-1 text-[10px] text-[#605E5C]">
+                                <span className="w-3 h-3 bg-[#D13438] inline-block rounded-sm" /> Busy
+                              </span>
+                            </div>
+                          </div>
+
+                          {suggestedHours.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-[#323130] mb-1.5">Suggested times</p>
+                              <div className="flex flex-wrap gap-2">
+                                {suggestedHours.map((h) => {
+                                  const slotStart = new Date(rangeStart.getTime() + h * 3600_000)
+                                  const slotEnd = new Date(slotStart.getTime() + 3600_000)
+                                  return (
+                                    <button
+                                      key={h}
+                                      type="button"
+                                      onClick={() => {
+                                        setValue('start_time', formatDateTimeLocal(slotStart))
+                                        setValue('end_time', formatDateTimeLocal(slotEnd))
+                                      }}
+                                      className="text-xs bg-[#EBF3FB] hover:bg-[#C7E0F4] text-[#0078D4] px-2 py-1 rounded transition-colors"
+                                    >
+                                      {format(slotStart, 'EEE h:mm a')} – {format(slotEnd, 'h:mm a')}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </>
+                ) : (
+                  <p className="text-xs text-[#605E5C]">Click &quot;Scheduling assistant&quot; to check availability.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex items-center justify-between pt-2 border-t border-[#EDEBE9]">

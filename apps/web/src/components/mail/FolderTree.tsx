@@ -19,8 +19,10 @@ import {
   Calendar,
   Users,
   CheckSquare,
+  Play,
+  Clock,
 } from 'lucide-react'
-import { folders, messages } from '@/lib/api'
+import { folders, messages, rules } from '@/lib/api'
 import type { Folder as FolderType } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
 import { useUIStore } from '@/store/ui'
@@ -86,6 +88,22 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   const createSubMutation = useMutation({
     mutationFn: (name: string) => folders.create({ name, parent_id: folder.id }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['folders'] }),
+  })
+
+  const { data: ruleList = [] } = useQuery({
+    queryKey: ['rules'],
+    queryFn: () => rules.list(),
+  })
+
+  const runAllRulesMutation = useMutation({
+    mutationFn: async () => {
+      const enabledRules = ruleList.filter((r) => r.is_enabled)
+      await Promise.all(enabledRules.map((r) => rules.run(r.id, folder.id)))
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      setContextMenu(null)
+    },
   })
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -191,6 +209,14 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
         >
           <button
             role="menuitem"
+            onClick={() => runAllRulesMutation.mutate()}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
+          >
+            <Play size={13} /> Run rules on folder
+          </button>
+          <div className="h-px bg-[#EDEBE9]" />
+          <button
+            role="menuitem"
             onClick={() => { setRenaming(true); setContextMenu(null) }}
             className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
           >
@@ -242,6 +268,9 @@ export function FolderTree() {
   const queryClient = useQueryClient()
   const [newMailDropOpen, setNewMailDropOpen] = useState(false)
   const newMailDropRef = useRef<HTMLDivElement>(null)
+  const [newFolderInput, setNewFolderInput] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const newFolderRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!newMailDropOpen) return
@@ -261,12 +290,21 @@ export function FolderTree() {
 
   const createFolderMutation = useMutation({
     mutationFn: (name: string) => folders.create({ name }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['folders'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      setNewFolderInput(false)
+      setNewFolderName('')
+    },
   })
 
   const handleNewFolder = () => {
-    const name = window.prompt('New folder name:')
-    if (name?.trim()) createFolderMutation.mutate(name.trim())
+    setNewFolderInput(true)
+    setTimeout(() => newFolderRef.current?.focus(), 50)
+  }
+
+  const submitNewFolder = () => {
+    if (newFolderName.trim()) createFolderMutation.mutate(newFolderName.trim())
+    else { setNewFolderInput(false); setNewFolderName('') }
   }
 
   // Build tree: system folders first, then user folders
@@ -284,7 +322,7 @@ export function FolderTree() {
   return (
     <nav
       aria-label="Folder tree"
-      className="flex flex-col h-full bg-[#F3F2F1] select-none"
+      className="flex flex-col h-full bg-white select-none"
     >
       {/* Compose split button */}
       <div className="px-2 pt-3 pb-2" ref={newMailDropRef}>
@@ -387,6 +425,31 @@ export function FolderTree() {
                   My folders
                 </span>
               </li>
+
+              {/* Follow-up virtual folder */}
+              <li>
+                <Link
+                  href="/mail/followup"
+                  aria-label="Follow-up"
+                  className={cn(
+                    'w-full flex items-center gap-2.5 px-3 py-1.5 rounded text-sm transition-colors no-underline',
+                    currentSlug === 'followup'
+                      ? 'bg-[#EDEBE9] text-[#0078D4] font-medium'
+                      : 'text-[#323130] hover:bg-[#EDEBE9]'
+                  )}
+                  onClick={() => {
+                    useMailStore.getState().setSelectedFolderSlug('followup')
+                    useMailStore.getState().setSelectedFolderId(null)
+                    useMailStore.getState().setSelectedMessageId(null)
+                  }}
+                >
+                  <span className={currentSlug === 'followup' ? 'text-[#0078D4]' : 'text-[#605E5C]'}>
+                    <Clock size={16} />
+                  </span>
+                  Follow-up
+                </Link>
+              </li>
+
               {userFolders.map((folder) => (
                 <FolderItem
                   key={folder.id}
@@ -397,14 +460,33 @@ export function FolderTree() {
               ))}
             </ul>
 
-            <button
-              onClick={handleNewFolder}
-              className="flex items-center gap-1.5 w-full px-3 py-2 text-sm text-[#605E5C] hover:text-[#323130] hover:bg-[#F3F2F1] transition-colors mt-1"
-              aria-label="New folder"
-            >
-              <FolderPlus size={14} className="text-[#0078D4]" />
-              New folder
-            </button>
+            {newFolderInput ? (
+              <div className="flex items-center gap-1.5 px-3 py-1 mt-1">
+                <FolderPlus size={14} className="text-[#0078D4] flex-shrink-0" />
+                <input
+                  ref={newFolderRef}
+                  type="text"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitNewFolder()
+                    if (e.key === 'Escape') { setNewFolderInput(false); setNewFolderName('') }
+                  }}
+                  onBlur={submitNewFolder}
+                  placeholder="Folder name"
+                  className="flex-1 text-sm border border-[#0078D4] rounded px-1.5 py-0.5 focus:outline-none text-[#323130]"
+                />
+              </div>
+            ) : (
+              <button
+                onClick={handleNewFolder}
+                className="flex items-center gap-1.5 w-full px-3 py-2 text-sm text-[#605E5C] hover:text-[#323130] hover:bg-[#F3F2F1] transition-colors mt-1"
+                aria-label="New folder"
+              >
+                <FolderPlus size={14} className="text-[#0078D4]" />
+                New folder
+              </button>
+            )}
           </>
         )}
       </div>

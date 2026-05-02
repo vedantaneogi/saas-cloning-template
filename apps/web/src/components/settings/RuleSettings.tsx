@@ -6,8 +6,9 @@ import { rules, folders } from '@/lib/api'
 import type { Rule, RuleCondition, RuleAction } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Plus, Trash2, Edit2, Play, ToggleLeft, ToggleRight, CheckCircle2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, Edit2, Play, ToggleLeft, ToggleRight, CheckCircle2, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react'
 import { useUIStore } from '@/store/ui'
+import { cn } from '@/lib/utils'
 
 export function RuleSettings() {
   const queryClient = useQueryClient()
@@ -15,6 +16,8 @@ export function RuleSettings() {
   const [editing, setEditing] = useState<Rule | null>(null)
   const [creating, setCreating] = useState(false)
   const [runResult, setRunResult] = useState<{ ruleId: string; matched: number } | null>(null)
+  const [runPickerRuleId, setRunPickerRuleId] = useState<string | null>(null)
+  const [runFolderId, setRunFolderId] = useState<string>('')
 
   const { data: ruleList = [], isLoading } = useQuery({
     queryKey: ['rules'],
@@ -27,6 +30,11 @@ export function RuleSettings() {
   })
 
   const inboxFolder = folderList.find((f) => f.slug === 'inbox')
+
+  const openRunPicker = (ruleId: string) => {
+    setRunPickerRuleId(ruleId)
+    setRunFolderId(inboxFolder?.id ?? folderList[0]?.id ?? '')
+  }
 
   const toggleMutation = useMutation({
     mutationFn: (rule: Rule) => rules.update(rule.id, { is_enabled: !rule.is_enabled }),
@@ -52,13 +60,15 @@ export function RuleSettings() {
   }
 
   const runMutation = useMutation({
-    mutationFn: (id: string) => rules.run(id, inboxFolder?.id),
-    onSuccess: (data, id) => {
+    mutationFn: ({ id, folderId }: { id: string; folderId: string }) =>
+      rules.run(id, folderId),
+    onSuccess: (data, { id }) => {
       const matched = ((data as unknown) as { matched: number })?.matched ?? 0
       setRunResult({ ruleId: id, matched })
       showNotification(`Rule applied: ${matched} message${matched !== 1 ? 's' : ''} matched`)
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['folders'] })
+      setRunPickerRuleId(null)
       setTimeout(() => setRunResult(null), 3000)
     },
   })
@@ -135,18 +145,58 @@ export function RuleSettings() {
                   {rule.actions.length} action{rule.actions.length !== 1 ? 's' : ''}
                 </p>
               </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity relative">
                 <button
-                  onClick={() => runMutation.mutate(rule.id)}
+                  onClick={() => openRunPicker(rule.id)}
                   disabled={runMutation.isPending}
-                  aria-label={`Run ${rule.name} on inbox`}
-                  title="Run now on Inbox"
-                  className="text-[#605E5C] hover:text-[#0078D4] p-1"
+                  aria-label={`Run ${rule.name} on a folder`}
+                  title="Run now on folder"
+                  className="text-[#605E5C] hover:text-[#0078D4] p-1 flex items-center gap-0.5"
                 >
                   {runResult?.ruleId === rule.id
                     ? <CheckCircle2 size={13} className="text-[#107C10]" />
-                    : <Play size={13} />}
+                    : <><Play size={13} /><ChevronRight size={10} /></>}
                 </button>
+                {runPickerRuleId === rule.id && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setRunPickerRuleId(null)} aria-hidden="true" />
+                    <div
+                      role="dialog"
+                      aria-label="Run rule on folder"
+                      className="absolute right-0 top-full mt-1 z-40 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-52"
+                    >
+                      <p className="text-xs font-semibold text-[#323130] mb-2">Apply to folder</p>
+                      <select
+                        value={runFolderId}
+                        onChange={(e) => setRunFolderId(e.target.value)}
+                        aria-label="Select folder"
+                        className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-[#0078D4]"
+                      >
+                        {folderList.map((f) => (
+                          <option key={f.id} value={f.id}>{f.name}</option>
+                        ))}
+                      </select>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => runMutation.mutate({ id: rule.id, folderId: runFolderId })}
+                          disabled={!runFolderId || runMutation.isPending}
+                          className={cn(
+                            'flex-1 text-xs font-medium bg-[#0078D4] hover:bg-[#106EBE] text-white px-2 py-1.5 rounded transition-colors',
+                            (!runFolderId || runMutation.isPending) && 'opacity-50 cursor-not-allowed'
+                          )}
+                        >
+                          {runMutation.isPending ? 'Running…' : 'Run now'}
+                        </button>
+                        <button
+                          onClick={() => setRunPickerRuleId(null)}
+                          className="text-xs text-[#605E5C] hover:bg-[#EDEBE9] px-2 py-1.5 rounded"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
                 <button
                   onClick={() => { setEditing(rule); setCreating(false) }}
                   aria-label={`Edit ${rule.name}`}

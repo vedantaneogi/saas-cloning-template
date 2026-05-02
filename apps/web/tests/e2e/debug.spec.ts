@@ -3,6 +3,12 @@ import { test, expect } from '@playwright/test';
 const BASE = 'http://localhost:3000';
 
 test('debug login flow', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', msg => {
+    if (msg.type() === 'error') errors.push(msg.text());
+  });
+  page.on('pageerror', err => errors.push(err.message));
+
   await page.goto(`${BASE}/sign-in`);
   await page.screenshot({ path: 'test-results/01-signin-page.png', fullPage: true });
 
@@ -11,14 +17,16 @@ test('debug login flow', async ({ page }) => {
   await page.screenshot({ path: 'test-results/02-filled-form.png', fullPage: true });
 
   await page.click('[type="submit"]');
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(5000);
   await page.screenshot({ path: 'test-results/03-after-submit.png', fullPage: true });
 
   console.log('Current URL:', page.url());
   console.log('Page title:', await page.title());
+  console.log('Console errors:', errors.join('\n'));
 
   // Wait a bit more
   await page.waitForTimeout(3000);
   await page.screenshot({ path: 'test-results/04-after-wait.png', fullPage: true });
   console.log('URL after wait:', page.url());
+  console.log('All errors:', errors.join('\n'));
 });

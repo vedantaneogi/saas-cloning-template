@@ -1,14 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { messages, folders, categories } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import { MessageListItem } from './MessageListItem'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Inbox, SortAsc, SortDesc, Tag } from 'lucide-react'
+import { Inbox, SortAsc, SortDesc, Tag, MailOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type DateGroup = 'Today' | 'Yesterday' | 'This week' | 'Last week' | 'Older'
@@ -50,6 +50,15 @@ export function MessageList() {
   const sortOrder = useMailStore((s) => s.sortOrder)
   const setSortOrder = useMailStore((s) => s.setSortOrder)
   const isInbox = selectedFolderSlug === 'inbox'
+  const queryClient = useQueryClient()
+
+  const markAllReadMutation = useMutation({
+    mutationFn: (ids: string[]) => messages.bulk('mark_read', ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+    },
+  })
 
   // Get folder ID from slug if we don't have it
   const { data: folderList } = useQuery({
@@ -66,6 +75,14 @@ export function MessageList() {
     (f) => f.slug === selectedFolderSlug
   )?.id
 
+  const isFollowupView = selectedFolderSlug === 'followup'
+
+  const { data: followupData, isLoading: followupLoading } = useQuery({
+    queryKey: ['messages-followup'],
+    queryFn: () => messages.needsFollowup(3),
+    enabled: isFollowupView,
+  })
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder],
     queryFn: () =>
@@ -77,17 +94,17 @@ export function MessageList() {
         order: sortOrder,
         per_page: 50,
       }),
-    enabled: true,
+    enabled: !isFollowupView,
   })
 
-  const allMessages = data?.items ?? []
+  const allMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
   const messageList = selectedCategoryId
     ? allMessages.filter((m) => m.categories?.some((c) => c.id === selectedCategoryId))
     : allMessages
 
-  const folderName = folderList?.find(
-    (f) => f.slug === selectedFolderSlug || f.id === selectedFolderSlug
-  )?.name ?? selectedFolderSlug
+  const folderName = isFollowupView
+    ? 'Follow-up'
+    : (folderList?.find((f) => f.slug === selectedFolderSlug || f.id === selectedFolderSlug)?.name ?? selectedFolderSlug)
 
   return (
     <div
@@ -115,6 +132,21 @@ export function MessageList() {
           >
             Grouped
           </button>
+
+          {/* Mark all read */}
+          {allMessages.some((m) => !m.is_read) && (
+            <button
+              onClick={() => {
+                const unreadIds = allMessages.filter((m) => !m.is_read).map((m) => m.id)
+                markAllReadMutation.mutate(unreadIds)
+              }}
+              aria-label="Mark all as read"
+              title="Mark all as read"
+              className="p-1 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
+            >
+              <MailOpen size={14} />
+            </button>
+          )}
 
           {/* Sort order toggle */}
           <button
@@ -211,7 +243,7 @@ export function MessageList() {
         aria-label={`Messages in ${folderName}`}
       >
         <div data-automation-id="virtuoso-item-list">
-          {isLoading ? (
+          {(isLoading || followupLoading) ? (
             <SpinnerOverlay />
           ) : isError ? (
             <EmptyState
@@ -227,13 +259,13 @@ export function MessageList() {
           ) : messageList.length === 0 ? (
             <EmptyState
               icon={Inbox}
-              title="Nothing here"
-              description="This folder is empty."
+              title={isFollowupView ? 'All caught up' : 'Nothing here'}
+              description={isFollowupView ? 'No sent messages are awaiting a reply.' : 'This folder is empty.'}
             />
           ) : (
             groupMessages(messageList).map(({ group, items }) => (
               <div key={group}>
-                <div className="px-3 py-1.5 bg-[#FAF9F8] border-b border-[#EDEBE9]">
+                <div className="px-3 py-1 mt-1">
                   <span className="text-xs font-semibold text-[#605E5C] uppercase tracking-wide">{group}</span>
                 </div>
                 {items.map((msg) => (
@@ -246,10 +278,10 @@ export function MessageList() {
       </div>
 
       {/* Footer count */}
-      {!isLoading && messageList.length > 0 && (
+      {!isLoading && !followupLoading && messageList.length > 0 && (
         <div className="px-3 py-1.5 border-t border-[#EDEBE9] bg-[#FAF9F8]">
           <span className="text-xs text-[#605E5C]">
-            {data?.total ?? messageList.length} messages
+            {(isFollowupView ? followupData?.total : data?.total) ?? messageList.length} messages
           </span>
         </div>
       )}

@@ -34,7 +34,7 @@ export function DateNavigator({ currentDate, view, onDateChange }: DateNavigator
     <div className="flex items-center gap-2">
       <button
         onClick={goToday}
-        aria-label="Go to today"
+        aria-label="Today"
         className="px-3 py-1.5 text-sm border border-[#D2D0CE] rounded hover:bg-[#F3F2F1] transition-colors text-[#323130]"
       >
         Today

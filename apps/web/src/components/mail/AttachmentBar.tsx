@@ -49,12 +49,15 @@ export function AttachmentBar({ attachments }: AttachmentBarProps) {
                 {formatFileSize(att.size_bytes)}
               </p>
             </div>
-            <button
+            <a
+              href={`/api/v1/messages/${att.message_id}/attachments/${att.id}/download`}
+              download={att.filename}
               aria-label={`Download ${att.filename}`}
+              onClick={(e) => e.stopPropagation()}
               className="text-[#605E5C] hover:text-[#0078D4] opacity-0 group-hover:opacity-100 transition-all"
             >
               <Download size={12} />
-            </button>
+            </a>
           </div>
         ))}
       </div>

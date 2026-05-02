@@ -11,5 +11,8 @@
     "generate": "node scripts/generate/generate-backend.mjs && node scripts/generate/generate-openapi-client.mjs && node scripts/generate/generate-frontend.mjs && node scripts/generate/generate-tests.mjs && node scripts/generate/generate-seeds.mjs",
     "validate": "bash scripts/validate/run-typecheck.sh && bash scripts/validate/run-pytests.sh && bash scripts/validate/run-playwright-clone.sh",
     "package": "bash scripts/package/build-api-image.sh && bash scripts/package/build-web-image.sh && bash scripts/package/build-electron.sh"
+  },
+  "dependencies": {
+    "@tiptap/extension-image": "^3.22.5"
   }
 }

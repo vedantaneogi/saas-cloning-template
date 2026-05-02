@@ -9,7 +9,9 @@ test.describe('Calendar — P0 Features', () => {
     await page.fill('[name="password"]', 'password123');
     await page.click('[type="submit"]');
     await page.waitForURL(`${BASE}/mail/inbox`);
-    await page.goto(`${BASE}/calendar`);
+    await page.goto(`${BASE}/calendar/month`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('[aria-label="Top toolbar"]').waitFor({ timeout: 10000 });
   });
 
   test('Calendar grid loads', async ({ page }) => {

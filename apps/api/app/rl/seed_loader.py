@@ -4,6 +4,7 @@ Designed to be idempotent (clears existing user data then re-inserts).
 """
 from __future__ import annotations
 
+import random
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -102,6 +103,9 @@ async def load_seed(session: AsyncSession, payload: SeedPayload) -> dict[str, in
     Load all seed data into the database.
     Returns entity counts.
     """
+    # Seed the global PRNG for determinism — same rng_seed → same random outputs
+    random.seed(payload.rng_seed)
+
     app = payload.app_data
     world = payload.world
     now = rl_state.clock.now()

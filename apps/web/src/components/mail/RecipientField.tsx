@@ -98,7 +98,10 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
             onFocus={() => setFocused(true)}
             onBlur={() => {
               setFocused(false)
-              // Delay to allow click on suggestion
+              // Auto-commit any typed email on blur (e.g. when clicking Send)
+              if (input.trim()) {
+                addRecipient(input)
+              }
               setTimeout(() => setDropdownOpen(false), 150)
             }}
             placeholder={value.length === 0 ? placeholder : ''}

@@ -36,6 +36,10 @@ function getCalendarColor(calendars: Calendar[], calendarId: string): string {
   return calendars.find((c) => c.id === calendarId)?.color ?? '#0078D4'
 }
 
+function isCalendarShared(calendars: Calendar[], calendarId: string): boolean {
+  return calendars.find((c) => c.id === calendarId)?.is_shared ?? false
+}
+
 function MonthView({
   currentDate,
   events,
@@ -109,6 +113,7 @@ function MonthView({
                           event={event}
                           compact
                           color={getCalendarColor(calList, event.calendar_id)}
+                          isShared={isCalendarShared(calList, event.calendar_id)}
                           onClick={onEventClick}
                         />
                       ))}
@@ -209,6 +214,7 @@ function WeekView({
                       key={event.id}
                       event={event}
                       color={getCalendarColor(calList, event.calendar_id)}
+                      isShared={isCalendarShared(calList, event.calendar_id)}
                       onClick={onEventClick}
                     />
                   ))}
@@ -277,6 +283,7 @@ function DayView({
                     key={event.id}
                     event={event}
                     color={getCalendarColor(calList, event.calendar_id)}
+                    isShared={isCalendarShared(calList, event.calendar_id)}
                     onClick={onEventClick}
                   />
                 ))}

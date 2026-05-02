@@ -24,6 +24,13 @@ async function request<T>(
   })
 
   if (!res.ok) {
+    // On 401, clear stale auth and redirect to sign-in
+    if (res.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth-storage')
+      window.location.href = '/sign-in'
+      throw new Error('Session expired')
+    }
     let message = `HTTP ${res.status}`
     try {
       const body = await res.json()
@@ -289,6 +296,15 @@ export interface Category {
   created_at: string
 }
 
+export interface QuickStep {
+  id: string
+  name: string
+  icon: string | null
+  actions: { type: string; params?: Record<string, string> }[]
+  shortcut_key: string | null
+  sort_order: number
+}
+
 export interface OOFSettings {
   enabled: boolean
   start: string | null
@@ -344,6 +360,7 @@ export const messages = {
     is_read?: boolean
     is_flagged?: boolean
     conversation_grouping?: boolean
+    from_addr?: string
   }) => {
     const qs = new URLSearchParams()
     Object.entries(params).forEach(([k, v]) => {
@@ -409,6 +426,31 @@ export const messages = {
     })
     return request<PaginatedResponse<Message>>(`/messages/search?${qs}`)
   },
+
+  needsFollowup: (days = 3) =>
+    request<PaginatedResponse<Message>>(`/messages/needs-followup?days=${days}`),
+
+  cleanupThread: (conversationId: string) =>
+    request<{ cleaned: number }>('/messages/cleanup-thread', {
+      method: 'POST',
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }),
+
+  sweepKeepLatest: (senderEmail: string, folderId?: string) =>
+    request<{ deleted: number; kept: number }>('/messages/sweep/keep-latest', {
+      method: 'POST',
+      body: JSON.stringify({ sender_email: senderEmail, folder_id: folderId ?? null }),
+    }),
+
+  sweepMoveAll: (senderEmail: string, targetFolderId: string, sourceFolderId?: string) =>
+    request<{ moved: number }>('/messages/sweep/move-all', {
+      method: 'POST',
+      body: JSON.stringify({
+        sender_email: senderEmail,
+        target_folder_id: targetFolderId,
+        source_folder_id: sourceFolderId ?? null,
+      }),
+    }),
 
   uploadAttachment: (messageId: string, file: File): Promise<Attachment> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
@@ -525,6 +567,21 @@ export const calendars = {
 
   delete: (id: string) =>
     request<void>(`/calendars/${id}`, { method: 'DELETE' }),
+
+  share: (id: string, permissionLevel: string, share: boolean) =>
+    request<Calendar>(`/calendars/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_shared: share, permission_level: permissionLevel }),
+    }),
+
+  subscribe: (email: string) =>
+    request<Calendar>('/calendars/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  unsubscribe: (id: string) =>
+    request<void>(`/calendars/${id}`, { method: 'DELETE' }),
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -555,16 +612,21 @@ export const events = {
       body: JSON.stringify(data),
     }),
 
-  update: (id: string, data: Partial<Event>, scope?: 'single' | 'series') =>
-    request<Event>(`/events/${id}${scope ? `?scope=${scope}` : ''}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
+  update: (id: string, data: Partial<Event>, scope?: 'single' | 'series', occurrenceStart?: string) => {
+    const qs = new URLSearchParams()
+    if (scope) qs.set('scope', scope)
+    if (occurrenceStart) qs.set('occurrence_start', occurrenceStart)
+    const query = qs.toString() ? `?${qs}` : ''
+    return request<Event>(`/events/${id}${query}`, { method: 'PATCH', body: JSON.stringify(data) })
+  },
 
-  delete: (id: string, scope?: 'single' | 'series') =>
-    request<void>(`/events/${id}${scope ? `?scope=${scope}` : ''}`, {
-      method: 'DELETE',
-    }),
+  delete: (id: string, scope?: 'single' | 'series', occurrenceStart?: string) => {
+    const qs = new URLSearchParams()
+    if (scope) qs.set('scope', scope)
+    if (occurrenceStart) qs.set('occurrence_start', occurrenceStart)
+    const query = qs.toString() ? `?${qs}` : ''
+    return request<void>(`/events/${id}${query}`, { method: 'DELETE' })
+  },
 
   respond: (id: string, response: 'accepted' | 'tentative' | 'declined') =>
     request<EventAttendee>(`/events/${id}/respond`, {
@@ -582,11 +644,16 @@ export const events = {
       body: JSON.stringify({ start_time, end_time }),
     }),
 
-  getAvailability: (emails: string[], start: string, end: string) =>
-    request<Record<string, unknown>>('/events/availability', {
-      method: 'POST',
-      body: JSON.stringify({ emails, start, end }),
-    }),
+  getAvailability: (emails: string[], start: string, end: string) => {
+    const qs = new URLSearchParams({
+      attendee_emails: emails.join(','),
+      start,
+      end,
+    })
+    return request<Array<{ attendee: string; slots: Array<{ start: string; end: string; status: string }> }>>(
+      `/events/availability?${qs}`
+    )
+  },
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
@@ -750,6 +817,64 @@ export const settings = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+}
+
+// ─── Quick Steps ──────────────────────────────────────────────────────────────
+
+export const quickSteps = {
+  list: () => request<QuickStep[]>('/quick-steps'),
+
+  create: (data: Partial<QuickStep>) =>
+    request<QuickStep>('/quick-steps', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: string, data: Partial<QuickStep>) =>
+    request<QuickStep>(`/quick-steps/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    request<void>(`/quick-steps/${id}`, { method: 'DELETE' }),
+
+  run: (id: string, message_id: string) =>
+    request<{ applied: string[] }>(`/quick-steps/${id}/run?message_id=${message_id}`, {
+      method: 'POST',
+    }),
+}
+
+// ─── Groups ───────────────────────────────────────────────────────────────────
+
+export interface Group {
+  id: string
+  name: string
+  description: string | null
+  email: string
+  privacy: 'public' | 'private'
+  color: string
+  member_count: number
+  is_member: boolean
+  created_at: string
+  updated_at: string
+}
+
+export const groups = {
+  list: () => request<Group[]>('/groups'),
+
+  create: (data: { name: string; description?: string; email?: string; privacy?: string; color?: string }) =>
+    request<Group>('/groups', { method: 'POST', body: JSON.stringify(data) }),
+
+  update: (id: string, data: Partial<Group>) =>
+    request<Group>(`/groups/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  join: (id: string) =>
+    request<{ id: string; group_id: string; user_id: string; role: string; joined_at: string }>(
+      `/groups/${id}/join`, { method: 'POST' }
+    ),
+
+  leave: (id: string) => request<void>(`/groups/${id}/leave`, { method: 'DELETE' }),
 }
 
 // ─── RL Environment ───────────────────────────────────────────────────────────

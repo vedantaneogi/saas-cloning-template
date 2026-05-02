@@ -10,6 +10,8 @@ test.describe('Mail — P0 Features', () => {
     await page.fill('[name="password"]', 'password123');
     await page.click('[type="submit"]');
     await page.waitForURL(`${BASE}/mail/inbox`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('[aria-label="Top toolbar"]').waitFor({ timeout: 10000 });
   });
 
   test('Three-pane layout is visible', async ({ page }) => {
@@ -42,7 +44,10 @@ test.describe('Mail — P0 Features', () => {
 
   test('Reply to a message', async ({ page }) => {
     await page.locator('[aria-label="Message list"] [role="listitem"]').first().click();
-    await page.locator('[aria-label="Reply to message"], [aria-label="Reply"]').first().click();
+    // Wait for reading pane to load the message
+    const replyBtn = page.locator('[aria-label="Reply to message"]').first();
+    await replyBtn.waitFor({ timeout: 5000 });
+    await replyBtn.click();
     // Inline reply composer should be visible
     await expect(page.locator('[aria-label="Send reply"]').first()).toBeVisible();
   });

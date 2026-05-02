@@ -1,11 +1,11 @@
 import calendar as _cal
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import and_, desc, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -47,6 +47,8 @@ def _expand_recurring_event(
     # For weekly+specific days we step 1 day at a time
     step_daily = frequency == "weekly" and len(days_of_week) > 0
 
+    exceptions: set[str] = {str(e) for e in (rule.get("exceptions") or [])}
+
     while current <= start_before and len(occurrences) < max_instances:
         if count_limit is not None and total >= int(count_limit):
             break
@@ -54,6 +56,28 @@ def _expand_recurring_event(
             end_dt = datetime.fromisoformat(str(end_date_str).replace("Z", "+00:00"))
             if current.date() > end_dt.date():
                 break
+
+        # Skip exception dates (single occurrences that were deleted or overridden)
+        current_iso = current.isoformat()
+        if any(current_iso.startswith(exc[:10]) for exc in exceptions):
+            if step_daily:
+                current += timedelta(days=1)
+            elif frequency == "daily":
+                current += timedelta(days=interval)
+            elif frequency == "weekly":
+                current += timedelta(weeks=interval)
+            elif frequency == "monthly":
+                m = current.month - 1 + interval
+                yr = current.year + m // 12
+                mo = m % 12 + 1
+                day = min(current.day, _cal.monthrange(yr, mo)[1])
+                current = current.replace(year=yr, month=mo, day=day)
+            elif frequency == "yearly":
+                try:
+                    current = current.replace(year=current.year + interval)
+                except ValueError:
+                    current = current.replace(year=current.year + interval, day=28)
+            continue
 
         # Decide whether this date matches the recurrence
         matches = True
@@ -176,7 +200,6 @@ async def list_events(
     calendar_id: Optional[uuid.UUID] = None,
     start_after: Optional[datetime] = None,
     start_before: Optional[datetime] = None,
-    cursor: Optional[str] = None,
     limit: int = Query(default=50, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -298,13 +321,52 @@ async def create_event(
 async def update_event(
     event_id: uuid.UUID,
     body: EventUpdate,
-    scope: Optional[str] = Query(None, description="this_occurrence|this_and_following|all_in_series"),
+    scope: Optional[str] = Query(None, description="single|series"),
+    occurrence_start: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     ev = await _get_event_or_404(db, event_id, current_user.id)
     now = rl_state.clock.now()
 
+    # scope=single: add occurrence to exceptions on parent, create override row
+    if scope == "single" and occurrence_start is not None and ev.is_recurring:
+        rule = dict(ev.recurrence_rule or {})
+        exceptions = list(rule.get("exceptions") or [])
+        occ_iso = occurrence_start.isoformat()
+        if occ_iso not in exceptions:
+            exceptions.append(occ_iso)
+        rule["exceptions"] = exceptions
+        ev.recurrence_rule = rule
+        ev.updated_at = now
+
+        # Create a non-recurring override event for this occurrence
+        override = Event(
+            id=uuid.uuid4(),
+            calendar_id=body.calendar_id if body.calendar_id is not None else ev.calendar_id,
+            user_id=ev.user_id,
+            title=body.title if body.title is not None else ev.title,
+            description=body.description if body.description is not None else ev.description,
+            location=body.location if body.location is not None else ev.location,
+            start_time=body.start_time if body.start_time is not None else occurrence_start,
+            end_time=body.end_time if body.end_time is not None else occurrence_start + (ev.end_time - ev.start_time),
+            all_day=body.all_day if body.all_day is not None else ev.all_day,
+            is_recurring=False,
+            recurrence_parent_id=ev.id,
+            reminder_minutes=body.reminder_minutes if body.reminder_minutes is not None else ev.reminder_minutes,
+            is_online_meeting=body.is_online_meeting if body.is_online_meeting is not None else ev.is_online_meeting,
+            meeting_url=body.meeting_url if body.meeting_url is not None else ev.meeting_url,
+            status=body.status if body.status is not None else ev.status,
+            sensitivity=body.sensitivity if body.sensitivity is not None else ev.sensitivity,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(override)
+        await db.flush()
+        rl_state.event_log.append("event_occurrence_updated", {"parent_id": str(ev.id), "override_id": str(override.id)})
+        return EventOut.model_validate(override)
+
+    # scope=series or no scope: update the parent (existing behaviour)
     if body.calendar_id is not None:
         ev.calendar_id = body.calendar_id
     if body.title is not None:
@@ -358,12 +420,28 @@ async def update_event(
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(
     event_id: uuid.UUID,
-    scope: Optional[str] = None,
-    notify_attendees: bool = False,
+    scope: Optional[str] = Query(None, description="single|series"),
+    occurrence_start: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     ev = await _get_event_or_404(db, event_id, current_user.id)
+
+    # scope=single: add to exceptions so the occurrence is hidden, keep parent
+    if scope == "single" and occurrence_start is not None and ev.is_recurring:
+        rule = dict(ev.recurrence_rule or {})
+        exceptions = list(rule.get("exceptions") or [])
+        occ_iso = occurrence_start.isoformat()
+        if occ_iso not in exceptions:
+            exceptions.append(occ_iso)
+        rule["exceptions"] = exceptions
+        ev.recurrence_rule = rule
+        ev.updated_at = rl_state.clock.now()
+        await db.flush()
+        rl_state.event_log.append("event_occurrence_deleted", {"parent_id": str(event_id), "occurrence": occ_iso})
+        return
+
+    # scope=series or no scope: delete the parent (and cascade overrides)
     await db.delete(ev)
     await db.flush()
     rl_state.event_log.append("event_deleted", {"id": str(event_id)})
