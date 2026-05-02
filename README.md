@@ -32,8 +32,8 @@ pip install fastapi "uvicorn[standard]" "sqlalchemy[asyncio]" asyncpg alembic \
   "pydantic[email]" pydantic-settings "python-jose[cryptography]" \
   "passlib[bcrypt]" python-multipart aiofiles greenlet
 
-# Create the database (run inside psql)
-# CREATE DATABASE outlook_clone;
+# Create the database — open a terminal and run:
+# psql -U postgres -h localhost -c "CREATE DATABASE outlook_clone;"
 
 # Run migrations
 alembic upgrade head
