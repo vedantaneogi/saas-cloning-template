@@ -1,15 +1,25 @@
 {
-  "name": "saas-clone-factory",
+  "name": "docusign-clone",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
+    "dev": "turbo run dev",
     "dev:web": "pnpm --dir apps/web dev",
-    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:api": "cd apps/api && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "build": "turbo run build",
+    "build:web": "pnpm --dir apps/web build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:e2e": "pnpm --dir apps/web test:e2e",
+    "validate": "bash scripts/validate/run-typecheck.sh && bash scripts/validate/run-pytests.sh && bash scripts/validate/run-playwright-clone.sh",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build",
+    "seed": "curl -X POST http://localhost:8000/admin/seed -H 'X-API-Key: dev-admin-key'",
     "capture": "node scripts/capture/run-computer-use.mjs",
     "formalize": "node scripts/formalize/normalize-session.mjs",
     "synthesize": "node scripts/synthesize/generate-playwright-assets.mjs && node scripts/synthesize/generate-specs.mjs",
     "generate": "node scripts/generate/generate-backend.mjs && node scripts/generate/generate-openapi-client.mjs && node scripts/generate/generate-frontend.mjs && node scripts/generate/generate-tests.mjs && node scripts/generate/generate-seeds.mjs",
-    "validate": "bash scripts/validate/run-typecheck.sh && bash scripts/validate/run-pytests.sh && bash scripts/validate/run-playwright-clone.sh",
     "package": "bash scripts/package/build-api-image.sh && bash scripts/package/build-web-image.sh && bash scripts/package/build-electron.sh"
   }
 }

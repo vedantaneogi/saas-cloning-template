@@ -1,0 +1,24 @@
+# Local-dev override: mounts source code for hot-reload.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# NOTE: .env must exist. Copy from .env.example: cp .env.example .env
+
+services:
+  api:
+    build:
+      context: ./apps/api
+    volumes:
+      - ./apps/api:/app
+      - api_uploads:/app/uploads
+    command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+  web:
+    build:
+      context: ./apps/web
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    command: pnpm dev

@@ -1,3 +1,13 @@
-export default function HomePage() {
-  return <main style={{ padding: 24 }}>Clone factory web app</main>;
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+
+export default async function RootPage() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("access_token");
+
+  if (token?.value) {
+    redirect("/home");
+  }
+
+  redirect("/landing");
 }

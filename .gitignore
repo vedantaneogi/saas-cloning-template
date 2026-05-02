@@ -249,3 +249,14 @@ deployment/environments/**/.env.*
 # Always allow placeholder keep files
 # ------------------------------------------------------------------------------
 !**/.gitkeep
+.gstack/
+
+# Uploads (user data)
+apps/api/uploads/
+
+# Task screenshots
+.tasks/screenshots/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+*.output

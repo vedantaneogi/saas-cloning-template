@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 40" fill="none" width="180" height="40">
+  <!-- DocuSign "d" mark icon (white-tinted for dark backgrounds) -->
+  <!-- Indigo/purple square (back layer, bottom-right) -->
+  <rect x="8" y="8" width="32" height="32" rx="3" fill="#3B1FA3"/>
+  <!-- Red/coral square (front layer, top-left) -->
+  <rect x="0" y="0" width="26" height="26" rx="3" fill="#E8342A"/>
+  <!-- "docusign" wordmark in white -->
+  <text x="50" y="26" font-family="DSIndigo, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="500" fill="#FFFFFF" letter-spacing="-0.3">docusign</text>
+</svg>

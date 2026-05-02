@@ -1,0 +1,1164 @@
+import csv
+import io
+import os
+import shutil
+import uuid
+from typing import List, Optional
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from fastapi.responses import Response as FastAPIResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.dependencies import get_current_user
+from app.auth.models import User
+from app.core.config import get_settings
+from app.db.session import get_db
+from app.envelopes import service as svc
+from app.envelopes.models import (
+    Document,
+    Envelope,
+    EnvelopeStatus,
+)
+from app.envelopes.schemas import (
+    BulkSendResponse,
+    BulkSendStatusResponse,
+    CommentCreate,
+    CommentResponse,
+    DocumentResponse,
+    EnvelopeCreate,
+    EnvelopeDetailResponse,
+    EnvelopeListResponse,
+    EnvelopeResponse,
+    EnvelopeUpdate,
+    FieldBulkSaveRequest,
+    FieldCreate,
+    FieldResponse,
+    FieldUpdate,
+    RecipientCreate,
+    RecipientResponse,
+    RecipientUpdate,
+    SaveAsTemplateRequest,
+    SaveAsTemplateResponse,
+    VoidEnvelopeRequest,
+)
+from app.signing.pdf_processor import get_page_count, render_page
+
+settings = get_settings()
+
+router = APIRouter(tags=["envelopes"])
+
+
+# ── Envelope endpoints ────────────────────────────────────────────────────────
+
+@router.post("/envelopes", response_model=EnvelopeResponse, status_code=status.HTTP_201_CREATED)
+async def create_envelope(
+    data: EnvelopeCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.create_envelope(db, current_user.id, data)
+    return envelope
+
+
+@router.get("/envelopes", response_model=EnvelopeListResponse)
+async def list_envelopes(
+    status_filter: Optional[EnvelopeStatus] = Query(None, alias="status"),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    items, total = await svc.list_envelopes(
+        db,
+        current_user.id,
+        status=status_filter,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+    return EnvelopeListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/envelopes/stats")
+async def get_envelope_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from sqlalchemy import func, select
+    result = await db.execute(
+        select(Envelope.status, func.count(Envelope.id))
+        .where(Envelope.user_id == current_user.id)
+        .group_by(Envelope.status)
+    )
+    stats = {row[0]: row[1] for row in result.all()}
+    return {
+        "total": sum(stats.values()),
+        "draft": stats.get("draft", 0),
+        "sent": stats.get("sent", 0),
+        "completed": stats.get("completed", 0),
+        "voided": stats.get("voided", 0),
+        "declined": stats.get("declined", 0),
+    }
+
+
+@router.get("/envelopes/tasks")
+async def get_envelope_tasks(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from sqlalchemy import select
+    result = await db.execute(
+        select(Envelope)
+        .where(Envelope.user_id == current_user.id)
+        .where(Envelope.status.in_(["sent", "delivered"]))
+        .order_by(Envelope.updated_at.desc())
+        .limit(10)
+    )
+    tasks = result.scalars().all()
+    return [{"id": str(t.id), "subject": t.subject, "status": t.status} for t in tasks]
+
+
+# NOTE: Static sub-paths (bulk-send, etc.) MUST be registered before the
+# wildcard /{envelope_id} route so FastAPI doesn't swallow them.
+
+@router.get("/envelopes/bulk-send/{batch_id}/status", response_model=BulkSendStatusResponse)
+async def get_bulk_send_status_early(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return progress counts for a bulk send batch."""
+    from sqlalchemy import func as sa_func, select as sa_select
+
+    result = await db.execute(
+        sa_select(Envelope.status, sa_func.count(Envelope.id))
+        .where(Envelope.user_id == current_user.id, Envelope.batch_id == batch_id)
+        .group_by(Envelope.status)
+    )
+    counts: dict[str, int] = {row[0]: row[1] for row in result.all()}
+    total = sum(counts.values())
+    if total == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+
+    return BulkSendStatusResponse(
+        batch_id=batch_id,
+        total=total,
+        sent=counts.get("sent", 0) + counts.get("delivered", 0),
+        completed=counts.get("completed", 0),
+        failed=counts.get("voided", 0) + counts.get("declined", 0),
+    )
+
+
+@router.get("/envelopes/bulk-send/batches")
+async def list_bulk_batches(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from sqlalchemy import func, select
+    result = await db.execute(
+        select(
+            Envelope.batch_id,
+            func.min(Envelope.subject).label("name"),
+            func.count(Envelope.id).label("total"),
+            func.count(Envelope.id).filter(Envelope.status.in_(["sent", "delivered"])).label("sent"),
+            func.count(Envelope.id).filter(Envelope.status == "completed").label("completed"),
+            func.count(Envelope.id).filter(Envelope.status.in_(["voided", "declined"])).label("failed"),
+            func.min(Envelope.created_at).label("submitted"),
+        )
+        .where(Envelope.user_id == current_user.id)
+        .where(Envelope.batch_id.isnot(None))
+        .group_by(Envelope.batch_id)
+        .order_by(func.min(Envelope.created_at).desc())
+    )
+    batches = []
+    for row in result.all():
+        total = row.sent + row.completed + row.failed
+        batches.append({
+            "batch_id": row.batch_id,
+            "name": row.name,
+            "total": total,
+            "sent": row.sent,
+            "completed": row.completed,
+            "failed": row.failed,
+            "status": (
+                "Processed" if total > 0 and row.failed == 0
+                else "Partial" if row.failed > 0
+                else "Processing"
+            ),
+            "submitted": row.submitted.isoformat() if row.submitted else None,
+        })
+    return batches
+
+
+@router.get("/envelopes/{envelope_id}", response_model=EnvelopeDetailResponse)
+async def get_envelope(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    return envelope
+
+
+@router.put("/envelopes/{envelope_id}", response_model=EnvelopeResponse)
+async def update_envelope(
+    envelope_id: uuid.UUID,
+    data: EnvelopeUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft envelopes can be updated",
+        )
+    return await svc.update_envelope(db, envelope, data)
+
+
+@router.delete("/envelopes/{envelope_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_envelope(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft envelopes can be deleted",
+        )
+    await svc.delete_envelope(db, envelope)
+
+
+@router.post("/envelopes/{envelope_id}/send", response_model=EnvelopeResponse)
+async def send_envelope(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    if not envelope.recipients:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Envelope must have at least one recipient before sending",
+        )
+    return await svc.send_envelope(db, envelope)
+
+
+@router.post("/envelopes/{envelope_id}/void", response_model=EnvelopeResponse)
+async def void_envelope(
+    envelope_id: uuid.UUID,
+    data: VoidEnvelopeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    return await svc.void_envelope(db, envelope, data)
+
+
+@router.post("/envelopes/{envelope_id}/resend", response_model=EnvelopeResponse)
+async def resend_envelope(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    return await svc.resend_envelope(db, envelope)
+
+
+@router.post(
+    "/envelopes/{envelope_id}/save-as-template",
+    response_model=SaveAsTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def save_envelope_as_template(
+    envelope_id: uuid.UUID,
+    data: SaveAsTemplateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Copy this envelope's documents, fields config, and roles into a new Template record."""
+    from app.templates.models import Template
+
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+
+    # Build document_ids list (store as string UUIDs for the template JSON column)
+    document_ids = [str(doc.id) for doc in envelope.documents]
+
+    # Build roles list from the envelope's recipients (placeholder roles)
+    roles = [
+        {
+            "name": r.name,
+            "email": r.email,
+            "role": r.role.value,
+            "routing_order": r.routing_order,
+        }
+        for r in envelope.recipients
+    ]
+
+    # Build fields_config from all fields across all documents
+    fields_config = [
+        {
+            "document_id": str(f.document_id),
+            "recipient_id": str(f.recipient_id),
+            "type": f.type.value,
+            "page": f.page,
+            "x": f.x,
+            "y": f.y,
+            "width": f.width,
+            "height": f.height,
+            "required": f.required,
+            "label": f.label,
+        }
+        for doc in envelope.documents
+        for f in doc.fields
+    ]
+
+    template_name = data.name or envelope.subject
+    template = Template(
+        user_id=current_user.id,
+        name=template_name,
+        description=envelope.message,
+        document_ids=document_ids,
+        roles=roles,
+        fields_config=fields_config,
+    )
+    db.add(template)
+    await db.commit()
+    await db.refresh(template)
+
+    return SaveAsTemplateResponse(template_id=template.id)
+
+
+# ── Document endpoints ────────────────────────────────────────────────────────
+
+@router.post(
+    "/envelopes/{envelope_id}/documents",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_document(
+    envelope_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Documents can only be added to draft envelopes",
+        )
+
+    # Validate file type — accept PDF and Word documents
+    allowed_mime_types = {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+    }
+    content_type = file.content_type or ""
+    original_filename = file.filename or "document"
+    name_lower = original_filename.lower()
+    is_pdf = content_type == "application/pdf" or name_lower.endswith(".pdf")
+    is_docx = (
+        content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        or name_lower.endswith(".docx")
+    )
+    is_doc = content_type == "application/msword" or name_lower.endswith(".doc")
+
+    if content_type and content_type not in allowed_mime_types:
+        # Only reject if the browser supplied a content type we don't recognise
+        if not (is_pdf or is_docx or is_doc):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=f"Unsupported file type: {content_type}. Accepted types: PDF, DOCX, DOC",
+            )
+
+    # Preserve the original file extension so the stored file is not misidentified
+    ext = os.path.splitext(original_filename)[-1].lower()
+    if ext not in (".pdf", ".docx", ".doc"):
+        ext = ".pdf"  # safe fallback
+
+    os.makedirs(settings.upload_dir, exist_ok=True)
+    file_id = str(uuid.uuid4())
+    stored_filename = f"{file_id}{ext}"
+    file_path = os.path.join(settings.upload_dir, stored_filename)
+
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    file_size = len(content)
+
+    if is_pdf:
+        try:
+            page_count = get_page_count(file_path)
+        except Exception:
+            page_count = 1
+    elif is_docx:
+        try:
+            from docx import Document as DocxDocument
+            docx_doc = DocxDocument(file_path)
+            # python-docx doesn't track pages directly; count section breaks as a proxy
+            # Fall back to 1 if the library is not available or the file is malformed
+            page_count = max(1, len(docx_doc.sections))
+        except Exception:
+            page_count = 1
+    else:
+        # .doc (legacy binary format) — no pure-Python page counter available
+        page_count = 1
+
+    order = len(envelope.documents)
+    doc = Document(
+        envelope_id=envelope_id,
+        filename=stored_filename,
+        original_filename=original_filename,
+        file_path=file_path,
+        page_count=page_count,
+        file_size=file_size,
+        order=order,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return {
+        "id": doc.id,
+        "envelope_id": doc.envelope_id,
+        "filename": doc.filename,
+        "original_filename": doc.original_filename,
+        "page_count": doc.page_count,
+        "file_size": doc.file_size,
+        "order": doc.order,
+        "created_at": doc.created_at,
+        "fields": [],
+    }
+
+
+@router.get("/documents/{document_id}/pages/{page}")
+async def get_document_page(
+    document_id: uuid.UUID,
+    page: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    doc = await svc.get_document(db, document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    # Verify ownership via envelope
+    envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    try:
+        png_bytes = render_page(doc.file_path, page - 1)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to render page: {exc}",
+        )
+
+    return FastAPIResponse(content=png_bytes, media_type="image/png")
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    doc = await svc.get_document(db, document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Documents can only be removed from draft envelopes",
+        )
+    await svc.delete_document(db, doc)
+
+
+# ── Recipient endpoints ───────────────────────────────────────────────────────
+
+@router.post(
+    "/envelopes/{envelope_id}/recipients",
+    response_model=RecipientResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_recipient(
+    envelope_id: uuid.UUID,
+    data: RecipientCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Recipients can only be added to draft envelopes",
+        )
+    recipient = await svc.add_recipient(db, envelope, data)
+    return {
+        "id": recipient.id,
+        "envelope_id": recipient.envelope_id,
+        "name": recipient.name,
+        "email": recipient.email,
+        "role": recipient.role,
+        "routing_order": recipient.routing_order,
+        "status": recipient.status,
+        "signing_token": recipient.signing_token,
+        "signed_at": recipient.signed_at,
+        "declined_at": recipient.declined_at,
+        "decline_reason": recipient.decline_reason,
+        "access_code": recipient.access_code,
+        "fields": [],
+    }
+
+
+@router.put("/recipients/{recipient_id}", response_model=RecipientResponse)
+async def update_recipient(
+    recipient_id: uuid.UUID,
+    data: RecipientUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    recipient = await svc.get_recipient(db, recipient_id)
+    if not recipient:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+    envelope = await svc.get_envelope(db, recipient.envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    updated = await svc.update_recipient(db, recipient, data)
+    return {
+        "id": updated.id,
+        "envelope_id": updated.envelope_id,
+        "name": updated.name,
+        "email": updated.email,
+        "role": updated.role,
+        "routing_order": updated.routing_order,
+        "status": updated.status,
+        "signing_token": updated.signing_token,
+        "signed_at": updated.signed_at,
+        "declined_at": updated.declined_at,
+        "decline_reason": updated.decline_reason,
+        "access_code": updated.access_code,
+        "fields": [],
+    }
+
+
+@router.delete("/recipients/{recipient_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recipient(
+    recipient_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    recipient = await svc.get_recipient(db, recipient_id)
+    if not recipient:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+    envelope = await svc.get_envelope(db, recipient.envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Recipients can only be removed from draft envelopes",
+        )
+    await svc.delete_recipient(db, recipient)
+
+
+# ── Field endpoints ───────────────────────────────────────────────────────────
+
+@router.post(
+    "/documents/{document_id}/fields",
+    response_model=FieldResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_field(
+    document_id: uuid.UUID,
+    data: FieldCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    doc = await svc.get_document(db, document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return await svc.create_field(db, document_id, data)
+
+
+@router.put("/fields/{field_id}", response_model=FieldResponse)
+async def update_field(
+    field_id: uuid.UUID,
+    data: FieldUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    field = await svc.get_field(db, field_id)
+    if not field:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
+    doc = await svc.get_document(db, field.document_id)
+    envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return await svc.update_field(db, field, data)
+
+
+@router.delete("/fields/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_field(
+    field_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    field = await svc.get_field(db, field_id)
+    if not field:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
+    doc = await svc.get_document(db, field.document_id)
+    envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await svc.delete_field(db, field)
+
+
+@router.get("/envelopes/{envelope_id}/fields", response_model=list[FieldResponse])
+async def get_envelope_fields(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    return await svc.get_fields_for_envelope(db, envelope_id)
+
+
+@router.put("/envelopes/{envelope_id}/fields", response_model=list[FieldResponse])
+async def save_envelope_fields(
+    envelope_id: uuid.UUID,
+    data: FieldBulkSaveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk-save (upsert + delete) all fields for an envelope in one request."""
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Fields can only be modified on draft envelopes",
+        )
+    return await svc.save_fields_for_envelope(db, envelope_id, data.fields)
+
+
+# ── Download endpoints ────────────────────────────────────────────────────────
+
+@router.get("/documents/{document_id}/download")
+async def download_document(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the original document file."""
+    doc = await svc.get_document(db, document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    # Verify ownership via envelope
+    envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found on server",
+        )
+
+    with open(doc.file_path, "rb") as f:
+        content = f.read()
+
+    # Determine MIME type from stored filename extension
+    _ext = os.path.splitext(doc.filename)[-1].lower()
+    _mime_map = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".doc": "application/msword",
+    }
+    media_type = _mime_map.get(_ext, "application/octet-stream")
+
+    return FastAPIResponse(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{doc.original_filename}"'
+        },
+    )
+
+
+@router.get("/envelopes/{envelope_id}/download")
+async def download_signed_envelope(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the signed/completed PDF for a completed envelope (merges all documents with fields applied)."""
+    from app.signing.pdf_processor import apply_fields_to_pdf
+
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+
+    if envelope.status != EnvelopeStatus.completed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only completed envelopes can be downloaded as signed PDFs",
+        )
+
+    if not envelope.documents:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No documents found for this envelope",
+        )
+
+    # Use the first document as the primary signed PDF (apply all fields)
+    doc = envelope.documents[0]
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document file not found on server",
+        )
+
+    # Collect all fields across all documents
+    all_fields = [
+        {
+            "type": f.type.value,
+            "page": f.page,
+            "x": f.x,
+            "y": f.y,
+            "width": f.width,
+            "height": f.height,
+            "value": f.value,
+            "label": f.label,
+        }
+        for d in envelope.documents
+        for f in d.fields
+    ]
+
+    try:
+        pdf_bytes = apply_fields_to_pdf(doc.file_path, all_fields)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate signed PDF: {exc}",
+        )
+
+    safe_subject = "".join(c for c in envelope.subject if c.isalnum() or c in " _-")[:50]
+    filename = f"signed_{safe_subject}.pdf"
+
+    return FastAPIResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/envelopes/{envelope_id}/certificate")
+async def download_certificate(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the audit trail / completion certificate PDF."""
+    from app.audit import service as audit_svc
+    from app.signing.pdf_processor import generate_certificate
+
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+
+    if envelope.status != EnvelopeStatus.completed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Certificate is only available for completed envelopes",
+        )
+
+    audit_events = await audit_svc.get_audit_events(db, envelope_id)
+
+    envelope_data = {
+        "id": envelope.id,
+        "subject": envelope.subject,
+        "sent_at": envelope.sent_at,
+        "completed_at": envelope.completed_at,
+    }
+    audit_dicts = [
+        {
+            "created_at": ae.created_at,
+            "event_type": ae.event_type,
+            "details": ae.details,
+        }
+        for ae in audit_events
+    ]
+
+    try:
+        cert_bytes = generate_certificate(envelope_data, audit_dicts)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate certificate: {exc}",
+        )
+
+    safe_subject = "".join(c for c in envelope.subject if c.isalnum() or c in " _-")[:50]
+    filename = f"certificate_{safe_subject}.pdf"
+
+    return FastAPIResponse(
+        content=cert_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── Bulk Send endpoints ────────────────────────────────────────────────────────
+
+@router.post(
+    "/envelopes/bulk-send-direct",
+    response_model=BulkSendResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def bulk_send_direct(
+    csv_file: UploadFile = File(...),
+    documents: List[UploadFile] = File(...),
+    subject: str = Form(...),
+    message: str = Form(""),
+    reminder_days: int = Form(0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create one envelope per CSV row (columns: name, email) using the uploaded documents directly."""
+    # Parse CSV
+    csv_content = await csv_file.read()
+    try:
+        text = csv_content.decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(text))
+        rows = [row for row in reader]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid CSV: {exc}",
+        )
+
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="CSV has no data rows",
+        )
+
+    # Read all uploaded document bytes once so we can copy them per envelope
+    os.makedirs(settings.upload_dir, exist_ok=True)
+    source_docs: list[dict] = []
+    for upload in documents:
+        original_filename = upload.filename or "document"
+        ext = os.path.splitext(original_filename)[-1].lower()
+        if ext not in (".pdf", ".docx", ".doc"):
+            ext = ".pdf"
+
+        file_id = str(uuid.uuid4())
+        stored_filename = f"{file_id}{ext}"
+        source_path = os.path.join(settings.upload_dir, stored_filename)
+
+        content = await upload.read()
+        with open(source_path, "wb") as fh:
+            fh.write(content)
+
+        # Determine page count for the source file
+        name_lower = original_filename.lower()
+        is_pdf = name_lower.endswith(".pdf")
+        is_docx = name_lower.endswith(".docx")
+        if is_pdf:
+            try:
+                page_count = get_page_count(source_path)
+            except Exception:
+                page_count = 1
+        elif is_docx:
+            try:
+                from docx import Document as DocxDocument
+                docx_doc = DocxDocument(source_path)
+                page_count = max(1, len(docx_doc.sections))
+            except Exception:
+                page_count = 1
+        else:
+            page_count = 1
+
+        source_docs.append(
+            {
+                "source_path": source_path,
+                "original_filename": original_filename,
+                "ext": ext,
+                "file_size": len(content),
+                "page_count": page_count,
+            }
+        )
+
+    batch_id = str(uuid.uuid4())
+    created = 0
+    total_rows = len(rows)
+
+    for row in rows:
+        name = (row.get("name") or "").strip()
+        email = (row.get("email") or "").strip()
+        if not name or not email:
+            continue
+
+        # Create envelope
+        from app.envelopes.schemas import EnvelopeCreate as EnvCreate
+        envelope_data = EnvCreate(
+            subject=subject,
+            message=message or None,
+            reminder_days=reminder_days,
+        )
+        envelope = await svc.create_envelope(db, current_user.id, envelope_data)
+        envelope.batch_id = batch_id
+        await db.flush()
+
+        # Copy each document to a new path and create Document records
+        for idx, src in enumerate(source_docs):
+            new_file_id = str(uuid.uuid4())
+            new_stored_filename = f"{new_file_id}{src['ext']}"
+            new_file_path = os.path.join(settings.upload_dir, new_stored_filename)
+            shutil.copy2(src["source_path"], new_file_path)
+
+            doc = Document(
+                envelope_id=envelope.id,
+                filename=new_stored_filename,
+                original_filename=src["original_filename"],
+                file_path=new_file_path,
+                page_count=src["page_count"],
+                file_size=src["file_size"],
+                order=idx,
+            )
+            db.add(doc)
+
+        await db.flush()
+
+        # Add recipient
+        from app.envelopes.models import Recipient as RecipientModel
+        recipient = RecipientModel(
+            envelope_id=envelope.id,
+            name=name,
+            email=email,
+        )
+        db.add(recipient)
+        await db.flush()
+
+        # Send the envelope
+        envelope_detail = await svc.get_envelope(db, envelope.id, current_user.id)
+        if envelope_detail:
+            try:
+                await svc.send_envelope(db, envelope_detail)
+            except Exception:
+                pass  # count as created even if send fails
+
+        created += 1
+
+    await db.commit()
+    return BulkSendResponse(batch_id=batch_id, total=total_rows, created=created)
+
+
+@router.post(
+    "/envelopes/bulk-send",
+    response_model=BulkSendResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def bulk_send_envelopes(
+    template_id: uuid.UUID = Query(...),
+    csv_file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create one envelope per CSV row (columns: name, email) from a template."""
+    from app.templates import service as tmpl_svc
+    from app.templates.models import Template
+    from sqlalchemy import select as sa_select
+
+    # Load template
+    tmpl_result = await db.execute(
+        sa_select(Template).where(Template.id == template_id, Template.user_id == current_user.id)
+    )
+    template = tmpl_result.scalar_one_or_none()
+    if not template:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+
+    # Parse CSV
+    content = await csv_file.read()
+    try:
+        text = content.decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(text))
+        rows = [row for row in reader]
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid CSV: {exc}")
+
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="CSV has no data rows")
+
+    # Validate required columns
+    for i, row in enumerate(rows, 1):
+        if "name" not in row or "email" not in row:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Row {i} is missing 'name' or 'email' column",
+            )
+
+    batch_id = str(uuid.uuid4())
+    created = 0
+
+    for row in rows:
+        name = (row.get("name") or "").strip()
+        email = (row.get("email") or "").strip()
+        if not name or not email:
+            continue
+
+        # Create envelope from template
+        envelope_id = await tmpl_svc.create_envelope_from_template(db, template, current_user.id)
+
+        # Load the created envelope and set batch_id + add recipient
+        env_result = await db.execute(
+            sa_select(Envelope).where(Envelope.id == envelope_id)
+        )
+        envelope = env_result.scalar_one()
+        envelope.batch_id = batch_id
+
+        from app.envelopes.models import Recipient as RecipientModel
+        recipient = RecipientModel(
+            envelope_id=envelope.id,
+            name=name,
+            email=email,
+        )
+        db.add(recipient)
+        await db.flush()
+
+        # Send the envelope
+        from app.envelopes.service import send_envelope
+        envelope_detail = await svc.get_envelope(db, envelope.id, current_user.id)
+        if envelope_detail:
+            try:
+                await send_envelope(db, envelope_detail)
+            except Exception:
+                pass  # count as created even if send fails
+
+        created += 1
+
+    await db.commit()
+    return BulkSendResponse(batch_id=batch_id, total=len(rows), created=created)
+
+
+# ── Comment endpoints ──────────────────────────────────────────────────────────
+
+@router.get("/envelopes/{envelope_id}/comments", response_model=list[CommentResponse])
+async def list_comments(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    comments = await svc.list_comments(db, envelope_id)
+    return [
+        {
+            "id": c.id,
+            "envelope_id": c.envelope_id,
+            "user_id": c.user_id,
+            "text": c.text,
+            "created_at": c.created_at,
+            "author_name": c.author.name if c.author else None,
+            "author_email": c.author.email if c.author else None,
+        }
+        for c in comments
+    ]
+
+
+@router.post(
+    "/envelopes/{envelope_id}/comments",
+    response_model=CommentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_comment(
+    envelope_id: uuid.UUID,
+    data: CommentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    comment = await svc.create_comment(db, envelope_id, current_user.id, data)
+    return {
+        "id": comment.id,
+        "envelope_id": comment.envelope_id,
+        "user_id": comment.user_id,
+        "text": comment.text,
+        "created_at": comment.created_at,
+        "author_name": comment.author.name if comment.author else None,
+        "author_email": comment.author.email if comment.author else None,
+    }
+
+
+# ── Correct in-flight endpoints ────────────────────────────────────────────────
+
+@router.post("/envelopes/{envelope_id}/correct", response_model=EnvelopeResponse)
+async def correct_envelope(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Transition a sent/delivered envelope back to draft for editing."""
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    return await svc.correct_envelope(db, envelope)
+
+
+@router.post("/envelopes/{envelope_id}/resend-corrected", response_model=EnvelopeResponse)
+async def resend_corrected_envelope(
+    envelope_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Re-send an envelope that was corrected (back in draft state)."""
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    return await svc.resend_corrected_envelope(db, envelope)
