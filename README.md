@@ -47,9 +47,9 @@ uvicorn app.main:app --reload --port 8000
 With the API running, seed the database:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/reset \
+curl -X POST http://localhost:8000/seed \
   -H "Content-Type: application/json" \
-  -d '{"scenario": "default"}'
+  -d @apps/api/seeds/seed-default.json
 ```
 
 ### 4. Frontend (Next.js — port 3000)
