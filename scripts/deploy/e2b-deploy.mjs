@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
- * E2B deployment script
- * Creates an E2B sandbox, installs Docker, clones the repo,
- * and runs docker-compose.prod.yml. Outputs the public URL.
+ * E2B deployment script — no Docker, runs processes directly
+ * Installs deps, starts postgres via apt, runs api + web, seeds db.
  */
 
 import { Sandbox } from 'e2b'
@@ -11,7 +10,7 @@ const REPO_URL = 'https://github.com/vedantaneogi/saas-cloning-template.git'
 const BRANCH = process.env.DEPLOY_BRANCH ?? 'outlook-clone'
 const SECRET_KEY = process.env.SECRET_KEY ?? 'e2b-deploy-secret-key'
 const APP_DIR = '/home/user/app'
-const SANDBOX_TIMEOUT = 24 * 60 * 60 * 1000 // 24 hours (E2B max)
+const SANDBOX_TIMEOUT = 24 * 60 * 60 * 1000 // 24 hours
 
 function log(msg) {
   console.log(`[e2b-deploy] ${msg}`)
@@ -28,12 +27,26 @@ async function run(sandbox, cmd, opts = {}) {
     console.error(`STDERR: ${result.stderr?.slice(-2000)}`)
     throw new Error(`Command failed (exit ${result.exitCode}): ${cmd}`)
   }
-  if (result.stdout?.trim()) log(result.stdout.trim().slice(-500))
+  if (result.stdout?.trim()) log(result.stdout.trim().slice(-300))
   return result
 }
 
 async function sleep(ms) {
   return new Promise(r => setTimeout(r, ms))
+}
+
+async function waitForUrl(sandbox, url, maxAttempts = 30, intervalMs = 3000) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const check = await sandbox.commands.run(
+      `curl -so /dev/null -w "%{http_code}" ${url}`,
+      { timeoutMs: 30_000 }
+    )
+    const code = check.stdout.trim()
+    log(`Health check ${i + 1}: HTTP ${code}`)
+    if (['200', '301', '302', '307', '308'].includes(code)) return true
+    await sleep(intervalMs)
+  }
+  throw new Error(`Service at ${url} did not become healthy`)
 }
 
 async function main() {
@@ -46,64 +59,107 @@ async function main() {
     timeoutMs: SANDBOX_TIMEOUT,
     requestTimeoutMs: 30_000,
   })
-
   log(`Sandbox ID: ${sandbox.sandboxId}`)
-
-  // Install Docker
-  log('Installing Docker...')
-  await run(sandbox, 'curl -fsSL https://get.docker.com | sudo sh', { timeoutMs: 180_000 })
-  await run(sandbox, 'sudo docker --version')
-  await run(sandbox, 'sudo docker compose version')
 
   // Clone repo
   log(`Cloning ${REPO_URL} (branch: ${BRANCH})...`)
   await run(sandbox, `git clone --branch ${BRANCH} --depth 1 ${REPO_URL} ${APP_DIR}`, { timeoutMs: 60_000 })
 
-  // Build images sequentially (avoids OOM from parallel builds in E2B sandbox)
-  log('Building API image...')
+  // ── PostgreSQL ────────────────────────────────────────────────
+  log('Installing PostgreSQL...')
+  await run(sandbox, 'sudo apt-get update -qq && sudo apt-get install -y postgresql postgresql-contrib', { timeoutMs: 120_000 })
+  await run(sandbox, 'sudo service postgresql start')
+  await run(sandbox, `sudo -u postgres psql -c "CREATE USER app WITH PASSWORD 'app';"`)
+  await run(sandbox, `sudo -u postgres psql -c "CREATE DATABASE outlook OWNER app;"`)
+  log('PostgreSQL ready')
+
+  // ── Python / API ─────────────────────────────────────────────
+  log('Installing system deps for asyncpg...')
+  await run(sandbox, 'sudo apt-get install -y libpq-dev gcc python3-dev', { timeoutMs: 60_000 })
+
+  log('Installing Python deps...')
   await run(sandbox,
-    `cd ${APP_DIR} && sudo docker compose -f docker-compose.prod.yml build api 2>&1`,
-    { timeoutMs: 0 }
+    'pip install fastapi "uvicorn[standard]" "sqlalchemy[asyncio]" asyncpg alembic "pydantic[email]" pydantic-settings "python-jose[cryptography]" "passlib[bcrypt]" python-multipart aiofiles greenlet python-json-logger',
+    { timeoutMs: 180_000 }
   )
 
-  log('Building web image...')
+  log('Running DB migrations...')
   await run(sandbox,
-    `cd ${APP_DIR} && sudo docker compose -f docker-compose.prod.yml build web 2>&1`,
-    { timeoutMs: 0 }
-  )
-
-  log('Starting all services...')
-  await run(sandbox,
-    `cd ${APP_DIR} && SECRET_KEY=${SECRET_KEY} sudo docker compose -f docker-compose.prod.yml up -d 2>&1`,
+    `cd ${APP_DIR}/apps/api && DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/outlook alembic upgrade head`,
     { timeoutMs: 60_000 }
   )
 
-  // Show running containers
-  log('Services are up! Running containers:')
-  await run(sandbox, `sudo docker compose -f ${APP_DIR}/docker-compose.prod.yml ps 2>&1`)
+  log('Starting API server...')
+  sandbox.commands.run(
+    `cd ${APP_DIR}/apps/api && DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/outlook SECRET_KEY=${SECRET_KEY} DEBUG=false python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/api.log 2>&1`,
+    { timeoutMs: 0 }
+  ).catch(() => {})
 
-  // Wait for API health check
-  log('Waiting for API to be ready...')
-  for (let i = 0; i < 30; i++) {
-    await sleep(3_000)
-    const check = await sandbox.commands.run('curl -sf http://localhost/health && echo OK || echo WAITING', { timeoutMs: 0 })
-    if (check.stdout.trim() === 'OK') {
-      log('API is healthy!')
-      break
-    }
-    log(`Health check ${i + 1}/30: waiting...`)
-  }
+  await sleep(5000)
+  // Check if it started at all
+  const apiLog = await sandbox.commands.run('cat /tmp/api.log 2>/dev/null || echo "no log"', { timeoutMs: 0 })
+  log(`API log:\n${apiLog.stdout}`)
 
-  // Seed database
-  log('Seeding database...')
-  const seedResult = await sandbox.commands.run(
-    `curl -s -X POST http://localhost/seed -H "Content-Type: application/json" -d @${APP_DIR}/apps/api/seeds/seed-default.json`
+  await waitForUrl(sandbox, 'http://localhost:8000/health')
+  log('API is healthy!')
+
+  // ── Node / Web ────────────────────────────────────────────────
+  log('Installing Node.js 22...')
+  await run(sandbox,
+    'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -',
+    { timeoutMs: 60_000 }
   )
-  log(`Seed result: ${seedResult.stdout.slice(0, 200)}`)
+  await run(sandbox, 'sudo apt-get install -y nodejs', { timeoutMs: 120_000 })
+  await run(sandbox, 'node --version && npm --version')
 
-  // Get public URL (nginx on port 80)
-  const host = sandbox.getHost(80)
-  const url = `https://${host}`
+  // Add swap to ensure enough virtual memory for npm install of Next.js
+  log('Adding swap space (2GB)...')
+  await run(sandbox, 'sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile', { timeoutMs: 60_000 })
+  await run(sandbox, 'free -h')
+
+  // Install in a clean dir outside the monorepo to avoid packageManager field interference
+  // PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 prevents ~300MB browser binary downloads
+  log('Installing Node deps (all deps, skip playwright browsers)...')
+  await run(sandbox, `mkdir -p /home/user/webapp-install && cp ${APP_DIR}/apps/web/package.json /home/user/webapp-install/`)
+  await run(sandbox,
+    'cd /home/user/webapp-install && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --legacy-peer-deps',
+    { timeoutMs: 0 }
+  )
+  await run(sandbox, `cp -r /home/user/webapp-install/node_modules ${APP_DIR}/apps/web/`, { timeoutMs: 120_000 })
+
+  const nextBin = `${APP_DIR}/apps/web/node_modules/.bin/next`
+  log(`next binary: ${nextBin}`)
+
+  log('Building Next.js...')
+  await run(sandbox,
+    `cd ${APP_DIR}/apps/web && NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_API_URL=/api/v1 NODE_OPTIONS="--max-old-space-size=1536" node ${nextBin} build`,
+    { timeoutMs: 0 }
+  )
+
+  log('Starting web server...')
+  sandbox.commands.run(
+    `cd ${APP_DIR}/apps/web && API_INTERNAL_URL=http://localhost:8000 NODE_ENV=production node ${nextBin} start -p 3000 > /tmp/web.log 2>&1`,
+    { timeoutMs: 0 }
+  ).catch(() => {})
+
+  await sleep(8000)
+  const webLog = await sandbox.commands.run('cat /tmp/web.log 2>/dev/null || echo "no log"', { timeoutMs: 30_000 })
+  log(`Web log:\n${webLog.stdout}`)
+
+  await waitForUrl(sandbox, 'http://localhost:3000')
+  log('Web server is ready!')
+
+  // ── Seed ──────────────────────────────────────────────────────
+  log('Seeding database...')
+  const seed = await sandbox.commands.run(
+    `curl -s -X POST http://localhost:8000/seed -H "Content-Type: application/json" -d @${APP_DIR}/apps/api/seeds/seed-default.json`,
+    { timeoutMs: 0 }
+  )
+  log(`Seed: ${seed.stdout.slice(0, 150)}`)
+
+  // ── Public URLs ───────────────────────────────────────────────
+  const webHost = sandbox.getHost(3000)
+  const url = `https://${webHost}`
 
   log('='.repeat(60))
   log(`Deployment successful!`)
@@ -112,7 +168,6 @@ async function main() {
   log(`Sandbox ID:  ${sandbox.sandboxId}`)
   log('='.repeat(60))
 
-  // GitHub Actions outputs
   if (process.env.GITHUB_OUTPUT) {
     const { appendFileSync } = await import('fs')
     appendFileSync(process.env.GITHUB_OUTPUT, `url=${url}\n`)
