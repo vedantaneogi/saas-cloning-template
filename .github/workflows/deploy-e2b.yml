@@ -1,0 +1,39 @@
+name: Deploy to E2B
+
+on:
+  push:
+    branches: [outlook-clone]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: false
+        default: 'outlook-clone'
+
+jobs:
+  deploy:
+    name: Deploy to E2B Sandbox
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install E2B SDK
+        run: npm install e2b
+
+      - name: Deploy to E2B
+        id: deploy
+        run: node scripts/deploy/e2b-deploy.mjs
+        env:
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+          SECRET_KEY: ${{ secrets.APP_SECRET_KEY }}
+          DEPLOY_BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
+
+      - name: Print deployment URL
+        run: |
+          echo "App deployed at: ${{ steps.deploy.outputs.url }}"
+          echo "Sandbox ID: ${{ steps.deploy.outputs.sandbox_id }}"
