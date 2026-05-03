@@ -158,6 +158,49 @@ async def load_seed(session: AsyncSession, payload: SeedPayload) -> dict[str, in
 
     rl_state.active_user_id = str(user.id)
 
+    # ------------------------------------------------------------------
+    # 1b. Create accounts for ALL world people (for multi-account testing)
+    # ------------------------------------------------------------------
+    extra_users_created = 0
+    for person in world.people:
+        if person.id == app.active_user.world_id:
+            continue  # Skip active user (already created above)
+        existing = await session.execute(select(User).where(User.email == person.email))
+        if existing.scalar_one_or_none():
+            continue
+        extra_user = User(
+            id=uuid.uuid4(),
+            world_id=person.id,
+            email=person.email,
+            display_name=f"{person.first_name} {person.last_name}",
+            avatar_url=person.avatar_url,
+            timezone="America/New_York",
+            locale="en-US",
+            role="worker",
+            hashed_password=hash_password("password123"),
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(extra_user)
+        await session.flush()
+        # Create system folders for extra user
+        for sf in SYSTEM_FOLDERS:
+            session.add(Folder(
+                id=uuid.uuid4(),
+                user_id=extra_user.id,
+                name=sf["name"],
+                slug=sf["slug"],
+                is_system=True,
+                icon=sf["icon"],
+                sort_order=sf["sort_order"],
+                created_at=now,
+                updated_at=now,
+            ))
+        extra_users_created += 1
+    if extra_users_created:
+        await session.flush()
+
     # OOF settings
     oof = app.out_of_office
     if oof:
