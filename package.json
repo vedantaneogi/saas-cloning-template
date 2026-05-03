@@ -14,5 +14,8 @@
   },
   "dependencies": {
     "@tiptap/extension-image": "^3.22.5"
+  },
+  "devDependencies": {
+    "e2b": "^2.19.4"
   }
 }

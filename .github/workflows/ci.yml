@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [outlook-clone]
+
+jobs:
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: apps/web
+
+      - name: Type check
+        run: npx tsc --noEmit
+        working-directory: apps/web
+
+  test:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    needs: typecheck
+
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: outlook
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install API dependencies
+        run: pip install fastapi "uvicorn[standard]" "sqlalchemy[asyncio]" asyncpg alembic "pydantic[email]" pydantic-settings "python-jose[cryptography]" "passlib[bcrypt]" python-multipart aiofiles greenlet python-json-logger
+        working-directory: apps/api
+
+      - name: Run DB migrations
+        run: alembic upgrade head
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/outlook
+
+      - name: Start API server
+        run: uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/outlook
+          SECRET_KEY: ci-test-secret-key
+          DEBUG: 'true'
+
+      - name: Install web dependencies
+        run: npm install
+        working-directory: apps/web
+
+      - name: Build Next.js
+        run: npm run build
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: /api/v1
+
+      - name: Start web server
+        run: npm start &
+        working-directory: apps/web
+        env:
+          NODE_ENV: production
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+
+      - name: Wait for servers
+        run: npx wait-on http://localhost:8000/health http://localhost:3000 --timeout 60000
+        working-directory: apps/web
+
+      - name: Seed database
+        run: |
+          curl -s -X POST http://localhost:8000/seed \
+            -H "Content-Type: application/json" \
+            -d @../api/seeds/seed-default.json
+
+      - name: Run Playwright tests
+        run: npx playwright test --reporter=list
+        working-directory: apps/web
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
