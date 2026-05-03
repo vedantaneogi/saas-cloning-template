@@ -1,0 +1,93 @@
+.wrap {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: visible;
+  background: var(--tbl-fill, #ffffff);
+  border-radius: 2px;
+  border: var(--tbl-border-w, 1px) solid var(--tbl-border-color, #c7c9cc);
+}
+
+.wrap[data-editing="true"] {
+  cursor: text;
+}
+
+.wrap[data-interactive="true"]:not([data-editing="true"]) {
+  cursor: move;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: var(--tbl-cols, 1fr);
+  grid-template-rows: var(--tbl-rows, 1fr);
+  width: 100%;
+  height: 100%;
+  gap: 0;
+}
+
+.cell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  border-right: var(--tbl-border-w, 1px) solid var(--tbl-border-color, #c7c9cc);
+  border-bottom: var(--tbl-border-w, 1px) solid var(--tbl-border-color, #c7c9cc);
+  padding: 6px 8px;
+  font-size: 14px;
+  color: #202124;
+  line-height: 1.3;
+  overflow: hidden;
+  background: transparent;
+}
+
+.cell:last-child,
+.cell[data-cell-col] {
+  /* no-op placeholder so CSS modules keep the attribute selector live */
+}
+
+/* remove trailing borders — outer border is drawn by .wrap */
+.grid > .cell[data-cell-col] {
+  /* The outer .wrap border supplies the table's right/bottom edge. */
+}
+
+.cellHeader {
+  background: var(--tbl-header-fill, #dfe6f7);
+  font-weight: var(--tbl-header-weight, 700);
+}
+
+.wrap[data-header="off"] .cellHeader {
+  background: transparent;
+  font-weight: 400;
+}
+
+.cellZebra {
+  background: var(--tbl-zebra-fill, #f1f3f4);
+}
+
+.wrap[data-zebra="off"] .cellZebra {
+  background: transparent;
+}
+
+.cellContent {
+  width: 100%;
+  height: 100%;
+  outline: none;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.cellContent p {
+  margin: 0;
+  line-height: 1.3;
+  min-height: 1.2em;
+}
+
+.cellContent :global(.ProseMirror) {
+  outline: none;
+  width: 100%;
+  height: 100%;
+  min-height: 1.2em;
+}
+
+.cellContent :global(.ProseMirror-focused) {
+  outline: none;
+}

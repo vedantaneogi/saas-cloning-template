@@ -1,0 +1,53 @@
+.wrap {
+  --tbl-pick-size: 18px;
+  padding: 10px 12px 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: none;
+}
+
+.grid {
+  display: grid;
+  gap: 2px;
+  justify-content: start;
+}
+
+.cell {
+  width: var(--tbl-pick-size);
+  height: var(--tbl-pick-size);
+  border: 1px solid #c7c9cc;
+  background: #fff;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background 60ms ease;
+}
+
+.cell:hover {
+  background: #f1f3f4;
+}
+
+.cellActive {
+  background: #d2e3fc;
+  border-color: #1a73e8;
+}
+
+.label {
+  font-size: 12px;
+  color: #3c4043;
+  text-align: center;
+  line-height: 16px;
+  min-height: 16px;
+}
+
+@media (max-width: 768px) {
+  .wrap {
+    --tbl-pick-size: 14px;
+    padding: 8px 10px 6px 10px;
+  }
+
+  .label {
+    font-size: 11px;
+  }
+}

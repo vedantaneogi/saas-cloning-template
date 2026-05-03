@@ -1,0 +1,484 @@
+/* Shared card shell used by composer + posted comments. */
+.card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.15), 0 0 0 1px rgba(60, 64, 67, 0.08);
+  padding: 12px 14px;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: "Google Sans", Roboto, Arial, sans-serif;
+  color: #202124;
+}
+
+.cardMuted {
+  background: #E9EEF6;
+  box-shadow: none;
+  border: none;
+}
+
+.authorRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #1a73e8;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.authorMeta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.authorName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #202124;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.authorTime {
+  font-size: 12px;
+  color: #5f6368;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.hoverControls {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.card:hover .hoverControls,
+.card:focus-within .hoverControls {
+  display: inline-flex;
+}
+
+.iconBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #5f6368;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iconBtn:hover {
+  background: rgba(60, 64, 67, 0.08);
+}
+
+.iconBtnPrimary {
+  color: #1a73e8;
+}
+
+.commentText {
+  font-size: 14px;
+  line-height: 1.4;
+  color: #202124;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 8px;
+}
+
+.composerInput {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  resize: vertical;
+  border: 1.5px solid #1a73e8;
+  border-radius: 20px;
+  padding: 9px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #202124;
+  outline: none;
+  margin-top: 10px;
+}
+
+.composerInput::placeholder {
+  color: #80868b;
+}
+
+.composerActions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btnText {
+  background: transparent;
+  border: none;
+  color: #1a73e8;
+  font-weight: 600;
+  font-size: 14px;
+  font-family: inherit;
+  padding: 8px 14px;
+  border-radius: 18px;
+  cursor: pointer;
+}
+
+.btnText:hover {
+  background: rgba(26, 115, 232, 0.08);
+}
+
+.btnPrimary {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 18px;
+  padding: 8px 18px;
+  font-weight: 600;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btnPrimary:hover {
+  background: #1967d2;
+}
+
+.btnPrimary:disabled {
+  background: #dadce0;
+  color: #9aa0a6;
+  cursor: not-allowed;
+}
+
+/* Composer popup container (portal-rendered). */
+.popup {
+  position: fixed;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  z-index: 40;
+  animation: cmtFade 120ms ease-out;
+}
+
+@keyframes cmtFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.popupBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+}
+
+/* Canvas right rail stack — list of unresolved comments for the active slide. */
+.rail {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+  width: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  pointer-events: auto;
+}
+
+.rail::-webkit-scrollbar {
+  width: 6px;
+}
+.rail::-webkit-scrollbar-thumb {
+  background: rgba(60, 64, 67, 0.2);
+  border-radius: 3px;
+}
+
+/* Yellow border on active slide while composing. */
+.slideCommentingOutline {
+  outline: 3px solid #f6bf26;
+  outline-offset: 0;
+  border-radius: 2px;
+}
+
+/* Full right-side "Comments" panel (toggled via TopBar icon). */
+.panel {
+  grid-row: 2 / span 2;
+  grid-column: 2;
+  background: #f0f4f9;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: calc(100% - 16px);
+  margin: 8px 12px 8px 0;
+  font-family: "Google Sans", Roboto, Arial, sans-serif;
+  color: #202124;
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 18px 10px;
+}
+
+.panelTitle {
+  font-size: 22px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.panelHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.panelIconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #5f6368;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panelIconBtn:hover {
+  background: rgba(60, 64, 67, 0.08);
+}
+
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-bottom: 1px solid #e0e2e6;
+}
+
+.tabsLeft {
+  display: inline-flex;
+  gap: 28px;
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5f6368;
+  cursor: pointer;
+  font-family: inherit;
+  position: relative;
+}
+
+.tabActive {
+  color: #1a73e8;
+}
+
+.tabActive::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  background: #1a73e8;
+  border-radius: 3px 3px 0 0;
+}
+
+.tabSearch {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #5f6368;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.tabSearch:hover {
+  background: rgba(60, 64, 67, 0.08);
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  padding: 14px 18px 8px;
+}
+
+.filterSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid #747775;
+  background: transparent
+    url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%235f6368'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E")
+    no-repeat right 8px center;
+  border-radius: 4px;
+  padding: 6px 28px 6px 14px;
+  font-size: 13px;
+  color: #202124;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.filterSelect:hover {
+  background-color: rgba(60, 64, 67, 0.04);
+}
+
+.panelBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 18px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panelEmpty {
+  color: #5f6368;
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 8px;
+}
+
+.panelSlideLabel {
+  font-size: 13px;
+  font-weight: 400;
+  color: #5f6368;
+  margin: 2px 4px -8px;
+}
+
+.panelResolvedLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: #202124;
+  margin: 16px 4px 0;
+}
+
+.threadCard {
+  background: #DDE3E9;
+  padding: 14px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.threadDivider {
+  height: 1px;
+  background: rgba(60, 64, 67, 0.12);
+  margin: 4px 0 4px;
+}
+
+/* Small dropdown menu (same portal pattern as ThumbnailContextMenu). */
+.menuBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.menu {
+  position: fixed;
+  z-index: 91;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(60, 64, 67, 0.25), 0 0 0 1px rgba(60, 64, 67, 0.08);
+  min-width: 140px;
+  padding: 4px 0;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #202124;
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+}
+
+.menuItem:hover {
+  background: rgba(60, 64, 67, 0.06);
+}
+
+.menuItemDanger {
+  color: #d93025;
+}
+
+/* Unread-count badge on the TopBar comment icon. */
+.topBarCommentBtn {
+  position: relative;
+}
+
+.topBarBadge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: #d93025;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #fff;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Panel overlay on narrow viewports. */
+@media (max-width: 900px) {
+  .panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    box-shadow: -4px 0 16px rgba(60, 64, 67, 0.12);
+  }
+}

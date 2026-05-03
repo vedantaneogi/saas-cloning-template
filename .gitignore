@@ -249,3 +249,6 @@ deployment/environments/**/.env.*
 # Always allow placeholder keep files
 # ------------------------------------------------------------------------------
 !**/.gitkeep
+
+
+plans
