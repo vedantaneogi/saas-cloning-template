@@ -48,11 +48,8 @@ async function main() {
   await run(sandbox, 'curl -fsSL https://get.docker.com | sh', { timeoutMs: 180_000 })
   await run(sandbox, 'docker --version')
 
-  // Install docker-compose plugin
-  await run(sandbox,
-    'apt-get install -y docker-compose-plugin 2>/dev/null || pip install docker-compose',
-    { timeoutMs: 60_000 }
-  )
+  // docker compose v2 is bundled with Docker 29 — verify it's available
+  await run(sandbox, 'docker compose version')
 
   // Clone repo
   log(`Cloning ${REPO_URL} (branch: ${BRANCH})...`)
@@ -61,14 +58,14 @@ async function main() {
   // Start the stack
   log('Building and starting services (this takes ~5 mins for first build)...')
   await run(sandbox,
-    `cd /app && SECRET_KEY=${SECRET_KEY} docker compose -f docker-compose.prod.yml up -d --build`,
+    `cd /app && SECRET_KEY=${SECRET_KEY} docker compose -f docker-compose.prod.yml up -d --build 2>&1`,
     { timeoutMs: 600_000 }
   )
 
   // Wait for services to be healthy
   log('Waiting for services to be ready...')
   await run(sandbox,
-    'cd /app && docker compose -f docker-compose.prod.yml ps',
+    'cd /app && docker compose -f docker-compose.prod.yml ps 2>&1',
     { timeoutMs: 30_000 }
   )
 
