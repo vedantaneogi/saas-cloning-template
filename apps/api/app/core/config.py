@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     upload_dir: str = "./uploads"
 
     frontend_url: str = "http://localhost:3000"
-    cookie_domain: str = "localhost"
+    cookie_domain: str = ""
     cookie_secure: bool = False
     cookie_samesite: str = "lax"
 

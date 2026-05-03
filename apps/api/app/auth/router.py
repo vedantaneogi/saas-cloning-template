@@ -15,13 +15,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _set_auth_cookie(response: Response, token: str) -> None:
+    cookie_domain = settings.cookie_domain or None
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
         secure=settings.cookie_secure,
         samesite=settings.cookie_samesite,  # type: ignore[arg-type]
-        domain=settings.cookie_domain,
+        domain=cookie_domain,
         max_age=settings.access_token_expire_minutes * 60,
         path="/",
     )
@@ -69,7 +70,7 @@ def logout(response: Response) -> dict:
         httponly=True,
         secure=settings.cookie_secure,
         samesite=settings.cookie_samesite,  # type: ignore[arg-type]
-        domain=settings.cookie_domain,
+        domain=settings.cookie_domain or None,
         path="/",
     )
     return {"message": "Logged out"}
