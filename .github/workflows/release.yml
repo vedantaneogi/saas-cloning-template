@@ -1,1 +1,10 @@
-# Reserved for future release workflow
+name: Release (placeholder)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Release workflow not yet configured"
