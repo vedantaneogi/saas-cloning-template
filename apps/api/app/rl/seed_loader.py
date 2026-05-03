@@ -630,7 +630,7 @@ async def load_seed(session: AsyncSession, payload: SeedPayload) -> dict[str, in
     # Entity counts
     # ------------------------------------------------------------------
     counts = {
-        "users": 1,
+        "users": 1 + extra_users_created,
         "folders": len(all_folders),
         "messages": len(app.messages),
         "conversations": len(app.conversations),
