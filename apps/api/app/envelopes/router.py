@@ -36,6 +36,7 @@ from app.envelopes.schemas import (
     DocumentResponse,
     EnvelopeCreate,
     EnvelopeDetailResponse,
+    EnvelopeListItem,
     EnvelopeListResponse,
     EnvelopeResponse,
     EnvelopeUpdate,
@@ -43,6 +44,9 @@ from app.envelopes.schemas import (
     FieldCreate,
     FieldResponse,
     FieldUpdate,
+    FolderCreate,
+    FolderResponse,
+    MoveEnvelopesRequest,
     RecipientCreate,
     RecipientResponse,
     RecipientUpdate,
@@ -50,7 +54,7 @@ from app.envelopes.schemas import (
     SaveAsTemplateResponse,
     VoidEnvelopeRequest,
 )
-from app.signing.pdf_processor import get_page_count, render_page
+from app.signing.pdf_processor import convert_doc_to_pdf, get_page_count, render_page
 
 settings = get_settings()
 
@@ -72,21 +76,85 @@ async def create_envelope(
 @router.get("/envelopes", response_model=EnvelopeListResponse)
 async def list_envelopes(
     status_filter: Optional[EnvelopeStatus] = Query(None, alias="status"),
+    # Virtual filter: "waiting_for_others" means envelopes the sender is waiting on
+    # (status = sent OR delivered, not yet completed).
+    envelope_filter: Optional[str] = Query(None, alias="filter"),
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    envelope_id: Optional[str] = Query(None),
+    recipient_search: Optional[str] = Query(None),
+    shared: Optional[bool] = Query(None),
+    folder_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    statuses: Optional[list[EnvelopeStatus]] = None
+    moved_to_filter: Optional[str] = None
+    expiring_soon: bool = False
+    action_required: bool = False
+    auth_failed: bool = False
+
+    if envelope_filter == "waiting_for_others":
+        # "Waiting for Others" — envelopes the current user sent that recipients
+        # have not yet fully signed.  Covers both "sent" (awaiting first open) and
+        # "delivered" (opened but not yet completed).
+        statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered]
+        status_filter = None  # ignore any concurrent status param
+    elif envelope_filter == "deleted":
+        # "Deleted" — soft-deleted envelopes (moved_to = "deleted")
+        moved_to_filter = "deleted"
+        status_filter = None
+    elif envelope_filter == "expiring_soon":
+        # "Expiring Soon" — envelopes with expires_at within 30 days
+        expiring_soon = True
+        status_filter = None
+    elif envelope_filter == "action_required":
+        # "Action Required" — envelopes where the current user is a recipient
+        # who needs to take action (sign/approve)
+        action_required = True
+        status_filter = None
+    elif envelope_filter == "auth_failed":
+        # "Authentication Failed" — envelopes with recipients who have access
+        # codes set (potential auth gate). This is a best-effort filter since
+        # we don't currently track failed auth attempts per-envelope.
+        auth_failed = True
+        status_filter = None
+
     items, total = await svc.list_envelopes(
         db,
         current_user.id,
         status=status_filter,
+        statuses=statuses,
         search=search,
         page=page,
         page_size=page_size,
+        date_from=date_from,
+        date_to=date_to,
+        envelope_id=envelope_id,
+        recipient_search=recipient_search,
+        shared=shared,
+        current_user_email=current_user.email,
+        folder_id=folder_id,
+        moved_to=moved_to_filter,
+        expiring_soon=expiring_soon,
+        action_required=action_required,
+        auth_failed=auth_failed,
     )
-    return EnvelopeListResponse(items=items, total=total, page=page, page_size=page_size)
+    pages = max(1, -(-total // page_size))  # ceiling division
+
+    # Build list items, injecting from_name / from_email from the eager-loaded owner
+    serialized = []
+    for env in items:
+        item = EnvelopeListItem.model_validate(env)
+        if hasattr(env, "owner") and env.owner is not None:
+            item.from_name = env.owner.name
+            item.from_email = env.owner.email
+        serialized.append(item)
+
+    return EnvelopeListResponse(items=serialized, total=total, page=page, page_size=page_size, pages=pages)
 
 
 @router.get("/envelopes/stats")
@@ -94,20 +162,23 @@ async def get_envelope_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from sqlalchemy import func, select
+    from sqlalchemy import func, select, or_
     result = await db.execute(
         select(Envelope.status, func.count(Envelope.id))
-        .where(Envelope.user_id == current_user.id)
+        .where(
+            Envelope.user_id == current_user.id,
+            or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"),
+        )
         .group_by(Envelope.status)
     )
     stats = {row[0]: row[1] for row in result.all()}
     return {
         "total": sum(stats.values()),
-        "draft": stats.get("draft", 0),
-        "sent": stats.get("sent", 0),
-        "completed": stats.get("completed", 0),
-        "voided": stats.get("voided", 0),
-        "declined": stats.get("declined", 0),
+        "draft": stats.get(EnvelopeStatus.draft, 0),
+        "sent": stats.get(EnvelopeStatus.sent, 0),
+        "completed": stats.get(EnvelopeStatus.completed, 0),
+        "voided": stats.get(EnvelopeStatus.voided, 0),
+        "declined": stats.get(EnvelopeStatus.declined, 0),
     }
 
 
@@ -116,20 +187,122 @@ async def get_envelope_tasks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from sqlalchemy import select
-    result = await db.execute(
-        select(Envelope)
-        .where(Envelope.user_id == current_user.id)
-        .where(Envelope.status.in_(["sent", "delivered"]))
+    """Return envelopes where the current user is a pending recipient (needs to act).
+
+    Includes the sender's display name and recipient progress counts so the UI
+    can render a proper task card and signing progress bar.
+    """
+    from sqlalchemy import select, func, or_
+    from sqlalchemy.orm import selectinload as _selectinload
+    from app.envelopes.models import Recipient, RecipientRole, RecipientStatus
+
+    # Step 1: find envelope IDs where the current user is an unsigned signer.
+    # After send(), the first routing group gets status "sent"; later groups stay
+    # "pending". We include all three pre-signed statuses so we don't miss anyone.
+    action_id_result = await db.execute(
+        select(Envelope.id)
+        .join(Recipient, Recipient.envelope_id == Envelope.id)
+        .where(
+            func.lower(Recipient.email) == current_user.email.lower(),
+            Recipient.role == RecipientRole.signer,
+            Recipient.status.in_([RecipientStatus.pending, RecipientStatus.sent, RecipientStatus.delivered]),
+            Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]),
+            or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"),
+        )
         .order_by(Envelope.updated_at.desc())
         .limit(10)
+        .distinct()
     )
-    tasks = result.scalars().all()
-    return [{"id": str(t.id), "subject": t.subject, "status": t.status} for t in tasks]
+    action_ids = [row[0] for row in action_id_result.all()]
+
+    # Step 2: load those envelopes with recipients and owner eagerly
+    action_envs: list[Envelope] = []
+    if action_ids:
+        env_result = await db.execute(
+            select(Envelope)
+            .where(Envelope.id.in_(action_ids))
+            .options(
+                _selectinload(Envelope.recipients),
+                _selectinload(Envelope.owner),
+            )
+            .order_by(Envelope.updated_at.desc())
+        )
+        action_envs = env_result.scalars().all()
+
+    tasks = []
+    for envelope in action_envs:
+        signers = [r for r in envelope.recipients if r.role == RecipientRole.signer]
+        completed = [r for r in signers if r.status == RecipientStatus.signed]
+        sender_name = (
+            envelope.owner.name
+            if hasattr(envelope, "owner") and envelope.owner
+            else current_user.name
+        )
+        tasks.append({
+            "id": str(envelope.id),
+            "subject": envelope.subject,
+            "status": envelope.status,
+            "from_name": sender_name,
+            "action": "Needs to Sign",
+            "recipients_total": len(signers),
+            "recipients_completed": len(completed),
+            "created_at": envelope.created_at.isoformat() if envelope.created_at else None,
+            "updated_at": envelope.updated_at.isoformat() if envelope.updated_at else None,
+        })
+
+    # Also include envelopes the user sent that are awaiting others (secondary tasks)
+    remaining = max(0, 10 - len(tasks))
+    if remaining > 0:
+        sent_result = await db.execute(
+            select(Envelope)
+            .options(
+                _selectinload(Envelope.recipients),
+            )
+            .where(
+                Envelope.user_id == current_user.id,
+                Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]),
+                or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"),
+            )
+            .order_by(Envelope.updated_at.desc())
+            .limit(remaining)
+        )
+        sent_envelopes = sent_result.scalars().all()
+
+        # Avoid duplicates (envelope might appear in both queries if user sent to themselves)
+        existing_ids = {t["id"] for t in tasks}
+        for envelope in sent_envelopes:
+            if str(envelope.id) in existing_ids:
+                continue
+            signers = [r for r in envelope.recipients if r.role == RecipientRole.signer]
+            completed = [r for r in signers if r.status == RecipientStatus.signed]
+            tasks.append({
+                "id": str(envelope.id),
+                "subject": envelope.subject,
+                "status": envelope.status,
+                "from_name": current_user.name,
+                "action": "Waiting for Others",
+                "recipients_total": len(signers),
+                "recipients_completed": len(completed),
+                "created_at": envelope.created_at.isoformat() if envelope.created_at else None,
+                "updated_at": envelope.updated_at.isoformat() if envelope.updated_at else None,
+            })
+
+    return tasks
 
 
-# NOTE: Static sub-paths (bulk-send, etc.) MUST be registered before the
+# NOTE: Static sub-paths (bulk-send, move, etc.) MUST be registered before the
 # wildcard /{envelope_id} route so FastAPI doesn't swallow them.
+
+@router.put("/envelopes/move", status_code=status.HTTP_200_OK)
+async def move_envelopes(
+    data: MoveEnvelopesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Move one or more envelopes to a folder or virtual view (inbox/sent)."""
+    count = await svc.move_envelopes(db, current_user.id, data.envelope_ids, data.folder_id, data.moved_to)
+    return {"moved": count}
+
 
 @router.get("/envelopes/bulk-send/{batch_id}/status", response_model=BulkSendStatusResponse)
 async def get_bulk_send_status_early(
@@ -153,9 +326,9 @@ async def get_bulk_send_status_early(
     return BulkSendStatusResponse(
         batch_id=batch_id,
         total=total,
-        sent=counts.get("sent", 0) + counts.get("delivered", 0),
-        completed=counts.get("completed", 0),
-        failed=counts.get("voided", 0) + counts.get("declined", 0),
+        sent=counts.get(EnvelopeStatus.sent, 0) + counts.get(EnvelopeStatus.delivered, 0),
+        completed=counts.get(EnvelopeStatus.completed, 0),
+        failed=counts.get(EnvelopeStatus.voided, 0) + counts.get(EnvelopeStatus.declined, 0),
     )
 
 
@@ -170,9 +343,9 @@ async def list_bulk_batches(
             Envelope.batch_id,
             func.min(Envelope.subject).label("name"),
             func.count(Envelope.id).label("total"),
-            func.count(Envelope.id).filter(Envelope.status.in_(["sent", "delivered"])).label("sent"),
-            func.count(Envelope.id).filter(Envelope.status == "completed").label("completed"),
-            func.count(Envelope.id).filter(Envelope.status.in_(["voided", "declined"])).label("failed"),
+            func.count(Envelope.id).filter(Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered])).label("sent"),
+            func.count(Envelope.id).filter(Envelope.status == EnvelopeStatus.completed).label("completed"),
+            func.count(Envelope.id).filter(Envelope.status.in_([EnvelopeStatus.voided, EnvelopeStatus.declined])).label("failed"),
             func.min(Envelope.created_at).label("submitted"),
         )
         .where(Envelope.user_id == current_user.id)
@@ -182,7 +355,7 @@ async def list_bulk_batches(
     )
     batches = []
     for row in result.all():
-        total = row.sent + row.completed + row.failed
+        total = row.total
         batches.append({
             "batch_id": row.batch_id,
             "name": row.name,
@@ -260,6 +433,11 @@ async def send_envelope(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Envelope must have at least one recipient before sending",
+        )
+    if not envelope.documents:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Envelope must have at least one document before sending",
         )
     return await svc.send_envelope(db, envelope)
 
@@ -417,22 +595,36 @@ async def upload_document(
 
     file_size = len(content)
 
+    # For .doc/.docx files, convert to a preview PDF for accurate page rendering.
+    # The original file is preserved for download; the preview PDF is used for display.
+    preview_filename: str | None = None
     if is_pdf:
         try:
             page_count = get_page_count(file_path)
         except Exception:
             page_count = 1
-    elif is_docx:
-        try:
-            from docx import Document as DocxDocument
-            docx_doc = DocxDocument(file_path)
-            # python-docx doesn't track pages directly; count section breaks as a proxy
-            # Fall back to 1 if the library is not available or the file is malformed
-            page_count = max(1, len(docx_doc.sections))
-        except Exception:
-            page_count = 1
+    elif is_docx or is_doc:
+        preview_pdf_filename = f"{file_id}_preview.pdf"
+        preview_pdf_path = os.path.join(settings.upload_dir, preview_pdf_filename)
+        converted = convert_doc_to_pdf(file_path, preview_pdf_path)
+        if converted and os.path.exists(preview_pdf_path):
+            preview_filename = preview_pdf_filename
+            try:
+                page_count = get_page_count(preview_pdf_path)
+            except Exception:
+                page_count = 1
+        else:
+            # Conversion failed; fall back to section-count heuristic for .docx
+            if is_docx:
+                try:
+                    from docx import Document as DocxDocument
+                    docx_doc = DocxDocument(file_path)
+                    page_count = max(1, len(docx_doc.sections))
+                except Exception:
+                    page_count = 1
+            else:
+                page_count = 1
     else:
-        # .doc (legacy binary format) — no pure-Python page counter available
         page_count = 1
 
     order = len(envelope.documents)
@@ -441,6 +633,7 @@ async def upload_document(
         filename=stored_filename,
         original_filename=original_filename,
         file_path=file_path,
+        preview_filename=preview_filename,
         page_count=page_count,
         file_size=file_size,
         order=order,
@@ -477,8 +670,13 @@ async def get_document_page(
     if not envelope:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
+    # Resolve preview PDF path if one was generated during upload
+    preview_path: str | None = None
+    if doc.preview_filename:
+        preview_path = os.path.join(settings.upload_dir, doc.preview_filename)
+
     try:
-        png_bytes = render_page(doc.file_path, page - 1)
+        png_bytes = render_page(doc.file_path, page - 1, preview_path=preview_path)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -560,6 +758,8 @@ async def update_recipient(
     envelope = await svc.get_envelope(db, recipient.envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot edit recipients on a non-draft envelope")
     updated = await svc.update_recipient(db, recipient, data)
     return {
         "id": updated.id,
@@ -735,18 +935,16 @@ async def download_signed_envelope(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Download the signed/completed PDF for a completed envelope (merges all documents with fields applied)."""
+    """Download envelope PDF.
+
+    For completed envelopes: returns the signed PDF with all field values applied.
+    For non-completed envelopes: returns the original document without field overlays.
+    """
     from app.signing.pdf_processor import apply_fields_to_pdf
 
     envelope = await svc.get_envelope(db, envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
-
-    if envelope.status != EnvelopeStatus.completed:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only completed envelopes can be downloaded as signed PDFs",
-        )
 
     if not envelope.documents:
         raise HTTPException(
@@ -754,7 +952,7 @@ async def download_signed_envelope(
             detail="No documents found for this envelope",
         )
 
-    # Use the first document as the primary signed PDF (apply all fields)
+    # Use the first document as the primary PDF
     doc = envelope.documents[0]
     if not os.path.exists(doc.file_path):
         raise HTTPException(
@@ -762,32 +960,40 @@ async def download_signed_envelope(
             detail="Document file not found on server",
         )
 
-    # Collect all fields across all documents
-    all_fields = [
-        {
-            "type": f.type.value,
-            "page": f.page,
-            "x": f.x,
-            "y": f.y,
-            "width": f.width,
-            "height": f.height,
-            "value": f.value,
-            "label": f.label,
-        }
-        for d in envelope.documents
-        for f in d.fields
-    ]
-
-    try:
-        pdf_bytes = apply_fields_to_pdf(doc.file_path, all_fields)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate signed PDF: {exc}",
-        )
-
     safe_subject = "".join(c for c in envelope.subject if c.isalnum() or c in " _-")[:50]
-    filename = f"signed_{safe_subject}.pdf"
+
+    if envelope.status == EnvelopeStatus.completed:
+        # For completed envelopes, overlay field values onto the PDF
+        all_fields = [
+            {
+                "type": f.type.value,
+                "page": f.page,
+                "x": f.x,
+                "y": f.y,
+                "width": f.width,
+                "height": f.height,
+                "value": f.value,
+                "label": f.label,
+            }
+            for d in envelope.documents
+            for f in d.fields
+        ]
+
+        try:
+            pdf_bytes = apply_fields_to_pdf(doc.file_path, all_fields)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate signed PDF: {exc}",
+            )
+
+        filename = f"signed_{safe_subject}.pdf"
+    else:
+        # For non-completed envelopes, return the original document
+        with open(doc.file_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        filename = f"{safe_subject}.pdf"
 
     return FastAPIResponse(
         content=pdf_bytes,
@@ -1082,6 +1288,46 @@ async def bulk_send_envelopes(
 
     await db.commit()
     return BulkSendResponse(batch_id=batch_id, total=len(rows), created=created)
+
+
+# ── Folder endpoints ───────────────────────────────────────────────────────────
+
+@router.get("/folders", response_model=list[FolderResponse])
+async def list_folders(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the current user's custom folders."""
+    folders = await svc.list_folders(db, current_user.id)
+    return folders
+
+
+@router.post("/folders", response_model=FolderResponse, status_code=status.HTTP_201_CREATED)
+async def create_folder(
+    data: FolderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new custom folder."""
+    if not data.name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Folder name cannot be empty",
+        )
+    folder = await svc.create_folder(db, current_user.id, data.name)
+    return folder
+
+
+@router.delete("/folders/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_folder(
+    folder_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a custom folder. Envelopes in the folder are moved back to no-folder."""
+    found = await svc.delete_folder(db, folder_id, current_user.id)
+    if not found:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
 
 
 # ── Comment endpoints ──────────────────────────────────────────────────────────

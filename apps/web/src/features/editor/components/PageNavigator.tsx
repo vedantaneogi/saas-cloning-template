@@ -1,6 +1,8 @@
 "use client";
 
-import { DotsThree, CaretDown } from "@phosphor-icons/react";
+import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { DotsThree, CaretDown, ChatText, EyeSlash } from "@phosphor-icons/react";
 import type { PlacedField } from "../model/types";
 
 interface DocumentSection {
@@ -21,6 +23,9 @@ interface PageNavigatorProps {
   documentName?: string;
   /** When provided, each document is shown as its own section in the navigator. */
   documents?: DocumentSection[];
+  envelopeId?: string;
+  onCommentClick?: () => void;
+  onToggleRightPanel?: () => void;
 }
 
 export function PageNavigator({
@@ -31,7 +36,23 @@ export function PageNavigator({
   onPageChange,
   documentName = "Document",
   documents,
+  envelopeId,
+  onCommentClick,
+  onToggleRightPanel,
 }: PageNavigatorProps) {
+  const router = useRouter();
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (actionsRef.current && !actionsRef.current.contains(e.target as Node)) setActionsOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [actionsOpen]);
+
   const getPageFieldCount = (page: number) =>
     fields.filter((f) => f.page === page).length;
 
@@ -50,27 +71,69 @@ export function PageNavigator({
         borderLeft: "1px solid rgba(19,0,50,0.12)",
       }}
     >
-      {/* Header: Actions dropdown */}
+      {/* Header: Actions dropdown + Comment */}
       <div
-        className="px-3 flex items-center justify-between flex-shrink-0"
+        className="px-3 flex items-center gap-2 flex-shrink-0"
         style={{
           height: "44px",
           borderBottom: "1px solid rgba(19,0,50,0.12)",
         }}
       >
-        <button
-          className="flex items-center gap-1.5 px-2.5 py-1.5 transition-colors hover:bg-gray-50"
-          style={{
-            border: "1px solid rgba(19,0,50,0.2)",
-            borderRadius: "4px",
-            fontSize: "12.5px",
-            fontWeight: 500,
-            color: "rgba(19,0,50,0.9)",
-          }}
-        >
-          Actions
-          <CaretDown size={10} weight="bold" style={{ color: "rgba(19,0,50,0.45)", marginLeft: "2px" }} />
-        </button>
+        <div className="relative" ref={actionsRef}>
+          <button
+            onClick={() => setActionsOpen((v) => !v)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 transition-colors hover:bg-gray-50"
+            style={{
+              border: "1px solid rgba(19,0,50,0.2)",
+              borderRadius: "4px",
+              fontSize: "12.5px",
+              fontWeight: 500,
+              color: "rgba(19,0,50,0.9)",
+            }}
+          >
+            Actions
+            <CaretDown size={10} weight="bold" style={{ color: "rgba(19,0,50,0.45)", marginLeft: "2px" }} />
+          </button>
+          {actionsOpen && envelopeId && (
+            <div
+              className="absolute top-full mt-1 left-0 bg-white z-50 overflow-hidden"
+              style={{ border: "1px solid rgba(19,0,50,0.15)", borderRadius: "6px", boxShadow: "0 8px 24px rgba(19,0,50,0.12)", minWidth: "180px" }}
+            >
+              {["Edit Message", "Edit Recipients", "Edit Documents"].map((label) => (
+                <button
+                  key={label}
+                  onClick={() => { setActionsOpen(false); router.push(`/envelope/${envelopeId}/prepare`); }}
+                  className="w-full px-4 py-2.5 text-left transition-colors hover:bg-gray-50"
+                  style={{ fontSize: "13px", color: "rgba(19,0,50,0.85)" }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="ml-auto flex items-center gap-0.5">
+          {onCommentClick && (
+            <button
+              onClick={onCommentClick}
+              className="flex items-center justify-center w-8 h-8 rounded transition-colors hover:bg-gray-100"
+              style={{ color: "rgba(19,0,50,0.55)" }}
+              title="Toggle comments"
+            >
+              <ChatText size={18} weight="bold" />
+            </button>
+          )}
+          {onToggleRightPanel && (
+            <button
+              onClick={onToggleRightPanel}
+              className="flex items-center justify-center w-8 h-8 rounded transition-colors hover:bg-gray-100"
+              style={{ color: "rgba(19,0,50,0.55)" }}
+              title="Hide panel"
+            >
+              <EyeSlash size={18} weight="bold" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Per-document sections */}

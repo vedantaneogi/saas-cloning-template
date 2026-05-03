@@ -12,6 +12,7 @@ import {
   deleteDocument,
   updateEnvelope,
   addRecipient as addRecipientAPI,
+  updateRecipient as updateRecipientAPI,
   setRecipientAccessCode,
 } from "@/features/envelopes/api";
 import { getRecipientColor } from "@/lib/utils";
@@ -78,7 +79,12 @@ export default function PrepareEnvelopePage() {
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ id: string; name: string; size: number }>>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadingDocs, setUploadingDocs] = useState<Record<string, boolean>>({});
+  const [justUploadedDocs, setJustUploadedDocs] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Validation state ───────────────────────────────────────────────────────
+  const [triedToProceed, setTriedToProceed] = useState(false);
 
   // ── Recipients ─────────────────────────────────────────────────────────────
   const [recipients, setRecipients] = useState<RecipientForm[]>([
@@ -153,19 +159,47 @@ export default function PrepareEnvelopePage() {
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       setUploadProgress((prev) => ({ ...prev, [file.name]: 0 }));
+      setUploadingDocs((prev) => ({ ...prev, [file.name]: true }));
       const result = await uploadDocument(id, file);
       setUploadProgress((prev) => ({ ...prev, [file.name]: 100 }));
       return { result, file };
     },
     onSuccess: ({ result, file }) => {
+      const docId = result.documentId;
+      setUploadingDocs((prev) => {
+        const next = { ...prev };
+        delete next[file.name];
+        return next;
+      });
       setUploadedFiles((prev) => [
         ...prev,
         {
-          id: result.documentId,
+          id: docId,
           name: result.name || file.name,
           size: file.size,
         },
       ]);
+      // Show green checkmark for 1.5 s
+      setJustUploadedDocs((prev) => ({ ...prev, [docId]: true }));
+      setTimeout(() => {
+        setJustUploadedDocs((prev) => {
+          const next = { ...prev };
+          delete next[docId];
+          return next;
+        });
+      }, 1500);
+    },
+    onError: (_err, file) => {
+      setUploadingDocs((prev) => {
+        const next = { ...prev };
+        delete next[file.name];
+        return next;
+      });
+      setUploadProgress((prev) => {
+        const next = { ...prev };
+        delete next[file.name];
+        return next;
+      });
     },
   });
 
@@ -184,27 +218,39 @@ export default function PrepareEnvelopePage() {
         ...(expiresAt ? { expires_at: expiresAt } : {}),
       });
 
-      const existingEmails = new Set(
-        (envelope?.recipients ?? []).map((r) => r.email.toLowerCase()),
+      // Build a map of persisted recipients keyed by their server-assigned UUID.
+      // Recipients pre-populated from the API have a real UUID as `id`; locally-
+      // added rows (not yet saved) have a temp id like "r1" or "r<timestamp>".
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const existingIds = new Set(
+        (envelope?.recipients ?? []).map((r) => r.id),
       );
 
       const seen = new Set<string>();
-      const newRecipients = recipients.filter((r) => {
+      for (const r of recipients) {
         const email = r.email.trim().toLowerCase();
-        if (!r.name.trim() || !email) return false;
-        if (existingEmails.has(email)) return false;
-        if (seen.has(email)) return false;
+        if (!r.name.trim() || !email) continue;
+        if (seen.has(email)) continue;
         seen.add(email);
-        return true;
-      });
 
-      for (const r of newRecipients) {
-        await addRecipientAPI(id, {
-          name: r.name.trim(),
-          email: r.email.trim(),
-          role: r.role,
-          routing_order: r.order,
-        });
+        const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
+        if (isPersistedRecipient) {
+          // Update existing recipient in case name/role/order was changed in the UI.
+          await updateRecipientAPI(r.id, {
+            name: r.name.trim(),
+            email: r.email.trim(),
+            role: r.role,
+            routing_order: r.order,
+          });
+        } else {
+          // New recipient — add to envelope.
+          await addRecipientAPI(id, {
+            name: r.name.trim(),
+            email: r.email.trim(),
+            role: r.role,
+            routing_order: r.order,
+          });
+        }
       }
     },
     onSuccess: () => router.push(`/envelope/${id}/edit`),
@@ -295,6 +341,13 @@ export default function PrepareEnvelopePage() {
     reader.readAsText(file);
   };
 
+  // ── Proceed guard ──────────────────────────────────────────────────────────
+  const hasDocuments = (uploadedFiles.length > 0) || (envelope?.documents?.length ?? 0) > 0;
+  const hasValidRecipient = imOnlySigner
+    ? true
+    : recipients.some((r) => r.name?.trim() && r.email?.trim());
+  const canProceed = hasDocuments && hasValidRecipient;
+
   // ──────────────────────────────────────────────────────────────────────────
   return (
     <div
@@ -355,29 +408,57 @@ export default function PrepareEnvelopePage() {
           >
             <GearSix size={20} weight="bold" color="#555" />
           </button>
-          <button
-            onClick={() => saveAndContinueMutation.mutate()}
-            disabled={saveAndContinueMutation.isPending || uploadedFiles.length === 0}
-            className="flex items-center gap-2 text-white transition-opacity"
-            style={{
-              background: "#4C00FF",
-              borderRadius: "4px",
-              padding: "8px 20px",
-              fontSize: "14px",
-              fontWeight: 500,
-              opacity: (saveAndContinueMutation.isPending || uploadedFiles.length === 0) ? 0.5 : 1,
-              cursor: (saveAndContinueMutation.isPending || uploadedFiles.length === 0) ? "not-allowed" : "pointer",
-            }}
-          >
-            {saveAndContinueMutation.isPending ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Saving...
-              </>
-            ) : (
-              imOnlySigner ? "Sign" : "Next: Add Fields"
+          <div className="relative group">
+            <button
+              onClick={() => {
+                if (!canProceed) {
+                  setTriedToProceed(true);
+                  const missing: string[] = [];
+                  if (!hasDocuments) missing.push("upload at least one document");
+                  if (!hasValidRecipient) missing.push("fill in recipient name and email");
+                  alert(`Please ${missing.join(" and ")} before proceeding.`);
+                  return;
+                }
+                saveAndContinueMutation.mutate();
+              }}
+              disabled={saveAndContinueMutation.isPending}
+              className="flex items-center gap-2 text-white transition-opacity"
+              style={{
+                background: canProceed ? "#4C00FF" : "#9CA3AF",
+                borderRadius: "4px",
+                padding: "8px 20px",
+                fontSize: "14px",
+                fontWeight: 500,
+                opacity: saveAndContinueMutation.isPending ? 0.5 : 1,
+                cursor: (saveAndContinueMutation.isPending || !canProceed) ? "not-allowed" : "pointer",
+              }}
+            >
+              {saveAndContinueMutation.isPending ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                imOnlySigner ? "Sign" : "Next: Add Fields"
+              )}
+            </button>
+            {!canProceed && (
+              <div
+                className="absolute right-0 top-full mt-1 z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{
+                  background: "rgba(19,0,50,0.85)",
+                  color: "#fff",
+                  fontSize: "12px",
+                  borderRadius: "4px",
+                  padding: "6px 10px",
+                  whiteSpace: "nowrap",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                }}
+              >
+                Upload at least one document and add a recipient
+              </div>
             )}
-          </button>
+          </div>
         </div>
         </div>
       </header>
@@ -568,90 +649,126 @@ export default function PrepareEnvelopePage() {
                   </div>
                 )}
 
-                {/* In-progress uploads */}
-                {Object.entries(uploadProgress)
-                  .filter(([, pct]) => pct < 100)
-                  .map(([name, pct]) => (
-                    <div
-                      key={name}
-                      className="mt-3 rounded"
-                      style={{
-                        border: "1px solid #E0E0E0",
-                        background: "#FAFAFA",
-                        padding: "12px",
-                      }}
-                    >
-                      <div className="flex justify-between mb-1">
-                        <span
-                          className="truncate"
-                          style={{ fontSize: "13px", color: "rgba(19,0,50,0.9)" }}
-                        >
-                          {name}
-                        </span>
-                        <span style={{ fontSize: "12px", color: "#999" }}>{pct}%</span>
-                      </div>
-                      <div
-                        className="rounded-full overflow-hidden"
-                        style={{ height: "4px", background: "#E0E0E0" }}
+                {/* In-progress uploads — indeterminate animated bar */}
+                {Object.keys(uploadingDocs).map((name) => (
+                  <div
+                    key={name}
+                    className="mt-3 rounded"
+                    style={{
+                      border: "1px solid #E0E0E0",
+                      background: "#FAFAFA",
+                      padding: "12px",
+                    }}
+                  >
+                    <div className="flex justify-between mb-2">
+                      <span
+                        className="truncate"
+                        style={{ fontSize: "13px", color: "rgba(19,0,50,0.9)" }}
                       >
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{ width: `${pct}%`, background: "#4C00FF" }}
-                        />
-                      </div>
+                        {name}
+                      </span>
+                      <span style={{ fontSize: "12px", color: "#4C00FF", fontWeight: 500 }}>
+                        Uploading...
+                      </span>
                     </div>
-                  ))}
+                    <div
+                      className="rounded-full overflow-hidden"
+                      style={{ height: "4px", background: "#E0E0E0", position: "relative" }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          height: "100%",
+                          width: "40%",
+                          background: "#4C00FF",
+                          borderRadius: "9999px",
+                          animation: "uploadIndeterminate 1.4s ease-in-out infinite",
+                        }}
+                      />
+                    </div>
+                    <style>{`
+                      @keyframes uploadIndeterminate {
+                        0%   { left: -40%; width: 40%; }
+                        50%  { left: 60%; width: 40%; }
+                        100% { left: 110%; width: 40%; }
+                      }
+                    `}</style>
+                  </div>
+                ))}
 
                 {/* Uploaded file list */}
                 {uploadedFiles.length > 0 && (
                   <div className="mt-4 space-y-2">
-                    {uploadedFiles.map((file, i) => (
-                      <div
-                        key={file.id || i}
-                        className="flex items-center gap-3 rounded"
-                        style={{
-                          border: "1px solid #E0E0E0",
-                          background: "#FAFAFA",
-                          padding: "12px 16px",
-                        }}
-                      >
-                        {/* PDF icon */}
+                    {uploadedFiles.map((file, i) => {
+                      const isJustUploaded = justUploadedDocs[file.id];
+                      return (
                         <div
-                          className="flex items-center justify-center flex-shrink-0 rounded"
-                          style={{ background: "#FFEBEE", width: "36px", height: "36px" }}
-                        >
-                          <svg viewBox="0 0 24 24" fill="#D93025" width="18" height="18">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z" />
-                          </svg>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p
-                            className="font-medium truncate"
-                            style={{ fontSize: "13px", color: "rgba(19,0,50,0.9)" }}
-                          >
-                            {file.name || "document.pdf"}
-                          </p>
-                          <p style={{ fontSize: "12px", color: file.size > 0 ? "#999" : "#22c55e" }}>
-                            {file.size > 0 ? formatSize(file.size) : "Uploaded"}
-                          </p>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            if (file.id) {
-                              try { await deleteDocument(file.id); } catch (e) {
-                                console.error("Failed to delete document:", e);
-                              }
-                            }
-                            setUploadedFiles((prev) => prev.filter((_, idx) => idx !== i));
+                          key={file.id || i}
+                          className="flex items-center gap-3 rounded"
+                          style={{
+                            border: `1px solid ${isJustUploaded ? "#22c55e" : "#E0E0E0"}`,
+                            background: isJustUploaded ? "#f0fdf4" : "#FAFAFA",
+                            padding: "12px 16px",
+                            transition: "border-color 0.3s, background 0.3s",
                           }}
-                          className="rounded hover:bg-red-50 transition-colors"
-                          style={{ padding: "6px" }}
-                          aria-label="Remove file"
                         >
-                          <Trash size={16} weight="bold" color="#999" />
-                        </button>
-                      </div>
-                    ))}
+                          {/* Icon: green checkmark flash, then PDF icon */}
+                          {isJustUploaded ? (
+                            <div
+                              className="flex items-center justify-center flex-shrink-0 rounded"
+                              style={{ background: "#dcfce7", width: "36px", height: "36px" }}
+                            >
+                              <svg viewBox="0 0 24 24" fill="#16a34a" width="20" height="20">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                              </svg>
+                            </div>
+                          ) : (
+                            <div
+                              className="flex items-center justify-center flex-shrink-0 rounded"
+                              style={{ background: "#FFEBEE", width: "36px", height: "36px" }}
+                            >
+                              <svg viewBox="0 0 24 24" fill="#D93025" width="18" height="18">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z" />
+                              </svg>
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className="font-medium truncate"
+                              style={{ fontSize: "13px", color: "rgba(19,0,50,0.9)" }}
+                            >
+                              {file.name || "document.pdf"}
+                            </p>
+                            {isJustUploaded ? (
+                              <p style={{ fontSize: "12px", color: "#16a34a", fontWeight: 500 }}>
+                                Uploaded
+                              </p>
+                            ) : (
+                              <p style={{ fontSize: "12px", color: file.size > 0 ? "#999" : "#22c55e" }}>
+                                {file.size > 0 ? formatSize(file.size) : "Uploaded"}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={async () => {
+                              if (file.id) {
+                                try { await deleteDocument(file.id); } catch (e) {
+                                  console.error("Failed to delete document:", e);
+                                }
+                              }
+                              setUploadedFiles((prev) => prev.filter((_, idx) => idx !== i));
+                            }}
+                            className="rounded hover:bg-red-50 transition-colors"
+                            style={{ padding: "6px" }}
+                            aria-label="Remove file"
+                          >
+                            <Trash size={16} weight="bold" color="#999" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </>
@@ -764,7 +881,7 @@ export default function PrepareEnvelopePage() {
                 {/* Recipient cards — hidden when "I'm the only signer" */}
                 {!imOnlySigner && (
                 <div className="space-y-3" style={{ marginTop: "16px" }}>
-                  {recipients.map((recipient) => (
+                  {recipients.map((recipient, recipientIdx) => (
                     <div
                       key={recipient.id}
                       style={{
@@ -773,8 +890,57 @@ export default function PrepareEnvelopePage() {
                         borderRadius: "4px",
                         padding: "16px 24px",
                         background: "#fff",
+                        position: "relative",
                       }}
                     >
+                      {/* Reorder arrows — always visible when multiple recipients */}
+                      {recipients.length > 1 && (
+                        <div style={{ position: "absolute", right: "8px", top: "8px", display: "flex", flexDirection: "column", gap: "2px" }}>
+                          <button
+                            disabled={recipientIdx === 0}
+                            onClick={() => {
+                              if (recipientIdx === 0) return;
+                              setRecipients((prev) => {
+                                const arr = [...prev];
+                                [arr[recipientIdx - 1], arr[recipientIdx]] = [arr[recipientIdx], arr[recipientIdx - 1]];
+                                return arr.map((r, i) => ({ ...r, order: i + 1 }));
+                              });
+                            }}
+                            style={{
+                              width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center",
+                              border: "1px solid rgba(19,0,50,0.15)", borderRadius: "3px", background: "white",
+                              cursor: recipientIdx === 0 ? "default" : "pointer",
+                              opacity: recipientIdx === 0 ? 0.3 : 1,
+                              color: "rgba(19,0,50,0.6)",
+                            }}
+                            title="Move up"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 2L1 6h8L5 2z" fill="currentColor"/></svg>
+                          </button>
+                          <button
+                            disabled={recipientIdx === recipients.length - 1}
+                            onClick={() => {
+                              if (recipientIdx === recipients.length - 1) return;
+                              setRecipients((prev) => {
+                                const arr = [...prev];
+                                [arr[recipientIdx], arr[recipientIdx + 1]] = [arr[recipientIdx + 1], arr[recipientIdx]];
+                                return arr.map((r, i) => ({ ...r, order: i + 1 }));
+                              });
+                            }}
+                            style={{
+                              width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center",
+                              border: "1px solid rgba(19,0,50,0.15)", borderRadius: "3px", background: "white",
+                              cursor: recipientIdx === recipients.length - 1 ? "default" : "pointer",
+                              opacity: recipientIdx === recipients.length - 1 ? 0.3 : 1,
+                              color: "rgba(19,0,50,0.6)",
+                            }}
+                            title="Move down"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 8L1 4h8L5 8z" fill="currentColor"/></svg>
+                          </button>
+                        </div>
+                      )}
+
                       {/* Signing order input — only visible when "Set signing order" is checked */}
                       {setSigningOrder && (
                         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
@@ -826,7 +992,7 @@ export default function PrepareEnvelopePage() {
                                 paddingTop: "8px",
                                 paddingBottom: "8px",
                                 fontSize: "16px",
-                                border: "1px solid rgba(19,0,50,0.25)",
+                                border: `1px solid ${triedToProceed && !recipient.name?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
                                 borderRadius: "4px",
                                 background: imOnlySigner ? "#F3F3F3" : "#fff",
                                 color: imOnlySigner ? "#888" : "rgba(19,0,50,0.9)",
@@ -840,10 +1006,15 @@ export default function PrepareEnvelopePage() {
                                 }
                               }}
                               onBlur={(e) => {
-                                e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                                e.target.style.borderColor = triedToProceed && !recipient.name?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)";
                                 e.target.style.boxShadow = "none";
                               }}
                             />
+                            {triedToProceed && !recipient.name?.trim() && (
+                              <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
+                                Required
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -1034,7 +1205,7 @@ export default function PrepareEnvelopePage() {
                           disabled={imOnlySigner}
                           className="focus:outline-none transition-all"
                           style={{
-                            border: "1px solid rgba(19,0,50,0.25)",
+                            border: `1px solid ${triedToProceed && !recipient.email?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
                             borderRadius: "4px",
                             padding: "8px 16px",
                             fontSize: "16px",
@@ -1051,10 +1222,15 @@ export default function PrepareEnvelopePage() {
                             }
                           }}
                           onBlur={(e) => {
-                            e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                            e.target.style.borderColor = triedToProceed && !recipient.email?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)";
                             e.target.style.boxShadow = "none";
                           }}
                         />
+                        {triedToProceed && !recipient.email?.trim() && (
+                          <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
+                            Required
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}

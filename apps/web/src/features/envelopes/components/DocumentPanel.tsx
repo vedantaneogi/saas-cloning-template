@@ -13,21 +13,40 @@ interface DocumentPanelProps {
   documents: EnvelopeDocument[];
 }
 
-// ─── PDF page thumbnail ───────────────────────────────────────────────────────
+// ─── Derive a short extension label (PDF / DOC / DOCX / …) from filename ────
+function getExtLabel(docName: string): string {
+  const match = docName.match(/\.([a-zA-Z0-9]+)$/);
+  return match ? match[1].toUpperCase() : "DOC";
+}
+
+// ─── Pick a badge colour per extension ───────────────────────────────────────
+function getExtColor(ext: string): string {
+  switch (ext) {
+    case "PDF":  return "#D93025";
+    case "DOCX":
+    case "DOC":  return "#1565C0";
+    default:     return "#555";
+  }
+}
+
+// ─── PDF/DOC page thumbnail ───────────────────────────────────────────────────
 function DocThumbnail({ docId, docName }: { docId: string; docName: string }) {
   const [imgError, setImgError] = useState(false);
   const src = `/api/documents/${docId}/pages/1`;
 
+  const ext      = getExtLabel(docName);
+  const extColor = getExtColor(ext);
+
   if (imgError) {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        {/* Simple PDF page illustration fallback */}
+        {/* Document-type-aware page illustration fallback */}
         <svg viewBox="0 0 60 78" fill="none" width="60" height="78" aria-hidden="true">
           <rect x="0" y="0" width="52" height="68" rx="2" fill="#E8EAF6" />
           <path d="M40 0L52 12" stroke="#9FA8DA" strokeWidth="1.5" />
           <rect x="40" y="0" width="12" height="12" rx="1" fill="#C5CAE9" />
-          <rect x="0" y="52" width="52" height="16" rx="1" fill="#D93025" />
-          <text x="26" y="63" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold" fontFamily="sans-serif">PDF</text>
+          <rect x="0" y="52" width="52" height="16" rx="1" fill={extColor} />
+          <text x="26" y="63" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold" fontFamily="sans-serif">{ext}</text>
           <rect x="8" y="18" width="28" height="2" rx="1" fill="#C5CAE9" />
           <rect x="8" y="24" width="36" height="2" rx="1" fill="#C5CAE9" />
           <rect x="8" y="30" width="32" height="2" rx="1" fill="#C5CAE9" />

@@ -68,7 +68,7 @@ def logout(response: Response) -> dict:
         key="access_token",
         httponly=True,
         secure=settings.cookie_secure,
-        samesite=settings.cookie_samesite,
+        samesite=settings.cookie_samesite,  # type: ignore[arg-type]
         domain=settings.cookie_domain,
         path="/",
     )

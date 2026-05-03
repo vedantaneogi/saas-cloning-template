@@ -2,10 +2,40 @@ import { apiClient } from "@/lib/api-client";
 import type { Envelope, EnvelopeListParams, PaginatedEnvelopes, Field, Recipient } from "./types";
 
 export async function getEnvelopes(params: EnvelopeListParams = {}): Promise<PaginatedEnvelopes> {
-  const res = await apiClient.get("/envelopes", { params });
+  // Map frontend param names to backend query param names
+  const { perPage, date_from, date_to, envelope_id, recipient_search, folder_id, ...rest } = params;
+  const queryParams = {
+    ...rest,
+    ...(perPage != null ? { page_size: perPage } : {}),
+    ...(date_from != null ? { date_from } : {}),
+    ...(date_to != null ? { date_to } : {}),
+    ...(envelope_id != null && envelope_id !== "" ? { envelope_id } : {}),
+    ...(recipient_search != null && recipient_search !== "" ? { recipient_search } : {}),
+    ...(folder_id != null && folder_id !== "" ? { folder_id } : {}),
+  };
+  const res = await apiClient.get("/envelopes", { params: queryParams });
   const raw = res.data;
+  // Map backend snake_case fields to frontend camelCase Envelope shape
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items = (raw.items ?? []).map((item: any) => ({
+    ...item,
+    from: item.from ?? item.from_name ?? "",
+    fromEmail: item.fromEmail ?? item.from_email ?? "",
+    lastModified: item.lastModified ?? item.updated_at ?? item.created_at ?? "",
+    sentAt: item.sentAt ?? item.sent_at ?? undefined,
+    completedAt: item.completedAt ?? item.completed_at ?? undefined,
+    expiresAt: item.expiresAt ?? item.expires_at ?? undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recipients: (item.recipients ?? []).map((r: any) => ({
+      ...r,
+      order: r.routing_order ?? r.order ?? 1,
+      status: r.status === "signed" ? "completed" : r.status,
+      signedAt: r.signed_at ?? r.signedAt ?? undefined,
+    })),
+    documents: item.documents ?? [],
+  }));
   return {
-    items: raw.items ?? [],
+    items,
     total: raw.total ?? 0,
     page: raw.page ?? 1,
     perPage: raw.page_size ?? raw.perPage ?? 25,
@@ -18,6 +48,13 @@ export async function getEnvelope(id: string): Promise<Envelope> {
   const raw = res.data;
   return {
     ...raw,
+    // Map backend snake_case fields to frontend camelCase Envelope shape
+    from: raw.from ?? raw.from_name ?? "",
+    fromEmail: raw.fromEmail ?? raw.from_email ?? "",
+    lastModified: raw.lastModified ?? raw.updated_at ?? raw.created_at ?? "",
+    sentAt: raw.sentAt ?? raw.sent_at ?? undefined,
+    completedAt: raw.completedAt ?? raw.completed_at ?? undefined,
+    expiresAt: raw.expiresAt ?? raw.expires_at ?? undefined,
     documents: (raw.documents ?? []).map((d: Record<string, unknown>) => ({
       ...d,
       name: (d.original_filename ?? d.filename ?? "") as string,
@@ -70,6 +107,14 @@ export async function addRecipient(
   data: { name: string; email: string; role: string; routing_order: number },
 ): Promise<Recipient> {
   const res = await apiClient.post(`/envelopes/${envelopeId}/recipients`, data);
+  return res.data;
+}
+
+export async function updateRecipient(
+  recipientId: string,
+  data: { name?: string; email?: string; role?: string; routing_order?: number },
+): Promise<Recipient> {
+  const res = await apiClient.put(`/recipients/${recipientId}`, data);
   return res.data;
 }
 
@@ -263,6 +308,41 @@ export async function postComment(envelopeId: string, text: string): Promise<{
 }> {
   const res = await apiClient.post(`/envelopes/${envelopeId}/comments`, { text });
   return res.data;
+}
+
+export async function deleteComment(envelopeId: string, commentId: string): Promise<void> {
+  await apiClient.delete(`/envelopes/${envelopeId}/comments/${commentId}`);
+}
+
+// ── Folder API ────────────────────────────────────────────────────────────────
+
+export interface FolderItem {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export async function getFolders(): Promise<FolderItem[]> {
+  const res = await apiClient.get("/folders");
+  return res.data;
+}
+
+export async function createFolder(name: string): Promise<FolderItem> {
+  const res = await apiClient.post("/folders", { name });
+  return res.data;
+}
+
+export async function moveEnvelopes(ids: string[], folderId: string | null, movedTo?: string): Promise<{ moved: number }> {
+  const res = await apiClient.put("/envelopes/move", {
+    envelope_ids: ids,
+    folder_id: movedTo ? null : folderId,
+    moved_to: movedTo ?? null,
+  });
+  return res.data;
+}
+
+export async function deleteFolder(id: string): Promise<void> {
+  await apiClient.delete(`/folders/${id}`);
 }
 
 // Correct in-flight

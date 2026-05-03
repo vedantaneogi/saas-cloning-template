@@ -127,7 +127,12 @@ export default function SigningPage() {
     );
   }
 
-  if (!hasConsented) {
+  // Self-sign detection: signer email matches sender email
+  const signerEmail = data.recipientEmail || data.envelope.recipients?.find((r: { id: string; email?: string }) => r.id === data.recipientId)?.email;
+  const senderEmail = data.envelope.fromEmail;
+  const isSelfSign = !!(signerEmail && senderEmail && signerEmail.toLowerCase() === senderEmail.toLowerCase());
+
+  if (!hasConsented && !isSelfSign) {
     return (
       <ConsentGate
         senderName={data.envelope.from || data.envelope.fromEmail || "Sender"}
@@ -146,6 +151,7 @@ export default function SigningPage() {
       recipientId={data.recipientId}
       fields={data.fields ?? []}
       accessCode={verifiedAccessCode}
+      isSelfSign={isSelfSign}
     />
   );
 }

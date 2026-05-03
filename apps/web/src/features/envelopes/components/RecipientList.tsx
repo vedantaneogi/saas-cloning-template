@@ -90,28 +90,48 @@ function Toggle({
       className="flex items-center gap-2 cursor-pointer select-none"
       style={{ fontFamily: DS_FONT }}
     >
+      {/* Track */}
       <button
         role="switch"
         aria-checked={checked}
         onClick={onChange}
-        className="relative flex-shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
         style={{
-          width: "36px",
-          height: "20px",
-          background: checked ? "#260559" : "rgba(19,0,50,0.2)",
+          position: "relative",
+          display: "inline-block",
+          flexShrink: 0,
+          width: "40px",
+          height: "22px",
+          borderRadius: "11px",
+          background: checked ? "#260559" : "#cccccc",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          transition: "background 0.2s ease",
           outline: "none",
+          verticalAlign: "middle",
         }}
       >
+        {/* Knob */}
         <span
-          className="absolute top-0.5 rounded-full bg-white shadow transition-transform"
           style={{
-            width: "16px",
-            height: "16px",
-            transform: checked ? "translateX(18px)" : "translateX(2px)",
+            position: "absolute",
+            top: "2px",
+            left: "2px",
+            width: "18px",
+            height: "18px",
+            borderRadius: "50%",
+            background: "#ffffff",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.35)",
+            transition: "transform 0.2s ease",
+            transform: checked ? "translateX(18px)" : "translateX(0)",
           }}
         />
       </button>
-      <span className="text-sm" style={{ color: COLOR_SECONDARY }}>
+      {/* Label — always outside and next to the track */}
+      <span
+        className="text-sm"
+        style={{ color: COLOR_SECONDARY, lineHeight: "22px" }}
+      >
         {label}
       </span>
     </label>

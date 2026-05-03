@@ -7,7 +7,6 @@ const statusConfig: Record<EnvelopeStatus, { label: string; dotColor: string; te
   draft:     { label: "Draft",     dotColor: "#9E9E9E", textColor: "rgba(19,0,50,0.4)" },
   voided:    { label: "Voided",    dotColor: "#D93025", textColor: "#C62828" },
   declined:  { label: "Declined",  dotColor: "#D93025", textColor: "#C62828" },
-  waiting:   { label: "Waiting",   dotColor: "#FF6D00", textColor: "#E65100" },
   delivered: { label: "Delivered", dotColor: "#0288D1", textColor: "#0277BD" },
 };
 

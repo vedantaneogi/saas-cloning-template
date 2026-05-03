@@ -8,7 +8,6 @@ import {
   Copy,
   Trash,
   CaretDown,
-  Gear,
 } from "@phosphor-icons/react";
 import type { PlacedField, FieldType, EditorRecipient } from "../model/types";
 import { FIELD_LABELS } from "../model/types";
@@ -19,6 +18,173 @@ const PAGE_HEIGHT = 1056; // Letter at 96 dpi
 
 const ZOOM_PRESETS = [50, 75, 100, 125, 150, 200];
 
+export interface CommentDot {
+  id: string;
+  x: number;
+  y: number;
+  pageNum: number;
+  text: string;
+  authorName?: string;
+}
+
+function CommentDotOverlay({ dot }: { dot: CommentDot }) {
+  const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const initials = dot.authorName
+    ? dot.authorName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+    : "U";
+
+  return (
+    <div
+      className="absolute z-40"
+      style={{
+        left: `${dot.x}%`,
+        top: `${dot.y}%`,
+        transform: "translate(-50%, -50%)",
+        pointerEvents: "auto",
+      }}
+      ref={cardRef}
+    >
+      {/* Dot */}
+      <div
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        style={{
+          width: "12px",
+          height: "12px",
+          borderRadius: "50%",
+          background: "#9B8FD8",
+          boxShadow: "0 0 0 3px rgba(155,143,216,0.3)",
+          cursor: "pointer",
+          transition: "transform 0.15s",
+          transform: open ? "scale(1.3)" : "scale(1)",
+        }}
+      />
+
+      {/* Comment card */}
+      {open && (
+        <div
+          className="absolute z-50"
+          style={{
+            top: "-10px",
+            left: "20px",
+            width: "260px",
+            background: "white",
+            borderRadius: "8px",
+            border: "1px solid rgba(19,0,50,0.12)",
+            boxShadow: "0 8px 24px rgba(19,0,50,0.14)",
+            padding: "14px",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header: avatar + name + kebab */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", marginBottom: "10px" }}>
+            <div
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                background: "#E8E0FF",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#4C00FF",
+                flexShrink: 0,
+              }}
+            >
+              {initials}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: "14px", fontWeight: 600, color: "rgba(19,0,50,0.9)", margin: 0 }}>
+                {dot.authorName || "You"}
+              </p>
+              <p style={{ fontSize: "11px", color: "rgba(19,0,50,0.45)", margin: "2px 0 0" }}>
+                Posted when the envelope is sent.
+              </p>
+            </div>
+            {/* Kebab menu */}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "4px",
+                  border: "none",
+                  background: menuOpen ? "rgba(19,0,50,0.06)" : "transparent",
+                  cursor: "pointer",
+                  color: "rgba(19,0,50,0.5)",
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <circle cx="8" cy="3" r="1.5" />
+                  <circle cx="8" cy="8" r="1.5" />
+                  <circle cx="8" cy="13" r="1.5" />
+                </svg>
+              </button>
+              {menuOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: "4px",
+                    background: "white",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(19,0,50,0.12)",
+                    boxShadow: "0 8px 24px rgba(19,0,50,0.14)",
+                    minWidth: "120px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                    style={{ fontSize: "13px", color: "rgba(19,0,50,0.85)", border: "none", background: "none", cursor: "pointer", textAlign: "left" }}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    Edit
+                  </button>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                    style={{ fontSize: "13px", color: "rgba(19,0,50,0.85)", border: "none", background: "none", cursor: "pointer", textAlign: "left" }}
+                    onClick={() => { setMenuOpen(false); setOpen(false); }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Comment text */}
+          <p style={{ fontSize: "13px", color: "rgba(19,0,50,0.85)", margin: 0, lineHeight: "1.5", wordBreak: "break-word" }}>
+            {dot.text}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface PageDropZoneProps {
   pageNumber: number;
   pageImageUrl?: string;
@@ -28,12 +194,18 @@ interface PageDropZoneProps {
   activeTool: FieldType | "select";
   activeRecipientId: string | null;
   zoom: number;
+  commentMode?: boolean;
+  commentDots?: CommentDot[];
+  onCommentPlace?: (pageNum: number, xPct: number, yPct: number, screenX: number, screenY: number) => void;
   onFieldClick: (id: string) => void;
   onFieldUpdate: (id: string, updates: Partial<PlacedField>) => void;
   onFieldRemove: (id: string) => void;
   onAssignRecipient: (fieldId: string, recipientId: string) => void;
   onPageClick: (pageNumber: number, x: number, y: number, w: number, h: number) => void;
   onDeselect: () => void;
+  onFieldDoubleClick?: (fieldId: string) => void;
+  onFieldDuplicate?: (fieldId: string) => void;
+  onOpenFieldProperties?: (fieldId: string) => void;
 }
 
 function PageDropZone({
@@ -45,12 +217,18 @@ function PageDropZone({
   activeTool,
   activeRecipientId: _activeRecipientId,
   zoom,
+  commentMode = false,
+  commentDots = [],
+  onCommentPlace,
   onFieldClick,
   onFieldUpdate,
   onFieldRemove,
   onAssignRecipient,
   onPageClick,
   onDeselect,
+  onFieldDoubleClick,
+  onFieldDuplicate,
+  onOpenFieldProperties,
 }: PageDropZoneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -67,16 +245,24 @@ function PageDropZone({
   const handlePageClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      // Comment mode: place a dot instead of a field
+      if (commentMode) {
+        e.stopPropagation();
+        const xPct = (x / rect.width) * 100;
+        const yPct = (y / rect.height) * 100;
+        onCommentPlace?.(pageNumber, xPct, yPct, e.clientX, e.clientY);
+        return;
+      }
       if (activeTool === "select") {
         onDeselect();
         return;
       }
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
       onPageClick(pageNumber, x, y, rect.width, rect.height);
     },
-    [activeTool, pageNumber, onPageClick, onDeselect],
+    [activeTool, commentMode, pageNumber, onPageClick, onDeselect, onCommentPlace],
   );
 
   const scaledWidth = PAGE_WIDTH * zoom;
@@ -94,7 +280,7 @@ function PageDropZone({
           width: scaledWidth,
           height: scaledHeight,
           background: "white",
-          cursor: activeTool !== "select" ? "crosshair" : "default",
+          cursor: commentMode ? "cell" : activeTool !== "select" ? "crosshair" : "default",
           outline: isOver ? "2px dashed #4C00FF" : "1px solid rgba(19,0,50,0.12)",
           outlineOffset: isOver ? "2px" : "0",
           boxShadow: "0 2px 12px rgba(19,0,50,0.10)",
@@ -148,7 +334,7 @@ function PageDropZone({
         )}
 
         {/* Active tool hint */}
-        {activeTool !== "select" && !isOver && (
+        {activeTool !== "select" && !commentMode && !isOver && (
           <div
             className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 text-xs font-semibold text-white pointer-events-none z-20"
             style={{
@@ -158,6 +344,20 @@ function PageDropZone({
             }}
           >
             Click to place {FIELD_LABELS[activeTool as FieldType]}
+          </div>
+        )}
+
+        {/* Comment mode hint */}
+        {commentMode && (
+          <div
+            className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 text-xs font-semibold text-white pointer-events-none z-20"
+            style={{
+              background: "rgba(76,0,255,0.85)",
+              backdropFilter: "blur(4px)",
+              borderRadius: "4px",
+            }}
+          >
+            Click anywhere to add a comment
           </div>
         )}
 
@@ -174,14 +374,23 @@ function PageDropZone({
               recipientName={name}
               isSelected={selectedFieldId === field.id}
               allRecipients={recipients}
+              allFields={fields}
               onSelect={() => onFieldClick(field.id)}
               onUpdate={(updates) => onFieldUpdate(field.id, updates)}
               onRemove={() => onFieldRemove(field.id)}
               onAssignRecipient={(recipientId) => onAssignRecipient(field.id, recipientId)}
+              onDoubleClick={() => onFieldDoubleClick?.(field.id)}
+              onDuplicate={() => onFieldDuplicate?.(field.id)}
+              onOpenProperties={() => onOpenFieldProperties?.(field.id)}
               containerRef={containerRef as React.RefObject<HTMLDivElement>}
             />
           );
         })}
+
+        {/* Comment dots */}
+        {commentDots.filter((d) => d.pageNum === pageNumber).map((dot) => (
+          <CommentDotOverlay key={dot.id} dot={dot} />
+        ))}
       </div>
     </div>
   );
@@ -194,7 +403,7 @@ interface CanvasToolbarProps {
   onZoomChange: (zoom: number) => void;
   onUndo?: () => void;
   onRedo?: () => void;
-  onCopy?: () => void;
+  onDuplicate?: () => void;
   onDelete?: () => void;
   hasSelection: boolean;
   canUndo?: boolean;
@@ -206,7 +415,7 @@ function CanvasToolbar({
   onZoomChange,
   onUndo,
   onRedo,
-  onCopy,
+  onDuplicate,
   onDelete,
   hasSelection,
   canUndo = false,
@@ -237,13 +446,13 @@ function CanvasToolbar({
 
       <div className="w-px h-4 bg-gray-200 mx-1" />
 
-      {/* Copy */}
-      <ToolbarBtn onClick={onCopy} title="Copy field" disabled={!hasSelection}>
+      {/* Duplicate */}
+      <ToolbarBtn onClick={hasSelection ? onDuplicate : undefined} title="Duplicate field" disabled={!hasSelection}>
         <Copy size={14} weight="bold" />
       </ToolbarBtn>
 
       {/* Delete */}
-      <ToolbarBtn onClick={onDelete} title="Delete field" disabled={!hasSelection}>
+      <ToolbarBtn onClick={hasSelection ? onDelete : undefined} title="Delete field (Del)" disabled={!hasSelection}>
         <Trash size={14} weight="bold" />
       </ToolbarBtn>
 
@@ -299,10 +508,6 @@ function CanvasToolbar({
         )}
       </div>
 
-      {/* Settings */}
-      <ToolbarBtn title="Canvas settings">
-        <Gear size={14} weight="bold" />
-      </ToolbarBtn>
     </div>
   );
 }
@@ -355,8 +560,12 @@ interface DocumentCanvasProps {
   zoom: number;
   pageImageUrls?: Record<number, string>;
   documentName?: string;
+  documents?: Array<{ id: string; name: string; pageCount: number; startPage: number }>;
   canUndo?: boolean;
   canRedo?: boolean;
+  commentMode?: boolean;
+  commentDots?: CommentDot[];
+  onCommentPlace?: (pageNum: number, xPct: number, yPct: number, screenX: number, screenY: number) => void;
   onFieldClick: (id: string) => void;
   onFieldUpdate: (id: string, updates: Partial<PlacedField>) => void;
   onFieldRemove: (id: string) => void;
@@ -367,6 +576,10 @@ interface DocumentCanvasProps {
   onZoomChange?: (zoom: number) => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  onDuplicate?: () => void;
+  onFieldDoubleClick?: (fieldId: string) => void;
+  onFieldDuplicate?: (fieldId: string) => void;
+  onOpenFieldProperties?: (fieldId: string) => void;
 }
 
 export function DocumentCanvas({
@@ -380,8 +593,12 @@ export function DocumentCanvas({
   zoom,
   pageImageUrls,
   documentName = "document.pdf",
+  documents: docSections,
   canUndo = false,
   canRedo = false,
+  commentMode = false,
+  commentDots = [],
+  onCommentPlace,
   onFieldClick,
   onFieldUpdate,
   onFieldRemove,
@@ -392,6 +609,10 @@ export function DocumentCanvas({
   onZoomChange,
   onUndo,
   onRedo,
+  onDuplicate,
+  onFieldDoubleClick,
+  onFieldDuplicate,
+  onOpenFieldProperties,
 }: DocumentCanvasProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -468,6 +689,7 @@ export function DocumentCanvas({
         canRedo={canRedo}
         onUndo={onUndo}
         onRedo={onRedo}
+        onDuplicate={onDuplicate}
         onDelete={handleDelete}
       />
 
@@ -476,6 +698,7 @@ export function DocumentCanvas({
         ref={scrollContainerRef}
         className="flex-1 overflow-auto relative"
         style={{ background: "#F5F5F5" }}
+        data-canvas-area="true"
       >
         {/* Top anchor for "Return to top" */}
         <div ref={topRef} />
@@ -500,12 +723,18 @@ export function DocumentCanvas({
                   activeTool={activeTool}
                   activeRecipientId={activeRecipientId}
                   zoom={zoom}
+                  commentMode={commentMode}
+                  commentDots={commentDots}
+                  onCommentPlace={onCommentPlace}
                   onFieldClick={onFieldClick}
                   onFieldUpdate={onFieldUpdate}
                   onFieldRemove={onFieldRemove}
                   onAssignRecipient={onAssignRecipient}
                   onPageClick={onPageClick}
                   onDeselect={onDeselect}
+                  onFieldDoubleClick={onFieldDoubleClick}
+                  onFieldDuplicate={onFieldDuplicate}
+                  onOpenFieldProperties={onOpenFieldProperties}
                 />
               </div>
             );
@@ -531,7 +760,13 @@ export function DocumentCanvas({
             fontWeight: 400,
           }}
         >
-          {documentName}
+          {(() => {
+            if (docSections) {
+              const doc = docSections.find((d) => currentPage >= d.startPage && currentPage < d.startPage + d.pageCount);
+              return doc?.name ?? documentName;
+            }
+            return documentName;
+          })()}
         </span>
 
         <span

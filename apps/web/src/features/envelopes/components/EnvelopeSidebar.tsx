@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
-import { createEnvelope } from "../api";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { createEnvelope, getFolders } from "../api";
 import {
   Tray,
   PaperPlaneRight,
@@ -99,8 +99,12 @@ function NavRow({
 export function EnvelopeSidebar() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const activeFilter = searchParams.get("filter") ?? "inbox";
-  const [showMore, setShowMore] = useState(false);
+  const pathname = usePathname();
+  const isBulkSendPage = pathname === "/agreements/bulk-send";
+  const activeFilter = isBulkSendPage
+    ? "bulk-send"
+    : (searchParams.get("filter") ?? "inbox");
+  const [showMore, setShowMore] = useState(isBulkSendPage);
   const [envelopesCollapsed, setEnvelopesCollapsed] = useState(false);
 
   const createEnvelopeMutation = useMutation({
@@ -108,6 +112,12 @@ export function EnvelopeSidebar() {
     onSuccess: (envelope) => {
       router.push(`/envelope/${envelope.id}/prepare`);
     },
+  });
+
+  const { data: customFolders = [] } = useQuery({
+    queryKey: ["folders"],
+    queryFn: getFolders,
+    staleTime: 30_000,
   });
 
   return (
@@ -290,6 +300,49 @@ export function EnvelopeSidebar() {
             Folders
           </span>
         </div>
+
+        {/* Custom folders list */}
+        {customFolders.map((folder) => {
+          const folderId = `folder:${folder.id}`;
+          const isActive = activeFilter === folderId;
+          return (
+            <button
+              key={folder.id}
+              onClick={() => router.push(`/agreements?filter=${encodeURIComponent(folderId)}`)}
+              className="w-full flex items-center text-left"
+              style={{
+                height: "40px",
+                paddingLeft: "16px",
+                paddingRight: "16px",
+                gap: "12px",
+                fontSize: "14px",
+                fontWeight: isActive ? 700 : 400,
+                color: isActive ? LABEL_COLOR : MUTED_COLOR,
+                background: "transparent",
+                border: "none",
+                borderLeft: isActive
+                  ? `4px solid ${PURPLE_BAR}`
+                  : "4px solid transparent",
+                cursor: "pointer",
+              }}
+              onMouseOver={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.background = HOVER_BG;
+                  e.currentTarget.style.borderLeftColor = "#d0d0d0";
+                }
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderLeftColor = isActive ? PURPLE_BAR : "transparent";
+              }}
+            >
+              <span style={{ color: isActive ? LABEL_COLOR : MUTED_COLOR, flexShrink: 0, display: "flex" }}>
+                <Folder size={20} weight="regular" />
+              </span>
+              {folder.name}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

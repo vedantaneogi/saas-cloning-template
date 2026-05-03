@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,7 @@ from app.envelopes.models import (
     Envelope,
     EnvelopeStatus,
     Field,
+    Folder,
     Recipient,
     RecipientStatus,
 )
@@ -52,19 +53,162 @@ async def list_envelopes(
     db: AsyncSession,
     user_id: int,
     status: Optional[EnvelopeStatus] = None,
+    statuses: Optional[list[EnvelopeStatus]] = None,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    envelope_id: Optional[str] = None,
+    recipient_search: Optional[str] = None,
+    shared: Optional[bool] = None,
+    current_user_email: Optional[str] = None,
+    folder_id: Optional[str] = None,
+    moved_to: Optional[str] = None,
+    expiring_soon: bool = False,
+    action_required: bool = False,
+    auth_failed: bool = False,
 ) -> tuple[list[Envelope], int]:
-    query = select(Envelope).where(Envelope.user_id == user_id)
-    if status:
-        query = query.where(Envelope.status == status)
-    if search:
-        query = query.where(Envelope.subject.ilike(f"%{search}%"))
+    from datetime import timezone as _tz, timedelta
+    from sqlalchemy import exists, and_, or_
 
-    count_q = select(func.count()).select_from(query.subquery())
+    if action_required and current_user_email:
+        # "Action Required" — envelopes where the current user is a recipient
+        # who still needs to sign (recipient status is "sent" or "delivered",
+        # i.e. not yet signed/declined).  The envelope itself is sent or delivered.
+        base = (
+            select(Envelope)
+            .join(Recipient, Recipient.envelope_id == Envelope.id)
+            .where(
+                func.lower(Recipient.email) == current_user_email.lower(),
+                Recipient.status.in_([RecipientStatus.sent, RecipientStatus.delivered]),
+                Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]),
+            )
+            .distinct()
+        )
+    elif shared and current_user_email:
+        # "Shared with Me" mode: envelopes where the current user appears as a
+        # recipient (any role) but is NOT the envelope owner.
+        base = (
+            select(Envelope)
+            .join(Recipient, Recipient.envelope_id == Envelope.id)
+            .where(
+                func.lower(Recipient.email) == current_user_email.lower(),
+                Envelope.user_id != user_id,
+            )
+            .distinct()
+        )
+    else:
+        base = select(Envelope).where(Envelope.user_id == user_id)
+
+    # "Deleted" virtual view — filter by moved_to="deleted"
+    if moved_to == "deleted":
+        base = base.where(Envelope.moved_to == "deleted")
+    elif moved_to:
+        base = base.where(Envelope.moved_to == moved_to)
+    else:
+        # Map sidebar view names to status values and vice versa
+        _view_to_status = {"inbox": "delivered", "sent": "sent", "completed": "completed"}
+        _status_to_view = {v: k for k, v in _view_to_status.items()}
+
+        if statuses:
+            base = base.where(Envelope.status.in_(statuses))
+            # Exclude soft-deleted envelopes from normal views
+            base = base.where(or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"))
+        elif status:
+            status_val = status.value if hasattr(status, 'value') else str(status)
+            view_name = _status_to_view.get(status_val)
+            base = base.where(
+                or_(
+                    and_(Envelope.status == status, Envelope.moved_to.is_(None)),
+                    Envelope.moved_to == view_name if view_name else Envelope.status == status,
+                )
+            )
+            # Exclude soft-deleted envelopes from normal views
+            base = base.where(or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"))
+        else:
+            # No status filter but also not a moved_to filter — exclude deleted
+            base = base.where(or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"))
+
+    # "Expiring Soon" — envelopes that have an expires_at within the next 30 days
+    if expiring_soon:
+        now = datetime.now(_tz.utc)
+        thirty_days = now + timedelta(days=30)
+        base = base.where(
+            Envelope.expires_at.isnot(None),
+            Envelope.expires_at > now,
+            Envelope.expires_at <= thirty_days,
+            Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]),
+        )
+
+    # "Authentication Failed" — envelopes with recipients that have access codes set.
+    # This serves as a proxy for envelopes that use recipient authentication.
+    # A full implementation would track per-attempt failures, but for now we show
+    # envelopes whose recipients have access_code protection.
+    if auth_failed:
+        base = base.where(
+            exists().where(
+                and_(
+                    Recipient.envelope_id == Envelope.id,
+                    Recipient.access_code.isnot(None),
+                )
+            )
+        )
+        base = base.where(
+            Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]),
+        )
+
+    # Date range filtering on created_at
+    if date_from:
+        try:
+            dt_from = datetime.fromisoformat(date_from)
+            if dt_from.tzinfo is None:
+                dt_from = dt_from.replace(tzinfo=_tz.utc)
+            base = base.where(Envelope.created_at >= dt_from)
+        except ValueError:
+            pass  # ignore malformed dates
+    if date_to:
+        try:
+            dt_to = datetime.fromisoformat(date_to)
+            if dt_to.tzinfo is None:
+                dt_to = dt_to.replace(tzinfo=_tz.utc)
+            base = base.where(Envelope.created_at <= dt_to)
+        except ValueError:
+            pass  # ignore malformed dates
+
+    # Direct envelope ID lookup (partial match on the UUID string)
+    if envelope_id:
+        base = base.where(Envelope.id.cast(String).ilike(f"%{envelope_id}%"))
+
+    if folder_id:
+        base = base.where(Envelope.folder_id == folder_id)
+    elif status or statuses:
+        base = base.where(Envelope.folder_id.is_(None))
+
+    # Search: subject ILIKE OR recipient name/email ILIKE
+    if search or recipient_search:
+        term = search or recipient_search
+        subject_match = Envelope.subject.ilike(f"%{term}%")
+        recipient_match = exists().where(
+            and_(
+                Recipient.envelope_id == Envelope.id,
+                Recipient.name.ilike(f"%{term}%") | Recipient.email.ilike(f"%{term}%"),
+            )
+        )
+        if search:
+            # Search across subject AND recipients
+            base = base.where(subject_match | recipient_match)
+        else:
+            # recipient_search only — search recipients exclusively
+            base = base.where(recipient_match)
+
+    count_q = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_q)).scalar_one()
 
+    query = base.options(
+        selectinload(Envelope.recipients),
+        selectinload(Envelope.owner),
+    )
     query = query.order_by(Envelope.created_at.desc())
     query = query.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
@@ -427,3 +571,93 @@ async def resend_corrected_envelope(db: AsyncSession, envelope: Envelope) -> Env
             detail="Envelope must have at least one recipient before sending",
         )
     return await send_envelope(db, envelope)
+
+
+# ── Folder CRUD ───────────────────────────────────────────────────────────────
+
+async def list_folders(db: AsyncSession, user_id: int) -> list[Folder]:
+    result = await db.execute(
+        select(Folder)
+        .where(Folder.user_id == user_id)
+        .order_by(Folder.created_at.asc())
+    )
+    return result.scalars().all()
+
+
+async def create_folder(db: AsyncSession, user_id: int, name: str) -> Folder:
+    folder = Folder(user_id=user_id, name=name.strip())
+    db.add(folder)
+    await db.commit()
+    await db.refresh(folder)
+    return folder
+
+
+async def delete_folder(db: AsyncSession, folder_id: uuid.UUID, user_id: int) -> bool:
+    """Delete a folder and clear folder_id on all its envelopes. Returns False if not found."""
+    result = await db.execute(
+        select(Folder).where(Folder.id == folder_id, Folder.user_id == user_id)
+    )
+    folder = result.scalar_one_or_none()
+    if not folder:
+        return False
+    # Clear folder_id on all envelopes in this folder
+    from sqlalchemy import update
+    await db.execute(
+        update(Envelope)
+        .where(Envelope.folder_id == folder_id)
+        .values(folder_id=None)
+    )
+    await db.delete(folder)
+    await db.commit()
+    return True
+
+
+async def move_envelopes(
+    db: AsyncSession,
+    user_id: int,
+    envelope_ids: list[str],
+    folder_id: str | None,
+    moved_to: str | None = None,
+) -> int:
+    """Move envelopes to a folder or a virtual view (inbox/sent).
+    moved_to="inbox"|"sent" moves to the real sidebar view.
+    folder_id moves to a custom folder.
+    Both None = remove from folder/view."""
+    from sqlalchemy import update
+
+    values: dict = {}
+
+    if moved_to in ("inbox", "sent", "deleted"):
+        values["moved_to"] = moved_to
+        values["folder_id"] = None
+    elif folder_id is not None:
+        folder_uuid = uuid.UUID(folder_id)
+        folder_result = await db.execute(
+            select(Folder).where(Folder.id == folder_uuid, Folder.user_id == user_id)
+        )
+        if not folder_result.scalar_one_or_none():
+            from fastapi import HTTPException, status as http_status
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Folder not found")
+        values["folder_id"] = folder_uuid
+        values["moved_to"] = None
+    else:
+        values["folder_id"] = None
+        values["moved_to"] = None
+
+    valid_ids: list[uuid.UUID] = []
+    for eid in envelope_ids:
+        try:
+            valid_ids.append(uuid.UUID(eid))
+        except ValueError:
+            pass
+
+    if not valid_ids:
+        return 0
+
+    result = await db.execute(
+        update(Envelope)
+        .where(Envelope.id.in_(valid_ids), Envelope.user_id == user_id)
+        .values(**values)
+    )
+    await db.commit()
+    return result.rowcount

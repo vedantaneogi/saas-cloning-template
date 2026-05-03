@@ -2,9 +2,19 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { CheckCircle, XCircle, FileText, Info, CaretRight } from "@phosphor-icons/react";
+import { Info, CaretRight } from "@phosphor-icons/react";
 import { getEnvelopes } from "@/features/envelopes/api";
+import { useAuthStore } from "@/features/auth/store";
 import type { Envelope } from "@/features/envelopes/types";
+
+const DS_FONT = "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif";
+const PRIMARY_TEXT = "rgba(19, 0, 50, 0.9)";
+const MUTED_TEXT = "rgba(19, 0, 50, 0.4)";
+const SECONDARY_TEXT = "rgba(19, 0, 50, 0.6)";
+const BORDER_COLOR = "#E0E0E0";
+const GREEN = "#00B851";
+const BLUE = "#0288D1";
+const GRAY_TRACK = "#E5E7EB";
 
 function getRelativeTime(dateStr?: string): string {
   if (!dateStr) return "";
@@ -24,48 +34,110 @@ function getRelativeTime(dateStr?: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function ActivityStatus({ status }: { status: Envelope["status"] }) {
-  if (status === "completed") {
+interface ProgressInfo {
+  completed: number;
+  total: number;
+  fraction: number;
+  label: string;
+  barColor: string;
+}
+
+function getProgress(envelope: Envelope): ProgressInfo {
+  const signers = (envelope.recipients ?? []).filter(
+    (r) => r.role === "signer" || !r.role
+  );
+  const total = signers.length || 1;
+  const completed = signers.filter(
+    (r) => r.status === "completed" || (r.status as string) === "signed"
+  ).length;
+  const fraction = completed / total;
+
+  if (envelope.status === "completed") {
+    return { completed: total, total, fraction: 1, label: "Completed", barColor: GREEN };
+  }
+  if (envelope.status === "voided") {
+    return { completed, total, fraction: 0, label: "Voided", barColor: "#D93025" };
+  }
+  if (envelope.status === "declined") {
+    return { completed, total, fraction: 0, label: "Declined", barColor: "#D93025" };
+  }
+  if (envelope.status === "draft") {
+    return { completed: 0, total, fraction: 0, label: "Draft", barColor: GRAY_TRACK };
+  }
+
+  // sent / delivered — show "You need to sign" or "N of M signed"
+  const label =
+    completed === 0
+      ? "You need to sign"
+      : `${completed} of ${total} signed`;
+
+  return { completed, total, fraction, label, barColor: BLUE };
+}
+
+function SigningProgressBar({ envelope, currentUserEmail }: { envelope: Envelope; currentUserEmail?: string }) {
+  const recipients = envelope.recipients ?? [];
+  const isSelfSend = currentUserEmail && recipients.some(
+    (r) => r.email?.toLowerCase() === currentUserEmail.toLowerCase() && (r.role === "signer" || !r.role)
+  );
+
+  if (!isSelfSend) {
+    const statusLabels: Record<string, string> = { sent: "Sent", delivered: "Delivered", completed: "Completed", voided: "Voided", declined: "Declined", draft: "Draft" };
     return (
-      <span className="inline-flex items-center gap-1" style={{ color: "#16a34a", fontSize: "14px" }}>
-        <CheckCircle size={18} color="#16a34a" weight="fill" />
-        Completed
-      </span>
+      <div style={{ minWidth: "140px" }}>
+        <p style={{ fontSize: "11px", color: SECONDARY_TEXT, margin: 0, fontFamily: DS_FONT }}>
+          {statusLabels[envelope.status] ?? envelope.status}
+        </p>
+      </div>
     );
   }
-  if (status === "voided") {
-    return (
-      <span className="inline-flex items-center gap-1" style={{ color: "#6B7280", fontSize: "14px" }}>
-        <XCircle size={18} color="#9CA3AF" weight="fill" />
-        Voided
-      </span>
-    );
-  }
-  if (status === "declined") {
-    return (
-      <span className="inline-flex items-center gap-1" style={{ color: "#dc2626", fontSize: "14px" }}>
-        <XCircle size={18} color="#dc2626" weight="fill" />
-        Declined
-      </span>
-    );
-  }
-  if (status === "draft") {
-    return (
-      <span className="inline-flex items-center gap-1" style={{ color: "#6B7280", fontSize: "14px" }}>
-        <FileText size={18} color="#9CA3AF" weight="fill" />
-        Draft
-      </span>
-    );
-  }
+
+  const { fraction, label, barColor } = getProgress(envelope);
+  const isVoidedOrDeclined = envelope.status === "voided" || envelope.status === "declined";
+
   return (
-    <span style={{ color: "#6B7280", fontSize: "14px" }}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
+    <div style={{ minWidth: "140px" }}>
+      {/* Bar */}
+      {!isVoidedOrDeclined && (
+        <div
+          style={{
+            width: "100%",
+            height: "4px",
+            background: GRAY_TRACK,
+            borderRadius: "2px",
+            overflow: "hidden",
+            marginBottom: "4px",
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.max(fraction * 100, fraction > 0 ? 8 : 0)}%`,
+              height: "100%",
+              background: barColor,
+              borderRadius: "2px",
+              transition: "width 0.3s ease",
+            }}
+          />
+        </div>
+      )}
+      {/* Label */}
+      <p
+        style={{
+          fontSize: "11px",
+          color: isVoidedOrDeclined ? "#D93025" : SECONDARY_TEXT,
+          margin: 0,
+          fontFamily: DS_FONT,
+          fontWeight: isVoidedOrDeclined ? 500 : 400,
+        }}
+      >
+        {label}
+      </p>
+    </div>
   );
 }
 
 export function AgreementActivity() {
   const router = useRouter();
+  const currentUser = useAuthStore((s) => s.user);
 
   const { data, isLoading } = useQuery({
     queryKey: ["agreement-activity"],
@@ -76,15 +148,28 @@ export function AgreementActivity() {
 
   if (isLoading) {
     return (
-      <div className="bg-white" style={{ border: "1px solid #E0E0E0", borderRadius: "8px" }}>
-        <div className="px-5 py-4 border-b" style={{ borderColor: "#E0E0E0" }}>
-          <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(19,0,50,0.6)", letterSpacing: "0.5px" }}>
+      <div
+        className="bg-white"
+        style={{ border: `1px solid ${BORDER_COLOR}`, borderRadius: "8px", fontFamily: DS_FONT }}
+      >
+        <div className="px-5 py-4 border-b" style={{ borderColor: BORDER_COLOR }}>
+          <h2
+            style={{
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.6px",
+              textTransform: "uppercase",
+              color: SECONDARY_TEXT,
+              fontFamily: DS_FONT,
+              margin: 0,
+            }}
+          >
             AGREEMENT ACTIVITY
           </h2>
         </div>
         <div className="p-5 space-y-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-10 bg-gray-100 rounded animate-pulse" />
+            <div key={i} style={{ height: "48px", background: "#F3F4F6", borderRadius: "6px" }} />
           ))}
         </div>
       </div>
@@ -94,33 +179,105 @@ export function AgreementActivity() {
   if (envelopes.length === 0) return null;
 
   return (
-    <div className="bg-white" style={{ border: "1px solid #E0E0E0", borderRadius: "8px" }}>
-      <div className="flex items-center gap-2 px-5 py-4 border-b" style={{ borderColor: "#E0E0E0" }}>
-        <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(19,0,50,0.6)", letterSpacing: "0.5px" }}>
+    <div
+      className="bg-white"
+      style={{ border: `1px solid ${BORDER_COLOR}`, borderRadius: "8px", fontFamily: DS_FONT }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center gap-2 px-5 py-4 border-b"
+        style={{ borderColor: BORDER_COLOR }}
+      >
+        <h2
+          style={{
+            fontSize: "11px",
+            fontWeight: 600,
+            letterSpacing: "0.6px",
+            textTransform: "uppercase",
+            color: SECONDARY_TEXT,
+            fontFamily: DS_FONT,
+            margin: 0,
+          }}
+        >
           AGREEMENT ACTIVITY
         </h2>
         <Info size={14} color="rgba(19,0,50,0.3)" weight="fill" />
       </div>
 
+      {/* Rows */}
       <div>
         {envelopes.map((envelope, idx) => (
           <div
             key={envelope.id}
-            className="flex items-center px-5 cursor-pointer hover:bg-gray-50 transition-colors"
-            style={{ borderBottom: idx < envelopes.length - 1 ? "1px solid #F0F0F0" : "none", paddingTop: "24px", paddingBottom: "24px" }}
+            role="button"
+            tabIndex={0}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+              padding: "18px 20px",
+              borderBottom: idx < envelopes.length - 1 ? `1px solid #F0F0F0` : "none",
+              cursor: "pointer",
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.02)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "white")}
             onClick={() => router.push(`/agreements/${envelope.id}`)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                router.push(`/agreements/${envelope.id}`);
+              }
+            }}
           >
-            <div className="flex-1 min-w-0">
-              <p className="text-sm" style={{ color: "rgba(19,0,50,0.9)", fontWeight: 400 }}>
+            {/* Subject + timestamp */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 400,
+                  color: PRIMARY_TEXT,
+                  margin: "0 0 3px",
+                  fontFamily: DS_FONT,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {envelope.subject || "Untitled"}
               </p>
-              <p className="text-xs mt-0.5" style={{ color: "rgba(19,0,50,0.4)" }}>
-                {getRelativeTime((envelope as any).updated_at || (envelope as any).created_at || (envelope as any).sentAt)}
+              <p
+                style={{
+                  fontSize: "11px",
+                  color: MUTED_TEXT,
+                  margin: 0,
+                  fontFamily: DS_FONT,
+                }}
+              >
+                {getRelativeTime(
+                  envelope.lastModified ||
+                    (envelope as any).updated_at ||
+                    (envelope as any).created_at ||
+                    envelope.sentAt
+                )}
               </p>
             </div>
 
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <ActivityStatus status={envelope.status} />
+            {/* Status or progress bar (bar only for self-send) */}
+            <SigningProgressBar envelope={envelope} currentUserEmail={currentUser?.email} />
+
+            {/* Caret — styled as a clickable affordance */}
+            <div
+              style={{
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "4px",
+                flexShrink: 0,
+              }}
+            >
               <CaretRight size={16} color="rgba(19,0,50,0.3)" />
             </div>
           </div>

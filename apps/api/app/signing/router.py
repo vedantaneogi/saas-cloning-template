@@ -1,4 +1,5 @@
 import base64
+import hmac
 import os
 import uuid
 from typing import List, Optional
@@ -8,12 +9,13 @@ from fastapi.responses import Response as FastAPIResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.envelopes.schemas import FieldResponse, RecipientResponse
 from app.signing import service as svc
 from app.signing.pdf_processor import render_page
 
-UPLOADS_DIR = os.environ.get("UPLOADS_DIR", "/app/uploads")
+UPLOADS_DIR = get_settings().upload_dir
 
 router = APIRouter(prefix="/signing", tags=["signing"])
 
@@ -117,8 +119,14 @@ async def get_signing_document_page(
     without requiring a full user session.
     """
     doc = await svc.get_document_for_signing(db, token, document_id)
+
+    # Resolve preview PDF path if one was generated during upload (for .doc/.docx files)
+    preview_path: str | None = None
+    if doc.preview_filename:
+        preview_path = os.path.join(UPLOADS_DIR, doc.preview_filename)
+
     try:
-        png_bytes = render_page(doc.file_path, page - 1)
+        png_bytes = render_page(doc.file_path, page - 1, preview_path=preview_path)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as exc:
@@ -166,10 +174,18 @@ async def get_signing_session(
         for r in envelope.recipients
     ]
 
+    owner_name = ""
+    owner_email = ""
+    if envelope.owner:
+        owner_name = envelope.owner.name or ""
+        owner_email = envelope.owner.email or ""
+
     envelope_info = SigningEnvelopeInfo(
         id=str(envelope.id),
         subject=envelope.subject,
         status=envelope.status.value,
+        from_name=owner_name,
+        fromEmail=owner_email,
         recipients=signing_recipients,
         documents=signing_documents,
         message=envelope.message,
@@ -247,7 +263,7 @@ async def verify_access_code(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Signing session not found")
     if not recipient.access_code:
         return {"verified": True}
-    if recipient.access_code != data.code.strip():
+    if not hmac.compare_digest(recipient.access_code, data.code.strip()):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid access code")
     return {"verified": True}
 
@@ -279,7 +295,7 @@ async def complete_signing(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access code required to complete signing",
             )
-        if recipient_check.access_code != supplied:
+        if not hmac.compare_digest(recipient_check.access_code, supplied):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid access code",

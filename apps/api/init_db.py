@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.db.base import Base
 from app.auth.models import User  # noqa: F401
-from app.envelopes.models import Envelope, Document, Recipient, Field, AuditEvent  # noqa: F401
+from app.envelopes.models import Envelope, Document, Recipient, Field, AuditEvent, Folder, Comment  # noqa: F401
 from app.templates.models import Template  # noqa: F401
 from app.contacts.models import Contact  # noqa: F401
 

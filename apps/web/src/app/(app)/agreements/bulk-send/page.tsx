@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MagnifyingGlass, DotsThree } from "@phosphor-icons/react";
+import { MagnifyingGlass, DotsThree, X, CaretDown, SlidersHorizontal } from "@phosphor-icons/react";
 import { getBulkBatches } from "@/features/envelopes/api";
+import { EnvelopeSidebar } from "@/features/envelopes/components/EnvelopeSidebar";
 
 // ── Design tokens (matching agreements list page) ─────────────────────────────
 const DS_FONT = "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif";
+const PRIMARY_COLOR = "#260559";
 const PRIMARY_TEXT = "rgba(19, 0, 50, 0.9)";
 const SECONDARY_TEXT = "rgba(19, 0, 50, 0.6)";
 const MUTED_TEXT = "rgba(19, 0, 50, 0.4)";
@@ -116,8 +118,13 @@ export default function BulkSendBatchPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<string>("all");
   const [sharedAccessOpen, setSharedAccessOpen] = useState(false);
   const [kebabOpen, setKebabOpen] = useState<string | null>(null);
+  const [dateFilterActive, setDateFilterActive] = useState(true);
+
+  const hasActiveFilters = dateFilterActive || statusFilter !== "all";
+  const clearAllFilters = () => { setDateFilterActive(false); setStatusFilter("all"); setPendingStatus("all"); };
 
   const { data: batches = [], isLoading } = useQuery({
     queryKey: ["bulk-batches"],
@@ -142,6 +149,10 @@ export default function BulkSendBatchPage() {
   };
 
   return (
+    <div className="flex flex-1 overflow-hidden min-h-0">
+      <Suspense>
+        <EnvelopeSidebar />
+      </Suspense>
     <div
       className="flex-1 flex flex-col min-h-0 overflow-y-auto"
       style={{ background: "#fff", fontFamily: DS_FONT }}
@@ -215,34 +226,30 @@ export default function BulkSendBatchPage() {
           </div>
         </div>
 
-        {/* ── Filter bar ──────────────────────────────────────────────────── */}
-        <div
-          className="flex items-center flex-wrap"
-          style={{ gap: "8px", paddingBottom: "12px" }}
-        >
-          {/* Search */}
+        {/* ── Search bar ──────────────────────────────────────────────────── */}
+        <div style={{ padding: "0 0 12px" }}>
           <div
             className="flex items-center"
             style={{
               border: `1px solid ${BORDER_COLOR}`,
               borderRadius: "4px",
-              padding: "6px 12px",
-              gap: "8px",
+              padding: "8px 14px",
+              gap: "10px",
               background: "white",
-              minWidth: "240px",
+              maxWidth: "480px",
             }}
           >
-            <MagnifyingGlass size={15} color={MUTED_TEXT} />
+            <MagnifyingGlass size={16} color={MUTED_TEXT} />
             <input
               type="text"
-              placeholder="Search by Batch Name or ID"
+              placeholder="Search Bulk Send and Folders"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               style={{
                 border: "none",
                 outline: "none",
-                fontSize: "13px",
+                fontSize: "14px",
                 color: PRIMARY_TEXT,
                 fontFamily: DS_FONT,
                 background: "transparent",
@@ -250,135 +257,206 @@ export default function BulkSendBatchPage() {
               }}
             />
           </div>
-
-          {/* Status dropdown */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setStatusDropdownOpen((o) => !o)}
-              className="flex items-center gap-2"
-              style={{
-                border: `1px solid ${BORDER_COLOR}`,
-                borderRadius: "4px",
-                padding: "7px 12px",
-                fontSize: "13px",
-                color: statusFilter !== "all" ? "#4C00FF" : PRIMARY_TEXT,
-                fontWeight: statusFilter !== "all" ? 600 : 400,
-                background: "white",
-                cursor: "pointer",
-                fontFamily: DS_FONT,
-              }}
-            >
-              {statusFilter === "all" ? "Status" : statusFilter}
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            {statusDropdownOpen && (
-              <div
-                className="absolute left-0 mt-1 bg-white rounded shadow-lg z-10 py-1"
-                style={{ border: `1px solid ${BORDER_COLOR}`, minWidth: "160px", top: "100%" }}
-              >
-                {["all", "Processed", "Processing", "Partial"].map((s) => (
-                  <button
-                    key={s}
-                    className="w-full text-left hover:bg-gray-50"
-                    style={{
-                      padding: "9px 16px",
-                      fontSize: "13px",
-                      color: statusFilter === s ? "#4C00FF" : PRIMARY_TEXT,
-                      fontWeight: statusFilter === s ? 600 : 400,
-                      fontFamily: DS_FONT,
-                    }}
-                    onClick={() => {
-                      setStatusFilter(s);
-                      setStatusDropdownOpen(false);
-                    }}
-                  >
-                    {s === "all" ? "All Statuses" : s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Date chip */}
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              border: `1px solid ${BORDER_COLOR}`,
-              borderRadius: "4px",
-              padding: "6px 12px",
-              fontSize: "13px",
-              color: SECONDARY_TEXT,
-              background: "rgba(19,0,50,0.03)",
-              fontFamily: DS_FONT,
-              userSelect: "none",
-            }}
-          >
-            Date: Last 6 months
-          </span>
         </div>
       </div>
 
-      {/* ── Table ───────────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflow: "auto" }}>
-        {isLoading ? (
+      {/* ── Filter row (matches Inbox) ───────────────────────────────────── */}
+      <div
+        className="flex items-center gap-2 px-6 py-2 flex-wrap"
+        style={{ borderBottom: `1px solid ${BORDER_COLOR}`, background: "white" }}
+      >
+        {/* Date tag — purple chip with × */}
+        {dateFilterActive && (
           <div
-            className="flex items-center justify-center"
-            style={{ padding: "80px 24px", color: MUTED_TEXT, fontSize: "14px", fontFamily: DS_FONT }}
-          >
-            Loading...
-          </div>
-        ) : filtered.length === 0 ? (
-          <div
-            className="flex flex-col items-center justify-center"
-            style={{ padding: "80px 24px", gap: "12px" }}
-          >
-            <p style={{ fontSize: "16px", color: SECONDARY_TEXT, fontFamily: DS_FONT, margin: 0 }}>
-              No bulk sends yet
-            </p>
-            <p style={{ fontSize: "13px", color: MUTED_TEXT, fontFamily: DS_FONT, margin: 0 }}>
-              Batch sends will appear here once you send to multiple recipients.
-            </p>
-          </div>
-        ) : (
-          <table
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium"
             style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontFamily: DS_FONT,
+              background: "rgba(38,5,89,0.06)",
+              border: `1px solid ${PRIMARY_COLOR}`,
+              color: PRIMARY_COLOR,
+              borderRadius: "4px",
             }}
           >
-            <thead>
-              <tr
-                style={{
-                  borderBottom: `1px solid ${BORDER_COLOR}`,
-                  background: "rgba(19,0,50,0.02)",
-                }}
-              >
-                {["BATCH NAME", "BATCH STATUS", "PROGRESS", "SUBMITTED", ""].map((h) => (
-                  <th
-                    key={h}
-                    className="text-left"
-                    style={{
-                      padding: "10px 16px",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                      color: MUTED_TEXT,
-                      letterSpacing: "0.05em",
-                      textTransform: "uppercase",
-                      fontFamily: DS_FONT,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {h}
-                  </th>
+            Date: Last 6 Months
+            <button
+              className="ml-1 transition-opacity hover:opacity-70"
+              aria-label="Remove date filter"
+              onClick={(e) => { e.stopPropagation(); setDateFilterActive(false); }}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: PRIMARY_COLOR, display: "flex" }}
+            >
+              <X size={11} weight="bold" />
+            </button>
+          </div>
+        )}
+
+        {/* Status dropdown */}
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setStatusDropdownOpen((o) => !o); setPendingStatus(statusFilter); }}
+            className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded"
+            style={{
+              borderColor: statusDropdownOpen || statusFilter !== "all" ? PRIMARY_COLOR : BORDER_COLOR,
+              color: statusFilter !== "all" ? PRIMARY_TEXT : SECONDARY_TEXT,
+              background: statusDropdownOpen ? "rgba(19,0,50,0.04)" : "white",
+              borderRadius: "4px",
+              fontFamily: DS_FONT,
+              fontWeight: statusFilter !== "all" ? 600 : 400,
+              cursor: "pointer",
+            }}
+          >
+            {statusFilter === "all" ? "Status" : statusFilter}
+            <CaretDown size={14} weight="regular" />
+          </button>
+          {statusDropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setStatusDropdownOpen(false)} />
+              <div className="absolute left-0 top-full mt-1 bg-white rounded shadow-lg border z-20 py-4 px-5" style={{ borderColor: BORDER_COLOR, minWidth: "240px", borderRadius: "8px" }}>
+                <p style={{ fontSize: "16px", fontWeight: 600, color: PRIMARY_TEXT, margin: "0 0 2px", fontFamily: DS_FONT }}>Status</p>
+                <p style={{ fontSize: "12px", color: SECONDARY_TEXT, margin: "0 0 14px", fontFamily: DS_FONT }}>Batch Status Filter</p>
+                {["all", "Processed", "Processing", "Partial"].map((opt) => (
+                  <label key={opt} className="flex items-center gap-3 py-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="batch-status-filter"
+                      checked={pendingStatus === opt}
+                      onChange={() => setPendingStatus(opt)}
+                      style={{ accentColor: PRIMARY_COLOR, width: "16px", height: "16px" }}
+                    />
+                    <span style={{ fontSize: "14px", color: PRIMARY_TEXT, fontFamily: DS_FONT }}>
+                      {opt === "all" ? "All Statuses" : opt}
+                    </span>
+                  </label>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+                <div className="flex justify-end gap-3 mt-4 pt-3" style={{ borderTop: `1px solid ${BORDER_COLOR}` }}>
+                  <button
+                    onClick={() => { setPendingStatus("all"); setStatusFilter("all"); setStatusDropdownOpen(false); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: PRIMARY_COLOR, fontSize: "13px", fontWeight: 500, fontFamily: DS_FONT }}
+                  >Cancel</button>
+                  <button
+                    onClick={() => { setStatusFilter(pendingStatus); setStatusDropdownOpen(false); }}
+                    style={{ background: PRIMARY_COLOR, color: "white", border: "none", borderRadius: "4px", padding: "6px 18px", cursor: "pointer", fontSize: "13px", fontWeight: 500, fontFamily: DS_FONT }}
+                  >Apply</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Advanced search dropdown */}
+        <button
+          className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded"
+          style={{
+            borderColor: BORDER_COLOR,
+            color: SECONDARY_TEXT,
+            background: "white",
+            borderRadius: "4px",
+            fontFamily: DS_FONT,
+            fontWeight: 400,
+            cursor: "pointer",
+          }}
+        >
+          Advanced search
+          <CaretDown size={14} weight="regular" />
+        </button>
+
+        {/* Clear All */}
+        {hasActiveFilters && (
+          <button
+            className="text-sm transition-colors px-2 py-1"
+            style={{ color: PRIMARY_COLOR, fontWeight: 500, background: "none", border: "none", cursor: "pointer", fontFamily: DS_FONT }}
+            onClick={clearAllFilters}
+            onMouseOver={(e) => (e.currentTarget.style.textDecoration = "underline")}
+            onMouseOut={(e) => (e.currentTarget.style.textDecoration = "none")}
+          >
+            Clear All
+          </button>
+        )}
+
+        <div className="flex-1" />
+      </div>
+
+      {/* ── Table ───────────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-auto" style={{ background: "white" }}>
+        <table className="w-full text-sm">
+          <thead
+            className="sticky top-0 z-10"
+            style={{
+              background: "white",
+              borderBottom: `1px solid ${BORDER_COLOR}`,
+            }}
+          >
+            <tr>
+              <th className="px-4 py-3 w-10">
+                <input type="checkbox" disabled style={{ width: "16px", height: "16px", accentColor: PRIMARY_COLOR }} />
+              </th>
+              {["BATCH NAME", "BATCH STATUS", "PROGRESS", "SUBMITTED"].map((h) => (
+                <th
+                  key={h}
+                  className="px-4 py-3 text-left"
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: MUTED_TEXT,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    fontFamily: DS_FONT,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+              <th className="px-4 py-3 w-28">
+                <div className="flex items-center justify-end">
+                  <button
+                    title="Customize columns"
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: MUTED_TEXT, display: "flex", alignItems: "center" }}
+                    onMouseOver={(e) => (e.currentTarget.style.color = PRIMARY_TEXT)}
+                    onMouseOut={(e) => (e.currentTarget.style.color = MUTED_TEXT)}
+                  >
+                    <SlidersHorizontal size={16} weight="regular" />
+                  </button>
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+        {isLoading ? (
+          <tr>
+            <td colSpan={6}>
+              <div
+                className="flex items-center justify-center"
+                style={{ padding: "80px 24px", color: MUTED_TEXT, fontSize: "14px", fontFamily: DS_FONT }}
+              >
+                Loading...
+              </div>
+            </td>
+          </tr>
+        ) : filtered.length === 0 ? (
+          <tr>
+            <td colSpan={6}>
+              <div
+                className="flex items-center justify-center"
+                style={{ padding: "80px 24px", gap: "40px" }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="https://docucdn-a.akamaihd.net/olive/images/2.110.0/empty-state/emptyStateBulkSend.svg"
+                  alt="No bulk sends"
+                  style={{ width: "200px", height: "auto", flexShrink: 0 }}
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <p style={{ fontSize: "18px", fontWeight: 600, color: PRIMARY_TEXT, fontFamily: DS_FONT, margin: 0 }}>
+                    No bulk sends yet
+                  </p>
+                  <p style={{ fontSize: "14px", color: MUTED_TEXT, fontFamily: DS_FONT, margin: 0, maxWidth: "320px" }}>
+                    Batch sends will appear here once you send to multiple recipients.
+                  </p>
+                </div>
+              </div>
+            </td>
+          </tr>
+        ) : (
+          <>
               {filtered.map((batch) => (
                 <tr
                   key={batch.batch_id}
@@ -393,6 +471,10 @@ export default function BulkSendBatchPage() {
                     (e.currentTarget as HTMLTableRowElement).style.background = "transparent";
                   }}
                 >
+                  {/* Checkbox */}
+                  <td className="px-4 py-3 w-10">
+                    <input type="checkbox" style={{ width: "16px", height: "16px", accentColor: PRIMARY_COLOR }} />
+                  </td>
                   {/* Batch Name */}
                   <td style={{ padding: "14px 16px" }}>
                     <span
@@ -548,10 +630,12 @@ export default function BulkSendBatchPage() {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+          </>
         )}
+          </tbody>
+        </table>
       </div>
+    </div>
     </div>
   );
 }

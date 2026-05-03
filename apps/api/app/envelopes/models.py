@@ -68,6 +68,24 @@ class FieldType(str, enum.Enum):
     payment = "payment"
 
 
+class Folder(Base):
+    __tablename__ = "folders"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    envelopes: Mapped[list["Envelope"]] = relationship("Envelope", back_populates="folder")
+
+
 class Envelope(Base):
     __tablename__ = "envelopes"
 
@@ -77,6 +95,13 @@ class Envelope(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("folders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    moved_to: Mapped[str | None] = mapped_column(String(50), nullable=True)
     subject: Mapped[str] = mapped_column(String(512), nullable=False)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[EnvelopeStatus] = mapped_column(
@@ -102,6 +127,7 @@ class Envelope(Base):
 
     # Relationships
     owner: Mapped["User"] = relationship("User", back_populates="envelopes")  # noqa: F821
+    folder: Mapped["Folder | None"] = relationship("Folder", back_populates="envelopes")
     documents: Mapped[list["Document"]] = relationship(
         "Document", back_populates="envelope", cascade="all, delete-orphan", order_by="Document.order"
     )
@@ -134,6 +160,7 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    preview_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
     page_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

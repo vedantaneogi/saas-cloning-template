@@ -33,7 +33,19 @@ export async function createField(
   documentId: string,
   field: Omit<PlacedField, "id">,
 ): Promise<PlacedField> {
-  const res = await apiClient.post(`/documents/${documentId}/fields`, field);
+  const payload = {
+    type: field.type,
+    recipient_id: field.recipientId,
+    page: field.page ?? 1,
+    x: field.x ?? 0,
+    y: field.y ?? 0,
+    width: field.width ?? 20,
+    height: field.height ?? 5,
+    required: field.required ?? true,
+    label: field.label ?? null,
+    value: field.value ?? null,
+  };
+  const res = await apiClient.post(`/documents/${documentId}/fields`, payload);
   return res.data;
 }
 

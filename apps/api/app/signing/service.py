@@ -26,6 +26,7 @@ async def get_signing_session(db: AsyncSession, token: str) -> dict:
             selectinload(Recipient.envelope).options(
                 selectinload(Envelope.documents).selectinload(Document.fields),
                 selectinload(Envelope.recipients),
+                selectinload(Envelope.owner),
             )
         )
         .where(Recipient.signing_token == token)
@@ -182,11 +183,11 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
             if r.routing_order == next_order:
                 r.status = RecipientStatus.sent
 
-    # Check if all signers have signed
+    # Check if all signers have signed (includes in_person signers)
     all_signed = all(
         r.status == RecipientStatus.signed
         for r in envelope.recipients
-        if r.role.value in ("signer", "approver")
+        if r.role.value in ("signer", "approver", "in_person")
     )
     if all_signed:
         envelope.status = EnvelopeStatus.completed

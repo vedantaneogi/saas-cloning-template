@@ -1,18 +1,125 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState } from "react";
-import { getEnvelopes } from "../api";
-import { StatusBadge } from "./StatusBadge";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { getEnvelopes, downloadEnvelope, resendEnvelope, deleteEnvelope, voidEnvelope, getFolders, createFolder, moveEnvelopes, correctEnvelope, saveEnvelopeAsTemplate, createEnvelope, type FolderItem } from "../api";
 import { formatDateWithTime } from "@/lib/utils";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { useAuthStore } from "@/features/auth/store";
 import type { Envelope } from "../types";
-import { SlidersHorizontal, X, MagnifyingGlass, DotsSixVertical, CaretUp, CaretDown, CaretUpDown, CaretLeft, CaretRight, Check, ArrowCounterClockwise, Trash, CopySimple, PenNib, DotsThreeOutline } from "@phosphor-icons/react";
-import { downloadEnvelope, resendEnvelope, deleteEnvelope, voidEnvelope } from "../api";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { SlidersHorizontal, X, MagnifyingGlass, DotsSixVertical, CaretUp, CaretDown, CaretUpDown, CaretLeft, CaretRight, Check, ArrowCounterClockwise, Trash, CopySimple, PenNib, DotsThreeOutline, Folder, Plus, Tray, PaperPlaneRight, WarningCircle } from "@phosphor-icons/react";
+
+// ── Lightweight inline toast system ──────────────────────────────────────────
+
+type ToastKind = "success" | "error" | "info" | "warning";
+interface ToastItem { id: number; message: string; kind: ToastKind }
+let _toastId = 0;
+let _addToast: ((msg: string, kind: ToastKind) => void) | null = null;
+
+function toast(message: string, kind: ToastKind = "info") {
+  _addToast?.(message, kind);
+}
+
+function ToastContainer() {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  const add = useCallback((message: string, kind: ToastKind) => {
+    const id = ++_toastId;
+    setToasts((prev) => [...prev, { id, message, kind }]);
+    const t = setTimeout(() => {
+      setToasts((prev) => prev.filter((x) => x.id !== id));
+      timers.current.delete(id);
+    }, 3500);
+    timers.current.set(id, t);
+  }, []);
+
+  useEffect(() => {
+    _addToast = add;
+    return () => { _addToast = null; };
+  }, [add]);
+
+  const kindStyle: Record<ToastKind, { bg: string; border: string; icon: string }> = {
+    success: { bg: "#F0FDF4", border: "#22C55E", icon: "✓" },
+    error:   { bg: "#FEF2F2", border: "#EF4444", icon: "✕" },
+    info:    { bg: "#EFF6FF", border: "#3B82F6", icon: "ℹ" },
+    warning: { bg: "#FFFBEB", border: "#F59E0B", icon: "⚠" },
+  };
+
+  if (toasts.length === 0) return null;
+
+  return (
+    <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 9999, display: "flex", flexDirection: "column", gap: "8px" }}>
+      {toasts.map((t) => {
+        const s = kindStyle[t.kind];
+        return (
+          <div
+            key={t.id}
+            style={{
+              background: s.bg,
+              border: `1px solid ${s.border}`,
+              borderRadius: "8px",
+              padding: "12px 16px",
+              fontSize: "14px",
+              color: "#111",
+              fontFamily: "'DS Indigo', Helvetica, Arial, sans-serif",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              minWidth: "260px",
+              maxWidth: "400px",
+            }}
+          >
+            <span style={{ fontWeight: 700, color: s.border, flexShrink: 0 }}>{s.icon}</span>
+            <span>{t.message}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── CSV export helper ─────────────────────────────────────────────────────────
+
+function exportEnvelopesAsCSV(envelopes: Envelope[]) {
+  const headers = ["Subject", "Status", "Sender", "Recipients", "Created", "Last Modified"];
+  const rows = envelopes.map((e) => [
+    `"${e.subject.replace(/"/g, '""')}"`,
+    e.status,
+    `"${(e.from || e.fromEmail || "").replace(/"/g, '""')}"`,
+    `"${(e.recipients ?? []).map((r) => r.email).join("; ").replace(/"/g, '""')}"`,
+    e.sentAt ? new Date(e.sentAt).toLocaleDateString() : "",
+    e.lastModified ? new Date(e.lastModified).toLocaleDateString() : "",
+  ]);
+  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `envelopes-export-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Spinner helper ────────────────────────────────────────────────────────────
+function Spinner({ size = 12 }: { size?: number }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width: size,
+        height: size,
+        border: "2px solid currentColor",
+        borderTopColor: "transparent",
+        borderRadius: "50%",
+        animation: "spin 0.7s linear infinite",
+      }}
+    />
+  );
+}
 
 const CDN_BASE = "https://docucdn-a.akamaihd.net/olive/images/2.110.0";
 
@@ -57,7 +164,7 @@ const EMPTY_STATES: Record<string, EmptyStateDef> = {
   deleted: {
     svgUrl: `${CDN_BASE}/empty-state/emptyStateDeleted.svg`,
     title: "Nothing here",
-    description: "Deleted envelopes will appear here for 30 days.",
+    description: "Envelopes you delete will appear here. You can restore them by moving them back to Inbox or Sent.",
   },
   waiting: {
     svgUrl: `${CDN_BASE}/empty-state/emptyStateWaiting.svg`,
@@ -74,7 +181,7 @@ const EMPTY_STATES: Record<string, EmptyStateDef> = {
   "auth-failed": {
     svgUrl: `${CDN_BASE}/empty-state/emptyStateAuthFailed.svg`,
     title: "All clear",
-    description: "Envelopes with authentication failures will appear here.",
+    description: "Envelopes with recipient access code authentication will appear here.",
   },
   "bulk-send": {
     svgUrl: `${CDN_BASE}/empty-state/emptyStateBulkSend.svg`,
@@ -99,6 +206,94 @@ const MUTED_TEXT = "rgba(19, 0, 50, 0.4)";
 const BORDER_COLOR = "rgba(19, 0, 50, 0.1)";
 const DS_FONT = "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif";
 
+// ── Signing progress bar for STATUS column ────────────────────────────────────
+function StatusCell({ envelope, currentUserEmail }: { envelope: Envelope; currentUserEmail?: string }) {
+  const recipients = envelope.recipients ?? [];
+  const status = envelope.status;
+
+  const statusDotColors: Record<string, string> = {
+    sent: "#4C00FF",
+    delivered: "#4C00FF",
+    completed: "#00B851",
+    voided: "#D93025",
+    declined: "#D93025",
+    draft: MUTED_TEXT,
+  };
+
+  const statusLabels: Record<string, string> = {
+    sent: "Sent",
+    delivered: "Delivered",
+    completed: "Completed",
+    voided: "Voided",
+    declined: "Declined",
+    draft: "Draft",
+  };
+
+  const isSelfSend = currentUserEmail && recipients.some(
+    (r) => r.email?.toLowerCase() === currentUserEmail.toLowerCase() && (r.role === "signer" || !r.role)
+  );
+
+  if (!isSelfSend || status === "draft") {
+    const dotColor = statusDotColors[status] ?? MUTED_TEXT;
+    const label = statusLabels[status] ?? status;
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+        <span style={{ fontSize: "13px", color: PRIMARY_TEXT, fontFamily: DS_FONT }}>{label}</span>
+      </div>
+    );
+  }
+
+  const signers = recipients.filter((r) => r.role === "signer" || !r.role);
+  const total = signers.length || 1;
+  const completed = signers.filter(
+    (r) => r.status === "completed" || (r.status as string) === "signed"
+  ).length;
+
+  const isCompleted = status === "completed";
+  const fraction = isCompleted ? 1 : completed / total;
+  const barColor = isCompleted ? "#00B851" : "#0288D1";
+  const label = isCompleted
+    ? "Completed"
+    : completed === 0
+    ? "Need to sign"
+    : `${completed} of ${total} signed`;
+
+  return (
+    <div style={{ minWidth: "110px" }}>
+      <div
+        style={{
+          width: "100%",
+          height: "4px",
+          background: "#E5E7EB",
+          borderRadius: "2px",
+          overflow: "hidden",
+          marginBottom: "4px",
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.max(fraction * 100, fraction > 0 ? 6 : 0)}%`,
+            height: "100%",
+            background: barColor,
+            borderRadius: "2px",
+          }}
+        />
+      </div>
+      <span
+        style={{
+          fontSize: "11px",
+          color: isCompleted ? "#1B7A3E" : SECONDARY_TEXT,
+          fontFamily: DS_FONT,
+          fontWeight: isCompleted ? 500 : 400,
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function SortIcon({ active, dir }: { active?: boolean; dir?: "asc" | "desc" }) {
   if (active && dir === "asc") return <CaretUp size={12} weight="bold" />;
   if (active && dir === "desc") return <CaretDown size={12} weight="bold" />;
@@ -113,17 +308,23 @@ export function EnvelopeList() {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkMoreOpen, setBulkMoreOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [dateFilterActive, setDateFilterActive] = useState(true);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [senderDropdownOpen, setSenderDropdownOpen] = useState(false);
   const [advancedDropdownOpen, setAdvancedDropdownOpen] = useState(false);
   const [sharedAccessOpen, setSharedAccessOpen] = useState(false);
+  const [sharedAccessMode, setSharedAccessMode] = useState<"mine" | "shared">("mine");
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [appliedStatus, setAppliedStatus] = useState<string | null>(null);
   const [pendingSender, setPendingSender] = useState<string | null>(null);
   const [appliedSender, setAppliedSender] = useState<string | null>(null);
-  const [pendingAdvanced, setPendingAdvanced] = useState(false);
+  const [pendingEnvelopeId, setPendingEnvelopeId] = useState("");
+  const [pendingRecipientSearch, setPendingRecipientSearch] = useState("");
+  const [appliedEnvelopeId, setAppliedEnvelopeId] = useState("");
+  const [appliedRecipientSearch, setAppliedRecipientSearch] = useState("");
   const [customizeColumnsOpen, setCustomizeColumnsOpen] = useState(false);
   const [columnSearch, setColumnSearch] = useState("");
   const [columns, setColumns] = useState([
@@ -134,7 +335,12 @@ export function EnvelopeList() {
   const [pendingColumns, setPendingColumns] = useState(columns);
   const [sortKey, setSortKey] = useState<"subject" | "status" | "lastModified">("lastModified");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const perPage = 25;
+  const [perPage, setPerPage] = useState(25);
+  const [voidModalOpen, setVoidModalOpen] = useState(false);
+  const [voidTargetIds, setVoidTargetIds] = useState<string[]>([]);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidReasonType, setVoidReasonType] = useState<"declined" | "update" | "other">("other");
+  const [voidBusy, setVoidBusy] = useState(false);
 
   const handleEnvelopeSort = (key: typeof sortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -154,21 +360,76 @@ export function EnvelopeList() {
     setPendingStatus(null);
     setAppliedSender(null);
     setPendingSender(null);
+    setAppliedEnvelopeId("");
+    setPendingEnvelopeId("");
+    setAppliedRecipientSearch("");
+    setPendingRecipientSearch("");
   };
 
-  const hasActiveFilters = dateFilterActive || appliedStatus !== null || appliedSender !== null;
+  const hasActiveFilters =
+    dateFilterActive ||
+    appliedStatus !== null ||
+    appliedSender !== null ||
+    appliedEnvelopeId !== "" ||
+    appliedRecipientSearch !== "";
 
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["envelopes", filter, search, page, appliedStatus, appliedSender],
-    queryFn: () => getEnvelopes({
-      status: appliedStatus ?? filterToStatus[filter] ?? undefined,
+    queryKey: [
+      "envelopes",
+      filter,
       search,
       page,
       perPage,
-      sender: appliedSender ?? undefined,
-    }),
+      appliedStatus,
+      appliedSender,
+      sharedAccessMode,
+      dateFilterActive,
+      appliedEnvelopeId,
+      appliedRecipientSearch,
+    ],
+    queryFn: () => {
+      // When a user-applied status override exists, map the human-readable
+      // label to the backend enum value and skip the virtual backend filter.
+      const overrideStatus = appliedStatus
+        ? statusLabelToEnum[appliedStatus] ?? appliedStatus.toLowerCase()
+        : undefined;
+      const backendFilter = !overrideStatus ? filterToBackendFilter[filter] : undefined;
+
+      // Compute date_from for "Last 6 Months" filter
+      let date_from: string | undefined;
+      let date_to: string | undefined;
+      if (dateFilterActive) {
+        const now = new Date();
+        const sixMonthsAgo = new Date(now);
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        date_from = sixMonthsAgo.toISOString();
+        date_to = now.toISOString();
+      }
+
+      // Extract folder UUID when the sidebar sets ?filter=folder:<uuid>
+      const folderMatch = filter.startsWith("folder:") ? filter.slice("folder:".length) : undefined;
+
+      // Sender filter: "Sent to me" uses shared=true; "Sent by me" is default (no param needed)
+      const senderShared = appliedSender === "Sent to me" ? true : undefined;
+      // sharedAccessMode dropdown also controls shared; either one can activate it
+      const sharedParam = sharedAccessMode === "shared" ? true : senderShared;
+
+      return getEnvelopes({
+        status: overrideStatus ?? filterToStatus[filter] ?? undefined,
+        filter: backendFilter,
+        search,
+        page,
+        perPage,
+        shared: sharedParam,
+        date_from,
+        date_to,
+        envelope_id: appliedEnvelopeId || undefined,
+        recipient_search: appliedRecipientSearch || undefined,
+        folder_id: folderMatch,
+      });
+    },
     placeholderData: (prev) => prev,
   });
 
@@ -215,20 +476,173 @@ export function EnvelopeList() {
     powerforms: "PowerForms",
     voided: "Voided",
   };
-  const heading = headingMap[filter] ?? filter;
+
+  const { data: foldersList } = useQuery({
+    queryKey: ["folders"],
+    queryFn: getFolders,
+    enabled: filter.startsWith("folder:"),
+  });
+
+  const heading = (() => {
+    if (filter.startsWith("folder:")) {
+      const folderId = filter.slice("folder:".length);
+      const found = foldersList?.find((f) => f.id === folderId);
+      return found?.name ?? "Folder";
+    }
+    return headingMap[filter] ?? filter;
+  })();
 
   const filterToStatus: Record<string, string | undefined> = {
     inbox: "delivered",
     sent: "sent",
     completed: "completed",
-    "action-required": "delivered",
+    // "action-required", "deleted", "waiting", "expiring", "auth-failed" all use
+    // backend virtual filters instead of a single status value.
+    "action-required": undefined,
     draft: "draft",
-    deleted: "voided",
-    waiting: "sent",
-    expiring: "sent",
+    deleted: undefined,
+    waiting: undefined,
+    expiring: undefined,
     "auth-failed": undefined,
     "bulk-send": undefined,
     powerforms: undefined,
+  };
+
+  // Maps sidebar filter keys to the backend ?filter= virtual filter param.
+  // Used when the sidebar filter has special multi-status or non-status semantics.
+  const filterToBackendFilter: Record<string, string | undefined> = {
+    waiting: "waiting_for_others",
+    deleted: "deleted",
+    expiring: "expiring_soon",
+    "action-required": "action_required",
+    "auth-failed": "auth_failed",
+  };
+
+  // Maps the human-readable status dropdown labels to the backend enum values.
+  const statusLabelToEnum: Record<string, string> = {
+    "Completed": "completed",
+    "Declined": "declined",
+    "Draft": "draft",
+    "In progress": "sent",
+    "Voided": "voided",
+  };
+
+  // ── Bulk action helpers ─────────────────────────────────────────────────────
+
+  /** Envelope objects for the currently selected IDs (used by CSV export). */
+  const selectedEnvelopes = envelopes.filter((e) => selectedIds.has(e.id));
+
+  const handleBulkResend = async () => {
+    if (bulkBusy) return;
+    setBulkBusy(true);
+    const ids = Array.from(selectedIds);
+    let ok = 0;
+    let fail = 0;
+    for (const id of ids) {
+      try { await resendEnvelope(id); ok++; } catch { fail++; }
+    }
+    setBulkBusy(false);
+    setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+    if (fail === 0) {
+      toast(`Resent ${ok} envelope${ok !== 1 ? "s" : ""} successfully.`, "success");
+    } else {
+      toast(
+        `Resent ${ok}. ${fail} failed (only sent/delivered envelopes can be resent).`,
+        ok > 0 ? "warning" : "error",
+      );
+    }
+  };
+
+  const handleBulkVoid = () => {
+    if (bulkBusy) return;
+    setBulkMoreOpen(false);
+    setVoidTargetIds(Array.from(selectedIds));
+    setVoidReason("");
+    setVoidReasonType("other");
+    setVoidModalOpen(true);
+  };
+
+  const handleVoidSubmit = async (ids: string[], reason: string) => {
+    setVoidBusy(true);
+    const isBulk = ids.length > 1 || (voidTargetIds.length > 1 && ids === voidTargetIds);
+    let ok = 0;
+    let fail = 0;
+    for (const id of ids) {
+      try { await voidEnvelope(id, reason); ok++; } catch { fail++; }
+    }
+    setVoidBusy(false);
+    setVoidModalOpen(false);
+    setVoidReason("");
+    setVoidReasonType("other");
+    if (isBulk) setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+    if (fail === 0) {
+      toast(`Voided ${ok} envelope${ok !== 1 ? "s" : ""}.`, "success");
+    } else {
+      toast(
+        `Voided ${ok}. ${fail} failed (only sent/delivered envelopes can be voided).`,
+        ok > 0 ? "warning" : "error",
+      );
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkBusy) return;
+    const count = selectedIds.size;
+    if (
+      !window.confirm(
+        `Move ${count} envelope(s) to Deleted?`,
+      )
+    )
+      return;
+    setBulkBusy(true);
+    setBulkMoreOpen(false);
+    const ids = Array.from(selectedIds);
+    // Separate drafts (hard-delete) from non-drafts (soft-delete via move)
+    const draftIds = ids.filter((id) => envelopes.find((e) => e.id === id)?.status === "draft");
+    const nonDraftIds = ids.filter((id) => envelopes.find((e) => e.id === id)?.status !== "draft");
+    let ok = 0;
+    let fail = 0;
+    // Hard-delete drafts
+    for (const id of draftIds) {
+      try { await deleteEnvelope(id); ok++; } catch { fail++; }
+    }
+    // Soft-delete non-drafts by moving to "deleted" view
+    if (nonDraftIds.length > 0) {
+      try {
+        const result = await moveEnvelopes(nonDraftIds, null, "deleted");
+        ok += result.moved;
+        if (result.moved < nonDraftIds.length) fail += nonDraftIds.length - result.moved;
+      } catch {
+        fail += nonDraftIds.length;
+      }
+    }
+    setBulkBusy(false);
+    setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+    if (fail === 0) {
+      toast(`Moved ${ok} envelope${ok !== 1 ? "s" : ""} to Deleted.`, "success");
+    } else {
+      toast(
+        `Moved ${ok}. ${fail} could not be moved.`,
+        ok > 0 ? "warning" : "error",
+      );
+    }
+  };
+
+  const handleBulkExportCSV = () => {
+    setBulkMoreOpen(false);
+    if (selectedEnvelopes.length === 0) {
+      toast("No envelopes selected to export.", "warning");
+      return;
+    }
+    exportEnvelopesAsCSV(selectedEnvelopes);
+    toast(`Exported ${selectedEnvelopes.length} envelope${selectedEnvelopes.length !== 1 ? "s" : ""} as CSV.`, "success");
+  };
+
+  const handleBulkMove = () => {
+    setMoveModalOpen(true);
   };
 
   return (
@@ -236,6 +650,9 @@ export function EnvelopeList() {
       className="flex-1 flex flex-col overflow-hidden"
       style={{ fontFamily: DS_FONT }}
     >
+      {/* Global toast notifications */}
+      <ToastContainer />
+
       {/* Heading row */}
       <div className="flex items-center justify-between px-6 pt-5 pb-3">
         <h1
@@ -255,14 +672,15 @@ export function EnvelopeList() {
             onClick={() => { closeAllDropdowns(); setSharedAccessOpen(!sharedAccessOpen); }}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded transition-colors"
             style={{
-              borderColor: sharedAccessOpen ? "rgba(19,0,50,0.3)" : BORDER_COLOR,
-              color: PRIMARY_TEXT,
+              borderColor: sharedAccessOpen || sharedAccessMode === "shared" ? PRIMARY_COLOR : BORDER_COLOR,
+              color: sharedAccessMode === "shared" ? PRIMARY_COLOR : PRIMARY_TEXT,
               background: sharedAccessOpen ? "rgba(19,0,50,0.03)" : "white",
               fontFamily: DS_FONT,
               borderRadius: "6px",
+              fontWeight: sharedAccessMode === "shared" ? 600 : 400,
             }}
           >
-            Shared Access
+            {sharedAccessMode === "shared" ? "Shared with Me" : (currentUser?.name ?? "My Envelopes")}
             <CaretDown size={14} weight="regular" />
           </button>
           {sharedAccessOpen && (
@@ -270,25 +688,53 @@ export function EnvelopeList() {
               <div className="fixed inset-0 z-10" onClick={() => setSharedAccessOpen(false)} />
               <div
                 className="absolute right-0 top-full mt-1 bg-white rounded shadow-lg border z-20 py-1"
-                style={{ borderColor: BORDER_COLOR, minWidth: "200px", borderRadius: "8px" }}
+                style={{ borderColor: BORDER_COLOR, minWidth: "220px", borderRadius: "8px" }}
               >
-                <div className="flex items-center gap-2 px-4 py-2">
-                  <Check size={16} weight="bold" style={{ color: PRIMARY_COLOR }} />
-                  <span style={{ fontSize: "14px", color: PRIMARY_TEXT, fontFamily: DS_FONT }}>
-                    {currentUser?.name ?? "Me"}
+                {/* My Envelopes option */}
+                <button
+                  className="w-full flex items-center gap-2 px-4 py-2"
+                  style={{ fontSize: "14px", color: PRIMARY_TEXT, background: "none", border: "none", cursor: "pointer", fontFamily: DS_FONT, textAlign: "left" }}
+                  onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+                  onMouseOut={(e) => (e.currentTarget.style.background = "none")}
+                  onClick={() => { setSharedAccessMode("mine"); setPage(1); setSharedAccessOpen(false); }}
+                >
+                  <span style={{ width: "16px", display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
+                    {sharedAccessMode === "mine" && <Check size={16} weight="bold" style={{ color: PRIMARY_COLOR }} />}
                   </span>
-                </div>
+                  {currentUser?.name ?? "My Envelopes"}
+                </button>
+
                 <div style={{ borderTop: `1px solid ${BORDER_COLOR}`, margin: "4px 0" }} />
+
+                {/* Shared Access section label */}
                 <div className="px-4 py-1">
                   <span style={{ fontSize: "11px", fontWeight: 700, color: SECONDARY_TEXT, letterSpacing: "0.06em", textTransform: "uppercase" }}>
                     Shared Access
                   </span>
                 </div>
+
+                {/* Shared with Me option */}
                 <button
-                  className="w-full text-left px-4 py-2"
-                  style={{ fontSize: "14px", color: PRIMARY_TEXT, background: "none", border: "none", cursor: "pointer", fontFamily: DS_FONT }}
+                  className="w-full flex items-center gap-2 px-4 py-2"
+                  style={{ fontSize: "14px", color: PRIMARY_TEXT, background: "none", border: "none", cursor: "pointer", fontFamily: DS_FONT, textAlign: "left" }}
                   onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
                   onMouseOut={(e) => (e.currentTarget.style.background = "none")}
+                  onClick={() => { setSharedAccessMode("shared"); setPage(1); setSharedAccessOpen(false); }}
+                >
+                  <span style={{ width: "16px", display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
+                    {sharedAccessMode === "shared" && <Check size={16} weight="bold" style={{ color: PRIMARY_COLOR }} />}
+                  </span>
+                  Shared with Me
+                </button>
+
+                <div style={{ borderTop: `1px solid ${BORDER_COLOR}`, margin: "4px 0" }} />
+
+                {/* View All link */}
+                <button
+                  className="w-full text-left px-4 py-2"
+                  style={{ fontSize: "14px", color: PRIMARY_COLOR, background: "none", border: "none", cursor: "pointer", fontFamily: DS_FONT }}
+                  onMouseOver={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                  onMouseOut={(e) => (e.currentTarget.style.textDecoration = "none")}
                   onClick={() => setSharedAccessOpen(false)}
                 >
                   View All
@@ -444,14 +890,23 @@ export function EnvelopeList() {
         {/* Advanced search dropdown */}
         <div style={{ position: "relative" }}>
           <button
-            onClick={() => { const open = !advancedDropdownOpen; closeAllDropdowns(); setAdvancedDropdownOpen(open); setPendingAdvanced(false); }}
+            onClick={() => {
+              const open = !advancedDropdownOpen;
+              closeAllDropdowns();
+              setAdvancedDropdownOpen(open);
+              if (open) {
+                setPendingEnvelopeId(appliedEnvelopeId);
+                setPendingRecipientSearch(appliedRecipientSearch);
+              }
+            }}
             className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded"
             style={{
-              borderColor: advancedDropdownOpen ? PRIMARY_COLOR : BORDER_COLOR,
-              color: SECONDARY_TEXT,
+              borderColor: advancedDropdownOpen || appliedEnvelopeId || appliedRecipientSearch ? PRIMARY_COLOR : BORDER_COLOR,
+              color: appliedEnvelopeId || appliedRecipientSearch ? PRIMARY_TEXT : SECONDARY_TEXT,
               background: advancedDropdownOpen ? "rgba(19,0,50,0.04)" : "white",
               borderRadius: "4px",
               fontFamily: DS_FONT,
+              fontWeight: appliedEnvelopeId || appliedRecipientSearch ? 600 : 400,
               cursor: "pointer",
             }}
           >
@@ -461,26 +916,70 @@ export function EnvelopeList() {
           {advancedDropdownOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setAdvancedDropdownOpen(false)} />
-              <div className="absolute left-0 top-full mt-1 bg-white rounded shadow-lg border z-20 py-4 px-5" style={{ borderColor: BORDER_COLOR, minWidth: "280px", borderRadius: "8px" }}>
+              <div className="absolute left-0 top-full mt-1 bg-white rounded shadow-lg border z-20 py-4 px-5" style={{ borderColor: BORDER_COLOR, minWidth: "300px", borderRadius: "8px" }}>
                 <p style={{ fontSize: "16px", fontWeight: 600, color: PRIMARY_TEXT, margin: "0 0 2px", fontFamily: DS_FONT }}>Advanced search</p>
-                <p style={{ fontSize: "12px", color: SECONDARY_TEXT, margin: "0 0 14px", fontFamily: DS_FONT }}>Envelopes Custom Filter</p>
-                <label className="flex items-center gap-3 py-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="advanced-filter"
-                    checked={pendingAdvanced}
-                    onChange={() => setPendingAdvanced(!pendingAdvanced)}
-                    style={{ accentColor: PRIMARY_COLOR, width: "16px", height: "16px" }}
-                  />
-                  <span style={{ fontSize: "14px", color: PRIMARY_TEXT, fontFamily: DS_FONT }}>Include envelope custom fields</span>
-                </label>
+                <p style={{ fontSize: "12px", color: SECONDARY_TEXT, margin: "0 0 14px", fontFamily: DS_FONT }}>Search by Envelope ID or Recipient</p>
+
+                {/* Envelope ID field */}
+                <div style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: SECONDARY_TEXT, marginBottom: "5px", fontFamily: DS_FONT, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Envelope ID
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center", border: `1px solid ${pendingEnvelopeId ? PRIMARY_COLOR : BORDER_COLOR}`, borderRadius: "4px", height: "36px", padding: "0 10px", gap: "8px" }}>
+                    <MagnifyingGlass size={14} weight="regular" style={{ color: MUTED_TEXT, flexShrink: 0 }} />
+                    <input
+                      type="text"
+                      placeholder="Enter envelope ID..."
+                      value={pendingEnvelopeId}
+                      onChange={(e) => setPendingEnvelopeId(e.target.value)}
+                      style={{ flex: 1, border: "none", outline: "none", fontSize: "14px", color: PRIMARY_TEXT, fontFamily: DS_FONT, background: "transparent" }}
+                    />
+                    {pendingEnvelopeId && (
+                      <button onClick={() => setPendingEnvelopeId("")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", color: MUTED_TEXT }}>
+                        <X size={12} weight="bold" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Recipient name/email field */}
+                <div style={{ marginBottom: "4px" }}>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: SECONDARY_TEXT, marginBottom: "5px", fontFamily: DS_FONT, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Recipient
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center", border: `1px solid ${pendingRecipientSearch ? PRIMARY_COLOR : BORDER_COLOR}`, borderRadius: "4px", height: "36px", padding: "0 10px", gap: "8px" }}>
+                    <MagnifyingGlass size={14} weight="regular" style={{ color: MUTED_TEXT, flexShrink: 0 }} />
+                    <input
+                      type="text"
+                      placeholder="Name or email..."
+                      value={pendingRecipientSearch}
+                      onChange={(e) => setPendingRecipientSearch(e.target.value)}
+                      style={{ flex: 1, border: "none", outline: "none", fontSize: "14px", color: PRIMARY_TEXT, fontFamily: DS_FONT, background: "transparent" }}
+                    />
+                    {pendingRecipientSearch && (
+                      <button onClick={() => setPendingRecipientSearch("")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", color: MUTED_TEXT }}>
+                        <X size={12} weight="bold" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex gap-2 mt-4">
                   <button
-                    onClick={() => { setPendingAdvanced(false); setAdvancedDropdownOpen(false); }}
+                    onClick={() => {
+                      setPendingEnvelopeId(appliedEnvelopeId);
+                      setPendingRecipientSearch(appliedRecipientSearch);
+                      setAdvancedDropdownOpen(false);
+                    }}
                     style={{ flex: 1, padding: "7px", border: `1px solid ${BORDER_COLOR}`, borderRadius: "4px", background: "white", fontSize: "14px", color: PRIMARY_TEXT, cursor: "pointer", fontFamily: DS_FONT }}
                   >Cancel</button>
                   <button
-                    onClick={() => setAdvancedDropdownOpen(false)}
+                    onClick={() => {
+                      setAppliedEnvelopeId(pendingEnvelopeId);
+                      setAppliedRecipientSearch(pendingRecipientSearch);
+                      setPage(1);
+                      setAdvancedDropdownOpen(false);
+                    }}
                     style={{ flex: 1, padding: "7px", border: "none", borderRadius: "4px", background: PRIMARY_COLOR, color: "white", fontSize: "14px", fontWeight: 600, cursor: "pointer", fontFamily: DS_FONT }}
                   >Apply</button>
                 </div>
@@ -518,6 +1017,7 @@ export function EnvelopeList() {
 
           {/* Resend */}
           <button
+            disabled={bulkBusy}
             style={{
               padding: "5px 16px",
               fontSize: "14px",
@@ -526,26 +1026,24 @@ export function EnvelopeList() {
               background: "white",
               border: `1.5px solid ${BORDER_COLOR}`,
               borderRadius: "4px",
-              cursor: "pointer",
+              cursor: bulkBusy ? "not-allowed" : "pointer",
               fontFamily: DS_FONT,
               display: "flex",
               alignItems: "center",
               gap: "6px",
+              opacity: bulkBusy ? 0.6 : 1,
             }}
-            onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+            onMouseOver={(e) => { if (!bulkBusy) e.currentTarget.style.background = "rgba(19,0,50,0.04)"; }}
             onMouseOut={(e) => (e.currentTarget.style.background = "white")}
-            onClick={async () => {
-              for (const envId of Array.from(selectedIds)) {
-                try { await resendEnvelope(envId); } catch {}
-              }
-            }}
+            onClick={handleBulkResend}
           >
-            <ArrowCounterClockwise size={14} weight="bold" />
-            Resend
+            {bulkBusy ? <Spinner size={12} /> : <ArrowCounterClockwise size={14} weight="bold" />}
+            {bulkBusy ? "Working…" : "Resend"}
           </button>
 
           {/* Move */}
           <button
+            disabled={bulkBusy}
             style={{
               padding: "5px 16px",
               fontSize: "14px",
@@ -554,11 +1052,13 @@ export function EnvelopeList() {
               background: "white",
               border: `1.5px solid ${BORDER_COLOR}`,
               borderRadius: "4px",
-              cursor: "pointer",
+              cursor: bulkBusy ? "not-allowed" : "pointer",
               fontFamily: DS_FONT,
+              opacity: bulkBusy ? 0.6 : 1,
             }}
-            onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+            onMouseOver={(e) => { if (!bulkBusy) e.currentTarget.style.background = "rgba(19,0,50,0.04)"; }}
             onMouseOut={(e) => (e.currentTarget.style.background = "white")}
+            onClick={handleBulkMove}
           >
             Move
           </button>
@@ -566,6 +1066,7 @@ export function EnvelopeList() {
           {/* More actions dropdown (⋮) */}
           <div style={{ position: "relative" }}>
             <button
+              disabled={bulkBusy}
               title="More bulk actions"
               style={{
                 padding: "5px 10px",
@@ -575,14 +1076,15 @@ export function EnvelopeList() {
                 background: bulkMoreOpen ? "rgba(19,0,50,0.04)" : "white",
                 border: `1.5px solid ${BORDER_COLOR}`,
                 borderRadius: "4px",
-                cursor: "pointer",
+                cursor: bulkBusy ? "not-allowed" : "pointer",
                 fontFamily: DS_FONT,
                 display: "flex",
                 alignItems: "center",
+                opacity: bulkBusy ? 0.6 : 1,
               }}
-              onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+              onMouseOver={(e) => { if (!bulkBusy) e.currentTarget.style.background = "rgba(19,0,50,0.04)"; }}
               onMouseOut={(e) => (e.currentTarget.style.background = bulkMoreOpen ? "rgba(19,0,50,0.04)" : "white")}
-              onClick={() => setBulkMoreOpen((o) => !o)}
+              onClick={() => { if (!bulkBusy) setBulkMoreOpen((o) => !o); }}
             >
               <DotsThreeOutline size={16} weight="fill" />
             </button>
@@ -600,7 +1102,7 @@ export function EnvelopeList() {
                     style={{ color: PRIMARY_TEXT, background: "none", border: "none", cursor: "pointer" }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    onClick={() => setBulkMoreOpen(false)}
+                    onClick={handleBulkExportCSV}
                   >
                     <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM8 17l-3-3h2V9h2v5h2l-3 3z"/>
@@ -614,15 +1116,7 @@ export function EnvelopeList() {
                     style={{ color: PRIMARY_TEXT, background: "none", border: "none", cursor: "pointer" }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    onClick={async () => {
-                      const reason = window.prompt("Void reason (optional):") ?? "Voided by sender";
-                      for (const envId of Array.from(selectedIds)) {
-                        try { await voidEnvelope(envId, reason); } catch {}
-                      }
-                      setSelectedIds(new Set());
-                      setBulkMoreOpen(false);
-                      queryClient.invalidateQueries({ queryKey: ["envelopes"] });
-                    }}
+                    onClick={handleBulkVoid}
                   >
                     <X size={14} weight="bold" />
                     Void
@@ -636,15 +1130,7 @@ export function EnvelopeList() {
                     style={{ color: "#D93025", background: "none", border: "none", cursor: "pointer" }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "#FFF5F5")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    onClick={async () => {
-                      if (!window.confirm(`Delete ${selectedIds.size} envelope(s)?`)) return;
-                      for (const envId of Array.from(selectedIds)) {
-                        try { await deleteEnvelope(envId); } catch {}
-                      }
-                      setSelectedIds(new Set());
-                      setBulkMoreOpen(false);
-                      queryClient.invalidateQueries({ queryKey: ["envelopes"] });
-                    }}
+                    onClick={handleBulkDelete}
                   >
                     <Trash size={14} weight="bold" />
                     Delete
@@ -782,6 +1268,16 @@ export function EnvelopeList() {
                   onClick={() => router.push(`/agreements/${envelope.id}`)}
                   currentUserEmail={currentUser?.email}
                   currentUserName={currentUser?.name}
+                  onVoidClick={(id) => {
+                    setVoidTargetIds([id]);
+                    setVoidReason("");
+                    setVoidReasonType("other");
+                    setVoidModalOpen(true);
+                  }}
+                  onMoveClick={(id) => {
+                    setSelectedIds(new Set([id]));
+                    setMoveModalOpen(true);
+                  }}
                 />
               ))
             )}
@@ -805,9 +1301,12 @@ export function EnvelopeList() {
                 fontFamily: DS_FONT,
               }}
               value={perPage}
-              onChange={() => {}}
+              onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
             >
-              <option>25 / Page</option>
+              <option value={10}>10 / Page</option>
+              <option value={25}>25 / Page</option>
+              <option value={50}>50 / Page</option>
+              <option value={100}>100 / Page</option>
             </select>
           </div>
 
@@ -844,6 +1343,34 @@ export function EnvelopeList() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Move to Folder modal */}
+      {moveModalOpen && (
+        <MoveToFolderModal
+          selectedIds={Array.from(selectedIds)}
+          onClose={() => setMoveModalOpen(false)}
+          onMoved={() => {
+            setMoveModalOpen(false);
+            setSelectedIds(new Set());
+            queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+            queryClient.invalidateQueries({ queryKey: ["folders"] });
+          }}
+        />
+      )}
+
+      {/* Void envelope modal */}
+      {voidModalOpen && (
+        <VoidEnvelopeModal
+          ids={voidTargetIds}
+          reason={voidReason}
+          reasonType={voidReasonType}
+          busy={voidBusy}
+          onReasonChange={setVoidReason}
+          onReasonTypeChange={setVoidReasonType}
+          onClose={() => { setVoidModalOpen(false); setVoidReason(""); setVoidReasonType("other"); }}
+          onSubmit={handleVoidSubmit}
+        />
       )}
 
       {/* Customize columns modal */}
@@ -974,6 +1501,600 @@ export function EnvelopeList() {
   );
 }
 
+// ── VoidEnvelopeModal ─────────────────────────────────────────────────────────
+
+function VoidEnvelopeModal({
+  ids,
+  reason,
+  reasonType,
+  busy,
+  onReasonChange,
+  onReasonTypeChange,
+  onClose,
+  onSubmit,
+}: {
+  ids: string[];
+  reason: string;
+  reasonType: "declined" | "update" | "other";
+  busy: boolean;
+  onReasonChange: (r: string) => void;
+  onReasonTypeChange: (t: "declined" | "update" | "other") => void;
+  onClose: () => void;
+  onSubmit: (ids: string[], reason: string) => void;
+}) {
+  const _DS_FONT = "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif";
+  const _PRIMARY_COLOR = "#260559";
+  const _PRIMARY_TEXT = "rgba(19, 0, 50, 0.9)";
+  const _SECONDARY_TEXT = "rgba(19, 0, 50, 0.6)";
+  const _BORDER_COLOR = "rgba(19, 0, 50, 0.1)";
+
+  const PRESET_REASONS: { value: "declined" | "update" | "other"; label: string }[] = [
+    { value: "declined", label: "One or more parties declined the terms" },
+    { value: "update", label: "The agreement needs to be updated and resent" },
+    { value: "other", label: "Input other reason" },
+  ];
+
+  const getFinalReason = () => {
+    if (reasonType === "declined") return "One or more parties declined the terms";
+    if (reasonType === "update") return "The agreement needs to be updated and resent";
+    return reason.trim() || "Voided by sender";
+  };
+
+  const handleSubmit = () => {
+    if (busy) return;
+    onSubmit(ids, getFinalReason());
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9100,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "white",
+          borderRadius: "10px",
+          boxShadow: "0 8px 40px rgba(0,0,0,0.22)",
+          width: "520px",
+          maxWidth: "94vw",
+          fontFamily: _DS_FONT,
+          overflow: "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "18px 22px 14px",
+            borderBottom: `1px solid ${_BORDER_COLOR}`,
+          }}
+        >
+          <span style={{ fontSize: "17px", fontWeight: 600, color: _PRIMARY_TEXT }}>
+            Void envelope{ids.length > 1 ? `s (${ids.length})` : ""}
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "rgba(19,0,50,0.4)",
+              display: "flex",
+              padding: "4px",
+              borderRadius: "4px",
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.color = _PRIMARY_TEXT)}
+            onMouseOut={(e) => (e.currentTarget.style.color = "rgba(19,0,50,0.4)")}
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        {/* Warning banner */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "10px",
+            margin: "18px 22px 0",
+            padding: "12px 14px",
+            background: "#FFF7ED",
+            border: "1px solid #F59E0B",
+            borderRadius: "6px",
+          }}
+        >
+          <WarningCircle size={20} weight="fill" style={{ color: "#F59E0B", flexShrink: 0, marginTop: "1px" }} />
+          <span style={{ fontSize: "13px", color: "#92400E", lineHeight: "1.5" }}>
+            You&apos;re voiding an in-progress envelope.
+          </span>
+        </div>
+
+        {/* Explanation */}
+        <p
+          style={{
+            fontSize: "13px",
+            color: _SECONDARY_TEXT,
+            lineHeight: "1.6",
+            margin: "14px 22px 0",
+          }}
+        >
+          By voiding this envelope, you are canceling all remaining signing activities.
+          Recipients who have finished signing will receive an email notification that
+          includes your reason for voiding. Recipients who have not yet signed will not
+          be able to view or sign the enclosed documents.
+        </p>
+
+        {/* Reason section */}
+        <div style={{ padding: "18px 22px 22px" }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: "13px",
+              fontWeight: 600,
+              color: _PRIMARY_TEXT,
+              marginBottom: "10px",
+              fontFamily: _DS_FONT,
+            }}
+          >
+            Void Reason <span style={{ color: "#D93025" }}>*</span>
+          </label>
+
+          {PRESET_REASONS.map((opt) => (
+            <label
+              key={opt.value}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "10px",
+                marginBottom: "10px",
+                cursor: "pointer",
+                fontSize: "14px",
+                color: _PRIMARY_TEXT,
+                fontFamily: _DS_FONT,
+              }}
+            >
+              <input
+                type="radio"
+                name="void-reason-type"
+                checked={reasonType === opt.value}
+                onChange={() => onReasonTypeChange(opt.value)}
+                style={{ accentColor: _PRIMARY_COLOR, width: "15px", height: "15px", flexShrink: 0, marginTop: "2px" }}
+              />
+              {opt.label}
+            </label>
+          ))}
+
+          {/* Custom textarea (shown when "other" is selected) */}
+          {reasonType === "other" && (
+            <textarea
+              autoFocus
+              placeholder="Enter your reason for voiding…"
+              value={reason}
+              onChange={(e) => onReasonChange(e.target.value)}
+              rows={3}
+              style={{
+                width: "100%",
+                marginTop: "4px",
+                border: `1px solid ${_BORDER_COLOR}`,
+                borderRadius: "6px",
+                padding: "10px 12px",
+                fontSize: "14px",
+                fontFamily: _DS_FONT,
+                color: _PRIMARY_TEXT,
+                outline: "none",
+                resize: "vertical",
+                boxSizing: "border-box",
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = _PRIMARY_COLOR)}
+              onBlur={(e) => (e.currentTarget.style.borderColor = _BORDER_COLOR)}
+            />
+          )}
+
+          {/* Submit button */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "18px" }}>
+            <button
+              onClick={onClose}
+              disabled={busy}
+              style={{
+                padding: "8px 20px",
+                background: "white",
+                border: `1px solid ${_BORDER_COLOR}`,
+                borderRadius: "4px",
+                fontSize: "14px",
+                color: _PRIMARY_TEXT,
+                cursor: busy ? "not-allowed" : "pointer",
+                fontFamily: _DS_FONT,
+                marginRight: "10px",
+                opacity: busy ? 0.6 : 1,
+              }}
+              onMouseOver={(e) => { if (!busy) e.currentTarget.style.background = "rgba(19,0,50,0.04)"; }}
+              onMouseOut={(e) => (e.currentTarget.style.background = "white")}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={busy || (reasonType === "other" && !reason.trim())}
+              style={{
+                padding: "8px 24px",
+                background:
+                  busy || (reasonType === "other" && !reason.trim())
+                    ? "rgba(38,5,89,0.35)"
+                    : _PRIMARY_COLOR,
+                border: "none",
+                borderRadius: "4px",
+                fontSize: "14px",
+                fontWeight: 600,
+                color: "white",
+                cursor:
+                  busy || (reasonType === "other" && !reason.trim())
+                    ? "not-allowed"
+                    : "pointer",
+                fontFamily: _DS_FONT,
+              }}
+            >
+              {busy ? "Voiding…" : "Void"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MoveToFolderModal ─────────────────────────────────────────────────────────
+
+function MoveToFolderModal({
+  selectedIds,
+  onClose,
+  onMoved,
+}: {
+  selectedIds: string[];
+  onClose: () => void;
+  onMoved: () => void;
+}) {
+  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+
+  const _DS_FONT = "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif";
+  const _PRIMARY_COLOR = "#260559";
+  const _PRIMARY_TEXT = "rgba(19, 0, 50, 0.9)";
+  const _SECONDARY_TEXT = "rgba(19, 0, 50, 0.6)";
+  const _MUTED_TEXT = "rgba(19, 0, 50, 0.4)";
+  const _BORDER_COLOR = "rgba(19, 0, 50, 0.1)";
+
+  useEffect(() => {
+    getFolders()
+      .then(setFolders)
+      .catch(() => setFolders([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCreateFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    setCreatingFolder(true);
+    try {
+      const folder = await createFolder(name);
+      setFolders((prev) => [...prev, folder]);
+      setNewFolderName("");
+      setShowNewFolder(false);
+      setSelectedFolderId(folder.id);
+    } catch {
+      toast("Failed to create folder.", "error");
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const virtualViews = [
+    { id: "__view__:inbox", name: "Inbox", view: "inbox", icon: Tray },
+    { id: "__view__:sent", name: "Sent", view: "sent", icon: PaperPlaneRight },
+  ];
+
+  const handleMove = async () => {
+    if (!selectedFolderId) return;
+    setMoving(true);
+    try {
+      let result;
+      if (selectedFolderId.startsWith("__view__:")) {
+        const view = selectedFolderId.slice("__view__:".length);
+        result = await moveEnvelopes(selectedIds, null, view);
+      } else {
+        result = await moveEnvelopes(selectedIds, selectedFolderId);
+      }
+      toast(
+        `Moved ${result.moved} envelope${result.moved !== 1 ? "s" : ""} successfully.`,
+        "success",
+      );
+      onMoved();
+    } catch {
+      toast("Failed to move envelopes.", "error");
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9000,
+        background: "rgba(0,0,0,0.40)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "white",
+          borderRadius: "10px",
+          boxShadow: "0 8px 40px rgba(0,0,0,0.22)",
+          width: "400px",
+          maxWidth: "94vw",
+          fontFamily: _DS_FONT,
+          overflow: "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "18px 20px 14px",
+            borderBottom: `1px solid ${_BORDER_COLOR}`,
+          }}
+        >
+          <span style={{ fontSize: "17px", fontWeight: 600, color: _PRIMARY_TEXT }}>
+            Move to Folder
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: _MUTED_TEXT,
+              display: "flex",
+              padding: "4px",
+              borderRadius: "4px",
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.color = _PRIMARY_TEXT)}
+            onMouseOut={(e) => (e.currentTarget.style.color = _MUTED_TEXT)}
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        {/* Folder list */}
+        <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+          {loading ? (
+            <div style={{ padding: "24px", textAlign: "center", color: _MUTED_TEXT, fontSize: "14px" }}>
+              Loading folders…
+            </div>
+          ) : (
+            <>
+              {/* Virtual views (Inbox, Sent) — moves to real sidebar view */}
+              {virtualViews.map((v) => {
+                const Icon = v.icon;
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => setSelectedFolderId(v.id)}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      padding: "11px 20px",
+                      background: selectedFolderId === v.id ? "rgba(19,0,50,0.06)" : "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      fontFamily: _DS_FONT,
+                      fontSize: "14px",
+                      color: _PRIMARY_TEXT,
+                      fontWeight: selectedFolderId === v.id ? 600 : 400,
+                    }}
+                    onMouseOver={(e) => { if (selectedFolderId !== v.id) e.currentTarget.style.background = "rgba(19,0,50,0.03)"; }}
+                    onMouseOut={(e) => { if (selectedFolderId !== v.id) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <Icon size={18} weight="regular" color={_SECONDARY_TEXT} />
+                    {v.name}
+                  </button>
+                );
+              })}
+
+              {/* Empty state when no custom folders exist */}
+              {folders.length === 0 && !showNewFolder && (
+                <div style={{ padding: "24px 20px", textAlign: "center", color: _MUTED_TEXT, fontSize: "14px" }}>
+                  Create a custom folder below.
+                </div>
+              )}
+
+              {/* Custom folders */}
+              {folders.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setSelectedFolderId(f.id)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "11px 20px",
+                    background: selectedFolderId === f.id ? "rgba(19,0,50,0.06)" : "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontFamily: _DS_FONT,
+                    fontSize: "14px",
+                    color: _PRIMARY_TEXT,
+                    fontWeight: selectedFolderId === f.id ? 600 : 400,
+                  }}
+                  onMouseOver={(e) => {
+                    if (selectedFolderId !== f.id)
+                      e.currentTarget.style.background = "rgba(19,0,50,0.03)";
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background =
+                      selectedFolderId === f.id ? "rgba(19,0,50,0.06)" : "transparent";
+                  }}
+                >
+                  <span style={{ color: selectedFolderId === f.id ? _PRIMARY_COLOR : _SECONDARY_TEXT, display: "flex", flexShrink: 0 }}>
+                    <Folder size={18} weight="regular" />
+                  </span>
+                  {f.name}
+                </button>
+              ))}
+
+              {/* New folder inline input */}
+              {showNewFolder && (
+                <div style={{ padding: "8px 20px 4px", display: "flex", gap: "8px", alignItems: "center" }}>
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Folder name"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleCreateFolder();
+                      if (e.key === "Escape") { setShowNewFolder(false); setNewFolderName(""); }
+                    }}
+                    style={{
+                      flex: 1,
+                      border: `1px solid ${_BORDER_COLOR}`,
+                      borderRadius: "4px",
+                      padding: "6px 10px",
+                      fontSize: "14px",
+                      fontFamily: _DS_FONT,
+                      color: _PRIMARY_TEXT,
+                      outline: "none",
+                    }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = _PRIMARY_COLOR)}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = _BORDER_COLOR)}
+                  />
+                  <button
+                    onClick={handleCreateFolder}
+                    disabled={creatingFolder || !newFolderName.trim()}
+                    style={{
+                      padding: "6px 12px",
+                      background: _PRIMARY_COLOR,
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: creatingFolder || !newFolderName.trim() ? "not-allowed" : "pointer",
+                      fontFamily: _DS_FONT,
+                      opacity: !newFolderName.trim() ? 0.5 : 1,
+                    }}
+                  >
+                    {creatingFolder ? "…" : "Add"}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 20px",
+            borderTop: `1px solid ${_BORDER_COLOR}`,
+          }}
+        >
+          {/* New Folder button */}
+          <button
+            onClick={() => { setShowNewFolder(true); setNewFolderName(""); }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              background: "none",
+              border: `1px solid ${_BORDER_COLOR}`,
+              borderRadius: "4px",
+              padding: "6px 12px",
+              fontSize: "13px",
+              color: _PRIMARY_TEXT,
+              cursor: "pointer",
+              fontFamily: _DS_FONT,
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+            onMouseOut={(e) => (e.currentTarget.style.background = "none")}
+          >
+            <Plus size={14} weight="bold" />
+            New Folder
+          </button>
+
+          {/* Cancel / Move */}
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              onClick={onClose}
+              style={{
+                padding: "7px 18px",
+                background: "white",
+                border: `1px solid ${_BORDER_COLOR}`,
+                borderRadius: "4px",
+                fontSize: "14px",
+                color: _PRIMARY_TEXT,
+                cursor: "pointer",
+                fontFamily: _DS_FONT,
+              }}
+              onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+              onMouseOut={(e) => (e.currentTarget.style.background = "white")}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleMove}
+              disabled={!selectedFolderId || moving}
+              style={{
+                padding: "7px 18px",
+                background: selectedFolderId && !moving ? _PRIMARY_COLOR : "rgba(38,5,89,0.35)",
+                border: "none",
+                borderRadius: "4px",
+                fontSize: "14px",
+                fontWeight: 600,
+                color: "white",
+                cursor: selectedFolderId && !moving ? "pointer" : "not-allowed",
+                fontFamily: _DS_FONT,
+              }}
+            >
+              {moving ? "Moving…" : "Move"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FilterEmptyState({
   filter,
   search,
@@ -1088,6 +2209,8 @@ function EnvelopeRow({
   onClick,
   currentUserEmail,
   currentUserName,
+  onVoidClick,
+  onMoveClick,
 }: {
   envelope: Envelope;
   isSelected: boolean;
@@ -1095,6 +2218,8 @@ function EnvelopeRow({
   onClick: () => void;
   currentUserEmail?: string;
   currentUserName?: string;
+  onVoidClick: (id: string) => void;
+  onMoveClick: (id: string) => void;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -1155,6 +2280,25 @@ function EnvelopeRow({
     mutationFn: () => resendEnvelope(envelope.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+      toast(`Resent "${envelope.subject}".`, "success");
+      setMenuOpen(false);
+    },
+    onError: () => {
+      toast("Resend failed. Only sent/delivered envelopes can be resent.", "error");
+      setMenuOpen(false);
+    },
+  });
+
+  // ── Void mutation ──────────────────────────────────────────────────────────
+  const voidMutation = useMutation({
+    mutationFn: (reason: string) => voidEnvelope(envelope.id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+      toast(`"${envelope.subject}" has been voided.`, "success");
+      setMenuOpen(false);
+    },
+    onError: () => {
+      toast("Void failed. Only sent/delivered envelopes can be voided.", "error");
       setMenuOpen(false);
     },
   });
@@ -1164,6 +2308,63 @@ function EnvelopeRow({
     mutationFn: () => deleteEnvelope(envelope.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+      toast(`"${envelope.subject}" was deleted.`, "success");
+      setMenuOpen(false);
+    },
+    onError: () => {
+      toast("Delete failed. Only draft envelopes can be permanently deleted.", "error");
+      setMenuOpen(false);
+    },
+  });
+
+  // ── Correct mutation ───────────────────────────────────────────────────────
+  const correctMutation = useMutation({
+    mutationFn: () => correctEnvelope(envelope.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+      toast(`"${envelope.subject}" reverted to draft for correction.`, "success");
+      setMenuOpen(false);
+    },
+    onError: () => {
+      toast("Correct failed. Only sent/delivered envelopes can be corrected.", "error");
+      setMenuOpen(false);
+    },
+  });
+
+  // ── Copy mutation ──────────────────────────────────────────────────────────
+  const copyMutation = useMutation({
+    mutationFn: () =>
+      createEnvelope({
+        subject: `Copy of ${envelope.subject}`,
+        message: envelope.message ?? "",
+        recipients: (envelope.recipients ?? []).map((r) => ({
+          name: r.name,
+          email: r.email,
+          role: r.role ?? "signer",
+          order: r.order ?? 1,
+        })),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["envelopes"] });
+      toast(`Copied "${envelope.subject}" as a new draft.`, "success");
+      setMenuOpen(false);
+    },
+    onError: () => {
+      toast("Copy failed.", "error");
+      setMenuOpen(false);
+    },
+  });
+
+  // ── Save as Template mutation ──────────────────────────────────────────────
+  const saveAsTemplateMutation = useMutation({
+    mutationFn: () => saveEnvelopeAsTemplate(envelope.id, envelope.subject),
+    onSuccess: () => {
+      toast(`"${envelope.subject}" saved as a template.`, "success");
+      setMenuOpen(false);
+    },
+    onError: () => {
+      toast("Save as template failed.", "error");
+      setMenuOpen(false);
     },
   });
 
@@ -1218,16 +2419,14 @@ function EnvelopeRow({
         </div>
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={envelope.status} />
+        <StatusCell envelope={envelope} currentUserEmail={currentUserEmail} />
       </td>
       <td className="px-4 py-3 text-sm" style={{ color: SECONDARY_TEXT, fontFamily: DS_FONT }}>
         {fromDisplay}
       </td>
       <td className="px-4 py-3 text-sm" style={{ color: MUTED_TEXT, fontFamily: DS_FONT }}>
         {(() => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const raw = (envelope as any).updated_at || (envelope as any).created_at || envelope.lastModified;
-          const { date, time } = formatDateWithTime(raw);
+          const { date, time } = formatDateWithTime(envelope.lastModified);
           return <><span>{date}</span><br /><span>{time}</span></>;
         })()}
       </td>
@@ -1325,6 +2524,7 @@ function EnvelopeRow({
                     style={{ color: PRIMARY_TEXT }}
                     onClick={() => {
                       navigator.clipboard.writeText(envelope.id);
+                      toast("Envelope ID copied to clipboard.", "info");
                       setMenuOpen(false);
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
@@ -1345,9 +2545,95 @@ function EnvelopeRow({
                       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                     >
                       <ArrowCounterClockwise size={14} weight="bold" />
-                      Resend
+                      {resendMutation.isPending ? "Resending…" : "Resend"}
                     </button>
                   )}
+
+                  {/* Move */}
+                  <button
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
+                    style={{ color: PRIMARY_TEXT }}
+                    onClick={() => { setMenuOpen(false); onMoveClick(envelope.id); }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <Folder size={14} weight="regular" />
+                    Move
+                  </button>
+
+                  {/* Correct (sent/delivered only — reverts to draft) */}
+                  {(envelope.status === "sent" || envelope.status === "delivered") && (
+                    <button
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
+                      style={{ color: PRIMARY_TEXT }}
+                      disabled={correctMutation.isPending}
+                      onClick={() => correctMutation.mutate()}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+                      </svg>
+                      {correctMutation.isPending ? "Correcting…" : "Correct"}
+                    </button>
+                  )}
+
+                  {/* Copy — duplicate as new draft */}
+                  <button
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
+                    style={{ color: PRIMARY_TEXT }}
+                    disabled={copyMutation.isPending}
+                    onClick={() => copyMutation.mutate()}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <CopySimple size={14} weight="bold" />
+                    {copyMutation.isPending ? "Copying…" : "Copy"}
+                  </button>
+
+                  {/* Save as Template */}
+                  <button
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
+                    style={{ color: PRIMARY_TEXT }}
+                    disabled={saveAsTemplateMutation.isPending}
+                    onClick={() => saveAsTemplateMutation.mutate()}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                      <path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" />
+                    </svg>
+                    {saveAsTemplateMutation.isPending ? "Saving…" : "Save as Template"}
+                  </button>
+
+                  {/* Void (sent/delivered only) */}
+                  {(envelope.status === "sent" || envelope.status === "delivered") && (
+                    <button
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
+                      style={{ color: PRIMARY_TEXT }}
+                      disabled={voidMutation.isPending}
+                      onClick={() => { setMenuOpen(false); onVoidClick(envelope.id); }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <X size={14} weight="bold" />
+                      Void
+                    </button>
+                  )}
+
+                  {/* History — navigate to detail page (audit trail) */}
+                  <button
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
+                    style={{ color: PRIMARY_TEXT }}
+                    onClick={() => { setMenuOpen(false); router.push(`/agreements/${envelope.id}`); }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                      <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
+                    </svg>
+                    History
+                  </button>
 
                   {/* View details */}
                   <button
@@ -1363,17 +2649,27 @@ function EnvelopeRow({
                     View Details
                   </button>
 
-                  {/* Delete */}
+                  <div style={{ borderTop: `1px solid ${BORDER_COLOR}`, margin: "4px 0" }} />
+
+                  {/* Delete — only draft envelopes can be deleted; show confirmation */}
                   <button
                     className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
                     style={{ color: "#D93025" }}
                     disabled={deleteMutation.isPending}
-                    onClick={() => { deleteMutation.mutate(); setMenuOpen(false); }}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `Delete "${envelope.subject}"?\n\nThis action cannot be undone. Only draft envelopes can be permanently deleted.`,
+                        )
+                      )
+                        return;
+                      deleteMutation.mutate();
+                    }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "#FFF5F5")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                   >
                     <Trash size={14} weight="bold" />
-                    Delete
+                    {deleteMutation.isPending ? "Deleting…" : "Delete"}
                   </button>
                 </div>
               </>

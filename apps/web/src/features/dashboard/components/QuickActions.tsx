@@ -11,7 +11,7 @@ const startMenuItems = [
   { label: "Send an Envelope", action: "create-envelope" },
   { label: "Use a Template", href: "/templates" },
   { label: "Create a Template", href: "/templates" },
-  { label: "Sign a Document", href: "/agreements?filter=action-required" },
+  { label: "Sign a Document", href: "/sign-document" },
 ];
 
 export function QuickActions() {
@@ -106,7 +106,7 @@ export function QuickActions() {
 
       {/* Sign a Document */}
       <button
-        onClick={() => router.push("/agreements?filter=action-required")}
+        onClick={() => router.push("/sign-document")}
         className="flex items-center gap-2 px-5 py-2.5 rounded text-sm font-semibold transition-colors"
         style={{
           background: "white",

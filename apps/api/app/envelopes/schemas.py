@@ -107,7 +107,7 @@ class RecipientResponse(BaseModel):
     role: RecipientRole
     routing_order: int
     status: RecipientStatus
-    signing_token: str
+    signing_token: Optional[str] = None
     signed_at: Optional[datetime] = None
     declined_at: Optional[datetime] = None
     decline_reason: Optional[str] = None
@@ -168,11 +168,32 @@ class EnvelopeDetailResponse(EnvelopeResponse):
     recipients: List[RecipientResponse] = []
 
 
+class RecipientSummary(BaseModel):
+    """Lightweight recipient info for list views (no nested fields)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    email: str
+    role: RecipientRole
+    routing_order: int
+    status: RecipientStatus
+    signing_token: Optional[str] = None
+
+
+class EnvelopeListItem(EnvelopeResponse):
+    """Envelope with recipients included for list views (e.g. sign button)."""
+    recipients: List[RecipientSummary] = []
+    from_name: Optional[str] = None
+    from_email: Optional[str] = None
+
+
 class EnvelopeListResponse(BaseModel):
-    items: List[EnvelopeResponse]
+    items: List[EnvelopeListItem]
     total: int
     page: int
     page_size: int
+    pages: int = 1
 
 
 # ── Save as Template Schemas ──────────────────────────────────────────────────
@@ -238,3 +259,23 @@ class BulkSendStatusResponse(BaseModel):
     sent: int
     completed: int
     failed: int
+
+
+# ── Folder Schemas ────────────────────────────────────────────────────────────
+
+class FolderCreate(BaseModel):
+    name: str
+
+
+class FolderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    created_at: datetime
+
+
+class MoveEnvelopesRequest(BaseModel):
+    envelope_ids: List[str]
+    folder_id: Optional[str] = None
+    moved_to: Optional[str] = None  # "inbox" | "sent" — moves to the real sidebar view

@@ -29,41 +29,230 @@ def get_page_count(file_path: str) -> int:
         return doc.page_count
 
 
-def _render_placeholder_page(dpi: int = 150) -> bytes:
-    """Return a gray placeholder PNG for document types that cannot be rendered
-    (e.g. legacy .doc files that PyMuPDF cannot open).
+def _load_font(size: int):
+    """Load a system font at the given size, falling back to Pillow's default."""
+    from PIL import ImageFont  # type: ignore
 
-    The image is roughly A4-proportioned and contains a centred message.
+    font_paths = [
+        # macOS
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/Arial.ttf",
+        "/Library/Fonts/Arial.ttf",
+        # Linux (Debian/Ubuntu)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        # Linux (RHEL/Fedora)
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+    for path in font_paths:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _render_docx_page(file_path: str, page_num: int = 0, dpi: int = 150) -> bytes:
+    """Render a .docx document page as a PNG image using python-docx + Pillow.
+
+    Extracts paragraph text from the document and lays it out on a white
+    page canvas.  For multi-section documents the text is split approximately
+    evenly across sections; page_num selects which section to render.
+    """
+    from PIL import Image, ImageDraw  # type: ignore
+
+    width_px  = int(8.5 * dpi)
+    height_px = int(11 * dpi)
+    margin_px = int(1.0 * dpi)   # 1-inch margin
+    line_spacing = int(dpi * 0.18)
+
+    img  = Image.new("RGB", (width_px, height_px), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    body_font_size  = max(12, int(dpi * 0.12))
+    title_font_size = max(16, int(dpi * 0.16))
+    body_font  = _load_font(body_font_size)
+    title_font = _load_font(title_font_size)
+
+    # Extract paragraphs from the docx
+    paragraphs: list[tuple[str, bool]] = []  # (text, is_heading)
+    try:
+        from docx import Document as DocxDocument  # type: ignore
+        docx_doc = DocxDocument(file_path)
+        for para in docx_doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                paragraphs.append(("", False))
+                continue
+            is_heading = para.style.name.lower().startswith("heading")
+            paragraphs.append((text, is_heading))
+    except Exception:
+        paragraphs = [("Document preview", True), ("(Content could not be extracted)", False)]
+
+    if not paragraphs:
+        paragraphs = [("(Empty document)", False)]
+
+    # Split paragraphs into sections (one per page_num)
+    # Simple strategy: divide paragraph list into equal chunks
+    try:
+        from docx import Document as DocxDocument  # type: ignore
+        docx_doc = DocxDocument(file_path)
+        num_sections = max(1, len(docx_doc.sections))
+    except Exception:
+        num_sections = 1
+
+    chunk_size = max(1, len(paragraphs) // num_sections)
+    start = page_num * chunk_size
+    end   = start + chunk_size if page_num < num_sections - 1 else len(paragraphs)
+    page_paragraphs = paragraphs[start:end]
+
+    # Draw a light header bar with filename
+    header_h = int(dpi * 0.35)
+    draw.rectangle([(0, 0), (width_px, header_h)], fill=(240, 240, 248))
+    import os as _os
+    doc_name = _os.path.basename(file_path)
+    header_font = _load_font(max(10, int(dpi * 0.09)))
+    draw.text((margin_px, int(header_h * 0.25)), doc_name, fill=(100, 100, 140), font=header_font)
+
+    # Render paragraphs
+    y = header_h + line_spacing
+    max_text_width = width_px - 2 * margin_px
+
+    for text, is_heading in page_paragraphs:
+        if y >= height_px - margin_px:
+            break
+        if not text:
+            y += line_spacing
+            continue
+
+        font = title_font if is_heading else body_font
+        color = (30, 30, 60) if is_heading else (50, 50, 50)
+
+        # Word-wrap the text to fit within the page width
+        words = text.split()
+        line = ""
+        for word in words:
+            test_line = f"{line} {word}".strip()
+            bbox = draw.textbbox((0, 0), test_line, font=font)
+            if bbox[2] - bbox[0] > max_text_width and line:
+                draw.text((margin_px, y), line, fill=color, font=font)
+                line_bbox = draw.textbbox((0, 0), line, font=font)
+                y += (line_bbox[3] - line_bbox[1]) + line_spacing
+                line = word
+                if y >= height_px - margin_px:
+                    break
+            else:
+                line = test_line
+        if line and y < height_px - margin_px:
+            draw.text((margin_px, y), line, fill=color, font=font)
+            line_bbox = draw.textbbox((0, 0), line, font=font)
+            y += (line_bbox[3] - line_bbox[1]) + (line_spacing * 2 if is_heading else line_spacing)
+
+    # Page number footer
+    footer_font = _load_font(max(9, int(dpi * 0.08)))
+    footer_text = f"Page {page_num + 1}"
+    draw.text((margin_px, height_px - margin_px + int(dpi * 0.1)), footer_text, fill=(160, 160, 160), font=footer_font)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _render_doc_page(file_path: str, dpi: int = 150) -> bytes:
+    """Render a legacy .doc file as a PNG using ReportLab to produce a PDF
+    page in memory, then rasterize it with PyMuPDF.
+
+    If the content cannot be extracted the function falls back to a styled
+    placeholder that clearly identifies the document by filename.
     """
     import os as _os
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
-    # Target canvas size matches the default DPI-scaled PDF page
-    width_px = int(8.5 * dpi)
+    doc_name = _os.path.basename(file_path)
+    buf = io.BytesIO()
+    pdf_doc = SimpleDocTemplate(
+        buf,
+        pagesize=letter,
+        rightMargin=inch,
+        leftMargin=inch,
+        topMargin=inch,
+        bottomMargin=inch,
+    )
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "DocTitle",
+        parent=styles["Heading1"],
+        fontSize=18,
+        spaceAfter=12,
+        textColor=colors.HexColor("#1a1a2e"),
+    )
+    body_style = ParagraphStyle(
+        "DocBody",
+        parent=styles["Normal"],
+        fontSize=11,
+        textColor=colors.HexColor("#444444"),
+        spaceAfter=8,
+    )
+    note_style = ParagraphStyle(
+        "DocNote",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=colors.HexColor("#888888"),
+        spaceAfter=4,
+    )
+
+    elements = [
+        Paragraph(doc_name, title_style),
+        Spacer(1, 0.2 * inch),
+        Paragraph(
+            "This document is in legacy .doc format. "
+            "A full-fidelity preview requires Microsoft Word or LibreOffice.",
+            body_style,
+        ),
+        Spacer(1, 0.1 * inch),
+        Paragraph(
+            "You can download the original file using the Download button above.",
+            note_style,
+        ),
+    ]
+
+    pdf_doc.build(elements)
+    pdf_bytes = buf.getvalue()
+
+    # Rasterize the first page of the generated PDF with PyMuPDF
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as tmp_doc:
+        page = tmp_doc.load_page(0)
+        zoom = dpi / 72
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        return pix.tobytes("png")
+
+
+def _render_placeholder_page(dpi: int = 150) -> bytes:
+    """Return a gray placeholder PNG as a last resort when no better renderer
+    is available.  The image is roughly A4-proportioned.
+    """
+    width_px  = int(8.5 * dpi)
     height_px = int(11 * dpi)
 
-    # Try to render via Pillow (optional dependency); fall back to a raw PNG if not available.
     try:
-        from PIL import Image, ImageDraw, ImageFont  # type: ignore
+        from PIL import Image, ImageDraw  # type: ignore
 
-        img = Image.new("RGB", (width_px, height_px), color=(240, 240, 240))
+        img  = Image.new("RGB", (width_px, height_px), color=(240, 240, 240))
         draw = ImageDraw.Draw(img)
 
         msg_lines = ["Document preview", "not available"]
-        font_size = max(24, dpi // 6)
+        font_size  = max(24, dpi // 6)
+        font       = _load_font(font_size)
 
-        # Pillow's default font is tiny; try to load a system font, ignore on failure.
-        font = None
-        try:
-            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
-        except Exception:
-            try:
-                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
-            except Exception:
-                font = ImageFont.load_default()
-
-        # Bounding box of the combined text block
         line_heights = []
-        line_widths = []
+        line_widths  = []
         for line in msg_lines:
             bbox = draw.textbbox((0, 0), line, font=font)
             line_widths.append(bbox[2] - bbox[0])
@@ -83,7 +272,7 @@ def _render_placeholder_page(dpi: int = 150) -> bytes:
     except ImportError:
         pass
 
-    # Minimal hard-coded 1×1 gray PNG as last resort (valid PNG, always works).
+    # Minimal hard-coded solid-gray PNG as absolute last resort.
     import struct
     import zlib
 
@@ -92,9 +281,9 @@ def _render_placeholder_page(dpi: int = 150) -> bytes:
         return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
 
     w, h = width_px, height_px
-    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+    ihdr     = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
     raw_rows = b"".join(b"\x00" + bytes([0x99, 0x99, 0x99]) * w for _ in range(h))
-    idat = zlib.compress(raw_rows)
+    idat     = zlib.compress(raw_rows)
     return (
         b"\x89PNG\r\n\x1a\n"
         + _png_chunk(b"IHDR", ihdr)
@@ -103,28 +292,223 @@ def _render_placeholder_page(dpi: int = 150) -> bytes:
     )
 
 
-def render_page(file_path: str, page_num: int = 0, dpi: int = 150) -> bytes:
-    """Render a document page as PNG bytes.
+def convert_doc_to_pdf(doc_path: str, output_pdf_path: str) -> bool:
+    """Convert a .doc or .docx file to PDF and save it at output_pdf_path.
 
-    For PDF files this uses PyMuPDF.  For non-PDF formats (e.g. .doc, .docx)
-    that PyMuPDF cannot open, a placeholder image is returned instead of
-    raising an error so that the editor never shows a broken image.
+    For .docx files: uses python-docx to extract content and reportlab to build
+    a PDF that accurately reflects the document's text content.
+
+    For .doc files: tries LibreOffice subprocess first; falls back to a reportlab
+    placeholder that clearly identifies the file and its legacy format.
 
     Args:
-        file_path: Path to the document file.
+        doc_path: Absolute path to the source .doc/.docx file.
+        output_pdf_path: Absolute path where the output PDF should be written.
+
+    Returns:
+        True if conversion succeeded, False if it failed completely.
+    """
+    import os as _os
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+
+    ext = _os.path.splitext(doc_path)[-1].lower()
+    doc_name = _os.path.basename(doc_path)
+
+    try:
+        if ext == ".docx":
+            # Extract text from the docx and render it as a proper PDF via reportlab
+            from docx import Document as DocxDocument  # type: ignore
+
+            docx_doc = DocxDocument(doc_path)
+            buf = io.BytesIO()
+            pdf_doc = SimpleDocTemplate(
+                buf,
+                pagesize=letter,
+                rightMargin=inch,
+                leftMargin=inch,
+                topMargin=inch,
+                bottomMargin=inch,
+            )
+            styles = getSampleStyleSheet()
+            heading_style = ParagraphStyle(
+                "DocHeading",
+                parent=styles["Heading1"],
+                fontSize=14,
+                spaceAfter=8,
+                textColor=colors.HexColor("#1a1a2e"),
+            )
+            body_style = ParagraphStyle(
+                "DocBody",
+                parent=styles["Normal"],
+                fontSize=10,
+                spaceAfter=6,
+                textColor=colors.HexColor("#222222"),
+                leading=14,
+            )
+
+            elements: list = []
+            for para in docx_doc.paragraphs:
+                text = para.text.strip()
+                if not text:
+                    elements.append(Spacer(1, 0.08 * inch))
+                    continue
+                is_heading = para.style.name.lower().startswith("heading")
+                # Escape reportlab special XML chars
+                safe_text = (
+                    text.replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                )
+                style = heading_style if is_heading else body_style
+                elements.append(Paragraph(safe_text, style))
+
+            if not elements:
+                elements.append(Paragraph("(Empty document)", body_style))
+
+            pdf_doc.build(elements)
+            with open(output_pdf_path, "wb") as fh:
+                fh.write(buf.getvalue())
+            return True
+
+        elif ext == ".doc":
+            # Try LibreOffice for faithful .doc conversion
+            import subprocess
+            output_dir = _os.path.dirname(output_pdf_path)
+            try:
+                result = subprocess.run(
+                    [
+                        "libreoffice",
+                        "--headless",
+                        "--convert-to",
+                        "pdf",
+                        "--outdir",
+                        output_dir,
+                        doc_path,
+                    ],
+                    capture_output=True,
+                    timeout=30,
+                )
+                if result.returncode == 0:
+                    # LibreOffice names the output after the input filename stem
+                    stem = _os.path.splitext(_os.path.basename(doc_path))[0]
+                    lo_output = _os.path.join(output_dir, f"{stem}.pdf")
+                    if _os.path.exists(lo_output):
+                        if lo_output != output_pdf_path:
+                            _os.rename(lo_output, output_pdf_path)
+                        return True
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass  # LibreOffice not available; fall through to placeholder
+
+            # Fallback: reportlab placeholder for legacy .doc
+            buf = io.BytesIO()
+            pdf_doc = SimpleDocTemplate(
+                buf,
+                pagesize=letter,
+                rightMargin=inch,
+                leftMargin=inch,
+                topMargin=inch,
+                bottomMargin=inch,
+            )
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                "DocTitle",
+                parent=styles["Heading1"],
+                fontSize=18,
+                spaceAfter=12,
+                textColor=colors.HexColor("#1a1a2e"),
+            )
+            body_style = ParagraphStyle(
+                "DocBody",
+                parent=styles["Normal"],
+                fontSize=11,
+                textColor=colors.HexColor("#444444"),
+                spaceAfter=8,
+            )
+            note_style = ParagraphStyle(
+                "DocNote",
+                parent=styles["Normal"],
+                fontSize=9,
+                textColor=colors.HexColor("#888888"),
+                spaceAfter=4,
+            )
+            elements = [
+                Paragraph(doc_name, title_style),
+                Spacer(1, 0.2 * inch),
+                Paragraph(
+                    "This document is in Legacy .doc format. "
+                    "A full-fidelity preview requires Microsoft Word or LibreOffice.",
+                    body_style,
+                ),
+                Spacer(1, 0.1 * inch),
+                Paragraph(
+                    "You can download the original file using the Download button.",
+                    note_style,
+                ),
+            ]
+            pdf_doc.build(elements)
+            with open(output_pdf_path, "wb") as fh:
+                fh.write(buf.getvalue())
+            return True
+
+    except Exception:
+        return False
+
+    return False
+
+
+def render_page(file_path: str, page_num: int = 0, dpi: int = 150, preview_path: str | None = None) -> bytes:
+    """Render a document page as PNG bytes.
+
+    When preview_path is supplied (a pre-converted PDF for .doc/.docx files),
+    it is used directly via PyMuPDF for full-fidelity rendering.  Otherwise the
+    dispatch table below applies:
+
+      - .pdf   → PyMuPDF (fitz) — full fidelity
+      - .docx  → python-docx text extraction + Pillow layout
+      - .doc   → ReportLab placeholder PDF rasterised by PyMuPDF
+      - other  → generic Pillow placeholder
+
+    Args:
+        file_path: Path to the original document file.
         page_num: Zero-based page index.
         dpi: Rendering resolution (default 150).
+        preview_path: Optional path to a pre-generated preview PDF.
 
     Returns:
         PNG image as bytes.
     """
     import os as _os
 
-    ext = _os.path.splitext(file_path)[-1].lower()
-    if ext in (".docx", ".doc"):
-        # PyMuPDF cannot render Word documents — return a placeholder page.
-        return _render_placeholder_page(dpi)
+    # If a preview PDF exists, always use it for rendering (handles .doc/.docx perfectly)
+    if preview_path and _os.path.exists(preview_path):
+        with fitz.open(preview_path) as doc:
+            if page_num < 0 or page_num >= doc.page_count:
+                page_num = max(0, min(page_num, doc.page_count - 1))
+            page = doc.load_page(page_num)
+            zoom = dpi / 72
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            return pix.tobytes("png")
 
+    ext = _os.path.splitext(file_path)[-1].lower()
+
+    if ext == ".docx":
+        try:
+            return _render_docx_page(file_path, page_num, dpi)
+        except Exception:
+            return _render_placeholder_page(dpi)
+
+    if ext == ".doc":
+        try:
+            return _render_doc_page(file_path, dpi)
+        except Exception:
+            return _render_placeholder_page(dpi)
+
+    # Default: treat as PDF via PyMuPDF
     with fitz.open(file_path) as doc:
         if page_num < 0 or page_num >= doc.page_count:
             raise ValueError(
@@ -132,8 +516,8 @@ def render_page(file_path: str, page_num: int = 0, dpi: int = 150) -> bytes:
             )
         page = doc.load_page(page_num)
         zoom = dpi / 72
-        mat = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(matrix=mat, alpha=False)
+        mat  = fitz.Matrix(zoom, zoom)
+        pix  = page.get_pixmap(matrix=mat, alpha=False)
         return pix.tobytes("png")
 
 

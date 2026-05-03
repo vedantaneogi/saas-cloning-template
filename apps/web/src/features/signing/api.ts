@@ -80,7 +80,7 @@ function mapSigningSession(raw: RawSigningSession): SigningSession {
       email: r.email,
       role: r.role,
       order: r.routing_order,
-      status: (r.status === "signed" ? "completed" : r.status) as "completed" | "sent" | "waiting" | "declined",
+      status: (r.status === "signed" ? "completed" : r.status) as "completed" | "sent" | "delivered" | "pending" | "declined",
     })),
     documents: raw.envelope.documents.map((d) => ({
       id: d.id,

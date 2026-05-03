@@ -14,15 +14,17 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 
-import { getEnvelope, saveFields, sendEnvelope } from "@/features/envelopes/api";
+import { getEnvelope, saveFields, sendEnvelope, updateEnvelope } from "@/features/envelopes/api";
 import { getEnvelopeFields } from "@/features/editor/api";
 import { editorReducer } from "@/features/editor/state/editorReducer";
-import { PrepareToolbar } from "@/features/editor/components/PrepareToolbar";
+import { PrepareToolbar, CommentPopover } from "@/features/editor/components/PrepareToolbar";
 import { PageNavigator } from "@/features/editor/components/PageNavigator";
 import { DocumentCanvas } from "@/features/editor/components/DocumentCanvas";
+import type { CommentDot } from "@/features/editor/components/DocumentCanvas";
 import { FieldPalette } from "@/features/editor/components/FieldPalette";
 import { getRecipientColor } from "@/lib/utils";
-import type { FieldType, PlacedField, EditorState } from "@/features/editor/model/types";
+import { useAuthStore } from "@/features/auth/store";
+import type { FieldType, PlacedField, EditorState, EditorRecipient } from "@/features/editor/model/types";
 import { FIELD_LABELS, FIELD_DEFAULT_SIZES } from "@/features/editor/model/types";
 
 // ── Preview Modal ────────────────────────────────────────────────────────────
@@ -385,16 +387,418 @@ function SuccessToast({ message }: { message: string }) {
   );
 }
 
+// ── Field Properties Panel ───────────────────────────────────────────────────
+
+interface FieldPropertiesPanelProps {
+  field: PlacedField;
+  recipients: EditorRecipient[];
+  onBack: () => void;
+  onUpdate: (updates: Partial<PlacedField>) => void;
+  onDelete: () => void;
+}
+
+function CollapsibleSection({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+      <button
+        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition-colors"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span style={{ fontSize: "12.5px", fontWeight: 600, color: "rgba(19,0,50,0.8)" }}>{title}</span>
+        <svg
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          width="12"
+          height="12"
+          style={{
+            color: "rgba(19,0,50,0.4)",
+            transform: open ? "rotate(180deg)" : "none",
+            transition: "transform 0.15s",
+          }}
+        >
+          <path d="M7 10l5 5 5-5z" />
+        </svg>
+      </button>
+      {open && <div className="px-4 pb-3">{children}</div>}
+    </div>
+  );
+}
+
+function FieldPropertiesPanel({ field, recipients, onBack, onUpdate, onDelete }: FieldPropertiesPanelProps) {
+  const [localValue, setLocalValue] = useState(field.value ?? "");
+  const [localLabel, setLocalLabel] = useState(field.label ?? field.id);
+  const [localX, setLocalX] = useState(field.x.toFixed(1));
+  const [localY, setLocalY] = useState(field.y.toFixed(1));
+  const [localW, setLocalW] = useState(field.width.toFixed(1));
+  const [localH, setLocalH] = useState(field.height.toFixed(1));
+  const [localFontSize, setLocalFontSize] = useState(12);
+  const [localAlignment, setLocalAlignment] = useState<"left" | "center" | "right">("left");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync when field changes (another field selected)
+  useEffect(() => {
+    setLocalValue(field.value ?? "");
+    setLocalLabel(field.label ?? field.id);
+    setLocalX(field.x.toFixed(1));
+    setLocalY(field.y.toFixed(1));
+    setLocalW(field.width.toFixed(1));
+    setLocalH(field.height.toFixed(1));
+    setLocalFontSize(12);
+    setLocalAlignment("left");
+  }, [field.id]);
+
+  const debouncedUpdate = useCallback((updates: Partial<PlacedField>) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => onUpdate(updates), 300);
+  }, [onUpdate]);
+
+  const isTextLike = ["text", "name", "email", "company", "title", "number", "note"].includes(field.type);
+  const isDateType = field.type === "date_signed";
+  const isDrawingOrSig = field.type === "drawing" || field.type === "signature" || field.type === "initial";
+
+  const recipient = recipients.find((r) => r.id === field.recipientId);
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    border: "1px solid rgba(19,0,50,0.18)",
+    borderRadius: "4px",
+    padding: "6px 9px",
+    fontSize: "12.5px",
+    color: "rgba(19,0,50,0.9)",
+    outline: "none",
+    background: "white",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: "11px",
+    fontWeight: 600,
+    color: "rgba(19,0,50,0.45)",
+    marginBottom: "4px",
+    letterSpacing: "0.03em",
+    textTransform: "uppercase",
+  };
+
+  return (
+    <div
+      className="flex-shrink-0 bg-white flex flex-col overflow-hidden"
+      style={{ width: "300px", borderRight: "1px solid rgba(19,0,50,0.12)" }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center gap-2 px-4 flex-shrink-0"
+        style={{ height: "44px", borderBottom: "1px solid rgba(19,0,50,0.12)" }}
+      >
+        <button
+          onClick={onBack}
+          className="flex items-center justify-center w-7 h-7 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+          title="Back to Fields"
+        >
+          <svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "rgba(19,0,50,0.65)" }}>
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <span style={{ fontSize: "14px", fontWeight: 600, color: "rgba(19,0,50,0.9)" }}>
+          {FIELD_LABELS[field.type]}
+        </span>
+        {field.required && (
+          <span style={{ fontSize: "11px", color: "#EF4444", fontWeight: 700 }}>*</span>
+        )}
+        {recipient && (
+          <div
+            className="ml-auto w-6 h-6 rounded-full flex items-center justify-center text-white flex-shrink-0"
+            style={{ background: recipient.color, fontSize: "9px", fontWeight: 700 }}
+            title={recipient.name}
+          >
+            {recipient.name.split(" ").map((p) => p[0]).join("").toUpperCase().slice(0, 2)}
+          </div>
+        )}
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Text/note fields */}
+        {isTextLike && (
+          <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+            <label style={labelStyle}>Default text</label>
+            <textarea
+              value={localValue}
+              onChange={(e) => {
+                setLocalValue(e.target.value);
+                debouncedUpdate({ value: e.target.value || undefined });
+              }}
+              rows={3}
+              placeholder="Optional default value…"
+              style={{ ...inputStyle, resize: "vertical" }}
+            />
+          </div>
+        )}
+
+        {/* Data label for all types */}
+        {(isTextLike || isDateType || isDrawingOrSig) && (
+          <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+            <label style={labelStyle}>Data label</label>
+            <input
+              type="text"
+              value={localLabel}
+              onChange={(e) => {
+                setLocalLabel(e.target.value);
+                debouncedUpdate({ label: e.target.value || undefined });
+              }}
+              placeholder={field.id}
+              style={inputStyle}
+            />
+          </div>
+        )}
+
+        {/* Drawing/Signature: required toggle + allow image upload */}
+        {isDrawingOrSig && (
+          <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+            {/* Required toggle */}
+            <div className="flex items-center justify-between">
+              <span style={{ fontSize: "12.5px", color: "rgba(19,0,50,0.85)", fontWeight: 500 }}>Required</span>
+              <button
+                onClick={() => onUpdate({ required: !field.required })}
+                style={{
+                  width: "36px",
+                  height: "20px",
+                  borderRadius: "10px",
+                  background: field.required ? "#4C00FF" : "#D1D5DB",
+                  border: "none",
+                  cursor: "pointer",
+                  position: "relative",
+                  transition: "background 0.2s",
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "2px",
+                    left: field.required ? "18px" : "2px",
+                    width: "16px",
+                    height: "16px",
+                    borderRadius: "50%",
+                    background: "white",
+                    transition: "left 0.2s",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }}
+                />
+              </button>
+            </div>
+            {/* Allow image upload */}
+            <div className="flex items-center justify-between">
+              <span style={{ fontSize: "12.5px", color: "rgba(19,0,50,0.85)", fontWeight: 500 }}>Allow image upload</span>
+              <div
+                style={{
+                  width: "36px",
+                  height: "20px",
+                  borderRadius: "10px",
+                  background: "#D1D5DB",
+                  position: "relative",
+                  flexShrink: 0,
+                  opacity: 0.5,
+                  cursor: "not-allowed",
+                }}
+                title="Coming soon"
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "2px",
+                    left: "2px",
+                    width: "16px",
+                    height: "16px",
+                    borderRadius: "50%",
+                    background: "white",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Formatting (collapsed by default) */}
+        <CollapsibleSection title="Formatting">
+          <div className="space-y-3 pt-1">
+            <div>
+              <label style={labelStyle}>Font size</label>
+              <select
+                value={localFontSize}
+                onChange={(e) => setLocalFontSize(Number(e.target.value))}
+                style={{ ...inputStyle }}
+              >
+                {[8, 9, 10, 11, 12, 14, 16, 18, 20, 24].map((s) => (
+                  <option key={s} value={s}>{s}pt</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Alignment</label>
+              <div className="flex gap-1">
+                {(["left", "center", "right"] as const).map((align) => (
+                  <button
+                    key={align}
+                    onClick={() => setLocalAlignment(align)}
+                    className="flex-1 py-1.5 rounded text-xs hover:bg-gray-100 transition-colors"
+                    style={{
+                      border: `1px solid ${localAlignment === align ? "#4C00FF" : "rgba(19,0,50,0.15)"}`,
+                      background: localAlignment === align ? "#F0EEFF" : "transparent",
+                      color: localAlignment === align ? "#4C00FF" : "rgba(19,0,50,0.7)",
+                      fontWeight: localAlignment === align ? 700 : 500,
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {align === "left" ? "L" : align === "center" ? "C" : "R"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </CollapsibleSection>
+
+        {/* Location & Autoplace (collapsed by default) */}
+        <CollapsibleSection title="Location and Autoplace">
+          <div className="space-y-3 pt-1">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: "Pixels from left", value: localX, setter: setLocalX, field: "x" },
+                { label: "Pixels from top", value: localY, setter: setLocalY, field: "y" },
+                { label: "Width (%)", value: localW, setter: setLocalW, field: "width" },
+                { label: "Height (%)", value: localH, setter: setLocalH, field: "height" },
+              ].map(({ label, value, setter, field: fieldKey }) => (
+                <div key={fieldKey}>
+                  <label style={labelStyle}>{label}</label>
+                  <input
+                    type="number"
+                    value={value}
+                    onChange={(e) => {
+                      setter(e.target.value);
+                      const num = parseFloat(e.target.value);
+                      if (!isNaN(num)) {
+                        debouncedUpdate({ [fieldKey]: Math.max(0, Math.min(num, 100)) });
+                      }
+                    }}
+                    style={{ ...inputStyle }}
+                    step="0.1"
+                    min="0"
+                    max="100"
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              className="w-full py-2 rounded transition-colors hover:bg-gray-50 text-center"
+              style={{
+                border: "1px solid rgba(19,0,50,0.18)",
+                fontSize: "12px",
+                color: "rgba(19,0,50,0.55)",
+                fontWeight: 500,
+              }}
+              title="Coming soon"
+            >
+              Set Up Autoplace
+            </button>
+          </div>
+        </CollapsibleSection>
+
+        {/* Advanced (collapsed by default) — Tooltip */}
+        <CollapsibleSection title="Advanced">
+          <div className="pt-1">
+            <label style={labelStyle}>Tooltip</label>
+            <textarea
+              placeholder="Enter tooltip text shown on hover..."
+              rows={2}
+              style={{ ...inputStyle, resize: "vertical" }}
+            />
+          </div>
+        </CollapsibleSection>
+
+        {/* Save as custom field */}
+        <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+          <button
+            className="w-full flex items-center justify-center gap-2 py-2 rounded transition-colors hover:bg-gray-50"
+            style={{
+              border: "1px solid rgba(19,0,50,0.18)",
+              fontSize: "12.5px",
+              color: "rgba(19,0,50,0.7)",
+              fontWeight: 500,
+            }}
+            title="Coming soon"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style={{ color: "rgba(19,0,50,0.4)" }}>
+              <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" />
+            </svg>
+            Save As Custom Field
+          </button>
+        </div>
+
+        {/* Delete button */}
+        <div className="px-4 py-3">
+          <button
+            onClick={() => { onDelete(); onBack(); }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded transition-colors hover:bg-red-600"
+            style={{
+              background: "#EF4444",
+              color: "white",
+              fontSize: "12.5px",
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+            </svg>
+            Delete Field
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Editor Page ──────────────────────────────────────────────────────────────
 
 export default function EditorPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const currentUser = useAuthStore((s) => s.user);
   const [draggedFieldType, setDraggedFieldType] = useState<FieldType | null>(null);
   const [showNoFieldsModal, setShowNoFieldsModal] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  // Field properties panel state
+  const [fieldPropertiesOpen, setFieldPropertiesOpen] = useState(false);
+  const [selectedFieldForProperties, setSelectedFieldForProperties] = useState<string | null>(null);
+  // Advanced Options panel state
+  const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false);
+  const [advAutoReminders, setAdvAutoReminders] = useState(false);
+  const [advReminderDays, setAdvReminderDays] = useState(3);
+  const [advDaysUntilExpiry, setAdvDaysUntilExpiry] = useState(120);
+  const [advExpirationAlert, setAdvExpirationAlert] = useState(0);
+  const [advSignOnPaper, setAdvSignOnPaper] = useState(false);
+  const [advChangeSigningResponsibility, setAdvChangeSigningResponsibility] = useState(false);
+  const [advResponsiveSigning, setAdvResponsiveSigning] = useState(false);
+  const [advAllowComments, setAdvAllowComments] = useState(false);
+  // Comment mode state
+  const [commentMode, setCommentMode] = useState(false);
+  const [commentPos, setCommentPos] = useState<{ x: number; y: number } | null>(null);
+  const [commentDots, setCommentDots] = useState<CommentDot[]>([]);
+  // pendingCommentDot: the dot being placed, waiting for text entry
+  const [pendingCommentDot, setPendingCommentDot] = useState<Omit<CommentDot, "text"> | null>(null);
+  // Right panel visibility
+  const [rightPanelVisible, setRightPanelVisible] = useState(true);
   // Track latest pointer position during drag so we can place accurately on drop
   const dragPointerRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -490,6 +894,22 @@ export default function EditorPage() {
     }
   };
 
+  const handleCommentClick = useCallback(() => {
+    setCommentMode((v) => !v);
+    // Close any open popover when toggling mode
+    setCommentPos(null);
+    setPendingCommentDot(null);
+  }, []);
+
+  const handleCommentPlace = useCallback((pageNum: number, xPct: number, yPct: number, screenX: number, screenY: number) => {
+    // Turn off comment mode immediately, show the popover near the click
+    setCommentMode(false);
+    const dotId = `comment_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    setPendingCommentDot({ id: dotId, x: xPct, y: yPct, pageNum, authorName: currentUser?.name ?? "You" });
+    // Position popover 12px to the right and slightly below the click
+    setCommentPos({ x: screenX + 12, y: screenY + 8 });
+  }, []);
+
   const activeRecipientId = state.activeRecipientId ?? editorRecipients[0]?.id ?? null;
   const activeRecipient = editorRecipients.find((r) => r.id === activeRecipientId);
   const activeTool = state.activeTool;
@@ -535,6 +955,45 @@ export default function EditorPage() {
       sendMutation.mutate();
     }
   }, [state.fields.length, sendMutation]);
+
+  // Duplicate selected field with a small offset so it's visually distinct
+  const handleDuplicate = useCallback(() => {
+    if (!state.selectedFieldId) return;
+    const original = state.fields.find((f) => f.id === state.selectedFieldId);
+    if (!original) return;
+    const clone: PlacedField = {
+      ...original,
+      id: `field_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      x: Math.min(original.x + 3, 100 - original.width),
+      y: Math.min(original.y + 3, 100 - original.height),
+    };
+    dispatch({ type: "ADD_FIELD", field: clone });
+  }, [state.selectedFieldId, state.fields]);
+
+  // Duplicate a specific field by ID (called from the floating toolbar)
+  const handleDuplicateField = useCallback((fieldId: string) => {
+    const original = state.fields.find((f) => f.id === fieldId);
+    if (!original) return;
+    const clone: PlacedField = {
+      ...original,
+      id: `field_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      x: Math.min(original.x + 3, 100 - original.width),
+      y: Math.min(original.y + 3, 100 - original.height),
+    };
+    dispatch({ type: "ADD_FIELD", field: clone });
+  }, [state.fields]);
+
+  // Open the field properties panel for a given field
+  const handleOpenFieldProperties = useCallback((fieldId: string) => {
+    dispatch({ type: "SELECT_FIELD", id: fieldId });
+    setSelectedFieldForProperties(fieldId);
+    setFieldPropertiesOpen(true);
+  }, []);
+
+  // Double-click on a field opens properties
+  const handleFieldDoubleClick = useCallback((fieldId: string) => {
+    handleOpenFieldProperties(fieldId);
+  }, [handleOpenFieldProperties]);
 
   const placeFieldOnPage = useCallback(
     (type: FieldType, pageNumber: number, x: number, y: number, w: number, h: number) => {
@@ -687,28 +1146,50 @@ export default function EditorPage() {
           {/* Top toolbar */}
           <PrepareToolbar
             envelopeId={id}
-            envelopeSubject={envelope?.subject ?? "Untitled Envelope"}
-            fields={state.fields}
-            recipients={editorRecipients}
-            zoom={state.zoom}
-            onZoomChange={(zoom) => dispatch({ type: "SET_ZOOM", zoom })}
             onSend={handleSendClick}
             isSending={sendMutation.isPending}
             onPreview={() => setShowPreviewModal(true)}
+            onOpenSettings={() => setAdvancedOptionsOpen(true)}
           />
 
           {/* Main editor layout — DocuSign order: Left palette | Center canvas | Right navigator */}
           <div className="flex flex-1 overflow-hidden">
-            {/* Left: Field palette (~300px) */}
-            <FieldPalette
-              activeTool={activeTool}
-              activeRecipient={activeRecipient}
-              onToolSelect={(tool) => dispatch({ type: "SET_TOOL", tool })}
-              allRecipients={editorRecipients}
-              onRecipientChange={(recipientId) =>
-                dispatch({ type: "SET_ACTIVE_RECIPIENT", id: recipientId })
+            {/* Left: Field palette OR Field properties panel (~300px) */}
+            {(() => {
+              const propField = fieldPropertiesOpen && selectedFieldForProperties
+                ? state.fields.find((f) => f.id === selectedFieldForProperties) ?? null
+                : null;
+
+              if (propField) {
+                return (
+                  <FieldPropertiesPanel
+                    field={propField}
+                    recipients={editorRecipients}
+                    onBack={() => setFieldPropertiesOpen(false)}
+                    onUpdate={(updates) =>
+                      dispatch({ type: "UPDATE_FIELD", id: propField.id, updates })
+                    }
+                    onDelete={() => {
+                      dispatch({ type: "REMOVE_FIELD", id: propField.id });
+                      setFieldPropertiesOpen(false);
+                      setSelectedFieldForProperties(null);
+                    }}
+                  />
+                );
               }
-            />
+
+              return (
+                <FieldPalette
+                  activeTool={activeTool}
+                  activeRecipient={activeRecipient}
+                  onToolSelect={(tool) => dispatch({ type: "SET_TOOL", tool })}
+                  allRecipients={editorRecipients}
+                  onRecipientChange={(recipientId) =>
+                    dispatch({ type: "SET_ACTIVE_RECIPIENT", id: recipientId })
+                  }
+                />
+              );
+            })()}
 
             {/* Center: Document canvas */}
             <DocumentCanvas
@@ -721,14 +1202,24 @@ export default function EditorPage() {
               activeRecipientId={activeRecipientId}
               zoom={state.zoom}
               pageImageUrls={pageImageUrls}
-              documentName={allDocs[0]?.name ?? "document.pdf"}
+              documentName={allDocs[0]?.name || allDocs[0]?.original_filename || "document.pdf"}
+              documents={navigatorDocuments}
               canUndo={(state._past?.length ?? 0) > 0}
               canRedo={(state._future?.length ?? 0) > 0}
+              commentMode={commentMode}
+              commentDots={commentDots}
+              onCommentPlace={handleCommentPlace}
               onFieldClick={(fieldId) => dispatch({ type: "SELECT_FIELD", id: fieldId })}
               onFieldUpdate={(fieldId, updates) =>
                 dispatch({ type: "UPDATE_FIELD", id: fieldId, updates })
               }
-              onFieldRemove={(fieldId) => dispatch({ type: "REMOVE_FIELD", id: fieldId })}
+              onFieldRemove={(fieldId) => {
+                dispatch({ type: "REMOVE_FIELD", id: fieldId });
+                if (selectedFieldForProperties === fieldId) {
+                  setFieldPropertiesOpen(false);
+                  setSelectedFieldForProperties(null);
+                }
+              }}
               onAssignRecipient={(fieldId, recipientId) =>
                 dispatch({ type: "UPDATE_FIELD", id: fieldId, updates: { recipientId } })
               }
@@ -738,17 +1229,44 @@ export default function EditorPage() {
               onZoomChange={(zoom) => dispatch({ type: "SET_ZOOM", zoom })}
               onUndo={() => dispatch({ type: "UNDO" })}
               onRedo={() => dispatch({ type: "REDO" })}
+              onDuplicate={handleDuplicate}
+              onFieldDoubleClick={handleFieldDoubleClick}
+              onFieldDuplicate={handleDuplicateField}
+              onOpenFieldProperties={handleOpenFieldProperties}
             />
 
             {/* Right: Page navigator (~280px) */}
-            <PageNavigator
-              pageCount={pageCount}
-              currentPage={state.currentPage}
-              fields={state.fields}
-              pageImageUrls={pageImageUrls}
-              documents={navigatorDocuments}
-              onPageChange={(page) => dispatch({ type: "SET_PAGE", page })}
-            />
+            {rightPanelVisible && (
+              <PageNavigator
+                pageCount={pageCount}
+                currentPage={state.currentPage}
+                fields={state.fields}
+                pageImageUrls={pageImageUrls}
+                documents={navigatorDocuments}
+                onPageChange={(page) => dispatch({ type: "SET_PAGE", page })}
+                envelopeId={id}
+                onCommentClick={handleCommentClick}
+                onToggleRightPanel={() => setRightPanelVisible(false)}
+              />
+            )}
+
+            {/* Floating re-show button when panel is hidden */}
+            {!rightPanelVisible && (
+              <div className="flex-shrink-0 flex flex-col items-center justify-start pt-2 gap-1"
+                style={{ width: "36px", borderLeft: "1px solid rgba(19,0,50,0.12)" }}
+              >
+                <button
+                  onClick={() => setRightPanelVisible(true)}
+                  className="flex items-center justify-center w-8 h-8 rounded transition-colors hover:bg-gray-100"
+                  style={{ color: "rgba(19,0,50,0.55)" }}
+                  title="Show panel"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -785,9 +1303,6 @@ export default function EditorPage() {
         />
       )}
 
-      {/* Success toast */}
-      {showSuccessToast && <SuccessToast message="Your agreement was sent." />}
-
       {/* Preview modal */}
       {showPreviewModal && (
         <PreviewModal
@@ -798,6 +1313,302 @@ export default function EditorPage() {
           onClose={() => setShowPreviewModal(false)}
         />
       )}
+
+      {/* Comment popover — shown after user clicks on canvas in comment mode */}
+      {commentPos && (
+        <CommentPopover
+          envelopeId={id}
+          position={commentPos}
+          recipients={editorRecipients.map((r) => ({ id: r.id, name: r.name, email: r.email }))}
+          onClose={() => {
+            setCommentPos(null);
+            setPendingCommentDot(null);
+          }}
+          onPosted={(text) => {
+            if (pendingCommentDot) {
+              setCommentDots((prev) => [
+                ...prev,
+                { ...pendingCommentDot, text },
+              ]);
+            }
+            setCommentPos(null);
+            setPendingCommentDot(null);
+          }}
+        />
+      )}
+
+      {/* ── Advanced Options slide-out panel ──────────────────────────────── */}
+      {/* Backdrop */}
+      {advancedOptionsOpen && (
+        <div
+          className="fixed inset-0 z-40"
+          style={{ background: "rgba(0,0,0,0.25)" }}
+          onClick={() => setAdvancedOptionsOpen(false)}
+        />
+      )}
+
+      {/* Panel */}
+      <div
+        className="fixed top-0 right-0 h-full bg-white z-50 flex flex-col"
+        style={{
+          width: "400px",
+          maxWidth: "100vw",
+          borderLeft: "1px solid #E0E0E0",
+          boxShadow: "-4px 0 24px rgba(0,0,0,0.10)",
+          transform: advancedOptionsOpen ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 0.25s ease",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Panel header */}
+        <div
+          className="flex items-center justify-between flex-shrink-0"
+          style={{ padding: "18px 20px", borderBottom: "1px solid #E0E0E0" }}
+        >
+          <span style={{ fontSize: "17px", fontWeight: 600, color: "rgba(19,0,50,0.9)" }}>
+            Advanced Options
+          </span>
+          <button
+            onClick={() => setAdvancedOptionsOpen(false)}
+            className="flex items-center justify-center rounded hover:bg-gray-100 transition-colors"
+            style={{ width: "32px", height: "32px" }}
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+              <path d="M18 6 6 18M6 6l12 12" stroke="#555" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Panel body — scrollable */}
+        <div className="flex-1 overflow-y-auto" style={{ padding: "20px" }}>
+          {/* Recipient Privileges */}
+          <div style={{ marginBottom: "28px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Recipient Privileges
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer select-none" style={{ marginBottom: "12px" }}>
+              <input
+                type="checkbox"
+                checked={advSignOnPaper}
+                onChange={(e) => setAdvSignOnPaper(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Recipients can sign on paper
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={advChangeSigningResponsibility}
+                onChange={(e) => setAdvChangeSigningResponsibility(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Recipients can change signing responsibility or assign a delegate
+              </span>
+            </label>
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.10)", marginBottom: "24px" }} />
+
+          {/* Reminders */}
+          <div style={{ marginBottom: "28px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Reminders
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer select-none" style={{ marginBottom: advAutoReminders ? "12px" : "0" }}>
+              <input
+                type="checkbox"
+                checked={advAutoReminders}
+                onChange={(e) => setAdvAutoReminders(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Turn on auto reminders
+              </span>
+            </label>
+            {advAutoReminders && (
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <label style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", flex: 1 }}>
+                  Send reminder every (days)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={advReminderDays}
+                  onChange={(e) => setAdvReminderDays(parseInt(e.target.value) || 3)}
+                  className="focus:outline-none"
+                  style={{
+                    width: "80px",
+                    padding: "6px 10px",
+                    border: "1px solid rgba(19,0,50,0.25)",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    color: "rgba(19,0,50,0.9)",
+                    textAlign: "right",
+                  }}
+                  onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "rgba(19,0,50,0.25)"; }}
+                />
+              </div>
+            )}
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.10)", marginBottom: "24px" }} />
+
+          {/* Expiration */}
+          <div style={{ marginBottom: "28px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Expiration
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+              <label style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", flex: 1 }}>
+                Days until envelope expires
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={advDaysUntilExpiry}
+                onChange={(e) => setAdvDaysUntilExpiry(parseInt(e.target.value) || 120)}
+                className="focus:outline-none"
+                style={{
+                  width: "80px",
+                  padding: "6px 10px",
+                  border: "1px solid rgba(19,0,50,0.25)",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  color: "rgba(19,0,50,0.9)",
+                  textAlign: "right",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(19,0,50,0.25)"; }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <label style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", flex: 1 }}>
+                Expiration Alert / Send alert
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={advExpirationAlert}
+                onChange={(e) => setAdvExpirationAlert(parseInt(e.target.value) || 0)}
+                className="focus:outline-none"
+                style={{
+                  width: "80px",
+                  padding: "6px 10px",
+                  border: "1px solid rgba(19,0,50,0.25)",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  color: "rgba(19,0,50,0.9)",
+                  textAlign: "right",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(19,0,50,0.25)"; }}
+              />
+            </div>
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.10)", marginBottom: "24px" }} />
+
+          {/* Mobile-Friendly */}
+          <div style={{ marginBottom: "28px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Mobile-Friendly
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={advResponsiveSigning}
+                onChange={(e) => setAdvResponsiveSigning(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Enable Responsive Signing for this envelope
+              </span>
+            </label>
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.10)", marginBottom: "24px" }} />
+
+          {/* Comments */}
+          <div>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Comments
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={advAllowComments}
+                onChange={(e) => setAdvAllowComments(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Allow comments
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* Panel footer */}
+        <div
+          className="flex-shrink-0 flex justify-end gap-3"
+          style={{ padding: "16px 20px", borderTop: "1px solid #E0E0E0" }}
+        >
+          <button
+            onClick={() => setAdvancedOptionsOpen(false)}
+            className="hover:bg-gray-50 transition-colors"
+            style={{
+              padding: "8px 20px",
+              borderRadius: "4px",
+              border: "1px solid rgba(19,0,50,0.25)",
+              background: "white",
+              color: "rgba(19,0,50,0.9)",
+              fontSize: "14px",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              // Persist reminder_days and expires_at to the backend
+              const expiresAt = advDaysUntilExpiry > 0
+                ? new Date(Date.now() + advDaysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
+                : undefined;
+              try {
+                await updateEnvelope(id, {
+                  ...(expiresAt ? { expires_at: expiresAt } : {}),
+                  reminder_days: advAutoReminders ? advReminderDays : 0,
+                });
+              } catch (err) {
+                console.error("Failed to save advanced options:", err);
+                alert("Failed to save advanced options. Your local changes are preserved.");
+              }
+              setAdvancedOptionsOpen(false);
+            }}
+            style={{
+              padding: "8px 20px",
+              borderRadius: "4px",
+              background: "#4C00FF",
+              color: "white",
+              fontSize: "14px",
+              fontWeight: 500,
+              cursor: "pointer",
+              border: "none",
+            }}
+          >
+            Apply
+          </button>
+        </div>
+      </div>
     </>
   );
 }

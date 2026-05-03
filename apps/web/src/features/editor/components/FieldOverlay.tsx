@@ -5,6 +5,229 @@ import type { PlacedField, FieldType, EditorRecipient } from "../model/types";
 import { FIELD_LABELS } from "../model/types";
 import { cn } from "@/lib/utils";
 
+// ── Floating Field Toolbar ────────────────────────────────────────────────────
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .map((p) => p[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+interface FieldToolbarProps {
+  field: PlacedField;
+  recipient: EditorRecipient | undefined;
+  allRecipients: EditorRecipient[];
+  onToggleRequired: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onOpenProperties: () => void;
+  onAssignRecipient: (recipientId: string) => void;
+}
+
+function FieldToolbar({
+  field,
+  recipient,
+  allRecipients,
+  onToggleRequired,
+  onDuplicate,
+  onDelete,
+  onOpenProperties,
+  onAssignRecipient,
+}: FieldToolbarProps) {
+  const [recipientDropdownOpen, setRecipientDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!recipientDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setRecipientDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [recipientDropdownOpen]);
+
+  const color = recipient?.color ?? "#4C00FF";
+  const initials = recipient ? getInitials(recipient.name) : "?";
+
+  return (
+    <div
+      className="absolute z-50 flex items-center gap-0 select-none"
+      style={{
+        bottom: "calc(100% + 6px)",
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "white",
+        border: "1px solid rgba(19,0,50,0.18)",
+        borderRadius: "6px",
+        boxShadow: "0 4px 16px rgba(19,0,50,0.14)",
+        height: "34px",
+        padding: "0 2px",
+        whiteSpace: "nowrap",
+        pointerEvents: "all",
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* Recipient badge + dropdown */}
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setRecipientDropdownOpen((v) => !v);
+          }}
+          className="flex items-center gap-1.5 px-2.5 h-full rounded-l-[5px] hover:bg-gray-50 transition-colors"
+          style={{ height: "32px" }}
+          title={`Assigned to: ${recipient?.name ?? "Unknown"}`}
+        >
+          <div
+            className="w-5 h-5 rounded-full flex items-center justify-center text-white flex-shrink-0"
+            style={{ background: color, fontSize: "9px", fontWeight: 700 }}
+          >
+            {initials}
+          </div>
+          <svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9" style={{ color: "rgba(19,0,50,0.45)" }}>
+            <path d="M7 10l5 5 5-5z" />
+          </svg>
+        </button>
+
+        {recipientDropdownOpen && allRecipients.length > 0 && (
+          <div
+            className="absolute top-full left-0 mt-1 bg-white overflow-hidden z-[60]"
+            style={{
+              border: "1px solid rgba(19,0,50,0.15)",
+              borderRadius: "6px",
+              boxShadow: "0 8px 24px rgba(19,0,50,0.14)",
+              minWidth: "180px",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div
+              className="px-3 py-1.5"
+              style={{ fontSize: "10px", fontWeight: 600, color: "rgba(19,0,50,0.4)", letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: "1px solid rgba(19,0,50,0.08)" }}
+            >
+              Assign to
+            </div>
+            {allRecipients.map((r) => (
+              <button
+                key={r.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAssignRecipient(r.id);
+                  setRecipientDropdownOpen(false);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left"
+              >
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-white"
+                  style={{ background: r.color, fontSize: "9px", fontWeight: 700 }}
+                >
+                  {getInitials(r.name)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="truncate" style={{ fontSize: "12.5px", fontWeight: 500, color: "rgba(19,0,50,0.9)" }}>
+                    {r.name}
+                  </p>
+                </div>
+                {r.id === field.recipientId && (
+                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div className="w-px h-4 bg-gray-200" />
+
+      {/* Required toggle */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggleRequired(); }}
+        className="flex items-center gap-1.5 px-2.5 transition-colors hover:bg-gray-50"
+        style={{ height: "32px" }}
+        title={field.required ? "Make optional" : "Make required"}
+      >
+        {/* Toggle switch */}
+        <div
+          className="relative"
+          style={{
+            width: "26px",
+            height: "14px",
+            borderRadius: "7px",
+            background: field.required ? "#4C00FF" : "#D1D5DB",
+            transition: "background 0.2s",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: "2px",
+              left: field.required ? "14px" : "2px",
+              width: "10px",
+              height: "10px",
+              borderRadius: "50%",
+              background: "white",
+              transition: "left 0.2s",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.15)",
+            }}
+          />
+        </div>
+        <span style={{ fontSize: "11.5px", color: "rgba(19,0,50,0.75)", fontWeight: 500 }}>
+          Required
+        </span>
+      </button>
+
+      {/* Divider */}
+      <div className="w-px h-4 bg-gray-200" />
+
+      {/* Duplicate */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+        className="flex items-center justify-center transition-colors hover:bg-gray-50"
+        style={{ height: "32px", width: "32px" }}
+        title="Duplicate field"
+      >
+        <svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "rgba(19,0,50,0.6)" }}>
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      </button>
+
+      {/* Delete */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        className="flex items-center justify-center transition-colors hover:bg-red-50"
+        style={{ height: "32px", width: "32px" }}
+        title="Delete field"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style={{ color: "#EF4444" }}>
+          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+        </svg>
+      </button>
+
+      {/* Divider */}
+      <div className="w-px h-4 bg-gray-200" />
+
+      {/* Settings / Open Properties */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onOpenProperties(); }}
+        className="flex items-center justify-center rounded-r-[5px] transition-colors hover:bg-gray-50"
+        style={{ height: "32px", width: "32px" }}
+        title="Field properties"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style={{ color: "rgba(19,0,50,0.55)" }}>
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 interface ResizeHandle {
   cursor: string;
   position: string; // Tailwind position classes
@@ -77,6 +300,9 @@ interface FieldOverlayProps {
   onUpdate: (updates: Partial<PlacedField>) => void;
   onRemove: () => void;
   onAssignRecipient: (recipientId: string) => void;
+  onDoubleClick?: () => void;
+  onDuplicate?: () => void;
+  onOpenProperties?: () => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -91,6 +317,9 @@ export function FieldOverlay({
   onUpdate,
   onRemove,
   onAssignRecipient,
+  onDoubleClick,
+  onDuplicate,
+  onOpenProperties,
   containerRef,
 }: FieldOverlayProps) {
   const fieldRef = useRef<HTMLDivElement>(null);
@@ -252,6 +481,7 @@ export function FieldOverlay({
         }}
         onMouseDown={handleMouseDown}
         onClick={(e) => { e.stopPropagation(); onSelect(); }}
+        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(); }}
         onContextMenu={handleContextMenu}
       >
         {/* Field content */}
@@ -290,24 +520,40 @@ export function FieldOverlay({
           {recipientName}
         </div>
 
-        {/* Quick-delete button */}
-        <button
-          className="absolute -top-2.5 -right-2.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-          style={{ fontSize: "12px", zIndex: 30 }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          title="Delete field"
-        >
-          ×
-        </button>
+        {/* Quick-delete button (only shown when not selected, so toolbar takes over) */}
+        {!isSelected && (
+          <button
+            className="absolute -top-2.5 -right-2.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+            style={{ fontSize: "12px", zIndex: 30 }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="Delete field"
+          >
+            ×
+          </button>
+        )}
+
+        {/* Floating selection toolbar */}
+        {isSelected && (
+          <FieldToolbar
+            field={field}
+            recipient={allRecipients.find((r) => r.id === field.recipientId)}
+            allRecipients={allRecipients}
+            onToggleRequired={() => onUpdate({ required: !field.required })}
+            onDuplicate={() => onDuplicate?.()}
+            onDelete={onRemove}
+            onOpenProperties={() => onOpenProperties?.()}
+            onAssignRecipient={onAssignRecipient}
+          />
+        )}
 
         {/* Selection resize handles */}
-        {isSelected && RESIZE_HANDLES.map((handle, i) => (
+        {isSelected && RESIZE_HANDLES.map((handle) => (
           <div
-            key={i}
+            key={handle.cursor.replace("-resize", "")}
             className={cn("absolute w-2.5 h-2.5 bg-white border-2 border-[#1B0A3C] rounded-sm", handle.position)}
             style={{ cursor: handle.cursor, zIndex: 25 }}
             onMouseDown={(e) => handleResizeMouseDown(e, handle)}

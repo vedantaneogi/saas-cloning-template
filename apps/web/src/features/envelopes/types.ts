@@ -4,7 +4,6 @@ export type EnvelopeStatus =
   | "draft"
   | "voided"
   | "declined"
-  | "waiting"
   | "delivered";
 
 export interface Recipient {
@@ -13,7 +12,7 @@ export interface Recipient {
   email: string;
   role: string;
   order: number;
-  status: "completed" | "sent" | "waiting" | "declined";
+  status: "completed" | "sent" | "delivered" | "pending" | "declined";
   signedAt?: string;
   color?: string;
   signing_token?: string;
@@ -52,6 +51,12 @@ export interface EnvelopeListParams {
   perPage?: number;
   dateRange?: string;
   sender?: string;
+  shared?: boolean;
+  date_from?: string;
+  date_to?: string;
+  envelope_id?: string;
+  recipient_search?: string;
+  folder_id?: string;
 }
 
 export interface PaginatedEnvelopes {
