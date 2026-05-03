@@ -282,6 +282,7 @@ def upgrade() -> None:
     sa.Column('reminder_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('importance', sa.Enum('low', 'normal', 'high', name='task_importance_enum'), nullable=False),
     sa.Column('source_message_id', sa.Uuid(), nullable=True),
+    sa.Column('steps', postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default='[]'),
     sa.Column('sort_order', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
