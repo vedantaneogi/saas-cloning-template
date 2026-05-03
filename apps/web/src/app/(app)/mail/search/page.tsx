@@ -55,7 +55,7 @@ function SearchResults() {
         ) : (
           <>
             <p className="text-xs text-[#605E5C] px-3 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8]">
-              {data?.total ?? results.length} result{(data?.total ?? results.length) !== 1 ? 's' : ''}
+              {data?.total_count ?? data?.total ?? results.length} result{(data?.total_count ?? data?.total ?? results.length) !== 1 ? 's' : ''}
               {q && <> for &ldquo;{q}&rdquo;</>}
             </p>
             {results.map((msg) => (

@@ -2,7 +2,7 @@
 
 import type { Event } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { format, parseISO } from 'date-fns'
+import { format } from 'date-fns'
 import { Share2 } from 'lucide-react'
 
 interface EventCardProps {
@@ -14,8 +14,8 @@ interface EventCardProps {
 }
 
 export function EventCard({ event, onClick, compact = false, color = '#0078D4', isShared = false }: EventCardProps) {
-  const startTime = format(parseISO(event.start_time), 'h:mm a')
-  const endTime = format(parseISO(event.end_time), 'h:mm a')
+  const startTime = format(new Date(event.start_time), 'h:mm a')
+  const endTime = format(new Date(event.end_time), 'h:mm a')
 
   return (
     <button

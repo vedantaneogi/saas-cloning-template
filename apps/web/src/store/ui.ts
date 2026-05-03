@@ -15,6 +15,8 @@ interface ComposerDraft {
 interface UIState {
   composerOpen: boolean
   composerDraft: ComposerDraft
+  settingsOpen: boolean
+  settingsSection: string
   sidebarWidth: number
   readingPaneWidth: number
   notificationMessage: string | null
@@ -22,6 +24,8 @@ interface UIState {
   openComposer: (draft?: Partial<ComposerDraft>) => void
   closeComposer: () => void
   setComposerDraft: (draft: Partial<ComposerDraft>) => void
+  openSettings: (section?: string) => void
+  closeSettings: () => void
   setSidebarWidth: (width: number) => void
   setReadingPaneWidth: (width: number) => void
   showNotification: (message: string) => void
@@ -39,6 +43,8 @@ const DEFAULT_DRAFT: ComposerDraft = {
 export const useUIStore = create<UIState>((set) => ({
   composerOpen: false,
   composerDraft: DEFAULT_DRAFT,
+  settingsOpen: false,
+  settingsSection: 'general',
   sidebarWidth: 240,
   readingPaneWidth: 500,
   notificationMessage: null,
@@ -56,6 +62,9 @@ export const useUIStore = create<UIState>((set) => ({
     set((state) => ({
       composerDraft: { ...state.composerDraft, ...draft },
     })),
+
+  openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? 'general' }),
+  closeSettings: () => set({ settingsOpen: false }),
 
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
   setReadingPaneWidth: (width) => set({ readingPaneWidth: width }),

@@ -46,11 +46,13 @@ DEFAULT_CATEGORIES = [
 ]
 
 
-def _parse_dt(value: Optional[str]) -> Optional[datetime]:
+def _parse_dt(value: Optional[str], randomize_time: bool = False) -> Optional[datetime]:
     if not value:
         return None
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if randomize_time:
+            dt = dt.replace(hour=random.randint(6, 22), minute=random.randint(0, 59), second=random.randint(0, 59))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
@@ -355,8 +357,8 @@ async def load_seed(session: AsyncSession, payload: SeedPayload) -> dict[str, in
             sensitivity=sm.sensitivity,
             has_attachments=sm.has_attachments,
             reply_type=sm.reply_type,
-            sent_at=_parse_dt(sm.sent_at),
-            received_at=_parse_dt(sm.received_at),
+            sent_at=_parse_dt(sm.sent_at, randomize_time=True),
+            received_at=_parse_dt(sm.received_at, randomize_time=True),
             snooze_until=_parse_dt(sm.snooze_until),
             scheduled_send_at=_parse_dt(sm.scheduled_send_at),
             created_at=now,

@@ -13,7 +13,6 @@ import {
   addWeeks,
   eachWeekOfInterval,
   isSameMonth,
-  parseISO,
 } from 'date-fns'
 import type { Event, Calendar } from '@/lib/api'
 import { EventCard } from './EventCard'
@@ -79,7 +78,7 @@ function MonthView({
             <div key={weekStart.toISOString()} className="grid grid-cols-7 border-b border-[#EDEBE9] min-h-[100px]">
               {weekDays.map((day) => {
                 const dayEvents = events.filter((e) => {
-                  try { return isSameDay(parseISO(e.start_time), day) } catch { return false }
+                  try { return isSameDay(new Date(e.start_time), day) } catch { return false }
                 })
                 const inMonth = isSameMonth(day, currentDate)
 
@@ -194,7 +193,7 @@ function WeekView({
             {days.map((day) => {
               const slotEvents = events.filter((e) => {
                 try {
-                  const start = parseISO(e.start_time)
+                  const start = new Date(e.start_time)
                   return isSameDay(start, day) && start.getHours() === hour
                 } catch { return false }
               })
@@ -236,7 +235,7 @@ function DayView({
   onSlotClick,
 }: Omit<CalendarGridProps, 'view'>) {
   const dayEvents = events.filter((e) => {
-    try { return isSameDay(parseISO(e.start_time), currentDate) } catch { return false }
+    try { return isSameDay(new Date(e.start_time), currentDate) } catch { return false }
   })
 
   return (
@@ -261,7 +260,7 @@ function DayView({
       <div className="flex-1 overflow-y-auto outlook-scrollbar">
         {HOURS.map((hour) => {
           const slotEvents = dayEvents.filter((e) => {
-            try { return parseISO(e.start_time).getHours() === hour } catch { return false }
+            try { return new Date(e.start_time).getHours() === hour } catch { return false }
           })
           return (
             <div key={hour} className="flex border-b border-[#EDEBE9] min-h-[48px]">

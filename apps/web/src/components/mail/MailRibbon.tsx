@@ -16,11 +16,9 @@ import {
   ChevronDown,
   Flag,
   FolderInput,
-  ChevronRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 
 function RibbonBtn({
   onClick,
@@ -66,7 +64,6 @@ export function MailRibbon() {
   const openComposer = useUIStore((s) => s.openComposer)
   const showNotification = useUIStore((s) => s.showNotification)
   const queryClient = useQueryClient()
-  const router = useRouter()
   const [qsOpen, setQsOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const qsRef = useRef<HTMLDivElement>(null)
@@ -85,8 +82,6 @@ export function MailRibbon() {
     queryKey: ['folders'],
     queryFn: () => folders.list(),
   })
-
-  const allMessages = (queryClient.getQueryData<{ items: Message[] }>(['messages', 'inbox']) ?? { items: [] }).items
 
   useEffect(() => {
     if (!qsOpen) return
@@ -169,10 +164,59 @@ export function MailRibbon() {
 
   return (
     <div
-      className="flex items-center h-10 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto"
+      className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto"
       role="toolbar"
       aria-label="Mail toolbar"
     >
+      {/* New mail — matches Outlook ribbon position */}
+      <button
+        onClick={() => openComposer()}
+        aria-label="New mail"
+        className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] active:bg-[#005A9E] text-white text-sm font-medium px-4 h-8 rounded transition-colors mr-1 flex-shrink-0"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="0.5" y="2.5" width="13" height="9" rx="1" stroke="white" strokeWidth="1.2"/><path d="M1 4L7 8L13 4" stroke="white" strokeWidth="1.1"/></svg>
+        New mail
+      </button>
+      <button
+        onClick={() => openComposer()}
+        aria-label="New mail options"
+        className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-8 px-1.5 rounded-r border-l border-[#106EBE] -ml-2 transition-colors mr-1 flex-shrink-0"
+      >
+        <ChevronDown size={11} />
+      </button>
+
+      <RibbonSep />
+
+      {/* Delete / Archive — matches Outlook order */}
+      <RibbonBtn disabled={!hasMsg || deleteMutation.isPending} label="Delete" onClick={() => deleteMutation.mutate()}>
+        <Trash2 size={16} />
+        <span>Delete</span>
+      </RibbonBtn>
+      <RibbonBtn disabled={!hasMsg || archiveMutation.isPending} label="Archive" onClick={() => archiveMutation.mutate()}>
+        <Archive size={16} />
+        <span>Archive</span>
+      </RibbonBtn>
+
+      {/* Move to */}
+      <div className="relative" ref={moveRef}>
+        <RibbonBtn disabled={!hasMsg} label="Move to" onClick={() => setMoveOpen((v) => !v)}>
+          <FolderInput size={16} />
+          <span className="flex items-center gap-0.5">Move to <ChevronDown size={10} /></span>
+        </RibbonBtn>
+        {moveOpen && (
+          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
+            {folderList.map((f) => (
+              <button key={f.id} onClick={() => moveMutation.mutate(f.id)}
+                className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate">
+                {f.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <RibbonSep />
+
       {/* Reply / Reply all / Forward */}
       <RibbonBtn disabled={!hasMsg} label="Reply" onClick={() => message && openComposer(draftFromReply(message, 'reply'))}>
         <Reply size={16} />
@@ -189,53 +233,23 @@ export function MailRibbon() {
 
       <RibbonSep />
 
-      {/* Delete / Archive */}
-      <RibbonBtn disabled={!hasMsg || deleteMutation.isPending} label="Delete" onClick={() => deleteMutation.mutate()}>
-        <Trash2 size={16} />
-        <span>Delete</span>
-      </RibbonBtn>
-      <RibbonBtn disabled={!hasMsg || archiveMutation.isPending} label="Archive" onClick={() => archiveMutation.mutate()}>
-        <Archive size={16} />
-        <span>Archive</span>
-      </RibbonBtn>
-
-      {/* Move to */}
-      <div className="relative" ref={moveRef}>
-        <RibbonBtn disabled={!hasMsg} label="Move to" onClick={() => setMoveOpen((v) => !v)}>
-          <FolderInput size={16} />
-          <span className="flex items-center gap-0.5">Move <ChevronDown size={10} /></span>
-        </RibbonBtn>
-        {moveOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-            {folderList.map((f) => (
-              <button key={f.id} onClick={() => moveMutation.mutate(f.id)}
-                className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate">
-                {f.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <RibbonSep />
-
-      {/* Flag / Read-Unread */}
-      <RibbonBtn
-        disabled={!hasMsg}
-        label={message?.is_flagged ? 'Remove flag' : 'Flag'}
-        active={!!message?.is_flagged}
-        onClick={() => flagMutation.mutate()}
-      >
-        <Flag size={16} className={message?.is_flagged ? 'text-[#D13438]' : ''} />
-        <span>Flag</span>
-      </RibbonBtn>
+      {/* Read / Flag */}
       <RibbonBtn
         disabled={!hasMsg}
         label={message?.is_read ? 'Mark as unread' : 'Mark as read'}
         onClick={() => markReadMutation.mutate(!message?.is_read)}
       >
         <MailOpen size={16} />
-        <span>{message?.is_read ? 'Unread' : 'Read'}</span>
+        <span>Read / Unread</span>
+      </RibbonBtn>
+      <RibbonBtn
+        disabled={!hasMsg}
+        label={message?.is_flagged ? 'Unflag' : 'Flag'}
+        active={!!message?.is_flagged}
+        onClick={() => flagMutation.mutate()}
+      >
+        <Flag size={16} className={message?.is_flagged ? 'text-[#D13438]' : ''} />
+        <span>Flag / Unflag</span>
       </RibbonBtn>
 
       <RibbonSep />

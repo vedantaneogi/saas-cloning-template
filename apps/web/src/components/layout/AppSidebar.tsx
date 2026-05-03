@@ -1,7 +1,6 @@
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
-import { Mail, Calendar, Users, CheckSquare, UsersRound, Cloud, StickyNote, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface NavItem {
@@ -9,68 +8,106 @@ interface NavItem {
   label: string
   icon: React.ReactNode
   href: string
-  color: string
-  activeColor: string
+}
+
+// SVG icons matching real Outlook's Fluent-style colored icons (20x20)
+function MailIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="1" y="4" width="18" height="12" rx="1.5" fill={active ? '#0078D4' : '#0F6CBD'} />
+      <path d="M1 6L10 11.5L19 6" stroke="white" strokeWidth="1.3" strokeLinejoin="round" fill="none" />
+    </svg>
+  )
+}
+
+function CalendarIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="2" y="3" width="16" height="15" rx="1.5" fill={active ? '#0078D4' : '#0F6CBD'} />
+      <rect x="2" y="3" width="16" height="4.5" rx="1.5" fill={active ? '#005A9E' : '#0A4A7A'} />
+      <rect x="5" y="9.5" width="2.5" height="2" rx="0.4" fill="white" opacity="0.9" />
+      <rect x="8.75" y="9.5" width="2.5" height="2" rx="0.4" fill="white" opacity="0.55" />
+      <rect x="12.5" y="9.5" width="2.5" height="2" rx="0.4" fill="white" opacity="0.55" />
+      <rect x="5" y="13" width="2.5" height="2" rx="0.4" fill="white" opacity="0.55" />
+      <rect x="8.75" y="13" width="2.5" height="2" rx="0.4" fill="white" opacity="0.55" />
+    </svg>
+  )
+}
+
+function PeopleIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <circle cx="8" cy="6.5" r="3" fill={active ? '#0078D4' : '#0F6CBD'} />
+      <path d="M2 16.5c0-2.5 2.8-4.2 6-4.2s6 1.7 6 4.2" fill={active ? '#0078D4' : '#0F6CBD'} />
+      <circle cx="15" cy="7.5" r="2" fill={active ? '#4DA3E0' : '#5CAEE0'} />
+      <path d="M12.5 16.5c0-1.5 1-2.8 2.5-3.5 1-.4 2-.6 2.8-.6 1.2 0 2.2.8 2.2 2.5" fill={active ? '#4DA3E0' : '#5CAEE0'} />
+    </svg>
+  )
+}
+
+function TodoIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="2" y="2" width="16" height="16" rx="2.5" fill={active ? '#0078D4' : '#0F6CBD'} />
+      <path d="M6 10.5L8.5 13L14 7.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function GroupsIcon({ active }: { active: boolean }) {
+  const color = active ? '#0078D4' : '#0F6CBD'
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <circle cx="10" cy="5.5" r="2.5" fill={color} />
+      <circle cx="4.5" cy="7.5" r="1.8" fill={color} opacity="0.55" />
+      <circle cx="15.5" cy="7.5" r="1.8" fill={color} opacity="0.55" />
+      <path d="M6 16.5c0-2.2 1.8-4 4-4s4 1.8 4 4" fill={color} />
+      <path d="M1 17c0-1.6 1.2-2.8 2.8-2.8.9 0 1.7.4 2.2 1" fill={color} opacity="0.45" />
+      <path d="M19 17c0-1.6-1.2-2.8-2.8-2.8-.9 0-1.7.4-2.2 1" fill={color} opacity="0.45" />
+    </svg>
+  )
 }
 
 const NAV_ITEMS: NavItem[] = [
   {
     id: 'mail',
     label: 'Mail',
-    icon: <Mail size={20} />,
+    icon: <MailIcon active={false} />,
     href: '/mail/inbox',
-    color: '#0F6CBD',
-    activeColor: '#0078D4',
   },
   {
     id: 'calendar',
     label: 'Calendar',
-    icon: <Calendar size={20} />,
+    icon: <CalendarIcon active={false} />,
     href: '/calendar/month',
-    color: '#0F6CBD',
-    activeColor: '#0078D4',
   },
   {
     id: 'people',
     label: 'People',
-    icon: <Users size={20} />,
+    icon: <PeopleIcon active={false} />,
     href: '/contacts',
-    color: '#0F6CBD',
-    activeColor: '#0078D4',
   },
   {
     id: 'tasks',
     label: 'To Do',
-    icon: <CheckSquare size={20} />,
+    icon: <TodoIcon active={false} />,
     href: '/tasks',
-    color: '#2563EB',
-    activeColor: '#0078D4',
   },
   {
     id: 'groups',
     label: 'Groups',
-    icon: <UsersRound size={20} />,
+    icon: <GroupsIcon active={false} />,
     href: '/groups',
-    color: '#0F6CBD',
-    activeColor: '#0078D4',
-  },
-  {
-    id: 'onedrive',
-    label: 'OneDrive',
-    icon: <Cloud size={20} />,
-    href: '/settings',
-    color: '#1565C0',
-    activeColor: '#0078D4',
-  },
-  {
-    id: 'notes',
-    label: 'Notes',
-    icon: <StickyNote size={20} />,
-    href: '/settings',
-    color: '#1565C0',
-    activeColor: '#0078D4',
   },
 ]
+
+const ACTIVE_ICONS: Record<string, React.ReactNode> = {
+  mail: <MailIcon active />,
+  calendar: <CalendarIcon active />,
+  people: <PeopleIcon active />,
+  tasks: <TodoIcon active />,
+  groups: <GroupsIcon active />,
+}
 
 export function AppSidebar() {
   const pathname = usePathname()
@@ -87,31 +124,29 @@ export function AppSidebar() {
 
   return (
     <nav
-      aria-label="left-rail-appbar"
-      className="w-12 flex-shrink-0 bg-[#FAF9F8] border-r border-[#EDEBE9] flex flex-col items-center pt-1 pb-2 gap-0.5"
+      aria-label="App navigation"
+      className="w-[40px] flex-shrink-0 bg-[#F3F2F1] border-r border-[#EDEBE9] flex flex-col items-center py-1 gap-1"
     >
+      {/* Nav items */}
       {NAV_ITEMS.map((item) => {
         const active = getActive(item)
         return (
           <div key={item.id} className="relative w-full flex items-center justify-center">
             {/* Left blue accent bar for active item */}
             {active && (
-              <span className="absolute left-0 top-2 bottom-2 w-[3px] bg-[#0078D4] rounded-r" />
+              <span className="absolute left-0 top-1 bottom-1 w-[3px] bg-[#0078D4] rounded-r" />
             )}
             <button
               onClick={() => router.push(item.href)}
               aria-label={item.label}
               aria-current={active ? 'page' : undefined}
               title={item.label}
-              style={{
-                color: active ? item.activeColor : item.color,
-              }}
               className={cn(
-                'w-10 h-10 flex items-center justify-center rounded transition-colors',
-                active ? 'bg-[#EBF3FB]' : 'hover:bg-[#EFF6FC]'
+                'w-8 h-8 flex items-center justify-center rounded transition-colors',
+                active ? 'bg-[#EBF3FB]' : 'hover:bg-[#EDEBE9]'
               )}
             >
-              {item.icon}
+              {active ? ACTIVE_ICONS[item.id] : item.icon}
             </button>
           </div>
         )

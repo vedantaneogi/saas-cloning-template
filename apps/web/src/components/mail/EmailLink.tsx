@@ -65,6 +65,15 @@ export function EmailLink({ email, name }: EmailLinkProps) {
         ref={ref}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (ref.current) {
+            const rect = ref.current.getBoundingClientRect()
+            setPos({ x: rect.left, y: rect.bottom + 6 })
+          }
+          setShow((v) => !v)
+        }}
         className="text-[#0078D4] hover:underline cursor-pointer"
         title={email}
       >

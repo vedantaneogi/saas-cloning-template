@@ -319,11 +319,17 @@ export interface AppSettings {
   reading_pane_position: 'right' | 'bottom' | 'off'
   conversation_grouping: boolean
   focused_inbox: boolean
+  theme: 'light' | 'dark'
+  // Nested shape from API
+  general?: { theme?: string; timezone?: string; locale?: string }
+  mail?: Record<string, unknown>
+  calendar?: Record<string, unknown>
 }
 
 export interface PaginatedResponse<T> {
   items: T[]
   total: number
+  total_count?: number
   page: number
   per_page: number
   pages: number
@@ -359,12 +365,17 @@ export const messages = {
     order?: 'asc' | 'desc'
     is_read?: boolean
     is_flagged?: boolean
+    focused?: boolean
     conversation_grouping?: boolean
     from_addr?: string
   }) => {
     const qs = new URLSearchParams()
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined) qs.set(k, String(v))
+      if (v !== undefined) {
+        // Map per_page to limit (backend expects 'limit')
+        const key = k === 'per_page' ? 'limit' : k
+        qs.set(key, String(v))
+      }
     })
     return request<PaginatedResponse<Message>>(`/messages?${qs}`)
   },
@@ -405,9 +416,9 @@ export const messages = {
     }),
 
   bulk: (action: string, ids: string[], params?: Record<string, string>) =>
-    request<void>('/messages/bulk', {
+    request<{ affected: number }>('/messages/bulk', {
       method: 'POST',
-      body: JSON.stringify({ action, ids, ...params }),
+      body: JSON.stringify({ action, message_ids: ids, params }),
     }),
 
   search: (params: {

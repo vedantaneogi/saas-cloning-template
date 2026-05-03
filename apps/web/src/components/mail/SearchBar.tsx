@@ -136,60 +136,88 @@ export function SearchBar() {
           </button>
         </div>
 
-        {/* Advanced filter panel */}
+        {/* Search filters — vertical layout matching Outlook */}
         {showFilters && (
-          <div className="mt-2 space-y-2 p-3 bg-[#FAF9F8] border border-[#EDEBE9] rounded text-sm">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs text-[#605E5C] mb-0.5">From</label>
-                <input type="text" value={from} onChange={(e) => setFrom(e.target.value)}
-                  placeholder="Sender email or name"
-                  aria-label="Filter by sender"
-                  className="w-full border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] text-xs focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
-              </div>
-              <div>
-                <label className="block text-xs text-[#605E5C] mb-0.5">To</label>
-                <input type="text" value={to} onChange={(e) => setTo(e.target.value)}
-                  placeholder="Recipient email or name"
-                  aria-label="Filter by recipient"
-                  className="w-full border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] text-xs focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
-              </div>
-              <div>
-                <label className="block text-xs text-[#605E5C] mb-0.5">After</label>
-                <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                  aria-label="Messages after date"
-                  className="w-full border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] text-xs focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
-              </div>
-              <div>
-                <label className="block text-xs text-[#605E5C] mb-0.5">Before</label>
-                <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                  aria-label="Messages before date"
-                  className="w-full border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] text-xs focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
-              </div>
-            </div>
+          <div className="mt-2 space-y-3 p-4 bg-white border border-[#EDEBE9] rounded shadow-outlook text-sm">
             <div>
-              <label className="block text-xs text-[#605E5C] mb-0.5">Folder</label>
+              <label className="block text-sm font-medium text-[#323130] mb-1">Search in</label>
               <select value={folderId} onChange={(e) => setFolderId(e.target.value)}
-                aria-label="Filter by folder"
-                className="w-full border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] text-xs focus:outline-none focus:ring-1 focus:ring-[#0078D4] bg-white">
+                aria-label="Search in folder"
+                className="w-full border-b-2 border-[#0078D4] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none bg-transparent">
+                <option value="">Current folder</option>
                 <option value="">All folders</option>
                 {folderList.map((f) => (
                   <option key={f.id} value={f.id}>{f.name}</option>
                 ))}
               </select>
             </div>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <div>
+              <label className="block text-sm font-medium text-[#323130] mb-1">From</label>
+              <input type="text" value={from} onChange={(e) => setFrom(e.target.value)}
+                aria-label="From"
+                className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#323130] mb-1">To</label>
+              <input type="text" value={to} onChange={(e) => setTo(e.target.value)}
+                aria-label="To"
+                className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#323130] mb-1">Subject</label>
+              <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
+                aria-label="Subject"
+                className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#323130] mb-1">Date</label>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <span className="text-xs text-[#605E5C]">Start</span>
+                  <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                    aria-label="Start date"
+                    className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-xs text-[#605E5C]">End</span>
+                  <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                    aria-label="End date"
+                    className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#323130] mb-1">Read status</label>
+              <select value="" onChange={() => {}}
+                aria-label="Read status"
+                className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent">
+                <option value="">All</option>
+                <option value="unread">Unread</option>
+                <option value="read">Read</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer py-1">
               <input type="checkbox" checked={hasAttachment} onChange={(e) => setHasAttachment(e.target.checked)}
-                aria-label="Has attachment"
-                className="rounded border-[#D2D0CE]" />
-              <span className="flex items-center gap-1 text-xs text-[#323130]">
-                <Paperclip size={11} /> Has attachment
-              </span>
+                aria-label="Attachments"
+                className="rounded border-[#8A8886] w-4 h-4" />
+              <span className="text-sm text-[#323130]">Attachments</span>
             </label>
-            <button type="submit"
-              className="w-full bg-[#0078D4] hover:bg-[#106EBE] text-white text-xs font-medium py-1.5 rounded transition-colors">
-              Search
-            </button>
+            <div className="flex items-center justify-between pt-2">
+              <button type="button" onClick={() => {}}
+                className="text-sm text-[#0078D4] hover:underline flex items-center gap-1">
+                + Add filters
+              </button>
+              <div className="flex gap-2">
+                <button type="submit"
+                  className="bg-[#0078D4] hover:bg-[#106EBE] text-white text-sm font-medium px-6 py-1.5 rounded transition-colors">
+                  Search
+                </button>
+                <button type="button" onClick={clearSearch}
+                  className="text-sm text-[#323130] border border-[#8A8886] px-4 py-1.5 rounded hover:bg-[#F3F2F1] transition-colors">
+                  Clear filters
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </form>

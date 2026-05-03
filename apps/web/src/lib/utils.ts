@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from 'date-fns'
+import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -9,7 +9,8 @@ export function cn(...inputs: ClassValue[]) {
 export function formatMessageDate(dateStr: string | null | undefined): string {
   if (!dateStr) return ''
   try {
-    const date = parseISO(dateStr)
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) return ''
     if (isToday(date)) {
       return format(date, 'h:mm a')
     }
@@ -33,7 +34,9 @@ export function formatMessageDate(dateStr: string | null | undefined): string {
 export function formatFullDate(dateStr: string | null | undefined): string {
   if (!dateStr) return ''
   try {
-    return format(parseISO(dateStr), 'EEEE, MMMM d, yyyy h:mm a')
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) return ''
+    return format(date, 'EEEE, MMMM d, yyyy h:mm a')
   } catch {
     return ''
   }

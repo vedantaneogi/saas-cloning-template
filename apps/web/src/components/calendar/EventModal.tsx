@@ -303,6 +303,59 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
       title={event ? 'Edit event' : 'New event'}
       size="lg"
     >
+      {/* Outlook-style toolbar ribbon */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8] flex-shrink-0">
+        <button
+          type="button"
+          onClick={handleSubmit(handleSaveClick)}
+          disabled={saveMutation.isPending}
+          className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors"
+        >
+          <Check size={12} /> Save
+        </button>
+        <div className="flex items-center border border-[#EDEBE9] rounded overflow-hidden">
+          <button type="button" className="text-xs px-2.5 py-1 bg-white text-[#323130] border-r border-[#EDEBE9] font-medium">
+            Event
+          </button>
+          <button type="button" onClick={() => setValue('repeat', !repeat)} className={cn('text-xs px-2.5 py-1', repeat ? 'bg-[#EBF3FB] text-[#0078D4]' : 'bg-white text-[#605E5C]')}>
+            Series
+          </button>
+        </div>
+        <select
+          className="text-xs border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] bg-white focus:outline-none"
+          defaultValue="busy"
+        >
+          <option value="busy">Busy</option>
+          <option value="free">Free</option>
+          <option value="tentative">Tentative</option>
+          <option value="out_of_office">Out of office</option>
+        </select>
+        <select
+          aria-label="Reminder"
+          className="text-xs border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] bg-white focus:outline-none"
+          {...register('reminder_minutes', { valueAsNumber: true })}
+        >
+          <option value={0}>No reminder</option>
+          <option value={5}>5 min</option>
+          <option value={15}>15 min</option>
+          <option value={30}>30 min</option>
+          <option value={60}>1 hour</option>
+          <option value={1440}>1 day</option>
+        </select>
+        <div className="ml-auto flex items-center gap-1">
+          {event && (
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              disabled={deleteMutation.isPending}
+              className="text-xs text-[#D13438] hover:bg-[#FDE7E9] px-2 py-1 rounded transition-colors"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Scope dialog for recurring events */}
       {scopeDialog && (
         <div
@@ -465,7 +518,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
 
       <form
         onSubmit={handleSubmit(handleSaveClick)}
-        className="p-4 space-y-4"
+        className="p-4 space-y-3"
         aria-label={event ? 'Edit event form' : 'New event form'}
       >
         {/* Title */}
@@ -544,35 +597,50 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           </select>
         </div>
 
-        {/* Time */}
+        {/* Time — Outlook style */}
         <div className="flex items-start gap-3">
           <span className="w-5 text-[#605E5C] pt-1.5">
             <Clock size={16} />
           </span>
           <div className="flex-1 space-y-2">
-            <label className="flex items-center gap-2 text-sm text-[#323130]">
-              <input
-                type="checkbox"
-                aria-label="All day event"
-                className="rounded border-[#D2D0CE]"
-                {...register('all_day')}
-              />
-              All day
-            </label>
+            {/* Readable time summary */}
+            {startVal && endVal && (
+              <p className="text-sm text-[#323130]">
+                {(() => {
+                  try {
+                    const s = new Date(startVal)
+                    const e = new Date(endVal)
+                    if (allDay) {
+                      return `${s.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', year: 'numeric' })}`
+                    }
+                    return `${s.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', year: 'numeric' })} ${s.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - ${e.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                  } catch { return '' }
+                })()}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <input
                 type={allDay ? 'date' : 'datetime-local'}
                 aria-label="Start time"
-                className="text-sm border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#0078D4] text-[#323130]"
+                className="text-sm border-0 border-b border-[#8A8886] px-0 py-1 focus:outline-none focus:border-b-2 focus:border-[#0078D4] text-[#323130] bg-transparent"
                 {...register('start_time')}
               />
-              <span className="text-[#605E5C] text-sm">→</span>
+              <span className="text-[#605E5C] text-sm">-</span>
               <input
                 type={allDay ? 'date' : 'datetime-local'}
                 aria-label="End time"
-                className="text-sm border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#0078D4] text-[#323130]"
+                className="text-sm border-0 border-b border-[#8A8886] px-0 py-1 focus:outline-none focus:border-b-2 focus:border-[#0078D4] text-[#323130] bg-transparent"
                 {...register('end_time')}
               />
+              <label className="flex items-center gap-1.5 text-sm text-[#605E5C] ml-2">
+                <input
+                  type="checkbox"
+                  aria-label="All day event"
+                  className="rounded border-[#8A8886]"
+                  {...register('all_day')}
+                />
+                All day
+              </label>
             </div>
           </div>
         </div>
@@ -677,16 +745,21 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           </div>
         </div>
 
-        {/* Location */}
+        {/* Location — underline style matching Outlook */}
         <div className="flex items-center gap-3">
           <span className="w-5 text-[#605E5C]">
             <MapPin size={16} />
           </span>
-          <Input
-            placeholder="Add a location"
-            aria-label="Location"
-            {...register('location')}
-          />
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              placeholder="Search for a location"
+              aria-label="Location"
+              className="w-full text-sm border-0 border-b border-[#8A8886] px-0 py-1.5 focus:outline-none focus:border-b-2 focus:border-[#0078D4] text-[#323130] bg-transparent placeholder:text-[#A19F9D]"
+              {...register('location')}
+            />
+            <MapPin size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-[#A19F9D]" />
+          </div>
         </div>
 
         {/* Room finder */}
@@ -809,41 +882,30 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           </div>
         </div>
 
-        {/* Reminder */}
-        <div className="flex items-center gap-3">
-          <span className="w-5 text-[#605E5C]">
-            <Clock size={16} />
-          </span>
-          <div className="flex items-center gap-2">
-            <select
-              aria-label="Reminder"
-              className="text-sm border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#0078D4] text-[#323130]"
-              {...register('reminder_minutes', { valueAsNumber: true })}
-            >
-              <option value={0}>No reminder</option>
-              <option value={5}>5 minutes</option>
-              <option value={10}>10 minutes</option>
-              <option value={15}>15 minutes</option>
-              <option value={30}>30 minutes</option>
-              <option value={60}>1 hour</option>
-              <option value={1440}>1 day</option>
-            </select>
-            <span className="text-sm text-[#605E5C]">before</span>
-          </div>
-        </div>
+        {/* Reminder moved to toolbar ribbon */}
 
-        {/* Description */}
+        {/* Description — card style matching Outlook */}
         <div className="flex items-start gap-3">
           <span className="w-5 text-[#605E5C] pt-1.5">
             <AlignLeft size={16} />
           </span>
-          <textarea
-            placeholder="Add a description or attach documents"
-            aria-label="Description"
-            rows={6}
-            className="flex-1 text-sm border border-[#EDEBE9] rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0078D4] text-[#323130] placeholder:text-[#A19F9D] resize-y"
-            {...register('description')}
-          />
+          <div className="flex-1 border border-[#EDEBE9] rounded overflow-hidden">
+            <textarea
+              placeholder="Add a description or attach documents"
+              aria-label="Description"
+              rows={6}
+              className="w-full text-sm px-3 py-2 focus:outline-none text-[#323130] placeholder:text-[#A19F9D] resize-y border-0"
+              {...register('description')}
+            />
+            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-[#EDEBE9] bg-[#FAF9F8]">
+              <button type="button" className="p-1 text-[#605E5C] hover:bg-[#EDEBE9] rounded" title="Attach file">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7.5 1.5L3 6l4.5 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M2 12.5h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              </button>
+              <button type="button" className="p-1 text-[#605E5C] hover:bg-[#EDEBE9] rounded" title="Insert image">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.2"/><circle cx="4.5" cy="5.5" r="1.5" fill="currentColor"/><path d="M1 10l3-3 2 2 3-3 4 4" stroke="currentColor" strokeWidth="1.1"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Scheduling assistant */}
@@ -968,37 +1030,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-2 border-t border-[#EDEBE9]">
-          <div className="flex items-center gap-2">
-            <Button
-              type="submit"
-              loading={isSubmitting || saveMutation.isPending}
-              aria-label="Save event"
-            >
-              Save
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onClose}
-              aria-label="Cancel"
-            >
-              Cancel
-            </Button>
-          </div>
-          {event && (
-            <Button
-              type="button"
-              variant="danger"
-              onClick={handleDeleteClick}
-              loading={deleteMutation.isPending}
-              aria-label="Delete event"
-            >
-              Delete
-            </Button>
-          )}
-        </div>
+        {/* Actions moved to toolbar ribbon above */}
       </form>
     </Modal>
   )

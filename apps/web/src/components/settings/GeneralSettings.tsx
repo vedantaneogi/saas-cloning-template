@@ -10,6 +10,7 @@ import { SpinnerOverlay } from '@/components/ui/Spinner'
 interface FormValues {
   timezone: string
   locale: string
+  theme: 'light' | 'dark'
 }
 
 const TIMEZONES = [
@@ -35,15 +36,19 @@ export function GeneralSettings() {
   })
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<FormValues>({
-    defaultValues: { timezone: 'UTC', locale: 'en-US' },
+    defaultValues: { timezone: 'UTC', locale: 'en-US', theme: 'light' },
   })
 
   useEffect(() => {
-    if (data) reset({ timezone: data.timezone ?? 'UTC', locale: data.locale ?? 'en-US' })
+    if (data) reset({
+      timezone: data.timezone ?? data.general?.timezone ?? 'UTC',
+      locale: data.locale ?? data.general?.locale ?? 'en-US',
+      theme: (data.general?.theme as 'light' | 'dark') ?? data.theme ?? 'light',
+    })
   }, [data, reset])
 
   const saveMutation = useMutation({
-    mutationFn: (d: FormValues) => settings.update(d),
+    mutationFn: (d: FormValues) => settings.update({ general: { timezone: d.timezone, locale: d.locale, theme: d.theme } } as never),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
   })
 
@@ -87,6 +92,21 @@ export function GeneralSettings() {
             <option value="de-DE">German</option>
             <option value="es-ES">Spanish</option>
             <option value="ja-JP">Japanese</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-[#605E5C] mb-1" htmlFor="theme">
+            Theme
+          </label>
+          <select
+            id="theme"
+            aria-label="Theme"
+            className="w-full text-sm border border-[#8A8886] rounded px-3 py-2 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
+            {...register('theme')}
+          >
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
           </select>
         </div>
 

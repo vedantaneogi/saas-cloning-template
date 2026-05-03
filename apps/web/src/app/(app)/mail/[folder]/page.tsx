@@ -7,7 +7,6 @@ import { useQuery } from '@tanstack/react-query'
 import { FolderTree } from '@/components/mail/FolderTree'
 import { MessageList } from '@/components/mail/MessageList'
 import { ReadingPane } from '@/components/mail/ReadingPane'
-import { MailRibbon } from '@/components/mail/MailRibbon'
 import { useMailStore } from '@/store/mail'
 import { settings } from '@/lib/api'
 
@@ -25,12 +24,15 @@ export default function MailFolderPage() {
 
   const readingPanePosition = appSettings?.reading_pane_position ?? 'right'
 
+  const clearSelection = useMailStore((s) => s.clearSelection)
+
   useEffect(() => {
     if (folder) {
       setSelectedFolderSlug(folder)
       setSelectedMessageId(null)
+      clearSelection()
     }
-  }, [folder, setSelectedFolderSlug, setSelectedMessageId])
+  }, [folder, setSelectedFolderSlug, setSelectedMessageId, clearSelection])
 
   const resizeHandleH = (
     <PanelResizeHandle className="w-1 bg-[#EDEBE9] hover:bg-[#0078D4] transition-colors cursor-col-resize" />
@@ -42,8 +44,7 @@ export default function MailFolderPage() {
   if (readingPanePosition === 'off') {
     return (
       <div className="flex flex-col h-full overflow-hidden">
-        <MailRibbon />
-        <PanelGroup direction="horizontal" className="flex-1 overflow-hidden" aria-label="Mail layout">
+          <PanelGroup direction="horizontal" className="flex-1 overflow-hidden" aria-label="Mail layout">
           <Panel defaultSize={20} minSize={14} maxSize={32}>
             <div className="h-full overflow-hidden"><FolderTree /></div>
           </Panel>
@@ -59,8 +60,7 @@ export default function MailFolderPage() {
   if (readingPanePosition === 'bottom') {
     return (
       <div className="flex flex-col h-full overflow-hidden">
-        <MailRibbon />
-        <PanelGroup direction="horizontal" className="flex-1 overflow-hidden" aria-label="Mail layout">
+          <PanelGroup direction="horizontal" className="flex-1 overflow-hidden" aria-label="Mail layout">
           <Panel defaultSize={18} minSize={12} maxSize={30}>
             <div className="h-full overflow-hidden"><FolderTree /></div>
           </Panel>
@@ -84,7 +84,6 @@ export default function MailFolderPage() {
   // Default: right
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <MailRibbon />
       <PanelGroup direction="horizontal" className="flex-1 overflow-hidden" aria-label="Mail layout">
         <Panel defaultSize={18} minSize={12} maxSize={30}>
           <div className="h-full overflow-hidden"><FolderTree /></div>

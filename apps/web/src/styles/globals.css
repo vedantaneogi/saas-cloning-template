@@ -3,6 +3,38 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FAF9F8;
+    --bg-tertiary: #F3F2F1;
+    --bg-hover: #EDEBE9;
+    --bg-selected: #EBF3FB;
+    --text-primary: #323130;
+    --text-secondary: #605E5C;
+    --text-disabled: #A19F9D;
+    --border-primary: #EDEBE9;
+    --border-dark: #D2D0CE;
+    --accent: #0078D4;
+    --accent-hover: #106EBE;
+    --shadow-color: rgba(0,0,0,0.15);
+  }
+
+  .dark {
+    --bg-primary: #1f1f1f;
+    --bg-secondary: #2d2d2d;
+    --bg-tertiary: #333333;
+    --bg-hover: #3d3d3d;
+    --bg-selected: #0e3a5c;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --text-disabled: #6a6a6a;
+    --border-primary: #3d3d3d;
+    --border-dark: #4a4a4a;
+    --accent: #4da3e0;
+    --accent-hover: #3b8dcc;
+    --shadow-color: rgba(0,0,0,0.4);
+  }
+
   * {
     box-sizing: border-box;
   }
@@ -18,11 +50,50 @@
     font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto',
       'Helvetica Neue', sans-serif;
     font-size: 14px;
-    color: #323130;
-    background-color: #ffffff;
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Dark mode overrides for hardcoded Outlook hex colors */
+  .dark {
+    color-scheme: dark;
+  }
+
+  /* Background overrides */
+  .dark .bg-white { background-color: var(--bg-primary) !important; }
+  .dark .bg-\[\#FFFFFF\] { background-color: var(--bg-primary) !important; }
+  .dark .bg-\[\#FAF9F8\] { background-color: var(--bg-secondary) !important; }
+  .dark .bg-\[\#F3F2F1\] { background-color: var(--bg-tertiary) !important; }
+  .dark .bg-\[\#EDEBE9\] { background-color: var(--bg-hover) !important; }
+  .dark .bg-\[\#EBF3FB\] { background-color: var(--bg-selected) !important; }
+  .dark .hover\:bg-\[\#F3F2F1\]:hover { background-color: var(--bg-hover) !important; }
+  .dark .hover\:bg-\[\#EDEBE9\]:hover { background-color: var(--bg-hover) !important; }
+
+  /* Text overrides */
+  .dark .text-\[\#323130\] { color: var(--text-primary) !important; }
+  .dark .text-\[\#605E5C\] { color: var(--text-secondary) !important; }
+  .dark .text-\[\#A19F9D\] { color: var(--text-disabled) !important; }
+  .dark .text-\[\#0078D4\] { color: var(--accent) !important; }
+
+  /* Border overrides */
+  .dark .border-\[\#EDEBE9\] { border-color: var(--border-primary) !important; }
+  .dark .border-\[\#D2D0CE\] { border-color: var(--border-dark) !important; }
+
+  /* Input and form overrides */
+  .dark input, .dark textarea, .dark select {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border-dark);
+  }
+  .dark input::placeholder, .dark textarea::placeholder {
+    color: var(--text-disabled);
+  }
+
+  /* Shadow overrides */
+  .dark .shadow-outlook { box-shadow: 0 2px 8px var(--shadow-color) !important; }
+  .dark .shadow-outlook-lg { box-shadow: 0 4px 16px var(--shadow-color) !important; }
 }
 
 @layer components {
@@ -68,9 +139,22 @@
     text-decoration: underline;
   }
 
-  .tiptap-editor .ProseMirror ul,
+  .tiptap-editor .ProseMirror ul {
+    padding-left: 1.5rem;
+    list-style-type: disc;
+  }
+
   .tiptap-editor .ProseMirror ol {
     padding-left: 1.5rem;
+    list-style-type: decimal;
+  }
+
+  .tiptap-editor .ProseMirror li {
+    display: list-item;
+  }
+
+  .tiptap-editor .ProseMirror li p {
+    margin: 0;
   }
 
   .tiptap-editor .ProseMirror blockquote {
@@ -78,4 +162,33 @@
     padding-left: 1rem;
     color: #605E5C;
   }
+
+  /* Dark mode scrollbar */
+  .dark .outlook-scrollbar {
+    scrollbar-color: #555 transparent;
+  }
+  .dark .outlook-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #555;
+  }
+  .dark .outlook-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #777;
+  }
+
+  /* Dark mode tiptap */
+  .dark .tiptap-editor .ProseMirror {
+    color: var(--text-primary);
+  }
+  .dark .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+    color: var(--text-disabled);
+  }
+  .dark .tiptap-editor .ProseMirror blockquote {
+    border-left-color: var(--border-primary);
+    color: var(--text-secondary);
+  }
+
+  /* Dark mode prose (reading pane) */
+  .dark .prose { color: var(--text-primary); }
+  .dark .prose a { color: var(--accent); }
+  .dark .prose strong { color: var(--text-primary); }
+  .dark .prose h1, .dark .prose h2, .dark .prose h3, .dark .prose h4 { color: var(--text-primary); }
 }

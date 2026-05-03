@@ -14,18 +14,13 @@ import {
   FolderPlus,
   ChevronRight,
   ChevronDown,
-  Plus,
   Pencil,
-  Calendar,
-  Users,
-  CheckSquare,
   Play,
   Clock,
 } from 'lucide-react'
 import { folders, messages, rules } from '@/lib/api'
 import type { Folder as FolderType } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
-import { useUIStore } from '@/store/ui'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -54,6 +49,8 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(folder.name)
+  const [creatingSubfolder, setCreatingSubfolder] = useState(false)
+  const [subfolderName, setSubfolderName] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -118,9 +115,16 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   }
 
   const handleCreateSub = () => {
-    const name = window.prompt('New folder name:')
-    if (name?.trim()) createSubMutation.mutate(name.trim())
+    setCreatingSubfolder(true)
+    setSubfolderName('')
+    setExpanded(true)
     setContextMenu(null)
+  }
+
+  const handleSubfolderSubmit = () => {
+    if (subfolderName.trim()) createSubMutation.mutate(subfolderName.trim())
+    setCreatingSubfolder(false)
+    setSubfolderName('')
   }
 
   const isActive = currentSlug === (folder.slug || folder.id)
@@ -256,6 +260,26 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
           ))}
         </ul>
       )}
+
+      {/* Inline subfolder creation input */}
+      {creatingSubfolder && (
+        <div className="flex items-center gap-1.5 py-1" style={{ paddingLeft: `${12 + (level + 1) * 12}px` }}>
+          <Folder size={14} className="text-[#605E5C] flex-shrink-0" />
+          <input
+            autoFocus
+            type="text"
+            value={subfolderName}
+            onChange={(e) => setSubfolderName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSubfolderSubmit()
+              if (e.key === 'Escape') { setCreatingSubfolder(false); setSubfolderName('') }
+            }}
+            onBlur={handleSubfolderSubmit}
+            placeholder="Folder name"
+            className="flex-1 text-sm text-[#323130] bg-white border border-[#0078D4] rounded px-1.5 py-0.5 focus:outline-none"
+          />
+        </div>
+      )}
     </li>
   )
 }
@@ -264,24 +288,10 @@ export function FolderTree() {
   const params = useParams()
   const router = useRouter()
   const currentSlug = (params?.folder as string) ?? 'inbox'
-  const openComposer = useUIStore((s) => s.openComposer)
   const queryClient = useQueryClient()
-  const [newMailDropOpen, setNewMailDropOpen] = useState(false)
-  const newMailDropRef = useRef<HTMLDivElement>(null)
   const [newFolderInput, setNewFolderInput] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const newFolderRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (!newMailDropOpen) return
-    const handler = (e: MouseEvent) => {
-      if (newMailDropRef.current && !newMailDropRef.current.contains(e.target as Node)) {
-        setNewMailDropOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [newMailDropOpen])
 
   const { data: folderList = [], isLoading } = useQuery({
     queryKey: ['folders'],
@@ -324,66 +334,6 @@ export function FolderTree() {
       aria-label="Folder tree"
       className="flex flex-col h-full bg-white select-none"
     >
-      {/* Compose split button */}
-      <div className="px-2 pt-3 pb-2" ref={newMailDropRef}>
-        <div className="flex rounded shadow-sm overflow-hidden">
-          <button
-            onClick={() => openComposer()}
-            aria-label="New mail"
-            data-automation-id="splitbuttonprimary"
-            className="flex-1 flex items-center gap-2 bg-[#0078D4] hover:bg-[#106EBE] active:bg-[#005A9E] text-white text-sm font-semibold px-3 h-9 transition-colors"
-          >
-            <Plus size={16} />
-            New mail
-          </button>
-          <div className="w-px bg-[#1565B0]" />
-          <button
-            onClick={() => setNewMailDropOpen((v) => !v)}
-            aria-label="More new item options"
-            aria-expanded={newMailDropOpen}
-            aria-haspopup="menu"
-            className="w-8 flex items-center justify-center bg-[#0078D4] hover:bg-[#106EBE] active:bg-[#005A9E] text-white h-9 transition-colors"
-          >
-            <ChevronDown size={12} />
-          </button>
-        </div>
-
-        {newMailDropOpen && (
-          <div
-            role="menu"
-            className="absolute z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg mt-1 animate-fade-in"
-          >
-            <button
-              role="menuitem"
-              onClick={() => { openComposer(); setNewMailDropOpen(false) }}
-              className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
-            >
-              <Plus size={14} className="text-[#0078D4]" /> New mail
-            </button>
-            <button
-              role="menuitem"
-              onClick={() => { router.push('/calendar/month'); setNewMailDropOpen(false) }}
-              className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
-            >
-              <Calendar size={14} className="text-[#0078D4]" /> New event
-            </button>
-            <button
-              role="menuitem"
-              onClick={() => { router.push('/contacts'); setNewMailDropOpen(false) }}
-              className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
-            >
-              <Users size={14} className="text-[#0078D4]" /> New contact
-            </button>
-            <button
-              role="menuitem"
-              onClick={() => { router.push('/tasks'); setNewMailDropOpen(false) }}
-              className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
-            >
-              <CheckSquare size={14} className="text-[#0078D4]" /> New task
-            </button>
-          </div>
-        )}
-      </div>
 
       <div className="flex-1 overflow-y-auto outlook-scrollbar px-1 pb-4">
         {isLoading ? (
@@ -409,7 +359,7 @@ export function FolderTree() {
 
             <div className="h-px bg-[#EDEBE9] my-2 mx-2" />
 
-            {/* All folders */}
+            {/* All folders — system + user folders inline, no separate "My Folders" section */}
             <ul role="tree" aria-label="All mail folders">
               {systemFolders.map((folder) => (
                 <FolderItem
@@ -420,36 +370,7 @@ export function FolderTree() {
                 />
               ))}
 
-              <li className="px-2 pt-3 pb-1 flex items-center justify-between">
-                <span className="text-xs font-semibold text-[#605E5C] uppercase tracking-wide">
-                  My folders
-                </span>
-              </li>
-
-              {/* Follow-up virtual folder */}
-              <li>
-                <Link
-                  href="/mail/followup"
-                  aria-label="Follow-up"
-                  className={cn(
-                    'w-full flex items-center gap-2.5 px-3 py-1.5 rounded text-sm transition-colors no-underline',
-                    currentSlug === 'followup'
-                      ? 'bg-[#EDEBE9] text-[#0078D4] font-medium'
-                      : 'text-[#323130] hover:bg-[#EDEBE9]'
-                  )}
-                  onClick={() => {
-                    useMailStore.getState().setSelectedFolderSlug('followup')
-                    useMailStore.getState().setSelectedFolderId(null)
-                    useMailStore.getState().setSelectedMessageId(null)
-                  }}
-                >
-                  <span className={currentSlug === 'followup' ? 'text-[#0078D4]' : 'text-[#605E5C]'}>
-                    <Clock size={16} />
-                  </span>
-                  Follow-up
-                </Link>
-              </li>
-
+              {/* User-created folders shown inline after system folders */}
               {userFolders.map((folder) => (
                 <FolderItem
                   key={folder.id}

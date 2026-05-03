@@ -3,12 +3,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
-import { messages, folders, categories } from '@/lib/api'
+import { messages, folders } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import { MessageListItem } from './MessageListItem'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Inbox, SortAsc, SortDesc, Tag, MailOpen } from 'lucide-react'
+import { Inbox, SortAsc, SortDesc, MailOpen, Trash2, Archive, Flag, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type DateGroup = 'Today' | 'Yesterday' | 'This week' | 'Last week' | 'Older'
@@ -41,7 +41,6 @@ function groupMessages(msgs: Message[]): Array<{ group: DateGroup; items: Messag
 
 export function MessageList() {
   const [focusedTab, setFocusedTab] = useState<'focused' | 'other'>('focused')
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const selectedFolderSlug = useMailStore((s) => s.selectedFolderSlug)
   const selectedFolderId = useMailStore((s) => s.selectedFolderId)
   const conversationGrouping = useMailStore((s) => s.conversationGrouping)
@@ -51,6 +50,10 @@ export function MessageList() {
   const setSortOrder = useMailStore((s) => s.setSortOrder)
   const isInbox = selectedFolderSlug === 'inbox'
   const queryClient = useQueryClient()
+  const selectedMessageIds = useMailStore((s) => s.selectedMessageIds)
+  const selectAllMessages = useMailStore((s) => s.selectAllMessages)
+  const clearSelection = useMailStore((s) => s.clearSelection)
+  const hasSelection = selectedMessageIds.size > 0
 
   const markAllReadMutation = useMutation({
     mutationFn: (ids: string[]) => messages.bulk('mark_read', ids),
@@ -60,15 +63,20 @@ export function MessageList() {
     },
   })
 
+  const bulkMutation = useMutation({
+    mutationFn: ({ action, params }: { action: string; params?: Record<string, string> }) =>
+      messages.bulk(action, Array.from(selectedMessageIds), params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      clearSelection()
+    },
+  })
+
   // Get folder ID from slug if we don't have it
   const { data: folderList } = useQuery({
     queryKey: ['folders'],
     queryFn: () => folders.list(),
-  })
-
-  const { data: categoryList = [] } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => categories.list(),
   })
 
   const folderId = selectedFolderId ?? folderList?.find(
@@ -83,8 +91,10 @@ export function MessageList() {
     enabled: isFollowupView,
   })
 
+  const focusedParam = isInbox ? (focusedTab === 'focused' ? true : false) : undefined
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder],
+    queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder, focusedParam],
     queryFn: () =>
       messages.list({
         folder_slug: selectedFolderSlug,
@@ -93,14 +103,38 @@ export function MessageList() {
         sort: sortBy,
         order: sortOrder,
         per_page: 50,
+        focused: focusedParam,
       }),
     enabled: !isFollowupView,
   })
 
-  const allMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
-  const messageList = selectedCategoryId
-    ? allMessages.filter((m) => m.categories?.some((c) => c.id === selectedCategoryId))
-    : allMessages
+  const rawMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
+
+  // Conversation grouping: show only the latest message per conversation_id
+  const allMessages = (() => {
+    if (!conversationGrouping) return rawMessages
+    const grouped = new Map<string, { latest: Message; count: number }>()
+    for (const msg of rawMessages) {
+      const key = msg.conversation_id ?? msg.id // ungrouped if no conversation
+      const existing = grouped.get(key)
+      if (!existing) {
+        grouped.set(key, { latest: msg, count: 1 })
+      } else {
+        existing.count += 1
+        const existingDate = new Date(existing.latest.received_at ?? existing.latest.created_at).getTime()
+        const msgDate = new Date(msg.received_at ?? msg.created_at).getTime()
+        if (msgDate > existingDate) {
+          existing.latest = msg
+        }
+      }
+    }
+    return Array.from(grouped.values()).map(({ latest, count }) => ({
+      ...latest,
+      _conversationCount: count,
+    }))
+  })()
+
+  const messageList = allMessages
 
   const folderName = isFollowupView
     ? 'Follow-up'
@@ -114,9 +148,25 @@ export function MessageList() {
     >
       {/* Toolbar */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#EDEBE9] bg-white flex-shrink-0">
-        <h2 className="text-sm font-semibold text-[#323130] truncate">
-          {folderName.charAt(0).toUpperCase() + folderName.slice(1)}
-        </h2>
+        <div className="flex items-center gap-2">
+          {/* Select all checkbox */}
+          <input
+            type="checkbox"
+            checked={messageList.length > 0 && selectedMessageIds.size === messageList.length}
+            ref={(el) => {
+              if (el) el.indeterminate = selectedMessageIds.size > 0 && selectedMessageIds.size < messageList.length
+            }}
+            onChange={() => {
+              if (selectedMessageIds.size === messageList.length) clearSelection()
+              else selectAllMessages(messageList.map((m) => m.id))
+            }}
+            aria-label="Select all messages"
+            className="w-3.5 h-3.5 rounded-sm border-[#8A8886] accent-[#0078D4] cursor-pointer"
+          />
+          <h2 className="text-sm font-semibold text-[#323130] truncate">
+            {folderName.charAt(0).toUpperCase() + folderName.slice(1)}
+          </h2>
+        </div>
         <div className="flex items-center gap-1">
           {/* Conversation grouping toggle */}
           <button
@@ -159,6 +209,63 @@ export function MessageList() {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {hasSelection && (
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-[#EDEBE9] bg-[#EBF3FB] flex-shrink-0 animate-fade-in">
+          <span className="text-xs font-medium text-[#0078D4] mr-2">
+            {selectedMessageIds.size} selected
+          </span>
+          <button
+            onClick={() => bulkMutation.mutate({ action: 'mark_read' })}
+            disabled={bulkMutation.isPending}
+            aria-label="Mark selected as read"
+            title="Mark as read"
+            className="p-1.5 text-[#323130] hover:bg-[#C7E0F4] rounded transition-colors"
+          >
+            <MailOpen size={13} />
+          </button>
+          <button
+            onClick={() => bulkMutation.mutate({ action: 'flag' })}
+            disabled={bulkMutation.isPending}
+            aria-label="Flag selected"
+            title="Flag"
+            className="p-1.5 text-[#323130] hover:bg-[#C7E0F4] rounded transition-colors"
+          >
+            <Flag size={13} />
+          </button>
+          <button
+            onClick={() => {
+              const archiveFolder = folderList?.find((f) => f.slug === 'archive')
+              if (archiveFolder) bulkMutation.mutate({ action: 'move', params: { folder_id: archiveFolder.id } })
+            }}
+            disabled={bulkMutation.isPending}
+            aria-label="Archive selected"
+            title="Archive"
+            className="p-1.5 text-[#323130] hover:bg-[#C7E0F4] rounded transition-colors"
+          >
+            <Archive size={13} />
+          </button>
+          <button
+            onClick={() => bulkMutation.mutate({ action: 'delete' })}
+            disabled={bulkMutation.isPending}
+            aria-label="Delete selected"
+            title="Delete"
+            className="p-1.5 text-[#323130] hover:bg-[#FDE7E9] rounded transition-colors"
+          >
+            <Trash2 size={13} />
+          </button>
+          <div className="ml-auto">
+            <button
+              onClick={clearSelection}
+              aria-label="Clear selection"
+              className="p-1 text-[#605E5C] hover:bg-[#C7E0F4] rounded transition-colors"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Focused / Other tabs — inbox only */}
       {isInbox && (
         <div className="flex border-b border-[#EDEBE9] bg-white flex-shrink-0" role="tablist" aria-label="Inbox tabs">
@@ -191,49 +298,6 @@ export function MessageList() {
         </div>
       )}
 
-      {/* Category filter chips */}
-      {categoryList.length > 0 && (
-        <div
-          className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto"
-          aria-label="Filter by category"
-        >
-          <Tag size={12} className="text-[#605E5C] flex-shrink-0" />
-          <button
-            onClick={() => setSelectedCategoryId(null)}
-            aria-pressed={selectedCategoryId === null}
-            className={cn(
-              'text-xs px-2 py-0.5 rounded-full border flex-shrink-0 transition-colors',
-              selectedCategoryId === null
-                ? 'border-[#0078D4] bg-[#EBF3FB] text-[#0078D4]'
-                : 'border-[#D2D0CE] text-[#605E5C] hover:bg-[#F3F2F1]'
-            )}
-          >
-            All
-          </button>
-          {categoryList.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategoryId(selectedCategoryId === cat.id ? null : cat.id)}
-              aria-pressed={selectedCategoryId === cat.id}
-              aria-label={`Filter by ${cat.name}`}
-              className={cn(
-                'text-xs px-2 py-0.5 rounded-full border flex-shrink-0 transition-colors flex items-center gap-1',
-                selectedCategoryId === cat.id
-                  ? 'border-[#0078D4] bg-[#EBF3FB] text-[#0078D4]'
-                  : 'border-[#D2D0CE] text-[#605E5C] hover:bg-[#F3F2F1]'
-              )}
-            >
-              {cat.color && (
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: cat.color }}
-                />
-              )}
-              {cat.name}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Message list */}
       <div
@@ -250,12 +314,6 @@ export function MessageList() {
               title="Failed to load messages"
               description="Check your connection and try again."
             />
-          ) : isInbox && focusedTab === 'other' ? (
-            <EmptyState
-              icon={Inbox}
-              title="No messages"
-              description="Messages that aren't in Focused will appear here."
-            />
           ) : messageList.length === 0 ? (
             <EmptyState
               icon={Inbox}
@@ -269,7 +327,7 @@ export function MessageList() {
                   <span className="text-xs font-semibold text-[#605E5C] uppercase tracking-wide">{group}</span>
                 </div>
                 {items.map((msg) => (
-                  <MessageListItem key={msg.id} message={msg} />
+                  <MessageListItem key={msg.id} message={msg} conversationCount={(msg as Message & { _conversationCount?: number })._conversationCount} />
                 ))}
               </div>
             ))

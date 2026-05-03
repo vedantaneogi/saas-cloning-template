@@ -6,6 +6,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
 import TextAlign from '@tiptap/extension-text-align'
 import Underline from '@tiptap/extension-underline'
+import Image from '@tiptap/extension-image'
 import Mention from '@tiptap/extension-mention'
 import { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion'
 import tippy, { Instance as TippyInstance } from 'tippy.js'
@@ -174,6 +175,10 @@ export function RichTextEditor({
     extensions: [
       StarterKit,
       Underline,
+      Image.configure({
+        inline: true,
+        HTMLAttributes: { class: 'max-w-full rounded' },
+      }),
       Placeholder.configure({ placeholder }),
       Link.configure({
         openOnClick: false,
@@ -190,20 +195,81 @@ export function RichTextEditor({
     onUpdate: ({ editor }) => {
       onChange?.(editor.getHTML())
     },
+    editorProps: {
+      handlePaste: (_view, event) => {
+        const items = event.clipboardData?.items
+        if (!items) return false
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            event.preventDefault()
+            const file = item.getAsFile()
+            if (!file) continue
+            const reader = new FileReader()
+            reader.onload = () => {
+              _view.dispatch(
+                _view.state.tr.replaceSelectionWith(
+                  _view.state.schema.nodes.image.create({ src: reader.result as string })
+                )
+              )
+            }
+            reader.readAsDataURL(file)
+            return true
+          }
+        }
+        return false
+      },
+      handleDrop: (_view, event) => {
+        const files = event.dataTransfer?.files
+        if (!files?.length) return false
+        for (const file of files) {
+          if (file.type.startsWith('image/')) {
+            event.preventDefault()
+            const reader = new FileReader()
+            reader.onload = () => {
+              const { tr, schema } = _view.state
+              const node = schema.nodes.image.create({ src: reader.result as string })
+              const pos = _view.posAtCoords({ left: event.clientX, top: event.clientY })
+              _view.dispatch(tr.insert(pos?.pos ?? tr.selection.from, node))
+            }
+            reader.readAsDataURL(file)
+            return true
+          }
+        }
+        return false
+      },
+    },
   })
 
+  const [linkInput, setLinkInput] = useState('')
+  const [showLinkDialog, setShowLinkDialog] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
   const addLink = () => {
-    const url = window.prompt('Enter URL:')
-    if (url && editor) {
-      editor.chain().focus().setLink({ href: url }).run()
+    setLinkInput(editor?.getAttributes('link')?.href ?? '')
+    setShowLinkDialog(true)
+  }
+
+  const submitLink = () => {
+    if (linkInput && editor) {
+      editor.chain().focus().setLink({ href: linkInput }).run()
     }
+    setShowLinkDialog(false)
+    setLinkInput('')
   }
 
   const addImage = () => {
-    const url = window.prompt('Enter image URL:')
-    if (url && editor) {
-      editor.chain().focus().insertContent(`<img src="${url}" class="max-w-full rounded" />`).run()
+    imageInputRef.current?.click()
+  }
+
+  const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !editor) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      editor.chain().focus().setImage({ src: reader.result as string }).run()
     }
+    reader.readAsDataURL(file)
+    e.target.value = ''
   }
 
   if (!editor) return null
@@ -307,6 +373,37 @@ export function RichTextEditor({
           </ToolbarButton>
         </div>
       )}
+
+      {/* Hidden file input for image insertion */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageFile}
+      />
+
+      {/* Inline link dialog */}
+      {showLinkDialog && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
+          <span className="text-xs text-[#605E5C]">URL:</span>
+          <input
+            autoFocus
+            type="url"
+            value={linkInput}
+            onChange={(e) => setLinkInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitLink()
+              if (e.key === 'Escape') { setShowLinkDialog(false); setLinkInput('') }
+            }}
+            placeholder="https://..."
+            className="flex-1 text-sm border border-[#EDEBE9] rounded px-2 py-0.5 focus:outline-none focus:border-[#0078D4] text-[#323130]"
+          />
+          <button onClick={submitLink} className="text-xs bg-[#0078D4] text-white px-3 py-1 rounded hover:bg-[#106EBE] transition-colors">Insert</button>
+          <button onClick={() => { setShowLinkDialog(false); setLinkInput('') }} className="text-xs text-[#605E5C] px-2 py-1 hover:bg-[#EDEBE9] rounded transition-colors">Cancel</button>
+        </div>
+      )}
+
       <EditorContent
         editor={editor}
         style={{ minHeight }}

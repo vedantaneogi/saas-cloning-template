@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation'
 
 interface MessageListItemProps {
   message: Message
+  conversationCount?: number
 }
 
 function MenuSep() {
@@ -65,7 +66,7 @@ function SubMenu({ icon, label, open, onOpenChange, children, alignRight }: {
   )
 }
 
-export function MessageListItem({ message }: MessageListItemProps) {
+export function MessageListItem({ message, conversationCount }: MessageListItemProps) {
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
   const openComposer = useUIStore((s) => s.openComposer)
@@ -213,11 +214,20 @@ export function MessageListItem({ message }: MessageListItemProps) {
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
+  const toggleMessageSelection = useMailStore((s) => s.toggleMessageSelection)
+  const selectedMessageIds = useMailStore((s) => s.selectedMessageIds)
+  const isChecked = selectedMessageIds.has(message.id)
+
   const handleClick = () => {
     setSelectedMessageId(message.id)
     if (isUnread) {
       markReadMutation.mutate(true)
     }
+  }
+
+  const handleCheckbox = (e: React.MouseEvent | React.ChangeEvent) => {
+    e.stopPropagation()
+    toggleMessageSelection(message.id)
   }
 
   const senderName = message.from_name || message.from_address.split('@')[0]
@@ -250,16 +260,44 @@ export function MessageListItem({ message }: MessageListItemProps) {
       onDragStart={handleDragStart}
     >
       {/* Unread indicator */}
-      {isUnread && (
+      {isUnread && !isChecked && (
         <span
           className="absolute left-1 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-[#0078D4]"
           aria-label="Unread"
         />
       )}
 
-      {/* Avatar */}
-      <div className="flex-shrink-0 pt-0.5">
-        <Avatar name={senderName} size="sm" />
+      {/* Checkbox / Avatar — checkbox shows on hover or when checked */}
+      <div className="flex-shrink-0 pt-0.5 relative w-8 h-8 flex items-center justify-center">
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onChange={handleCheckbox}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select ${senderName}: ${message.subject}`}
+          className={cn(
+            'absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10',
+          )}
+        />
+        <div className={cn(
+          'absolute inset-0 flex items-center justify-center rounded-full transition-all',
+          isChecked ? 'visible' : 'invisible group-hover:visible',
+        )}>
+          <span className={cn(
+            'w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors',
+            isChecked ? 'bg-[#0078D4] border-[#0078D4]' : 'border-[#8A8886] bg-white',
+          )}>
+            {isChecked && (
+              <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 3.5L3.5 6L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+          </span>
+        </div>
+        <div className={cn(
+          'transition-all',
+          isChecked ? 'invisible' : 'visible group-hover:invisible',
+        )}>
+          <Avatar name={senderName} size="sm" />
+        </div>
       </div>
 
       {/* Content */}
@@ -299,6 +337,11 @@ export function MessageListItem({ message }: MessageListItemProps) {
           >
             {message.subject || '(no subject)'}
           </span>
+          {conversationCount && conversationCount > 1 && (
+            <span className="flex-shrink-0 text-[10px] font-semibold text-[#605E5C] bg-[#EDEBE9] rounded-full px-1.5 py-0 leading-4" aria-label={`${conversationCount} messages in conversation`}>
+              {conversationCount}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1">
@@ -465,6 +508,13 @@ export function MessageListItem({ message }: MessageListItemProps) {
               </button>
             ))}
           </SubMenu>
+
+          <MenuItem
+            icon={<CheckSquare size={14} />}
+            label="Create task"
+            disabled={createTaskMutation.isPending}
+            onClick={() => createTaskMutation.mutate()}
+          />
 
           <MenuSep />
 

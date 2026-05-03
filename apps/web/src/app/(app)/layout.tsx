@@ -5,6 +5,8 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { TopToolbar } from '@/components/layout/TopToolbar'
+import { RibbonTabs } from '@/components/layout/RibbonTabs'
+import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ComposeModal } from '@/components/mail/ComposeModal'
 import { useUIStore, draftFromReply } from '@/store/ui'
 import { useMailStore } from '@/store/mail'
@@ -96,15 +98,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <TopToolbar />
       <div className="flex flex-1 overflow-hidden">
         <AppSidebar />
-        <main className="flex-1 overflow-hidden" role="main">
-          {children}
-        </main>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <RibbonTabs />
+          <main className="flex-1 overflow-hidden" role="main">
+            {children}
+          </main>
+        </div>
       </div>
 
       {/* Compose Modal */}
       {composerOpen && (
         <ComposeModal open={composerOpen} onClose={closeComposer} />
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal />
 
       {/* Notification Toast */}
       {notificationMessage && (

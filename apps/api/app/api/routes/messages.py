@@ -13,6 +13,9 @@ from app.models.category import Category
 from app.models.folder import Folder
 from app.models.message import Attachment, Message, MessageCategory
 from app.models.user import User
+# In-memory attachment content store (keyed by attachment UUID)
+_attachment_store: dict[str, bytes] = {}
+
 from app.rl.state import rl_state
 from app.schemas.message import (
     AttachmentOut,
@@ -57,6 +60,56 @@ async def _get_folder_by_slug(db: AsyncSession, slug: str, user_id: uuid.UUID) -
     return result.scalar_one_or_none()
 
 
+async def _deliver_to_recipients(
+    db: AsyncSession, sent_msg: Message, to_addresses: list, cc_addresses: list, bcc_addresses: list, sender: User
+):
+    """Deliver a copy of the sent message to each recipient's inbox."""
+    all_recipients = list(to_addresses or []) + list(cc_addresses or []) + list(bcc_addresses or [])
+    now = rl_state.clock.now()
+    for recipient in all_recipients:
+        rec_email = recipient.get("email", "") if isinstance(recipient, dict) else ""
+        if not rec_email or rec_email == sender.email:
+            continue
+        rec_user_result = await db.execute(select(User).where(User.email == rec_email))
+        rec_user = rec_user_result.scalar_one_or_none()
+        if not rec_user:
+            continue
+        rec_inbox = await _get_folder_by_slug(db, "inbox", rec_user.id)
+        if not rec_inbox:
+            continue
+        delivered = Message(
+            id=uuid.uuid4(),
+            user_id=rec_user.id,
+            folder_id=rec_inbox.id,
+            conversation_id=sent_msg.conversation_id,
+            in_reply_to_id=sent_msg.in_reply_to_id,
+            reply_type=sent_msg.reply_type,
+            from_address=sender.email,
+            from_name=sender.display_name,
+            to_addresses=to_addresses,
+            cc_addresses=cc_addresses,
+            bcc_addresses=[],
+            subject=sent_msg.subject,
+            body_html=sent_msg.body_html,
+            body_text=sent_msg.body_text,
+            importance=sent_msg.importance,
+            sensitivity=sent_msg.sensitivity,
+            has_attachments=sent_msg.has_attachments,
+            is_read=False,
+            is_draft=False,
+            sent_at=sent_msg.sent_at,
+            received_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(delivered)
+        await db.flush()
+        await _update_folder_counts(db, rec_inbox.id)
+        rl_state.event_log.append("message_delivered", {
+            "id": str(delivered.id), "from": sender.email, "to": rec_email,
+        })
+
+
 async def _update_folder_counts(db: AsyncSession, folder_id: uuid.UUID):
     result = await db.execute(select(Folder).where(Folder.id == folder_id))
     folder = result.scalar_one_or_none()
@@ -78,6 +131,7 @@ async def list_messages(
     importance: Optional[str] = None,
     search: Optional[str] = None,
     from_addr: Optional[str] = None,
+    focused: Optional[bool] = None,
     sort: str = "received_at:desc",
     cursor: Optional[str] = None,
     limit: int = Query(default=50, le=200),
@@ -97,6 +151,35 @@ async def list_messages(
         filters.append(Message.importance == importance)
     if from_addr:
         filters.append(Message.from_address.ilike(f"%{from_addr}%"))
+
+    # Focused inbox: messages from known contacts or with high importance are "focused"
+    if focused is not None:
+        from app.models.contact import Contact
+        contact_emails_subq = (
+            select(Contact.email)
+            .where(Contact.user_id == current_user.id, Contact.email.is_not(None))
+            .scalar_subquery()
+        )
+        if focused:
+            # Focused = from a known contact OR high importance OR flagged OR a reply to user's sent message
+            filters.append(
+                or_(
+                    Message.from_address.in_(contact_emails_subq),
+                    Message.importance == "high",
+                    Message.is_flagged.is_(True),
+                    Message.in_reply_to_id.is_not(None),
+                )
+            )
+        else:
+            # Other = NOT focused (from unknown senders, normal importance, not flagged, not a reply)
+            filters.append(
+                ~or_(
+                    Message.from_address.in_(contact_emails_subq),
+                    Message.importance == "high",
+                    Message.is_flagged.is_(True),
+                    Message.in_reply_to_id.is_not(None),
+                )
+            )
     if search:
         term = f"%{search}%"
         filters.append(
@@ -131,7 +214,7 @@ async def list_messages(
     total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
     total = total_result.scalar() or 0
 
-    result = await db.execute(select(Message).where(*filters).order_by(order).limit(limit + 1))
+    result = await db.execute(select(Message).where(*filters).order_by(order).distinct().limit(limit + 1))
     messages = result.scalars().all()
 
     has_more = len(messages) > limit
@@ -270,7 +353,7 @@ async def search_messages(
     total = total_result.scalar() or 0
 
     result = await db.execute(
-        select(Message).where(*filters).order_by(desc(Message.received_at)).limit(limit)
+        select(Message).where(*filters).order_by(desc(Message.received_at)).distinct().limit(limit)
     )
     items = list(result.scalars().all())
 
@@ -299,6 +382,9 @@ async def get_message(
     msg = await _get_message_or_404(db, message_id, current_user.id)
     out = MessageOut.model_validate(msg)
     out.categories = await _load_message_categories(db, msg.id)
+    # Load attachments
+    att_result = await db.execute(select(Attachment).where(Attachment.message_id == msg.id))
+    out.attachments = [AttachmentOut.model_validate(a) for a in att_result.scalars().all()]
     return out
 
 
@@ -328,6 +414,8 @@ async def create_message(
         user_id=current_user.id,
         folder_id=folder_id,
         conversation_id=body.conversation_id,
+        in_reply_to_id=body.in_reply_to_id,
+        reply_type=body.reply_type,
         from_address=current_user.email,
         from_name=current_user.display_name,
         to_addresses=body.to_addresses,
@@ -402,6 +490,10 @@ async def create_message(
             await db.flush()
             await _update_folder_counts(db, inbox_folder.id)
             rl_state.event_log.append("oof_auto_reply", {"from": rec_email, "to": current_user.email})
+
+    # Deliver message to each recipient's inbox
+    if not body.is_draft:
+        await _deliver_to_recipients(db, msg, body.to_addresses, body.cc_addresses, body.bcc_addresses, current_user)
 
     return MessageOut.model_validate(msg)
 
@@ -544,6 +636,10 @@ async def reply_message(
     await _update_folder_counts(db, folder_id)
 
     rl_state.event_log.append("message_replied", {"id": str(reply.id), "original_id": str(original.id)})
+
+    # Deliver reply to recipients
+    await _deliver_to_recipients(db, reply, to_addresses, cc_addresses, [], current_user)
+
     return MessageOut.model_validate(reply)
 
 
@@ -586,6 +682,10 @@ async def forward_message(
     await _update_folder_counts(db, folder_id)
 
     rl_state.event_log.append("message_forwarded", {"id": str(fwd.id), "original_id": str(original.id)})
+
+    # Deliver forward to recipients
+    await _deliver_to_recipients(db, fwd, body.to_addresses, body.cc_addresses, [], current_user)
+
     return MessageOut.model_validate(fwd)
 
 
@@ -695,9 +795,9 @@ async def download_attachment(
     att = result.scalar_one_or_none()
     if not att:
         raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "Attachment not found"}})
-    # Return empty body with correct content-disposition — real content would come from storage
+    content = _attachment_store.get(str(att.id), b"")
     return Response(
-        content=b"",
+        content=content,
         media_type=att.content_type,
         headers={"Content-Disposition": f'attachment; filename="{att.filename}"'},
     )
@@ -727,6 +827,8 @@ async def upload_attachment(
     msg.has_attachments = True
     msg.updated_at = now
     await db.flush()
+    # Store content in memory for download
+    _attachment_store[str(attachment.id)] = content
     rl_state.event_log.append("attachment_uploaded", {"message_id": str(message_id), "filename": attachment.filename})
     return AttachmentOut.model_validate(attachment)
 

@@ -49,7 +49,7 @@ class VirtualClock:
         self._time: datetime = datetime.now(timezone.utc)
 
     def now(self) -> datetime:
-        return self._time
+        return datetime.now(timezone.utc)
 
     def set(self, t: datetime) -> None:
         self._time = t

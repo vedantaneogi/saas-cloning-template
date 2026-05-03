@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { tasks } from '@/lib/api'
 import type { Task } from '@/lib/api'
 import { Star, Calendar, Circle, CheckCircle2 } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 
 interface TaskItemProps {
@@ -72,7 +72,7 @@ export function TaskItem({ task, selected, onClick }: TaskItemProps) {
           <div className="flex items-center gap-1 mt-0.5">
             <Calendar size={11} className="text-[#605E5C]" />
             <span className="text-xs text-[#605E5C]">
-              {format(parseISO(task.due_date), 'MMM d')}
+              {format(new Date(task.due_date), 'MMM d')}
             </span>
           </div>
         )}

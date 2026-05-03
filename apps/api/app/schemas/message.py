@@ -26,6 +26,8 @@ class AttachmentOut(BaseModel):
 class MessageCreate(BaseModel):
     folder_id: Optional[uuid.UUID] = None
     conversation_id: Optional[uuid.UUID] = None
+    in_reply_to_id: Optional[uuid.UUID] = None
+    reply_type: str = "none"
     to_addresses: list[dict[str, Any]] = []
     cc_addresses: list[dict[str, Any]] = []
     bcc_addresses: list[dict[str, Any]] = []
@@ -94,6 +96,7 @@ class MessageOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     categories: list[CategoryOut] = []
+    attachments: list[AttachmentOut] = []
 
 
 class MessageList(BaseModel):
