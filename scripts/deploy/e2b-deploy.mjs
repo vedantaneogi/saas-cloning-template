@@ -32,8 +32,12 @@ async function run(sandbox, cmd, opts = {}) {
 }
 
 async function main() {
+  const apiKey = process.env.E2B_API_KEY
+  if (!apiKey) throw new Error('E2B_API_KEY environment variable is not set')
+
   log('Creating E2B sandbox...')
   const sandbox = await Sandbox.create({
+    apiKey,
     timeoutMs: SANDBOX_TIMEOUT,
   })
 
