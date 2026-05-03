@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '0006_expand_fieldtype_enum'
-down_revision: Union[str, None] = '0005_add_reminder_days_to_envelopes'
+down_revision: Union[str, None] = '0005_add_reminder_days_envelopes'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

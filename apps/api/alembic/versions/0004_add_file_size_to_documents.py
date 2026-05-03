@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '0004_add_file_size_to_documents'
-down_revision: Union[str, None] = '0003_add_is_favorite_to_templates'
+down_revision: Union[str, None] = '0003_add_favorite_to_templates'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

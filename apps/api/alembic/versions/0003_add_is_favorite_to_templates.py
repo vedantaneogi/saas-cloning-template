@@ -1,6 +1,6 @@
 """add is_favorite to templates
 
-Revision ID: 0003_add_is_favorite_to_templates
+Revision ID: 0003_add_favorite_to_templates
 Revises: 0002_add_core_models
 Create Date: 2026-05-02 00:00:00.000000
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0003_add_is_favorite_to_templates'
+revision: str = '0003_add_favorite_to_templates'
 down_revision: Union[str, None] = '0002_add_core_models'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

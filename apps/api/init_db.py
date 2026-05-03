@@ -3,6 +3,9 @@ import asyncio
 import os
 import sys
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.db.base import Base
