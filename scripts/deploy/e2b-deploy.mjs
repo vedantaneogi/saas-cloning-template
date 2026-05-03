@@ -53,19 +53,19 @@ async function main() {
 
   // Clone repo
   log(`Cloning ${REPO_URL} (branch: ${BRANCH})...`)
-  await run(sandbox, `git clone --branch ${BRANCH} --depth 1 ${REPO_URL} /app`, { timeoutMs: 60_000 })
+  await run(sandbox, `git clone --branch ${BRANCH} --depth 1 ${REPO_URL} /home/user/app`, { timeoutMs: 60_000 })
 
   // Start the stack
   log('Building and starting services (this takes ~5 mins for first build)...')
   await run(sandbox,
-    `cd /app && SECRET_KEY=${SECRET_KEY} docker compose -f docker-compose.prod.yml up -d --build 2>&1`,
+    `cd /home/user/app && SECRET_KEY=${SECRET_KEY} docker compose -f docker-compose.prod.yml up -d --build 2>&1`,
     { timeoutMs: 600_000 }
   )
 
   // Wait for services to be healthy
   log('Waiting for services to be ready...')
   await run(sandbox,
-    'cd /app && docker compose -f docker-compose.prod.yml ps 2>&1',
+    'cd /home/user/app && docker compose -f docker-compose.prod.yml ps 2>&1',
     { timeoutMs: 30_000 }
   )
 
@@ -73,7 +73,7 @@ async function main() {
   log('Seeding database...')
   await new Promise(r => setTimeout(r, 5000)) // give API a moment to finish migrations
   await run(sandbox,
-    `curl -s -X POST http://localhost/seed -H "Content-Type: application/json" -d @/app/apps/api/seeds/seed-default.json`,
+    `curl -s -X POST http://localhost/seed -H "Content-Type: application/json" -d @/home/user/app/home/user/apps/api/seeds/seed-default.json`,
     { timeoutMs: 30_000 }
   )
 
