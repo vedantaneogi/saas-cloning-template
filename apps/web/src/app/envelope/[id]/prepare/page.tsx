@@ -358,7 +358,8 @@ export default function PrepareEnvelopePage() {
   const hasValidRecipient = imOnlySigner
     ? true
     : recipients.some((r) => r.name?.trim() && r.email?.trim());
-  const canProceed = hasDocuments && hasValidRecipient;
+  const isUploading = Object.keys(uploadingDocs).length > 0;
+  const canProceed = hasDocuments && hasValidRecipient && !isUploading;
 
   // ──────────────────────────────────────────────────────────────────────────
   return (
@@ -425,6 +426,10 @@ export default function PrepareEnvelopePage() {
               onClick={() => {
                 if (!canProceed) {
                   setTriedToProceed(true);
+                  if (isUploading) {
+                    alert("Please wait for all documents to finish uploading before proceeding.");
+                    return;
+                  }
                   const missing: string[] = [];
                   if (!hasDocuments) missing.push("upload at least one document");
                   if (!hasValidRecipient) missing.push("fill in recipient name and email");
@@ -433,7 +438,7 @@ export default function PrepareEnvelopePage() {
                 }
                 saveAndContinueMutation.mutate();
               }}
-              disabled={saveAndContinueMutation.isPending}
+              disabled={saveAndContinueMutation.isPending || isUploading}
               className="flex items-center gap-2 text-white transition-opacity"
               style={{
                 background: canProceed ? "#4C00FF" : "#9CA3AF",
@@ -441,7 +446,7 @@ export default function PrepareEnvelopePage() {
                 padding: "8px 20px",
                 fontSize: "14px",
                 fontWeight: 500,
-                opacity: saveAndContinueMutation.isPending ? 0.5 : 1,
+                opacity: (saveAndContinueMutation.isPending || isUploading) ? 0.5 : 1,
                 cursor: (saveAndContinueMutation.isPending || !canProceed) ? "not-allowed" : "pointer",
               }}
             >
@@ -449,6 +454,11 @@ export default function PrepareEnvelopePage() {
                 <>
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   Saving...
+                </>
+              ) : isUploading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Uploading...
                 </>
               ) : (
                 imOnlySigner ? "Sign" : "Next: Add Fields"
