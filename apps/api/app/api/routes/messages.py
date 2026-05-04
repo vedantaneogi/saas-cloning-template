@@ -63,9 +63,15 @@ async def _get_folder_by_slug(db: AsyncSession, slug: str, user_id: uuid.UUID) -
 async def _deliver_to_recipients(
     db: AsyncSession, sent_msg: Message, to_addresses: list, cc_addresses: list, bcc_addresses: list, sender: User
 ):
-    """Deliver a copy of the sent message to each recipient's inbox."""
+    """
+    Deliver message to recipients:
+    1. Internal users (in our DB) → create DB record in their inbox (instant UI)
+    2. All recipients → send real email via Resend (if configured)
+    """
     all_recipients = list(to_addresses or []) + list(cc_addresses or []) + list(bcc_addresses or [])
     now = rl_state.clock.now()
+
+    # Internal DB delivery for users in our system
     for recipient in all_recipients:
         rec_email = recipient.get("email", "") if isinstance(recipient, dict) else ""
         if not rec_email or rec_email == sender.email:
@@ -108,6 +114,30 @@ async def _deliver_to_recipients(
         rl_state.event_log.append("message_delivered", {
             "id": str(delivered.id), "from": sender.email, "to": rec_email,
         })
+
+    # Real email delivery via Resend
+    try:
+        from app.core.email import send_email
+        from app.core.config import settings
+        result = await send_email(
+            from_name=sender.display_name,
+            from_email=sender.email,
+            to_addresses=to_addresses,
+            cc_addresses=cc_addresses,
+            bcc_addresses=bcc_addresses,
+            subject=sent_msg.subject,
+            body_html=sent_msg.body_html or "",
+            reply_to=sender.email,
+            from_domain=settings.RESEND_FROM_DOMAIN,
+        )
+        if result:
+            rl_state.event_log.append("email_sent_resend", {
+                "resend_id": result.get("id", ""),
+                "to": [a.get("email", "") for a in to_addresses],
+            })
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Resend delivery failed: {e}")
 
 
 async def _update_folder_counts(db: AsyncSession, folder_id: uuid.UUID):
@@ -704,6 +734,148 @@ async def move_message(
     await _update_folder_counts(db, old_folder_id)
     await _update_folder_counts(db, body.folder_id)
     rl_state.event_log.append("message_moved", {"id": str(msg.id), "to_folder": str(body.folder_id)})
+
+
+@router.post("/{message_id}/report")
+async def report_message(
+    message_id: uuid.UUID,
+    report_type: str = Query(default="junk", description="junk or phishing"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Report as junk/phishing — moves message to Junk folder."""
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    junk_folder = await _get_folder_by_slug(db, "junk", current_user.id)
+    if junk_folder:
+        old_folder_id = msg.folder_id
+        msg.folder_id = junk_folder.id
+        msg.is_read = True
+        msg.updated_at = rl_state.clock.now()
+        await db.flush()
+        await _update_folder_counts(db, old_folder_id)
+        await _update_folder_counts(db, junk_folder.id)
+    rl_state.event_log.append("message_reported", {"id": str(msg.id), "type": report_type})
+    return {"status": "reported", "type": report_type}
+
+
+@router.post("/{message_id}/block")
+async def block_sender(
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Block sender — moves all messages from this sender to Junk."""
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    sender = msg.from_address
+    junk_folder = await _get_folder_by_slug(db, "junk", current_user.id)
+    if not junk_folder:
+        return {"status": "no_junk_folder", "blocked": 0}
+
+    # Move all messages from this sender to Junk
+    result = await db.execute(
+        select(Message).where(
+            Message.user_id == current_user.id,
+            Message.from_address == sender,
+            Message.folder_id != junk_folder.id,
+        )
+    )
+    msgs = result.scalars().all()
+    affected_folders = set()
+    for m in msgs:
+        affected_folders.add(m.folder_id)
+        m.folder_id = junk_folder.id
+        m.is_read = True
+
+    await db.flush()
+    for fid in affected_folders:
+        await _update_folder_counts(db, fid)
+    await _update_folder_counts(db, junk_folder.id)
+
+    rl_state.event_log.append("sender_blocked", {"sender": sender, "moved": len(msgs)})
+    return {"status": "blocked", "sender": sender, "moved": len(msgs)}
+
+
+@router.post("/{message_id}/ignore")
+async def ignore_conversation(
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Ignore conversation — moves all messages in this conversation to Deleted."""
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    deleted_folder = await _get_folder_by_slug(db, "deleted", current_user.id)
+    if not deleted_folder:
+        return {"status": "no_deleted_folder", "moved": 0}
+
+    if msg.conversation_id:
+        result = await db.execute(
+            select(Message).where(
+                Message.user_id == current_user.id,
+                Message.conversation_id == msg.conversation_id,
+                Message.folder_id != deleted_folder.id,
+            )
+        )
+        msgs = result.scalars().all()
+    else:
+        msgs = [msg] if msg.folder_id != deleted_folder.id else []
+
+    affected_folders = set()
+    for m in msgs:
+        affected_folders.add(m.folder_id)
+        m.folder_id = deleted_folder.id
+        m.is_read = True
+
+    await db.flush()
+    for fid in affected_folders:
+        await _update_folder_counts(db, fid)
+    await _update_folder_counts(db, deleted_folder.id)
+
+    rl_state.event_log.append("conversation_ignored", {"message_id": str(msg.id), "moved": len(msgs)})
+    return {"status": "ignored", "moved": len(msgs)}
+
+
+@router.post("/{message_id}/copy")
+async def copy_message(
+    message_id: uuid.UUID,
+    body: MoveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Copy message to another folder (duplicate, not move)."""
+    msg = await _get_message_or_404(db, message_id, current_user.id)
+    now = rl_state.clock.now()
+    copy = Message(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        folder_id=body.folder_id,
+        conversation_id=msg.conversation_id,
+        in_reply_to_id=msg.in_reply_to_id,
+        reply_type=msg.reply_type,
+        from_address=msg.from_address,
+        from_name=msg.from_name,
+        to_addresses=msg.to_addresses,
+        cc_addresses=msg.cc_addresses,
+        bcc_addresses=msg.bcc_addresses,
+        subject=msg.subject,
+        body_html=msg.body_html,
+        body_text=msg.body_text,
+        importance=msg.importance,
+        sensitivity=msg.sensitivity,
+        has_attachments=msg.has_attachments,
+        is_read=msg.is_read,
+        is_flagged=msg.is_flagged,
+        is_pinned=msg.is_pinned,
+        is_draft=False,
+        sent_at=msg.sent_at,
+        received_at=msg.received_at,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(copy)
+    await db.flush()
+    await _update_folder_counts(db, body.folder_id)
+    rl_state.event_log.append("message_copied", {"id": str(copy.id), "from": str(msg.id), "to_folder": str(body.folder_id)})
+    return {"status": "copied", "id": str(copy.id)}
 
 
 @router.post("/bulk")

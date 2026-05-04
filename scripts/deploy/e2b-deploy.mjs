@@ -9,6 +9,7 @@ import { Sandbox } from 'e2b'
 const REPO_URL = 'https://github.com/vedantaneogi/saas-cloning-template.git'
 const BRANCH = process.env.DEPLOY_BRANCH ?? 'outlook-clone'
 const SECRET_KEY = process.env.SECRET_KEY ?? 'e2b-deploy-secret-key'
+const RESEND_API_KEY = process.env.RESEND_API_KEY ?? ''
 const APP_DIR = '/home/user/app'
 const SANDBOX_TIMEOUT = 24 * 60 * 60 * 1000 // 24 hours
 
@@ -53,6 +54,28 @@ async function main() {
   const apiKey = process.env.E2B_API_KEY
   if (!apiKey) throw new Error('E2B_API_KEY environment variable is not set')
 
+  // Kill all existing sandboxes before creating a new one
+  log('Cleaning up old sandboxes...')
+  try {
+    const running = await Sandbox.list({ apiKey })
+    if (running.length > 0) {
+      log(`Found ${running.length} running sandbox(es), killing them...`)
+      for (const info of running) {
+        try {
+          const old = await Sandbox.connect(info.sandboxId, { apiKey })
+          await old.kill()
+          log(`Killed sandbox ${info.sandboxId}`)
+        } catch (e) {
+          log(`Could not kill ${info.sandboxId}: ${e.message}`)
+        }
+      }
+    } else {
+      log('No existing sandboxes found')
+    }
+  } catch (e) {
+    log(`Sandbox cleanup skipped: ${e.message}`)
+  }
+
   log('Creating E2B sandbox...')
   const sandbox = await Sandbox.create({
     apiKey,
@@ -79,7 +102,7 @@ async function main() {
 
   log('Installing Python deps...')
   await run(sandbox,
-    'pip install fastapi "uvicorn[standard]" "sqlalchemy[asyncio]" asyncpg alembic "pydantic[email]" pydantic-settings "python-jose[cryptography]" "passlib[bcrypt]" python-multipart aiofiles greenlet python-json-logger',
+    'pip install fastapi "uvicorn[standard]" "sqlalchemy[asyncio]" asyncpg alembic "pydantic[email]" pydantic-settings "python-jose[cryptography]" "passlib[bcrypt]" python-multipart aiofiles greenlet python-json-logger resend',
     { timeoutMs: 180_000 }
   )
 
@@ -91,7 +114,7 @@ async function main() {
 
   log('Starting API server...')
   sandbox.commands.run(
-    `cd ${APP_DIR}/apps/api && DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/outlook SECRET_KEY=${SECRET_KEY} DEBUG=false python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/api.log 2>&1`,
+    `cd ${APP_DIR}/apps/api && DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/outlook SECRET_KEY=${SECRET_KEY} RESEND_API_KEY=${RESEND_API_KEY} RESEND_FROM_DOMAIN=resend.dev DEBUG=false python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/api.log 2>&1`,
     { timeoutMs: 0 }
   ).catch(() => {})
 

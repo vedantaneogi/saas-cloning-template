@@ -463,6 +463,21 @@ export const messages = {
       }),
     }),
 
+  report: (messageId: string, type: 'junk' | 'phishing' = 'junk') =>
+    request<{ status: string }>(`/messages/${messageId}/report?report_type=${type}`, { method: 'POST' }),
+
+  block: (messageId: string) =>
+    request<{ status: string; sender: string; moved: number }>(`/messages/${messageId}/block`, { method: 'POST' }),
+
+  ignore: (messageId: string) =>
+    request<{ status: string; moved: number }>(`/messages/${messageId}/ignore`, { method: 'POST' }),
+
+  copy: (messageId: string, folderId: string) =>
+    request<{ status: string; id: string }>(`/messages/${messageId}/copy`, {
+      method: 'POST',
+      body: JSON.stringify({ folder_id: folderId }),
+    }),
+
   uploadAttachment: (messageId: string, file: File): Promise<Attachment> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
     const formData = new FormData()

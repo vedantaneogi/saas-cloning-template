@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
+    # Email (Resend)
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_DOMAIN: str = "resend.dev"  # verified domain for "from" address
+
     # CORS
     CORS_ORIGINS: list[str] = ["*"]
 

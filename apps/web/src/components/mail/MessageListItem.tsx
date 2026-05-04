@@ -442,7 +442,11 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
               .map((f) => (
                 <button key={f.id} role="menuitem" onClick={(e) => {
                   e.stopPropagation()
-                  showNotification(`Copied to ${f.name}`)
+                  messages.copy(message.id, f.id).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ['messages'] })
+                    queryClient.invalidateQueries({ queryKey: ['folders'] })
+                    showNotification(`Copied to ${f.name}`)
+                  })
                   setCopyOpen(false); setCopySearch(''); setContextMenu(null)
                 }} className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate flex items-center gap-2">
                   <FolderInput size={12} className="text-[#605E5C]" />{f.name}
@@ -450,9 +454,19 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
               ))
             }
             <MenuSep />
-            <button role="menuitem" onClick={(e) => { e.stopPropagation(); showNotification('Copy to new folder: coming soon'); setContextMenu(null) }}
-              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
-              Copy to new folder
+            <button role="menuitem" onClick={(e) => {
+              e.stopPropagation()
+              // Copy to first available non-system folder
+              const target = folderList.find((f) => !f.is_system)
+              if (target) {
+                messages.copy(message.id, target.id).then(() => {
+                  queryClient.invalidateQueries({ queryKey: ['messages'] })
+                  showNotification(`Copied to ${target.name}`)
+                })
+              }
+              setContextMenu(null)
+            }} className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
+              Copy to folder
             </button>
             <button role="menuitem" onClick={(e) => {
               e.stopPropagation()
@@ -461,10 +475,6 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
               setContextMenu(null)
             }} className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
               Copy to clipboard
-            </button>
-            <button role="menuitem" onClick={(e) => { e.stopPropagation(); showNotification('Select destination folder'); setContextMenu(null) }}
-              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
-              Copy to a different folder...
             </button>
           </SubMenu>
 
@@ -531,23 +541,49 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
           </SubMenu>
 
           <SubMenu icon={<ShieldAlert size={14} />} label="Report" open={reportOpen} onOpenChange={setReportOpen}>
-            <button role="menuitem" onClick={(e) => { e.stopPropagation(); showNotification('Reported as phishing'); setContextMenu(null) }}
-              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Report phishing</button>
-            <button role="menuitem" onClick={(e) => { e.stopPropagation(); showNotification('Reported as junk'); setContextMenu(null) }}
-              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Report junk</button>
+            <button role="menuitem" onClick={(e) => {
+              e.stopPropagation()
+              messages.report(message.id, 'phishing').then(() => {
+                queryClient.invalidateQueries({ queryKey: ['messages'] })
+                queryClient.invalidateQueries({ queryKey: ['folders'] })
+                showNotification('Reported as phishing and moved to Junk')
+              })
+              setContextMenu(null)
+            }} className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Report phishing</button>
+            <button role="menuitem" onClick={(e) => {
+              e.stopPropagation()
+              messages.report(message.id, 'junk').then(() => {
+                queryClient.invalidateQueries({ queryKey: ['messages'] })
+                queryClient.invalidateQueries({ queryKey: ['folders'] })
+                showNotification('Reported as junk and moved to Junk')
+              })
+              setContextMenu(null)
+            }} className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Report junk</button>
           </SubMenu>
 
           <SubMenu icon={<VolumeX size={14} />} label="Block" open={blockOpen} onOpenChange={setBlockOpen}>
-            <button role="menuitem" onClick={(e) => { e.stopPropagation(); showNotification(`Blocked ${message.from_address}`); setContextMenu(null) }}
-              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Block sender</button>
-            <button role="menuitem" onClick={(e) => { e.stopPropagation(); showNotification('Domain blocked'); setContextMenu(null) }}
-              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Block sender domain</button>
+            <button role="menuitem" onClick={(e) => {
+              e.stopPropagation()
+              messages.block(message.id).then((res) => {
+                queryClient.invalidateQueries({ queryKey: ['messages'] })
+                queryClient.invalidateQueries({ queryKey: ['folders'] })
+                showNotification(`Blocked ${message.from_address} — ${res.moved} messages moved to Junk`)
+              })
+              setContextMenu(null)
+            }} className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Block sender</button>
           </SubMenu>
 
           <MenuItem
             icon={<Volume2 size={14} />}
             label="Ignore"
-            onClick={() => { showNotification('Conversation ignored'); setContextMenu(null) }}
+            onClick={() => {
+              messages.ignore(message.id).then((res) => {
+                queryClient.invalidateQueries({ queryKey: ['messages'] })
+                queryClient.invalidateQueries({ queryKey: ['folders'] })
+                showNotification(`Conversation ignored — ${res.moved} messages moved to Deleted`)
+              })
+              setContextMenu(null)
+            }}
           />
 
           <MenuSep />
@@ -596,10 +632,23 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
           </SubMenu>
 
           <SubMenu icon={<Eye size={14} />} label="View" open={viewOpen} onOpenChange={setViewOpen}>
-            <button role="menuitem" onClick={(e) => { e.stopPropagation(); showNotification('Message source copied'); setContextMenu(null) }}
-              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">View message source</button>
-            <button role="menuitem" onClick={(e) => { e.stopPropagation(); showNotification('Opening in new window'); setContextMenu(null) }}
-              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Open in new window</button>
+            <button role="menuitem" onClick={(e) => {
+              e.stopPropagation()
+              const source = `From: ${message.from_name} <${message.from_address}>\nTo: ${(message.to_addresses || []).map((a: {email:string;name?:string}) => `${a.name || ''} <${a.email}>`).join(', ')}\nSubject: ${message.subject}\nDate: ${message.received_at || message.created_at}\nImportance: ${message.importance}\n\n${message.body_html || message.body_text || ''}`
+              const win = window.open('', '_blank', 'width=700,height=500')
+              if (win) {
+                win.document.write(`<html><head><title>Message Details</title><style>body{font-family:monospace;white-space:pre-wrap;padding:16px;font-size:13px;color:#323130;}</style></head><body>${source.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</body></html>`)
+              }
+              setContextMenu(null)
+            }} className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">View message details</button>
+            <button role="menuitem" onClick={(e) => {
+              e.stopPropagation()
+              const win = window.open('', '_blank', 'width=800,height=600')
+              if (win) {
+                win.document.write(`<html><head><title>${message.subject || '(no subject)'}</title><style>body{font-family:'Segoe UI',sans-serif;padding:24px;color:#323130;}</style></head><body><h2>${message.subject || '(no subject)'}</h2><p style="color:#605E5C;">From: ${message.from_name} &lt;${message.from_address}&gt;<br/>Date: ${message.received_at || message.created_at}</p><hr/>${message.body_html || message.body_text?.replace(/\n/g,'<br/>') || ''}</body></html>`)
+              }
+              setContextMenu(null)
+            }} className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Open in new tab</button>
           </SubMenu>
 
           <SubMenu icon={<MoreHorizontal size={14} />} label="Advanced actions" open={advancedOpen} onOpenChange={setAdvancedOpen}>

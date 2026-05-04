@@ -6,14 +6,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
 import { messages, folders, quickSteps, settings } from '@/lib/api'
-import type { Message } from '@/lib/api'
 import {
   Menu, Reply, ReplyAll, Forward, Trash2, Archive, MailOpen, Zap,
   ChevronDown, Flag, FolderInput, Printer, MoreHorizontal,
   PanelRight, PanelBottom, PanelLeftClose, MessageSquare,
   RotateCcw, HelpCircle, BookOpen, ExternalLink,
-  CalendarPlus, CalendarDays, CalendarRange, Share2, Filter,
-  UserPlus, Pencil, Users, Star, Plus, CheckSquare,
+  CalendarPlus, CalendarDays, CalendarRange, Share2,
+  UserPlus, Pencil, Star, Plus, CheckSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -49,7 +48,6 @@ type Tab = (typeof TABS)[number]
 
 export function RibbonTabs() {
   const pathname = usePathname()
-  const router = useRouter()
   const isMail = pathname?.startsWith('/mail')
   const isCalendar = pathname?.startsWith('/calendar')
   const isContacts = pathname?.startsWith('/contacts')
@@ -467,13 +465,17 @@ function CalendarHomeRibbon() {
 
 // ─── Contacts Home Tab ───────────────────────────────────────────────────────
 function ContactsHomeRibbon() {
-  const openComposer = useUIStore((s) => s.openComposer)
+  const showNotification = useUIStore((s) => s.showNotification)
+
+  const handleNewContact = () => {
+    // Dispatch custom event that the contacts page listens for
+    window.dispatchEvent(new CustomEvent('outlook:new-contact'))
+  }
 
   return (
     <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Contacts toolbar">
-      {/* New contact */}
       <div className="flex items-center mr-1 flex-shrink-0">
-        <button aria-label="New contact"
+        <button onClick={handleNewContact} aria-label="New contact"
           className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors">
           <UserPlus size={13} /> New contact
         </button>
@@ -485,20 +487,17 @@ function ContactsHomeRibbon() {
 
       <RibbonSep />
 
-      <RibbonBtn label="Edit" disabled onClick={() => {}}>
+      <RibbonBtn label="Edit" disabled onClick={() => showNotification('Select a contact first')}>
         <Pencil size={15} /><span>Edit</span>
       </RibbonBtn>
-      <RibbonBtn label="Delete" disabled onClick={() => {}}>
+      <RibbonBtn label="Delete" disabled onClick={() => showNotification('Select a contact first')}>
         <Trash2 size={15} /><span>Delete</span>
       </RibbonBtn>
 
       <RibbonSep />
 
-      <RibbonBtn label="Add to favorites" disabled onClick={() => {}}>
+      <RibbonBtn label="Add to favorites" disabled onClick={() => showNotification('Select a contact first')}>
         <Star size={15} /><span>Favorites</span>
-      </RibbonBtn>
-      <RibbonBtn label="Add to list" disabled onClick={() => {}}>
-        <Users size={15} /><span>Add to list</span>
       </RibbonBtn>
     </div>
   )
@@ -506,10 +505,14 @@ function ContactsHomeRibbon() {
 
 // ─── Tasks Home Tab ──────────────────────────────────────────────────────────
 function TasksHomeRibbon() {
+  const handleNewTask = () => {
+    window.dispatchEvent(new CustomEvent('outlook:new-task'))
+  }
+
   return (
     <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Tasks toolbar">
       <div className="flex items-center mr-1 flex-shrink-0">
-        <button aria-label="New task"
+        <button onClick={handleNewTask} aria-label="New task"
           className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors">
           <Plus size={13} /> New task
         </button>

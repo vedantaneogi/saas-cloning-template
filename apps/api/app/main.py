@@ -99,6 +99,13 @@ async def lifespan(app: FastAPI):
     if seed_path:
         await _load_seed_from_path(seed_path)
 
+    # Configure Resend email delivery
+    from app.core.email import configure_resend
+    if settings.RESEND_API_KEY:
+        configure_resend(settings.RESEND_API_KEY)
+    else:
+        logger.info("RESEND_API_KEY not set — real email delivery disabled")
+
     # Graceful SIGTERM: stop accepting new connections then drain
     loop = asyncio.get_event_loop()
 
