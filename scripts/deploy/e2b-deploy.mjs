@@ -180,6 +180,15 @@ async function main() {
   )
   log(`Seed: ${seed.stdout.slice(0, 150)}`)
 
+  // ── Create threaded conversations for demo ────────────────────
+  log('Creating threaded conversations...')
+  try {
+    await run(sandbox, `pip install requests`, { timeoutMs: 30_000 })
+    await run(sandbox, `cd ${APP_DIR} && python3 scripts/deploy/create-threads.py`, { timeoutMs: 60_000 })
+  } catch (e) {
+    log(`Thread creation skipped: ${e.message?.slice(0, 100)}`)
+  }
+
   // ── Public URLs ───────────────────────────────────────────────
   const webHost = sandbox.getHost(3000)
   const url = `https://${webHost}`
