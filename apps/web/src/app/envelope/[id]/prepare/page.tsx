@@ -265,7 +265,10 @@ export default function PrepareEnvelopePage() {
         }
       }
     },
-    onSuccess: () => router.push(`/envelope/${id}/edit`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["envelope", id] });
+      router.push(`/envelope/${id}/edit`);
+    },
   });
 
   // ── File drop ──────────────────────────────────────────────────────────────

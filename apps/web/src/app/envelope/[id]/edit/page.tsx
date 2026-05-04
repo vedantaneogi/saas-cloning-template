@@ -863,12 +863,12 @@ export default function EditorPage() {
     activeTool: "select",
   } satisfies EditorState);
 
-  // Set first recipient as active once envelope loads
+  // Set first recipient as active once envelope loads (or refetches with recipients)
   useEffect(() => {
     if (editorRecipients.length > 0 && !state.activeRecipientId) {
       dispatch({ type: "SET_ACTIVE_RECIPIENT", id: editorRecipients[0].id });
     }
-  }, [envelope]);
+  }, [editorRecipients]);
 
   // Populate fields from API
   useEffect(() => {
