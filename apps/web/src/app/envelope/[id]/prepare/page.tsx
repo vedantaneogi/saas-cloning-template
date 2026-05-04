@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CaretUp, CaretDown, X, Trash, Info, Desktop, Question, GearSix, PencilSimple, AddressBook, UserPlus, Layout, Key, ChatText, Eye, UserCircle } from "@phosphor-icons/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUp03Icon } from "@hugeicons/core-free-icons";
@@ -43,6 +43,7 @@ const roleLabel: Record<string, string> = {
 export default function PrepareEnvelopePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
 
   // ── Section collapse state — all open by default ──────────────────────────
@@ -140,6 +141,15 @@ export default function PrepareEnvelopePage() {
         order: r.order || i + 1,
         color: getRecipientColor(i),
       })));
+      // Restore imOnlySigner if envelope was saved with only the sender as recipient
+      const userEmail = currentUser?.email?.toLowerCase();
+      if (
+        userEmail &&
+        envelope.recipients.length === 1 &&
+        envelope.recipients[0].email?.toLowerCase() === userEmail
+      ) {
+        setImOnlySigner(true);
+      }
     }
     if (envelope.documents && envelope.documents.length > 0) {
       // Only pre-populate from API on initial load (when we have no local state yet).
@@ -188,6 +198,8 @@ export default function PrepareEnvelopePage() {
           return next;
         });
       }, 1500);
+      // Invalidate so the editor page gets fresh documents list
+      queryClient.invalidateQueries({ queryKey: ["envelope", id] });
     },
     onError: (_err, file) => {
       setUploadingDocs((prev) => {

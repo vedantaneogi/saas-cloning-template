@@ -294,6 +294,7 @@ function PageDropZone({
             alt={`Page ${pageNumber}`}
             className="absolute inset-0 w-full h-full object-contain pointer-events-none"
             draggable={false}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
           />
         ) : (
           <div
