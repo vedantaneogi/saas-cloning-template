@@ -46,6 +46,7 @@ class OOFUpdate(BaseModel):
 # In-memory settings store (per user in production would be a DB table,
 # but for the RL environment an in-memory map per user_id is fine)
 _user_settings: dict[str, dict] = {}
+_user_delegates: dict[str, list[dict]] = {}
 
 
 def _default_settings(user: User) -> dict:
@@ -169,3 +170,47 @@ async def update_oof(
         internal_message=current_user.out_of_office_message_internal,
         external_message=current_user.out_of_office_message_external,
     )
+
+
+# ---------------------------------------------------------------------------
+# Delegates
+# ---------------------------------------------------------------------------
+
+class DelegateEntry(BaseModel):
+    id: str
+    email: str
+    name: str
+    mail_permission: str = "none"
+    calendar_permission: str = "none"
+
+
+@router.get("/delegates", response_model=list[DelegateEntry])
+async def list_delegates(
+    current_user: User = Depends(get_current_user),
+):
+    uid = str(current_user.id)
+    return [DelegateEntry(**d) for d in _user_delegates.get(uid, [])]
+
+
+@router.post("/delegates", response_model=DelegateEntry, status_code=201)
+async def add_delegate(
+    body: DelegateEntry,
+    current_user: User = Depends(get_current_user),
+):
+    uid = str(current_user.id)
+    if uid not in _user_delegates:
+        _user_delegates[uid] = []
+    _user_delegates[uid].append(body.model_dump())
+    rl_state.event_log.append("delegate_added", {"user_id": uid, "delegate_email": body.email})
+    return body
+
+
+@router.delete("/delegates/{delegate_id}", status_code=204)
+async def remove_delegate(
+    delegate_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    uid = str(current_user.id)
+    delegates = _user_delegates.get(uid, [])
+    _user_delegates[uid] = [d for d in delegates if d["id"] != delegate_id]
+    rl_state.event_log.append("delegate_removed", {"user_id": uid, "delegate_id": delegate_id})

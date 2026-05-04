@@ -169,3 +169,38 @@ async def subscribe_calendar(
         "owner_email": body.email,
     })
     return CalendarOut.model_validate(cal)
+
+
+@router.get("/pub/{calendar_id}")
+async def public_calendar(
+    calendar_id: uuid.UUID,
+    detail: str = "availability",
+    db: AsyncSession = Depends(get_db),
+):
+    """Public calendar endpoint — no auth required. Returns events for a shared calendar."""
+    from app.models.calendar import Event
+    from app.schemas.calendar import EventOut
+
+    result = await db.execute(select(Calendar).where(Calendar.id == calendar_id))
+    cal = result.scalar_one_or_none()
+    if not cal:
+        raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "Calendar not found"}})
+
+    events_result = await db.execute(
+        select(Event).where(Event.calendar_id == calendar_id).order_by(Event.start_time)
+    )
+    events = events_result.scalars().all()
+
+    if detail == "availability":
+        return {
+            "calendar": cal.name,
+            "slots": [
+                {"start": e.start_time.isoformat(), "end": e.end_time.isoformat(), "status": e.status}
+                for e in events
+            ],
+        }
+    else:
+        return {
+            "calendar": cal.name,
+            "events": [EventOut.model_validate(e).model_dump() for e in events],
+        }

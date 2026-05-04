@@ -8,11 +8,8 @@ import { events, calendars } from '@/lib/api'
 import type { Event } from '@/lib/api'
 import { CalendarGrid } from '@/components/calendar/CalendarGrid'
 import { CalendarSidebar } from '@/components/calendar/CalendarSidebar'
-import { ViewSwitcher } from '@/components/calendar/ViewSwitcher'
 import { DateNavigator } from '@/components/calendar/DateNavigator'
 import { EventModal } from '@/components/calendar/EventModal'
-import { Button } from '@/components/ui/Button'
-import { Plus } from 'lucide-react'
 
 type CalendarView = 'day' | 'week' | 'work-week' | 'month'
 
@@ -82,31 +79,16 @@ export default function CalendarPage() {
       {/* Main calendar area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Toolbar */}
+        {/* Date navigation bar — matches Outlook: Today + arrows + date range */}
         <div
-          className="flex items-center justify-between px-4 py-2 border-b border-[#EDEBE9] bg-white flex-shrink-0"
+          className="flex items-center px-4 py-2 border-b border-[#EDEBE9] bg-white flex-shrink-0"
           aria-label="CalendarSurfaceNavigationToolbar"
-          data-automation-id="CalendarSurfaceNavigationToolbar"
         >
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={() => {
-                setInitialDate(undefined)
-                setEditingEvent(undefined)
-                setEventModalOpen(true)
-              }}
-              aria-label="New event"
-              size="md"
-            >
-              <Plus size={14} />
-              New event
-            </Button>
-            <DateNavigator
-              currentDate={currentDate}
-              view={view}
-              onDateChange={setCurrentDate}
-            />
-          </div>
-          <ViewSwitcher currentView={view} />
+          <DateNavigator
+            currentDate={currentDate}
+            view={view}
+            onDateChange={setCurrentDate}
+          />
         </div>
 
         {/* Calendar grid */}

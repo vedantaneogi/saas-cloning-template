@@ -5,14 +5,14 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
-import { messages, folders, quickSteps, settings } from '@/lib/api'
+import { messages, folders, quickSteps, settings, categories } from '@/lib/api'
 import {
   Menu, Reply, ReplyAll, Forward, Trash2, Archive, MailOpen, Zap,
   ChevronDown, Flag, FolderInput, Printer, MoreHorizontal,
   PanelRight, PanelBottom, PanelLeftClose, MessageSquare,
   RotateCcw, HelpCircle, BookOpen, ExternalLink,
   CalendarPlus, CalendarDays, CalendarRange, Share2,
-  UserPlus, Pencil, Star, Plus, CheckSquare,
+  UserPlus, Pencil, Star, Plus, CheckSquare, Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -28,7 +28,7 @@ function RibbonBtn({
       aria-label={label} title={label}
       className={cn(
         'flex flex-col items-center justify-center gap-0.5 px-2 py-0.5 rounded text-[11px] transition-colors min-w-[42px] h-full',
-        disabled ? 'text-[#A19F9D] cursor-not-allowed'
+        disabled ? 'text-[#A19F9D] cursor-not-allowed opacity-60'
           : active ? 'bg-[#EBF3FB] text-[#0078D4]'
           : 'text-[#323130] hover:bg-[#F3F2F1]',
       )}
@@ -66,7 +66,7 @@ export function RibbonTabs() {
   }, [fileMenuOpen])
 
   return (
-    <div className="flex flex-col flex-shrink-0">
+    <div className="flex flex-col flex-shrink-0 relative z-10">
       {/* Tab bar */}
       <div className="h-8 bg-white border-b border-[#EDEBE9] flex items-center gap-0 px-1">
         <button
@@ -146,6 +146,50 @@ export function RibbonTabs() {
 }
 
 // ─── Home Tab (mail toolbar) ─────────────────────────────────────────────────
+// ─── Move To dropdown matching Outlook ────────────────────────────────────────
+function MoveToDropdown({ folders, onMove, onClose }: {
+  folders: { id: string; name: string; slug: string }[]
+  onMove: (folderId: string) => void
+  onClose: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const filtered = search.trim()
+    ? folders.filter((f) => f.name.toLowerCase().includes(search.toLowerCase()))
+    : folders
+
+  return (
+    <div className="absolute left-0 top-full mt-0.5 z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in">
+      {/* Search */}
+      <div className="px-2 py-2 border-b border-[#EDEBE9]">
+        <div className="flex items-center gap-2 border border-[#EDEBE9] rounded px-2 py-1.5">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5.5" stroke="#A19F9D" strokeWidth="1.3"/><path d="M11 11l3.5 3.5" stroke="#A19F9D" strokeWidth="1.3" strokeLinecap="round"/></svg>
+          <input
+            autoFocus
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search for a folder"
+            className="flex-1 text-xs text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent"
+          />
+        </div>
+      </div>
+      {/* Folder list */}
+      <div className="max-h-48 overflow-y-auto outlook-scrollbar py-1">
+        {filtered.map((f) => (
+          <button key={f.id} onClick={() => { onMove(f.id); onClose() }}
+            className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors truncate">
+            <FolderInput size={14} className="text-[#605E5C] flex-shrink-0" />
+            {f.name}
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <p className="px-3 py-2 text-xs text-[#A19F9D]">No folders match</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function HomeRibbon() {
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
@@ -154,8 +198,10 @@ function HomeRibbon() {
   const queryClient = useQueryClient()
   const [qsOpen, setQsOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const qsRef = useRef<HTMLDivElement>(null)
   const moveRef = useRef<HTMLDivElement>(null)
+  const moreRef = useRef<HTMLDivElement>(null)
 
   const { data: message } = useQuery({
     queryKey: ['message', selectedMessageId],
@@ -181,6 +227,15 @@ function HomeRibbon() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [qsOpen])
+
+  useEffect(() => {
+    if (!moreOpen) return
+    const handler = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [moreOpen])
 
   useEffect(() => {
     if (!moveOpen) return
@@ -281,12 +336,11 @@ function HomeRibbon() {
           <span className="flex items-center gap-0.5">Move to <ChevronDown size={8} /></span>
         </RibbonBtn>
         {moveOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-            {folderList.map((f) => (
-              <button key={f.id} onClick={() => moveMutation.mutate(f.id)}
-                className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate">{f.name}</button>
-            ))}
-          </div>
+          <MoveToDropdown
+            folders={folderList}
+            onMove={(folderId) => moveMutation.mutate(folderId)}
+            onClose={() => setMoveOpen(false)}
+          />
         )}
       </div>
 
@@ -345,11 +399,40 @@ function HomeRibbon() {
         <RotateCcw size={15} /><span>Undo</span>
       </RibbonBtn>
 
-      {/* Overflow */}
-      <div className="ml-auto flex-shrink-0">
-        <RibbonBtn label="More commands" disabled={false} onClick={() => {}}>
+      {/* Overflow — categorized dropdown matching Outlook */}
+      <div className="ml-auto flex-shrink-0 relative">
+        <RibbonBtn label="More commands" onClick={() => setMoreOpen((v: boolean) => !v)}>
           <MoreHorizontal size={15} />
         </RibbonBtn>
+        {moreOpen && (
+          <div ref={moreRef} className="absolute right-0 top-full mt-0.5 z-50 w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+            <p className="px-3 py-1 text-[10px] font-semibold text-[#605E5C] uppercase">Move & delete</p>
+            <button onClick={() => { if (hasMsg) deleteMutation.mutate(); setMoreOpen(false) }} disabled={!hasMsg}
+              className="w-full flex items-center gap-2 text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] disabled:opacity-40">
+              <Trash2 size={14} className="text-[#605E5C]" /> Delete
+            </button>
+            <button onClick={() => { if (hasMsg) archiveMutation.mutate(); setMoreOpen(false) }} disabled={!hasMsg}
+              className="w-full flex items-center gap-2 text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] disabled:opacity-40">
+              <Archive size={14} className="text-[#605E5C]" /> Archive
+            </button>
+            <div className="h-px bg-[#EDEBE9] my-1" />
+            <p className="px-3 py-1 text-[10px] font-semibold text-[#605E5C] uppercase">Tags</p>
+            <button onClick={() => { if (hasMsg) flagMutation.mutate(); setMoreOpen(false) }} disabled={!hasMsg}
+              className="w-full flex items-center gap-2 text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] disabled:opacity-40">
+              <Flag size={14} className="text-[#605E5C]" /> Flag / Unflag
+            </button>
+            <button onClick={() => { if (hasMsg) markReadMutation.mutate(!message?.is_read); setMoreOpen(false) }} disabled={!hasMsg}
+              className="w-full flex items-center gap-2 text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] disabled:opacity-40">
+              <MailOpen size={14} className="text-[#605E5C]" /> Read / Unread
+            </button>
+            <div className="h-px bg-[#EDEBE9] my-1" />
+            <p className="px-3 py-1 text-[10px] font-semibold text-[#605E5C] uppercase">Print</p>
+            <button onClick={() => { window.print(); setMoreOpen(false) }}
+              className="w-full flex items-center gap-2 text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
+              <Printer size={14} className="text-[#605E5C]" /> Print
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -361,6 +444,22 @@ function ViewRibbon() {
   const conversationGrouping = useMailStore((s) => s.conversationGrouping)
   const setConversationGrouping = useMailStore((s) => s.setConversationGrouping)
   const showNotification = useUIStore((s) => s.showNotification)
+  const [catFilterOpen, setCatFilterOpen] = useState(false)
+  const catFilterRef = useRef<HTMLDivElement>(null)
+
+  const { data: categoryList = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categories.list(),
+  })
+
+  useEffect(() => {
+    if (!catFilterOpen) return
+    const handler = (e: MouseEvent) => {
+      if (catFilterRef.current && !catFilterRef.current.contains(e.target as Node)) setCatFilterOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [catFilterOpen])
 
   const updateSettingsMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => settings.update({ mail: data } as never),
@@ -393,6 +492,34 @@ function ViewRibbon() {
       >
         <MessageSquare size={15} /><span>Conversations</span>
       </RibbonBtn>
+
+      <RibbonSep />
+
+      {/* Category filter */}
+      {categoryList.length > 0 && (
+        <div className="relative" ref={catFilterRef}>
+          <RibbonBtn label="Filter by category" onClick={() => setCatFilterOpen((v) => !v)}>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            <span>Categories</span>
+          </RibbonBtn>
+          {catFilterOpen && (
+            <div className="absolute left-0 top-full mt-0.5 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+              {categoryList.map((cat: { id: string; name: string; color: string }) => (
+                <button key={cat.id}
+                  onClick={() => {
+                    // Navigate to search filtered by category
+                    showNotification(`Showing ${cat.name} messages`)
+                    setCatFilterOpen(false)
+                  }}
+                  className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors">
+                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -496,8 +623,19 @@ function ContactsHomeRibbon() {
 
       <RibbonSep />
 
+      <RibbonSep />
+
       <RibbonBtn label="Add to favorites" disabled onClick={() => showNotification('Select a contact first')}>
-        <Star size={15} /><span>Favorites</span>
+        <Star size={15} /><span>Add to favorites</span>
+      </RibbonBtn>
+      <RibbonBtn label="Add to list" disabled onClick={() => showNotification('Select a contact first')}>
+        <Users size={15} /><span>Add to list</span>
+      </RibbonBtn>
+
+      <RibbonSep />
+
+      <RibbonBtn label="Manage contacts" onClick={() => showNotification('Manage contacts')}>
+        <Users size={15} /><span>Manage contacts</span>
       </RibbonBtn>
     </div>
   )

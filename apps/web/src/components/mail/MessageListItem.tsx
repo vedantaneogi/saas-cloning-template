@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X } from 'lucide-react'
+import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X } from 'lucide-react'
 import type { Message } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
 import { Avatar } from '@/components/ui/Avatar'
@@ -15,6 +15,8 @@ import { useRouter } from 'next/navigation'
 interface MessageListItemProps {
   message: Message
   conversationCount?: number
+  onToggleThread?: () => void
+  threadExpanded?: boolean
 }
 
 function MenuSep() {
@@ -66,7 +68,7 @@ function SubMenu({ icon, label, open, onOpenChange, children, alignRight }: {
   )
 }
 
-export function MessageListItem({ message, conversationCount }: MessageListItemProps) {
+export function MessageListItem({ message, conversationCount, onToggleThread, threadExpanded }: MessageListItemProps) {
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
   const openComposer = useUIStore((s) => s.openComposer)
@@ -259,6 +261,23 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
       onContextMenu={handleContextMenu}
       onDragStart={handleDragStart}
     >
+      {/* Thread expand arrow */}
+      {onToggleThread ? (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleThread() }}
+          className="flex-shrink-0 w-4 text-[#605E5C] hover:text-[#323130] transition-colors self-center"
+          aria-label={threadExpanded ? 'Collapse thread' : 'Expand thread'}
+        >
+          {threadExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+      ) : conversationCount && conversationCount > 1 ? (
+        <span className="flex-shrink-0 w-4 text-[#605E5C] self-center">
+          <ChevronRight size={14} />
+        </span>
+      ) : (
+        <span className="w-4 flex-shrink-0" />
+      )}
+
       {/* Unread indicator */}
       {isUnread && !isChecked && (
         <span
@@ -311,23 +330,23 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
           >
             {senderName}
           </span>
-          <span className="text-xs text-[#605E5C] flex-shrink-0 whitespace-nowrap">
-            {formatMessageDate(dateStr)}
-          </span>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Always-visible icons: attachment + reply type */}
+            {message.has_attachments && (
+              <Paperclip size={12} className="text-[#605E5C]" />
+            )}
+            {message.in_reply_to_id && (
+              <Reply size={12} className="text-[#605E5C]" />
+            )}
+            <span className="text-xs text-[#605E5C] whitespace-nowrap">
+              {formatMessageDate(dateStr)}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1 mb-0.5">
           {message.importance === 'high' && (
             <Badge variant="importance">!</Badge>
-          )}
-          {message.reply_type === 'reply' && (
-            <Reply size={11} className="text-[#605E5C] flex-shrink-0" aria-label="Reply" />
-          )}
-          {message.reply_type === 'reply_all' && (
-            <MessagesSquare size={11} className="text-[#605E5C] flex-shrink-0" aria-label="Reply all" />
-          )}
-          {message.reply_type === 'forward' && (
-            <Forward size={11} className="text-[#605E5C] flex-shrink-0" aria-label="Forwarded" />
           )}
           <span
             className={cn(
@@ -359,9 +378,6 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
                 ))}
               </span>
             )}
-            {message.has_attachments && (
-              <Paperclip size={12} className="text-[#605E5C]" aria-label="Has attachments" />
-            )}
             {message.is_pinned && (
               <Star size={12} className="text-[#FFB900] fill-[#FFB900]" aria-label="Pinned" />
             )}
@@ -369,20 +385,36 @@ export function MessageListItem({ message, conversationCount }: MessageListItemP
         </div>
       </div>
 
-      {/* Flag button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          flagMutation.mutate()
-        }}
-        aria-label={message.is_flagged ? 'Remove flag' : 'Flag message'}
-        className={cn(
-          'flex-shrink-0 self-center p-1 rounded transition-colors opacity-0 group-hover:opacity-100',
-          message.is_flagged ? 'opacity-100 text-[#D13438]' : 'text-[#605E5C] hover:text-[#D13438]'
-        )}
-      >
-        <Flag size={14} className={message.is_flagged ? 'fill-[#D13438]' : ''} />
-      </button>
+      {/* Hover action icons — trash, flag, pin */}
+      <div className="flex-shrink-0 self-center flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => { e.stopPropagation(); deleteMutation.mutate() }}
+          aria-label="Delete"
+          className="p-1 rounded text-[#605E5C] hover:text-[#D13438] hover:bg-[#FDE7E9] transition-colors"
+        >
+          <Trash2 size={14} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); flagMutation.mutate() }}
+          aria-label={message.is_flagged ? 'Remove flag' : 'Flag message'}
+          className={cn('p-1 rounded transition-colors', message.is_flagged ? 'text-[#D13438]' : 'text-[#605E5C] hover:text-[#D13438]')}
+        >
+          <Flag size={14} className={message.is_flagged ? 'fill-[#D13438]' : ''} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); pinMutation.mutate() }}
+          aria-label={message.is_pinned ? 'Unpin' : 'Pin'}
+          className={cn('p-1 rounded transition-colors', message.is_pinned ? 'text-[#FFB900]' : 'text-[#605E5C] hover:text-[#FFB900]')}
+        >
+          <Star size={14} className={message.is_pinned ? 'fill-[#FFB900]' : ''} />
+        </button>
+      </div>
+      {/* Always-visible flag when flagged */}
+      {message.is_flagged && (
+        <span className="flex-shrink-0 self-center text-[#D13438] group-hover:hidden">
+          <Flag size={14} className="fill-[#D13438]" />
+        </span>
+      )}
 
       {/* Right-click context menu — matches real Outlook order exactly */}
       {contextMenu && (

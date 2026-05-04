@@ -641,11 +641,35 @@ async def reply_message(
         cc_addresses = [a for a in (original.to_addresses or []) if a.get("email") != current_user.email]
         cc_addresses += original.cc_addresses or []
 
+    # Auto-create or update conversation for threading
+    from app.models.conversation import Conversation
+    conv_id = original.conversation_id
+    if not conv_id:
+        conv = Conversation(
+            id=uuid.uuid4(),
+            user_id=current_user.id,
+            subject=original.subject,
+            last_message_at=now,
+            message_count=2,
+            has_attachments=original.has_attachments,
+        )
+        db.add(conv)
+        await db.flush()
+        conv_id = conv.id
+        original.conversation_id = conv_id
+    else:
+        # Update existing conversation
+        conv_result = await db.execute(select(Conversation).where(Conversation.id == conv_id))
+        conv = conv_result.scalar_one_or_none()
+        if conv:
+            conv.message_count = (conv.message_count or 0) + 1
+            conv.last_message_at = now
+
     reply = Message(
         id=uuid.uuid4(),
         user_id=current_user.id,
         folder_id=folder_id,
-        conversation_id=original.conversation_id,
+        conversation_id=conv_id,
         in_reply_to_id=original.id,
         reply_type="reply_all" if body.reply_all else "reply",
         from_address=current_user.email,

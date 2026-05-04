@@ -843,6 +843,14 @@ export const settings = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+
+  listDelegates: () => request<{ id: string; email: string; name: string; mail_permission: string; calendar_permission: string }[]>('/settings/delegates'),
+
+  addDelegate: (data: { id: string; email: string; name: string; mail_permission: string; calendar_permission: string }) =>
+    request<typeof data>('/settings/delegates', { method: 'POST', body: JSON.stringify(data) }),
+
+  removeDelegate: (id: string) =>
+    request<void>(`/settings/delegates/${id}`, { method: 'DELETE' }),
 }
 
 // ─── Quick Steps ──────────────────────────────────────────────────────────────

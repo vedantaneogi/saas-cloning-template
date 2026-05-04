@@ -7,6 +7,9 @@ import Link from '@tiptap/extension-link'
 import TextAlign from '@tiptap/extension-text-align'
 import Underline from '@tiptap/extension-underline'
 import Image from '@tiptap/extension-image'
+import Color from '@tiptap/extension-color'
+import { TextStyle } from '@tiptap/extension-text-style'
+import Highlight from '@tiptap/extension-highlight'
 import Mention from '@tiptap/extension-mention'
 import { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion'
 import tippy, { Instance as TippyInstance } from 'tippy.js'
@@ -15,6 +18,7 @@ import {
   Bold,
   Italic,
   UnderlineIcon,
+  Strikethrough,
   List,
   ListOrdered,
   AlignLeft,
@@ -24,6 +28,10 @@ import {
   Undo,
   Redo,
   ImageIcon,
+  Highlighter,
+  Type,
+  Minus,
+  Plus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { contacts } from '@/lib/api'
@@ -175,6 +183,9 @@ export function RichTextEditor({
     extensions: [
       StarterKit,
       Underline,
+      TextStyle,
+      Color,
+      Highlight.configure({ multicolor: true }),
       Image.configure({
         inline: true,
         HTMLAttributes: { class: 'max-w-full rounded' },
@@ -240,9 +251,23 @@ export function RichTextEditor({
     },
   })
 
+  // Sync external content changes back to editor (e.g. signature insertion)
+  useEffect(() => {
+    if (editor && content !== undefined && editor.getHTML() !== content) {
+      editor.commands.setContent(content, false)
+    }
+  }, [content, editor])
+
   const [linkInput, setLinkInput] = useState('')
   const [showLinkDialog, setShowLinkDialog] = useState(false)
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const [showHighlightPicker, setShowHighlightPicker] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const colorRef = useRef<HTMLDivElement>(null)
+  const highlightRef = useRef<HTMLDivElement>(null)
+
+  const TEXT_COLORS = ['#000000', '#D13438', '#0078D4', '#107C10', '#8764B8', '#FF8C00', '#605E5C']
+  const HIGHLIGHT_COLORS = ['#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#FFC0CB', '#FFD700', 'transparent']
 
   const addLink = () => {
     setLinkInput(editor?.getAttributes('link')?.href ?? '')
@@ -283,6 +308,25 @@ export function RichTextEditor({
     >
       {!readOnly && (
         <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
+          {/* Undo / Redo */}
+          <ToolbarButton
+            onClick={() => editor.chain().focus().undo().run()}
+            disabled={!editor.can().undo()}
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo size={14} />
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().redo().run()}
+            disabled={!editor.can().redo()}
+            title="Redo (Ctrl+Y)"
+          >
+            <Redo size={14} />
+          </ToolbarButton>
+
+          <div className="w-px h-4 bg-[#EDEBE9] mx-1" />
+
+          {/* Font formatting: B I U S */}
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBold().run()}
             active={editor.isActive('bold')}
@@ -304,9 +348,85 @@ export function RichTextEditor({
           >
             <UnderlineIcon size={14} />
           </ToolbarButton>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+            active={editor.isActive('strike')}
+            title="Strikethrough"
+          >
+            <Strikethrough size={14} />
+          </ToolbarButton>
 
           <div className="w-px h-4 bg-[#EDEBE9] mx-1" />
 
+          {/* Text color */}
+          <div className="relative" ref={colorRef}>
+            <ToolbarButton
+              onClick={() => { setShowColorPicker((v) => !v); setShowHighlightPicker(false) }}
+              title="Font color"
+            >
+              <div className="flex flex-col items-center">
+                <Type size={12} />
+                <div className="w-3.5 h-1 rounded-sm mt-0.5" style={{ backgroundColor: editor.getAttributes('textStyle')?.color || '#000000' }} />
+              </div>
+            </ToolbarButton>
+            {showColorPicker && (
+              <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-[#EDEBE9] rounded shadow-outlook p-2 flex gap-1 animate-fade-in">
+                {TEXT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => { editor.chain().focus().setColor(color).run(); setShowColorPicker(false) }}
+                    className="w-5 h-5 rounded-sm border border-[#D2D0CE] hover:scale-110 transition-transform"
+                    style={{ backgroundColor: color }}
+                    title={color}
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={() => { editor.chain().focus().unsetColor().run(); setShowColorPicker(false) }}
+                  className="w-5 h-5 rounded-sm border border-[#D2D0CE] hover:scale-110 transition-transform text-[10px] text-[#605E5C]"
+                  title="Remove color"
+                >
+                  x
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Highlight */}
+          <div className="relative" ref={highlightRef}>
+            <ToolbarButton
+              onClick={() => { setShowHighlightPicker((v) => !v); setShowColorPicker(false) }}
+              active={editor.isActive('highlight')}
+              title="Highlight"
+            >
+              <Highlighter size={14} />
+            </ToolbarButton>
+            {showHighlightPicker && (
+              <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-[#EDEBE9] rounded shadow-outlook p-2 flex gap-1 animate-fade-in">
+                {HIGHLIGHT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => {
+                      if (color === 'transparent') editor.chain().focus().unsetHighlight().run()
+                      else editor.chain().focus().toggleHighlight({ color }).run()
+                      setShowHighlightPicker(false)
+                    }}
+                    className={cn('w-5 h-5 rounded-sm border border-[#D2D0CE] hover:scale-110 transition-transform', color === 'transparent' && 'relative')}
+                    style={{ backgroundColor: color === 'transparent' ? '#fff' : color }}
+                    title={color === 'transparent' ? 'No highlight' : color}
+                  >
+                    {color === 'transparent' && <span className="text-[8px] text-[#D13438] absolute inset-0 flex items-center justify-center">/</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="w-px h-4 bg-[#EDEBE9] mx-1" />
+
+          {/* Lists */}
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             active={editor.isActive('bulletList')}
@@ -322,8 +442,7 @@ export function RichTextEditor({
             <ListOrdered size={14} />
           </ToolbarButton>
 
-          <div className="w-px h-4 bg-[#EDEBE9] mx-1" />
-
+          {/* Alignment */}
           <ToolbarButton
             onClick={() => editor.chain().focus().setTextAlign('left').run()}
             active={editor.isActive({ textAlign: 'left' })}
@@ -348,28 +467,12 @@ export function RichTextEditor({
 
           <div className="w-px h-4 bg-[#EDEBE9] mx-1" />
 
+          {/* Link / Image */}
           <ToolbarButton onClick={addLink} title="Insert link">
             <LinkIcon size={14} />
           </ToolbarButton>
           <ToolbarButton onClick={addImage} title="Insert image">
             <ImageIcon size={14} />
-          </ToolbarButton>
-
-          <div className="w-px h-4 bg-[#EDEBE9] mx-1" />
-
-          <ToolbarButton
-            onClick={() => editor.chain().focus().undo().run()}
-            disabled={!editor.can().undo()}
-            title="Undo (Ctrl+Z)"
-          >
-            <Undo size={14} />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().redo().run()}
-            disabled={!editor.can().redo()}
-            title="Redo (Ctrl+Y)"
-          >
-            <Redo size={14} />
           </ToolbarButton>
         </div>
       )}

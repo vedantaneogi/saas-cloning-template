@@ -83,6 +83,16 @@ export function TaskListView({ listId, onSelectTask, selectedTaskId }: TaskListV
         />
       </form>
 
+      {/* Table header */}
+      {!isFlaggedView && taskList.length > 0 && (
+        <div className="flex items-center px-4 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8] text-xs font-medium text-[#605E5C] flex-shrink-0">
+          <span className="w-8" />
+          <span className="flex-1">Title</span>
+          <span className="w-24 text-center">Due Date</span>
+          <span className="w-20 text-center">Importance</span>
+        </div>
+      )}
+
       {/* Task list */}
       <div className="flex-1 overflow-y-auto outlook-scrollbar" role="list" aria-label="Task list">
         {isFlaggedView ? (

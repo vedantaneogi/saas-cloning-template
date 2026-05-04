@@ -13,7 +13,9 @@
     "package": "bash scripts/package/build-api-image.sh && bash scripts/package/build-web-image.sh && bash scripts/package/build-electron.sh"
   },
   "dependencies": {
-    "@tiptap/extension-image": "^3.22.5"
+    "@tiptap/extension-image": "^3.22.5",
+    "markdown-it": "^14.1.1",
+    "playwright": "^1.59.1"
   },
   "devDependencies": {
     "e2b": "^2.19.4"

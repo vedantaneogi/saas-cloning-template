@@ -157,6 +157,27 @@
     margin: 0;
   }
 
+  /* Resizable images in editor */
+  .tiptap-editor .ProseMirror img {
+    max-width: 100%;
+    height: auto;
+    cursor: pointer;
+    resize: both;
+    overflow: hidden;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    transition: border-color 0.15s;
+  }
+
+  .tiptap-editor .ProseMirror img:hover,
+  .tiptap-editor .ProseMirror img.ProseMirror-selectednode {
+    border-color: #0078D4;
+  }
+
+  .tiptap-editor .ProseMirror img.ProseMirror-selectednode {
+    outline: none;
+  }
+
   .tiptap-editor .ProseMirror blockquote {
     border-left: 3px solid #EDEBE9;
     padding-left: 1rem;

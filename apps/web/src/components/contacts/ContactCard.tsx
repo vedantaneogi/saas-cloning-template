@@ -6,16 +6,22 @@ import { contacts } from '@/lib/api'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
 import { useUIStore } from '@/store/ui'
-import { Mail, Phone, Building2, MapPin, Star, Edit2, Trash2 } from 'lucide-react'
+import { Mail, Phone, Building2, MapPin, Star, Edit2, Trash2, FileText } from 'lucide-react'
+import { useState } from 'react'
+import { cn } from '@/lib/utils'
 
 interface ContactCardProps {
   contact: Contact
   onEdit?: () => void
 }
 
+const CONTACT_TABS = ['Overview', 'Contact', 'Files', 'Messages'] as const
+type ContactTab = (typeof CONTACT_TABS)[number]
+
 export function ContactCard({ contact, onEdit }: ContactCardProps) {
   const queryClient = useQueryClient()
   const openComposer = useUIStore((s) => s.openComposer)
+  const [activeTab, setActiveTab] = useState<ContactTab>('Contact')
 
   const favoriteMutation = useMutation({
     mutationFn: () => contacts.update(contact.id, { is_favorite: !contact.is_favorite }),
@@ -91,7 +97,52 @@ export function ContactCard({ contact, onEdit }: ContactCardProps) {
         </Button>
       </div>
 
-      {/* Details */}
+      {/* Tabs — matching Outlook: Overview / Contact / Files / Messages */}
+      <div className="flex border-b border-[#EDEBE9] px-6" role="tablist">
+        {CONTACT_TABS.map((tab) => (
+          <button
+            key={tab}
+            role="tab"
+            aria-selected={activeTab === tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              'px-3 py-2 text-sm transition-colors relative',
+              activeTab === tab
+                ? 'text-[#0078D4] font-medium after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#0078D4]'
+                : 'text-[#605E5C] hover:text-[#323130] hover:bg-[#F3F2F1]'
+            )}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      {activeTab === 'Overview' && (
+        <div className="p-6">
+          <p className="text-sm text-[#323130] mb-3">{contact.display_name}</p>
+          {contact.email && (
+            <div className="flex items-center gap-2 mb-2">
+              <Mail size={14} className="text-[#605E5C]" />
+              <a href={`mailto:${contact.email}`} className="text-sm text-[#0078D4] hover:underline">{contact.email}</a>
+            </div>
+          )}
+          {contact.phone && (
+            <div className="flex items-center gap-2 mb-2">
+              <Phone size={14} className="text-[#605E5C]" />
+              <span className="text-sm text-[#323130]">{contact.phone}</span>
+            </div>
+          )}
+          {contact.company && (
+            <div className="flex items-center gap-2">
+              <Building2 size={14} className="text-[#605E5C]" />
+              <span className="text-sm text-[#323130]">{contact.company}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'Contact' && (
       <div className="p-6 space-y-4">
         {/* Email */}
         <div className="flex items-start gap-3">
@@ -164,6 +215,27 @@ export function ContactCard({ contact, onEdit }: ContactCardProps) {
           </div>
         )}
       </div>
+      )}
+
+      {activeTab === 'Files' && (
+        <div className="p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText size={16} className="text-[#605E5C]" />
+            <p className="text-sm text-[#605E5C]">Files shared with {contact.display_name}</p>
+          </div>
+          <p className="text-sm text-[#A19F9D] text-center py-8">No shared files</p>
+        </div>
+      )}
+
+      {activeTab === 'Messages' && (
+        <div className="p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Mail size={16} className="text-[#605E5C]" />
+            <p className="text-sm text-[#605E5C]">Recent messages with {contact.display_name}</p>
+          </div>
+          <p className="text-sm text-[#A19F9D] text-center py-8">Search your mailbox for messages from {contact.email}</p>
+        </div>
+      )}
     </div>
   )
 }

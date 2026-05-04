@@ -386,6 +386,19 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
                 This event
               </button>
               <button
+                aria-label="This and all following events"
+                onClick={() => {
+                  if (scopeDialog.action === 'delete') {
+                    deleteMutation.mutate('series')
+                  } else {
+                    saveMutation.mutate({ data: scopeDialog.data, scope: 'series' })
+                  }
+                }}
+                className="text-left px-3 py-2 text-sm rounded border border-[#EDEBE9] hover:bg-[#F3F2F1] text-[#323130] transition-colors"
+              >
+                This and all following events
+              </button>
+              <button
                 aria-label="All events in series"
                 onClick={() => {
                   if (scopeDialog.action === 'delete') {
@@ -586,7 +599,8 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           </span>
           <select
             aria-label="Calendar"
-            className="text-sm text-[#323130] border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
+            className="text-sm text-[#323130] border-0 border-b border-[#8A8886] bg-transparent px-0 py-1 focus:outline-none focus:border-b-2 focus:border-[#0078D4] appearance-none cursor-pointer pr-5"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'10\' height=\'6\' viewBox=\'0 0 10 6\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M1 1l4 4 4-4\' stroke=\'%23605E5C\' stroke-width=\'1.5\' stroke-linecap=\'round\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0 center' }}
             {...register('calendar_id')}
           >
             {calendarList.map((cal) => (

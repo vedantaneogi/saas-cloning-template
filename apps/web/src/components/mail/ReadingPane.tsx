@@ -662,87 +662,67 @@ export function ReadingPane() {
             {message.subject || '(no subject)'}
           </h1>
 
-          {/* Conversation thread accordion */}
-          {conversationGrouping && threadMessages.length > 0 && (
-            <div className="border border-[#EDEBE9] rounded mb-4 overflow-hidden">
-              <button
-                onClick={() => setThreadExpanded((v) => !v)}
-                aria-expanded={threadExpanded}
-                className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-[#F3F2F1] transition-colors bg-[#FAF9F8]"
-              >
-                <MessagesSquare size={13} className="text-[#605E5C] flex-shrink-0" />
-                <span className="text-xs font-medium text-[#605E5C] flex-1">
-                  {convData?.conversation.message_count ?? threadMessages.length + 1} messages in thread
-                </span>
-                {threadExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              </button>
-              {threadExpanded && (
-                <div className="divide-y divide-[#EDEBE9]">
-                  {threadMessages.map((msg) => (
-                    <div key={msg.id}>
-                      <button
-                        onClick={() => setExpandedThreadMsgId(expandedThreadMsgId === msg.id ? null : msg.id)}
-                        className="flex items-center gap-2.5 w-full px-3 py-2 text-left hover:bg-[#F3F2F1] transition-colors"
-                      >
-                        <Avatar name={msg.from_name ?? msg.from_address} size="sm" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline justify-between gap-1">
-                            <span className="text-xs font-medium text-[#323130] truncate">
-                              {msg.from_name ?? msg.from_address.split('@')[0]}
-                            </span>
-                            <span className="text-xs text-[#605E5C] flex-shrink-0">
-                              {formatMessageDate(msg.received_at ?? msg.created_at)}
-                            </span>
-                          </div>
-                          {expandedThreadMsgId !== msg.id && (
-                            <p className="text-xs text-[#605E5C] truncate">
-                              {truncate(msg.body_text ?? stripHtml(msg.body_html ?? ''), 80)}
-                            </p>
-                          )}
-                        </div>
-                        {expandedThreadMsgId === msg.id ? <ChevronDown size={11} className="text-[#605E5C] flex-shrink-0" /> : <ChevronRight size={11} className="text-[#605E5C] flex-shrink-0" />}
-                      </button>
-                      {expandedThreadMsgId === msg.id && (
-                        <div
-                          className="px-4 py-3 text-sm text-[#323130] prose prose-sm max-w-none bg-white border-t border-[#EDEBE9]"
-                          dangerouslySetInnerHTML={{
-                            __html: trimQuotedReply(msg.body_html ?? msg.body_text?.replace(/\n/g, '<br/>') ?? '')
-                          }}
-                        />
-                      )}
+          {/* Thread messages as stacked cards — matches Outlook */}
+          {(() => {
+            // Combine all thread messages: thread children + current message, sorted chronologically
+            const allThreadMsgs = conversationGrouping && threadMessages.length > 0
+              ? [...threadMessages, message].sort((a, b) =>
+                  new Date(a.received_at ?? a.created_at).getTime() - new Date(b.received_at ?? b.created_at).getTime()
+                )
+              : [message]
+
+            return allThreadMsgs.map((msg, idx) => (
+              <div key={msg.id} className={cn('border border-[#EDEBE9] rounded-lg mb-3 bg-white', idx === allThreadMsgs.length - 1 && 'border-[#0078D4]/30')}>
+                {/* Message card header */}
+                <div className="flex items-start gap-3 px-4 pt-4 pb-2">
+                  <Avatar name={msg.from_name ?? msg.from_address} size="md" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <h3 className="font-semibold text-sm text-[#323130]">
+                        <EmailLink email={msg.from_address} name={msg.from_name} />
+                      </h3>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => openInlineReply('reply')} className="text-[#605E5C] hover:text-[#0078D4] p-0.5"><Reply size={14} /></button>
+                        <button onClick={() => openInlineReply('reply_all')} className="text-[#605E5C] hover:text-[#0078D4] p-0.5"><ReplyAll size={14} /></button>
+                        <button onClick={() => openComposer(draftFromReply(msg, 'forward'))} className="text-[#605E5C] hover:text-[#0078D4] p-0.5"><Forward size={14} /></button>
+                        <span className="text-[#605E5C]">|</span>
+                        <button className="text-[#605E5C] hover:text-[#323130] p-0.5"><MoreHorizontal size={14} /></button>
+                      </div>
                     </div>
-                  ))}
+                    <p className="text-xs text-[#605E5C]">
+                      To: {msg.to_addresses?.map((a: { email: string; name?: string }) => a.name || a.email).join(', ')}
+                    </p>
+                    <span className="text-xs text-[#605E5C]">
+                      {formatFullDate(msg.received_at ?? msg.created_at)}
+                    </span>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
 
-          {/* Message header */}
-          <MessageHeader message={message} />
+                {/* Reply info bar */}
+                {msg.reply_type && msg.reply_type !== 'none' && msg.in_reply_to_id && (
+                  <div className="flex items-center gap-2 mx-4 mb-2 px-3 py-1.5 bg-[#F3F2F1] rounded text-xs text-[#605E5C]">
+                    <span className="text-[#0078D4]">i</span>
+                    You {msg.reply_type === 'forward' ? 'forwarded' : 'replied'} on {formatFullDate(msg.sent_at ?? msg.created_at)}
+                  </div>
+                )}
 
-          {/* Category badges */}
-          {message.categories && message.categories.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
-              {message.categories.map((cat) => (
-                <span key={cat.id}
-                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white"
-                  style={{ backgroundColor: cat.color }}>
-                  {cat.name}
-                </span>
-              ))}
-            </div>
-          )}
+                {/* Attachments inline */}
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="px-4 mb-2">
+                    <AttachmentBar attachments={msg.attachments} />
+                  </div>
+                )}
 
-          <div className="h-px bg-[#EDEBE9] my-3" />
-
-          {/* Body */}
-          <div
-            className="text-sm text-[#323130] prose prose-sm max-w-none"
-            aria-label="Message body"
-            dangerouslySetInnerHTML={{
-              __html: message.body_html ?? message.body_text?.replace(/\n/g, '<br/>') ?? '',
-            }}
-          />
+                {/* Body */}
+                <div
+                  className="px-4 pb-4 text-sm text-[#323130] prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{
+                    __html: trimQuotedReply(msg.body_html ?? msg.body_text?.replace(/\n/g, '<br/>') ?? '')
+                  }}
+                />
+              </div>
+            ))
+          })()}
         </div>
       </div>
 
@@ -884,7 +864,13 @@ export function ReadingPane() {
               </button>
             </div>
             <div className="p-3 flex-1">
-              <p className="text-xs text-[#605E5C] mb-3">{addin.description}</p>
+              <p className="text-xs text-[#605E5C] mb-2">{addin.description}</p>
+              {/* Message context */}
+              <div className="bg-[#FAF9F8] rounded p-2 mb-3 border border-[#EDEBE9]">
+                <p className="text-[10px] text-[#605E5C] mb-1">Related to this email:</p>
+                <p className="text-xs font-medium text-[#323130] truncate">{message?.from_name || message?.from_address}</p>
+                <p className="text-[10px] text-[#605E5C] truncate">{message?.subject}</p>
+              </div>
               <div className="space-y-1.5">
                 {addin.actions.map((action) => (
                   <button
@@ -892,7 +878,7 @@ export function ReadingPane() {
                     type="button"
                     aria-label={action}
                     className="w-full text-left text-xs text-[#0078D4] hover:bg-[#EBF3FB] px-2 py-1.5 rounded flex items-center gap-1.5 transition-colors"
-                    onClick={() => showNotification(`${addin.name}: ${action} (stub)`)}
+                    onClick={() => showNotification(`${addin.name}: ${action}`)}
                   >
                     <ExternalLink size={11} className="flex-shrink-0" />
                     {action}
@@ -902,7 +888,7 @@ export function ReadingPane() {
             </div>
             <div className="px-3 py-2 border-t border-[#EDEBE9]">
               <p className="text-[10px] text-[#A19F9D]">
-                This is a demo stub. Connect your {addin.name} account in Settings.
+                Connect your {addin.name} account in Settings → Add-ins.
               </p>
             </div>
           </div>

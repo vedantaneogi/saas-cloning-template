@@ -103,7 +103,7 @@ async def get_conversation(
 
     msgs_result = await db.execute(
         select(Message)
-        .where(Message.conversation_id == conversation_id)
+        .where(Message.conversation_id == conversation_id, Message.user_id == current_user.id)
         .order_by(Message.received_at)
     )
     messages = msgs_result.scalars().all()

@@ -38,7 +38,9 @@ export function TopToolbar() {
   const addAccount = useAuthStore((s) => s.addAccount)
   const setSearchQuery = useMailStore((s) => s.setSearchQuery)
   const [search, setSearch] = useState('')
+  const [showAppLauncher, setShowAppLauncher] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const appLauncherRef = useRef<HTMLDivElement>(null)
   const [showBell, setShowBell] = useState(false)
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [addEmail, setAddEmail] = useState('')
@@ -56,6 +58,15 @@ export function TopToolbar() {
 
   const notifications = (notifData?.items ?? []).filter((m) => !m.is_read).slice(0, 8)
   const unreadCount = notifications.length
+
+  useEffect(() => {
+    if (!showAppLauncher) return
+    const handler = (e: MouseEvent) => {
+      if (appLauncherRef.current && !appLauncherRef.current.contains(e.target as Node)) setShowAppLauncher(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showAppLauncher])
 
   useEffect(() => {
     if (!showBell) return
@@ -119,15 +130,67 @@ export function TopToolbar() {
         aria-label="Top toolbar"
         className="h-12 bg-[#0F6CBD] flex items-center px-2 gap-2"
       >
-        {/* Waffle + Outlook */}
+        {/* Waffle App Launcher + Outlook */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            aria-label="App launcher"
-            title="Microsoft 365"
-            className="w-9 h-9 flex items-center justify-center text-white hover:bg-white/10 rounded transition-colors"
-          >
-            <WaffleIcon />
-          </button>
+          <div className="relative" ref={appLauncherRef}>
+            <button
+              onClick={() => setShowAppLauncher((v) => !v)}
+              aria-label="App launcher"
+              aria-expanded={showAppLauncher}
+              aria-haspopup="true"
+              title="Microsoft 365"
+              className={cn(
+                'w-9 h-9 flex items-center justify-center text-white rounded transition-colors',
+                showAppLauncher ? 'bg-white/20' : 'hover:bg-white/10'
+              )}
+            >
+              <WaffleIcon />
+            </button>
+
+            {showAppLauncher && (
+              <div className="absolute left-0 top-11 z-50 w-72 bg-white rounded-lg shadow-outlook-lg border border-[#EDEBE9] animate-fade-in">
+                <div className="px-4 pt-4 pb-2">
+                  <h3 className="text-sm font-semibold text-[#323130]">Microsoft 365</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-1 px-3 pb-3">
+                  {[
+                    { name: 'Outlook', icon: '📧', color: '#0078D4', href: '/mail/inbox' },
+                    { name: 'Calendar', icon: '📅', color: '#0078D4', href: '/calendar/month' },
+                    { name: 'People', icon: '👥', color: '#0078D4', href: '/contacts' },
+                    { name: 'To Do', icon: '✅', color: '#107C10', href: '/tasks' },
+                    { name: 'Word', icon: '📝', color: '#185ABD', href: '#' },
+                    { name: 'Excel', icon: '📊', color: '#107C41', href: '#' },
+                    { name: 'PowerPoint', icon: '📙', color: '#C43E1C', href: '#' },
+                    { name: 'OneDrive', icon: '☁️', color: '#0078D4', href: '#' },
+                    { name: 'Teams', icon: '💬', color: '#6264A7', href: '#' },
+                    { name: 'OneNote', icon: '📓', color: '#7719AA', href: '#' },
+                    { name: 'SharePoint', icon: '🏢', color: '#038387', href: '#' },
+                    { name: 'Groups', icon: '👨‍👩‍👧‍👦', color: '#0078D4', href: '/groups' },
+                  ].map((app) => (
+                    <button
+                      key={app.name}
+                      onClick={() => {
+                        if (app.href !== '#') router.push(app.href)
+                        setShowAppLauncher(false)
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg hover:bg-[#F3F2F1] transition-colors"
+                    >
+                      <span className="text-2xl leading-none">{app.icon}</span>
+                      <span className="text-[11px] text-[#323130] leading-tight">{app.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-[#EDEBE9] px-4 py-2.5">
+                  <button
+                    onClick={() => setShowAppLauncher(false)}
+                    className="text-xs text-[#0078D4] hover:underline"
+                  >
+                    All apps →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => router.push('/mail/inbox')}
             aria-label="Outlook"

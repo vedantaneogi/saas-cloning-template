@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   Inbox,
@@ -16,11 +16,11 @@ import {
   ChevronDown,
   Pencil,
   Play,
-  Clock,
 } from 'lucide-react'
 import { folders, messages, rules } from '@/lib/api'
 import type { Folder as FolderType } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
+import { useAuthStore } from '@/store/auth'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -286,12 +286,14 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
 
 export function FolderTree() {
   const params = useParams()
-  const router = useRouter()
   const currentSlug = (params?.folder as string) ?? 'inbox'
+  const currentUser = useAuthStore((s) => s.currentUser)
   const queryClient = useQueryClient()
   const [newFolderInput, setNewFolderInput] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const newFolderRef = useRef<HTMLInputElement>(null)
+  const [favoritesExpanded, setFavoritesExpanded] = useState(true)
+  const [accountExpanded, setAccountExpanded] = useState(true)
 
   const { data: folderList = [], isLoading } = useQuery({
     queryKey: ['folders'],
@@ -340,46 +342,72 @@ export function FolderTree() {
           <div className="px-3 py-2 text-xs text-[#605E5C]">Loading folders...</div>
         ) : (
           <>
-            {/* Favorites / Pinned section */}
-            <div className="px-2 py-1">
-              <span className="text-xs font-semibold text-[#605E5C] uppercase tracking-wide">
-                Favorites
-              </span>
+            {/* ── Favorites section (collapsible) with 3-dot hover menu ── */}
+            <div className="group flex items-center justify-between px-2 py-1.5 cursor-pointer hover:bg-[#F3F2F1] rounded-sm"
+              onClick={() => setFavoritesExpanded((v) => !v)}>
+              <div className="flex items-center gap-1">
+                {favoritesExpanded ? <ChevronDown size={12} className="text-[#605E5C]" /> : <ChevronRight size={12} className="text-[#605E5C]" />}
+                <span className="text-xs font-semibold text-[#323130] uppercase tracking-wide">Favorites</span>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation() }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[#EDEBE9] text-[#605E5C] transition-all"
+                title="More options"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/></svg>
+              </button>
             </div>
 
-            <ul role="tree" aria-label="Favorite folders">
-              {systemFolders.slice(0, 3).map((folder) => (
-                <FolderItem
-                  key={folder.id}
-                  folder={folder}
-                  currentSlug={currentSlug}
-                />
-              ))}
-            </ul>
+            {favoritesExpanded && (
+              <ul role="tree" aria-label="Favorite folders">
+                {systemFolders.slice(0, 3).map((folder) => (
+                  <FolderItem
+                    key={folder.id}
+                    folder={folder}
+                    currentSlug={currentSlug}
+                  />
+                ))}
+              </ul>
+            )}
 
-            <div className="h-px bg-[#EDEBE9] my-2 mx-2" />
+            <div className="h-px bg-[#EDEBE9] my-1 mx-2" />
 
-            {/* All folders — system + user folders inline, no separate "My Folders" section */}
-            <ul role="tree" aria-label="All mail folders">
-              {systemFolders.map((folder) => (
-                <FolderItem
-                  key={folder.id}
-                  folder={folder}
-                  children={childFolders(folder.id)}
-                  currentSlug={currentSlug}
-                />
-              ))}
+            {/* ── Account section (collapsible) with 3-dot hover menu ── */}
+            <div className="group flex items-center justify-between px-2 py-1.5 cursor-pointer hover:bg-[#F3F2F1] rounded-sm"
+              onClick={() => setAccountExpanded((v) => !v)}>
+              <div className="flex items-center gap-1 min-w-0">
+                {accountExpanded ? <ChevronDown size={12} className="text-[#605E5C] flex-shrink-0" /> : <ChevronRight size={12} className="text-[#605E5C] flex-shrink-0" />}
+                <span className="text-xs font-semibold text-[#323130] truncate">{currentUser?.email ?? 'Mail'}</span>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleNewFolder() }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[#EDEBE9] text-[#605E5C] transition-all flex-shrink-0"
+                title="Create new folder"
+              >
+                <FolderPlus size={14} />
+              </button>
+            </div>
 
-              {/* User-created folders shown inline after system folders */}
-              {userFolders.map((folder) => (
-                <FolderItem
-                  key={folder.id}
-                  folder={folder}
-                  children={childFolders(folder.id)}
-                  currentSlug={currentSlug}
-                />
-              ))}
-            </ul>
+            {accountExpanded && (
+              <ul role="tree" aria-label="All mail folders">
+                {systemFolders.map((folder) => (
+                  <FolderItem
+                    key={folder.id}
+                    folder={folder}
+                    children={childFolders(folder.id)}
+                    currentSlug={currentSlug}
+                  />
+                ))}
+                {userFolders.map((folder) => (
+                  <FolderItem
+                    key={folder.id}
+                    folder={folder}
+                    children={childFolders(folder.id)}
+                    currentSlug={currentSlug}
+                  />
+                ))}
+              </ul>
+            )}
 
             {newFolderInput ? (
               <div className="flex items-center gap-1.5 px-3 py-1 mt-1">

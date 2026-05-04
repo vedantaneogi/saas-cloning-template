@@ -36,7 +36,7 @@ export function TaskItem({ task, selected, onClick }: TaskItemProps) {
       data-testid="task-item"
       aria-selected={selected}
       className={cn(
-        'flex items-center gap-3 px-4 py-3 border-b border-[#EDEBE9] cursor-pointer transition-colors group',
+        'flex items-center px-4 py-2.5 border-b border-[#EDEBE9] cursor-pointer transition-colors group',
         selected ? 'bg-[#EBF3FB]' : 'hover:bg-[#F3F2F1]',
         task.is_completed && 'opacity-60'
       )}
@@ -49,7 +49,7 @@ export function TaskItem({ task, selected, onClick }: TaskItemProps) {
           completeMutation.mutate()
         }}
         aria-label={task.is_completed ? 'Mark incomplete' : 'Mark complete'}
-        className="flex-shrink-0 text-[#605E5C] hover:text-[#0078D4] transition-colors"
+        className="flex-shrink-0 w-8 text-[#605E5C] hover:text-[#0078D4] transition-colors"
       >
         {task.is_completed ? (
           <CheckCircle2 size={18} className="text-[#0078D4]" />
@@ -58,8 +58,8 @@ export function TaskItem({ task, selected, onClick }: TaskItemProps) {
         )}
       </button>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0" aria-label={task.title}>
+      {/* Title */}
+      <div className="flex-1 min-w-0">
         <p
           className={cn(
             'text-sm text-[#323130]',
@@ -68,8 +68,12 @@ export function TaskItem({ task, selected, onClick }: TaskItemProps) {
         >
           {task.title}
         </p>
+      </div>
+
+      {/* Due date column */}
+      <div className="w-24 text-center flex-shrink-0">
         {task.due_date && (
-          <div className="flex items-center gap-1 mt-0.5">
+          <div className="flex items-center justify-center gap-1">
             <Calendar size={11} className="text-[#605E5C]" />
             <span className="text-xs text-[#605E5C]">
               {format(new Date(task.due_date), 'MMM d')}
@@ -78,23 +82,27 @@ export function TaskItem({ task, selected, onClick }: TaskItemProps) {
         )}
       </div>
 
-      {/* Star for importance */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          importanceMutation.mutate()
-        }}
-        aria-label={task.importance === 'high' ? 'Remove importance' : 'Mark as important'}
-        className={cn(
-          'flex-shrink-0 transition-colors opacity-0 group-hover:opacity-100',
-          task.importance === 'high' && 'opacity-100 text-[#FFB900]'
-        )}
-      >
-        <Star
-          size={15}
-          className={task.importance === 'high' ? 'fill-[#FFB900]' : 'text-[#605E5C]'}
-        />
-      </button>
+      {/* Importance star column */}
+      <div className="w-20 flex justify-center flex-shrink-0">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            importanceMutation.mutate()
+          }}
+          aria-label={task.importance === 'high' ? 'Remove importance' : 'Mark as important'}
+          className={cn(
+            'transition-colors',
+            task.importance === 'high'
+              ? 'text-[#0078D4]'
+              : 'text-[#D2D0CE] hover:text-[#0078D4]'
+          )}
+        >
+          <Star
+            size={16}
+            className={task.importance === 'high' ? 'fill-[#0078D4]' : ''}
+          />
+        </button>
+      </div>
     </div>
   )
 }

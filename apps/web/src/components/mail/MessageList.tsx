@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
-import { messages, folders } from '@/lib/api'
+import { messages, folders, conversations } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import { MessageListItem } from './MessageListItem'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
@@ -39,12 +39,32 @@ function groupMessages(msgs: Message[]): Array<{ group: DateGroup; items: Messag
   return order.filter((g) => map.has(g)).map((g) => ({ group: g, items: map.get(g)! }))
 }
 
+function ThreadChildren({ conversationId, parentId }: { conversationId: string; parentId: string }) {
+  const { data } = useQuery({
+    queryKey: ['conversation', conversationId],
+    queryFn: () => conversations.get(conversationId),
+  })
+
+  const threadMsgs = (data?.messages ?? []).filter((m: Message) => m.id !== parentId)
+
+  if (threadMsgs.length === 0) return null
+
+  return (
+    <>
+      {threadMsgs.map((child: Message) => (
+        <div key={child.id} className="ml-8 border-l-[3px] border-[#0078D4] bg-[#FAF9F8]">
+          <MessageListItem message={child} />
+        </div>
+      ))}
+    </>
+  )
+}
+
 export function MessageList() {
   const [focusedTab, setFocusedTab] = useState<'focused' | 'other'>('focused')
   const selectedFolderSlug = useMailStore((s) => s.selectedFolderSlug)
   const selectedFolderId = useMailStore((s) => s.selectedFolderId)
   const conversationGrouping = useMailStore((s) => s.conversationGrouping)
-  const setConversationGrouping = useMailStore((s) => s.setConversationGrouping)
   const sortBy = useMailStore((s) => s.sortBy)
   const sortOrder = useMailStore((s) => s.sortOrder)
   const setSortOrder = useMailStore((s) => s.setSortOrder)
@@ -109,32 +129,47 @@ export function MessageList() {
   })
 
   const rawMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
 
-  // Conversation grouping: show only the latest message per conversation_id
-  const allMessages = (() => {
-    if (!conversationGrouping) return rawMessages
-    const grouped = new Map<string, { latest: Message; count: number }>()
+  const toggleThread = useCallback((threadKey: string) => {
+    setExpandedThreads((prev) => {
+      const next = new Set(prev)
+      if (next.has(threadKey)) next.delete(threadKey)
+      else next.add(threadKey)
+      return next
+    })
+  }, [])
+
+  // Conversation grouping: group messages by conversation_id, keep all children
+  type ThreadGroup = { latest: Message; children: Message[]; count: number; key: string }
+  const threadGroups: ThreadGroup[] = (() => {
+    if (!conversationGrouping) return rawMessages.map((m) => ({ latest: m, children: [], count: 1, key: m.id }))
+    const grouped = new Map<string, { latest: Message; children: Message[] }>()
     for (const msg of rawMessages) {
-      const key = msg.conversation_id ?? msg.id // ungrouped if no conversation
+      const key = msg.conversation_id ?? msg.id
       const existing = grouped.get(key)
       if (!existing) {
-        grouped.set(key, { latest: msg, count: 1 })
+        grouped.set(key, { latest: msg, children: [] })
       } else {
-        existing.count += 1
         const existingDate = new Date(existing.latest.received_at ?? existing.latest.created_at).getTime()
         const msgDate = new Date(msg.received_at ?? msg.created_at).getTime()
         if (msgDate > existingDate) {
+          existing.children.push(existing.latest)
           existing.latest = msg
+        } else {
+          existing.children.push(msg)
         }
       }
     }
-    return Array.from(grouped.values()).map(({ latest, count }) => ({
-      ...latest,
-      _conversationCount: count,
+    return Array.from(grouped.entries()).map(([key, { latest, children }]) => ({
+      latest: { ...latest, _conversationCount: 1 + children.length } as Message & { _conversationCount: number },
+      children: children.sort((a, b) => new Date(b.received_at ?? b.created_at).getTime() - new Date(a.received_at ?? a.created_at).getTime()),
+      count: 1 + children.length,
+      key,
     }))
   })()
 
-  const messageList = allMessages
+  const messageList = threadGroups.map((g) => g.latest)
 
   const folderName = isFollowupView
     ? 'Follow-up'
@@ -146,10 +181,9 @@ export function MessageList() {
       aria-label="Message list"
       data-automation-id="MessageList"
     >
-      {/* Toolbar */}
+      {/* Toolbar — matches Outlook: folder name + Select/Filter/Sort */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#EDEBE9] bg-white flex-shrink-0">
         <div className="flex items-center gap-2">
-          {/* Select all checkbox */}
           <input
             type="checkbox"
             checked={messageList.length > 0 && selectedMessageIds.size === messageList.length}
@@ -167,42 +201,37 @@ export function MessageList() {
             {folderName.charAt(0).toUpperCase() + folderName.slice(1)}
           </h2>
         </div>
-        <div className="flex items-center gap-1">
-          {/* Conversation grouping toggle */}
-          <button
-            onClick={() => setConversationGrouping(!conversationGrouping)}
-            aria-label={conversationGrouping ? 'Switch to individual messages' : 'Group by conversation'}
-            aria-pressed={conversationGrouping}
-            className={cn(
-              'text-xs px-2 py-1 rounded border transition-colors',
-              conversationGrouping
-                ? 'border-[#0078D4] text-[#0078D4] bg-[#EBF3FB]'
-                : 'border-[#D2D0CE] text-[#605E5C] hover:bg-[#F3F2F1]'
-            )}
-          >
-            Grouped
-          </button>
-
+        <div className="flex items-center gap-0.5">
           {/* Mark all read */}
-          {allMessages.some((m) => !m.is_read) && (
+          {rawMessages.some((m) => !m.is_read) && (
             <button
               onClick={() => {
-                const unreadIds = allMessages.filter((m) => !m.is_read).map((m) => m.id)
+                const unreadIds = rawMessages.filter((m) => !m.is_read).map((m) => m.id)
                 markAllReadMutation.mutate(unreadIds)
               }}
               aria-label="Mark all as read"
               title="Mark all as read"
-              className="p-1 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
+              className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
             >
               <MailOpen size={14} />
             </button>
           )}
 
-          {/* Sort order toggle */}
+          {/* Filter */}
+          <button
+            aria-label="Filter"
+            title="Filter"
+            className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          </button>
+
+          {/* Sort */}
           <button
             onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
             aria-label={`Sort ${sortOrder === 'desc' ? 'oldest first' : 'newest first'}`}
-            className="p-1 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
+            title={`Sorted: By Date ${sortOrder === 'desc' ? '(Newest)' : '(Oldest)'}`}
+            className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
           >
             {sortOrder === 'desc' ? <SortDesc size={14} /> : <SortAsc size={14} />}
           </button>
@@ -326,9 +355,32 @@ export function MessageList() {
                 <div className="px-3 py-1 mt-1">
                   <span className="text-xs font-semibold text-[#605E5C] uppercase tracking-wide">{group}</span>
                 </div>
-                {items.map((msg) => (
-                  <MessageListItem key={msg.id} message={msg} conversationCount={(msg as Message & { _conversationCount?: number })._conversationCount} />
-                ))}
+                {items.map((msg) => {
+                  const thread = threadGroups.find((g) => g.latest.id === msg.id)
+                  const threadKey = thread?.key ?? msg.id
+                  const isExpanded = expandedThreads.has(threadKey)
+                  const hasChildren = (thread?.count ?? 1) > 1
+
+                  return (
+                    <div key={msg.id}>
+                      <MessageListItem
+                        message={msg}
+                        conversationCount={(msg as Message & { _conversationCount?: number })._conversationCount}
+                        onToggleThread={hasChildren ? () => toggleThread(threadKey) : undefined}
+                        threadExpanded={isExpanded}
+                      />
+                      {/* Expanded thread — fetch ALL conversation messages */}
+                      {isExpanded && msg.conversation_id && (
+                        <ThreadChildren conversationId={msg.conversation_id} parentId={msg.id} />
+                      )}
+                      {isExpanded && !msg.conversation_id && thread && thread.children.map((child) => (
+                        <div key={child.id} className="ml-8 border-l-[3px] border-[#0078D4] bg-[#FAF9F8]">
+                          <MessageListItem message={child} />
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
               </div>
             ))
           )}

@@ -3,11 +3,77 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { UsersRound, Mail, Calendar, Folder, Plus, LogIn, LogOut, Check, FileText, Image, Archive, MoreHorizontal } from 'lucide-react'
-import { groups } from '@/lib/api'
+import { groups, messages } from '@/lib/api'
 import type { Group } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 type GroupTab = 'mail' | 'calendar' | 'files'
+
+function GroupConversationsTab({ group }: { group: Group }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['group-messages', group.id],
+    queryFn: () => messages.search({ q: group.name }),
+    enabled: group.is_member,
+  })
+
+  const msgList = data?.items ?? []
+
+  if (!group.is_member) {
+    return (
+      <div className="text-center py-12">
+        <UsersRound size={40} className="mx-auto text-[#A19F9D] mb-3" />
+        <p className="text-sm font-medium text-[#323130] mb-1">Join to see conversations</p>
+        <p className="text-xs text-[#605E5C]">You must be a member to view group conversations.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-2xl space-y-3">
+      <p className="text-xs text-[#605E5C] mb-4">
+        Showing group conversations for <strong>{group.name}</strong>.
+        Messages sent to {group.email} appear here.
+      </p>
+      {isLoading ? (
+        <p className="text-xs text-[#605E5C] animate-pulse">Loading conversations...</p>
+      ) : msgList.length === 0 ? (
+        <p className="text-sm text-[#605E5C] py-8 text-center">No conversations yet. Send an email to {group.email} to start.</p>
+      ) : (
+        msgList.map((msg) => (
+          <div
+            key={msg.id}
+            className={cn(
+              'flex items-start gap-3 p-3 rounded border cursor-pointer hover:bg-[#F3F2F1] transition-colors',
+              !msg.is_read ? 'border-[#0078D4]/30 bg-[#EBF3FB]/30' : 'border-[#EDEBE9]'
+            )}
+          >
+            <span
+              className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-bold"
+              style={{ backgroundColor: group.color }}
+            >
+              {(msg.from_name || msg.from_address)[0]}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className={cn('text-sm truncate', !msg.is_read ? 'font-semibold text-[#323130]' : 'text-[#323130]')}>
+                  {msg.from_name || msg.from_address.split('@')[0]}
+                </p>
+                <span className="text-xs text-[#605E5C] flex-shrink-0">
+                  {msg.received_at ? new Date(msg.received_at).toLocaleDateString() : ''}
+                </span>
+              </div>
+              <p className={cn('text-sm truncate', !msg.is_read ? 'font-medium text-[#323130]' : 'text-[#605E5C]')}>
+                {msg.subject}
+              </p>
+              <p className="text-xs text-[#A19F9D] truncate">{msg.body_text?.slice(0, 100) || ''}</p>
+            </div>
+            {!msg.is_read && <span className="w-2 h-2 rounded-full bg-[#0078D4] flex-shrink-0 mt-1.5" />}
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
 
 export default function GroupsPage() {
   const queryClient = useQueryClient()
@@ -234,55 +300,7 @@ export default function GroupsPage() {
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto outlook-scrollbar p-6">
             {activeTab === 'mail' ? (
-              <div className="max-w-2xl space-y-3">
-                {selectedGroup.is_member ? (
-                  <>
-                    <p className="text-xs text-[#605E5C] mb-4">
-                      Showing group conversations for <strong>{selectedGroup.name}</strong>.
-                      Messages sent to {selectedGroup.email} appear here.
-                    </p>
-                    {[
-                      { from: 'Alex Johnson', subject: 'Q4 planning kick-off', preview: "Let's schedule the kick-off for next week. I've sent calendar invites…", time: '2h ago', unread: true },
-                      { from: 'Sarah Chen', subject: 'New onboarding checklist', preview: 'Updated the onboarding doc with the latest tooling requirements.', time: 'Yesterday', unread: false },
-                      { from: 'Marcus Lee', subject: 'Retro action items', preview: 'Summary of action items from last sprint retro. Please review by Friday.', time: 'Mon', unread: false },
-                    ].map((msg, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          'flex items-start gap-3 p-3 rounded border cursor-pointer hover:bg-[#F3F2F1] transition-colors',
-                          msg.unread ? 'border-[#0078D4]/30 bg-[#EBF3FB]/30' : 'border-[#EDEBE9]'
-                        )}
-                      >
-                        <span
-                          className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-bold"
-                          style={{ backgroundColor: selectedGroup.color }}
-                        >
-                          {msg.from[0]}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className={cn('text-sm truncate', msg.unread ? 'font-semibold text-[#323130]' : 'text-[#323130]')}>
-                              {msg.from}
-                            </p>
-                            <span className="text-xs text-[#605E5C] flex-shrink-0">{msg.time}</span>
-                          </div>
-                          <p className={cn('text-sm truncate', msg.unread ? 'font-medium text-[#323130]' : 'text-[#605E5C]')}>
-                            {msg.subject}
-                          </p>
-                          <p className="text-xs text-[#A19F9D] truncate">{msg.preview}</p>
-                        </div>
-                        {msg.unread && <span className="w-2 h-2 rounded-full bg-[#0078D4] flex-shrink-0 mt-1.5" />}
-                      </div>
-                    ))}
-                  </>
-                ) : (
-                  <div className="text-center py-12">
-                    <UsersRound size={40} className="mx-auto text-[#A19F9D] mb-3" />
-                    <p className="text-sm font-medium text-[#323130] mb-1">Join to see conversations</p>
-                    <p className="text-xs text-[#605E5C]">You must be a member to view group conversations.</p>
-                  </div>
-                )}
-              </div>
+              <GroupConversationsTab group={selectedGroup} />
             ) : activeTab === 'calendar' ? (
               <div className="max-w-2xl">
                 {selectedGroup.is_member ? (

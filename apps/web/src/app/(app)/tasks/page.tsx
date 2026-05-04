@@ -6,7 +6,7 @@ import { tasks } from '@/lib/api'
 import type { Task, TaskStep } from '@/lib/api'
 import { TaskSidebar } from '@/components/tasks/TaskSidebar'
 import { TaskListView } from '@/components/tasks/TaskListView'
-import { CheckSquare, Sun, Calendar, Bell, Trash2, Circle, CheckCircle2, Star, Plus } from 'lucide-react'
+import { Sun, Calendar, Bell, Trash2, Circle, CheckCircle2, Star, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function TaskDetailPanel({ task, onClose, onDeleted }: { task: Task; onClose: () => void; onDeleted: () => void }) {
@@ -291,10 +291,34 @@ export default function TasksPage() {
       <TaskSidebar selectedListId={selectedListId} onSelect={setSelectedListId} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#EDEBE9] bg-white flex-shrink-0">
-          <h1 className="text-base font-semibold text-[#323130]">
-            {listName[selectedListId] ?? selectedListId}
-          </h1>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#EDEBE9] bg-white flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-semibold text-[#323130]">
+              {listName[selectedListId] ?? selectedListId}
+            </h1>
+            <span className="text-xs text-[#A19F9D]">...</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Grid/List toggle */}
+            <div className="flex items-center border border-[#D2D0CE] rounded overflow-hidden">
+              <button className="px-2 py-1 text-xs bg-[#0078D4] text-white" aria-pressed="true">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="0" y="0" width="5" height="5" rx="0.5" fill="currentColor"/><rect x="7" y="0" width="5" height="5" rx="0.5" fill="currentColor"/><rect x="0" y="7" width="5" height="5" rx="0.5" fill="currentColor"/><rect x="7" y="7" width="5" height="5" rx="0.5" fill="currentColor"/></svg>
+              </button>
+              <button className="px-2 py-1 text-xs text-[#605E5C] hover:bg-[#F3F2F1]">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="0" y="1" width="12" height="2" rx="0.5" fill="currentColor"/><rect x="0" y="5" width="12" height="2" rx="0.5" fill="currentColor"/><rect x="0" y="9" width="12" height="2" rx="0.5" fill="currentColor"/></svg>
+              </button>
+            </div>
+            {/* Sort */}
+            <button className="flex items-center gap-1 text-xs text-[#0078D4] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3h8M3 6h6M4 9h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              Sort
+            </button>
+            {/* Group */}
+            <button className="flex items-center gap-1 text-xs text-[#605E5C] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="10" height="4" rx="1" stroke="currentColor" strokeWidth="1.1"/><rect x="1" y="7" width="10" height="4" rx="1" stroke="currentColor" strokeWidth="1.1"/></svg>
+              Group
+            </button>
+          </div>
         </div>
         <TaskListView
           listId={selectedListId}

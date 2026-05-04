@@ -62,6 +62,7 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [sigMenuOpen, setSigMenuOpen] = useState(false)
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false)
+  const [importance, setImportance] = useState<'low' | 'normal' | 'high'>('normal')
   const [sensitivityMenuOpen, setSensitivityMenuOpen] = useState(false)
   const [sensitivity, setSensitivity] = useState<'normal' | 'personal' | 'private' | 'confidential'>('normal')
   const [sensitivityWarningPending, setSensitivityWarningPending] = useState<false | 'send' | { scheduled: string }>(false)
@@ -82,8 +83,9 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
   useEffect(() => {
     if (!composerDraft.replyType && signatureList.length > 0) {
       const defaultSig = signatureList.find((s) => s.is_default_new) ?? signatureList[0]
-      if (defaultSig && !bodyHtml.includes(defaultSig.body_html)) {
-        setBodyHtml((prev) => `${prev}<br/><br/>${defaultSig.body_html}`)
+      if (defaultSig && !bodyHtml.includes('<!-- sig -->')) {
+        const sigBlock = `<br/><br/><!-- sig -->${defaultSig.body_html}`
+        setBodyHtml((prev) => `${prev}${sigBlock}`)
         setSelectedSignature(defaultSig.id)
       }
     }
@@ -115,6 +117,7 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
         subject,
         body_html: bodyHtml,
         is_draft: draft,
+        importance,
         sensitivity,
         in_reply_to_id: composerDraft.replyToMessageId,
         reply_type: (composerDraft.replyType ?? 'none') as 'none' | 'reply' | 'reply_all' | 'forward',
@@ -228,29 +231,60 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
 
   const requiresWarning = sensitivity === 'private' || sensitivity === 'confidential'
 
+  const scanForSensitiveContent = (text: string): string[] => {
+    const warnings: string[] = []
+    const plainText = text.replace(/<[^>]+>/g, ' ')
+    // Credit card patterns (Visa, Mastercard, Amex)
+    if (/\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b/.test(plainText)) {
+      warnings.push('Message may contain credit card numbers')
+    }
+    // SSN pattern
+    if (/\b\d{3}-\d{2}-\d{4}\b/.test(plainText)) {
+      warnings.push('Message may contain Social Security numbers')
+    }
+    // Password patterns
+    if (/\b(?:password|passwd|pwd)\s*[:=]\s*\S+/i.test(plainText)) {
+      warnings.push('Message may contain passwords')
+    }
+    // Bank account
+    if (/\b(?:account\s*(?:number|#|no)?)\s*[:=]?\s*\d{8,17}\b/i.test(plainText)) {
+      warnings.push('Message may contain bank account numbers')
+    }
+    return warnings
+  }
+
   const handleSend = (scheduled?: string) => {
-    if (requiresWarning) {
-      // DLP checks
-      const violations: string[] = []
-      const senderDomain = currentUser?.email?.split('@')[1] ?? ''
-      const allRecipients = [...to, ...cc, ...bcc]
-      const externalRecipients = senderDomain
-        ? allRecipients.filter((r) => {
-            const domain = r.split('@')[1] ?? ''
-            return domain && domain !== senderDomain
-          })
-        : []
+    // DLP content scanning — runs on every send
+    const contentWarnings = scanForSensitiveContent(bodyHtml + ' ' + subject)
+    const violations: string[] = [...contentWarnings]
+
+    const senderDomain = currentUser?.email?.split('@')[1] ?? ''
+    const allRecipients = [...to, ...cc, ...bcc]
+    const externalRecipients = senderDomain
+      ? allRecipients.filter((r) => {
+          const domain = r.split('@')[1] ?? ''
+          return domain && domain !== senderDomain
+        })
+      : []
+
+    if (requiresWarning || contentWarnings.length > 0) {
       if (externalRecipients.length > 0 && sensitivity === 'confidential') {
         violations.push(`Sending to ${externalRecipients.length} external recipient${externalRecipients.length !== 1 ? 's' : ''} outside ${senderDomain}`)
       }
       if (attachedFiles.length > 0 && sensitivity === 'confidential') {
         violations.push(`${attachedFiles.length} attachment${attachedFiles.length !== 1 ? 's' : ''} will be sent without encryption`)
       }
-      setDlpViolations(violations)
-      setSensitivityWarningPending(scheduled ? { scheduled } : 'send')
-    } else {
-      sendMutation.mutate({ draft: false, ...(scheduled ? { scheduled } : {}) })
+      if (externalRecipients.length > 0 && contentWarnings.length > 0) {
+        violations.push(`Sending sensitive content to ${externalRecipients.length} external recipient${externalRecipients.length !== 1 ? 's' : ''}`)
+      }
+      if (violations.length > 0) {
+        setDlpViolations(violations)
+        setSensitivityWarningPending(scheduled ? { scheduled } : 'send')
+        return
+      }
     }
+
+    sendMutation.mutate({ draft: false, ...(scheduled ? { scheduled } : {}) })
   }
 
   if (!open) return null
@@ -329,22 +363,26 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
             placeholder="Recipients"
           />
 
-          {!showCc && !showBcc && (
+          {(!showCc || !showBcc) && (
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCc(true)}
-                className="text-xs text-[#0078D4] hover:underline"
-              >
-                Cc
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowBcc(true)}
-                className="text-xs text-[#0078D4] hover:underline"
-              >
-                Bcc
-              </button>
+              {!showCc && (
+                <button
+                  type="button"
+                  onClick={() => setShowCc(true)}
+                  className="text-xs text-[#0078D4] hover:underline"
+                >
+                  Cc
+                </button>
+              )}
+              {!showBcc && (
+                <button
+                  type="button"
+                  onClick={() => setShowBcc(true)}
+                  className="text-xs text-[#0078D4] hover:underline"
+                >
+                  Bcc
+                </button>
+              )}
             </div>
           )}
 
@@ -378,6 +416,16 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
               className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none py-0.5"
               {...register('subject')}
             />
+            {importance === 'high' && (
+              <span className="text-xs font-bold text-[#D13438] px-1.5 py-0.5 rounded flex-shrink-0 bg-[#FDE7E9]">
+                High importance
+              </span>
+            )}
+            {importance === 'low' && (
+              <span className="text-xs font-medium text-[#0078D4] px-1.5 py-0.5 rounded flex-shrink-0 bg-[#EBF3FB]">
+                Low importance
+              </span>
+            )}
             {sensitivity !== 'normal' && (
               <span
                 className="text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0"
@@ -560,6 +608,34 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
           </div>
 
           <div className="flex items-center gap-1">
+            {/* Importance toggle */}
+            <button
+              type="button"
+              aria-label="High importance"
+              aria-pressed={importance === 'high'}
+              title="Set high importance"
+              onClick={() => setImportance(importance === 'high' ? 'normal' : 'high')}
+              className={cn(
+                'p-1.5 rounded transition-colors text-sm font-bold w-7 h-7 flex items-center justify-center',
+                importance === 'high' ? 'text-[#D13438] bg-[#FDE7E9]' : 'text-[#605E5C] hover:bg-[#EDEBE9]'
+              )}
+            >
+              !
+            </button>
+            <button
+              type="button"
+              aria-label="Low importance"
+              aria-pressed={importance === 'low'}
+              title="Set low importance"
+              onClick={() => setImportance(importance === 'low' ? 'normal' : 'low')}
+              className={cn(
+                'p-1.5 rounded transition-colors w-7 h-7 flex items-center justify-center',
+                importance === 'low' ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:bg-[#EDEBE9]'
+              )}
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3v7M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+
             {/* Sensitivity picker */}
             <div className="relative" ref={sensitivityMenuRef}>
               <button
