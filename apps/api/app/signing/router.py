@@ -134,7 +134,11 @@ async def get_signing_document_page(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to render page: {exc}",
         )
-    return FastAPIResponse(content=png_bytes, media_type="image/png")
+    return FastAPIResponse(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"Referrer-Policy": "no-referrer", "Cache-Control": "private, max-age=300"},
+    )
 
 
 # ── Wildcard token routes ──────────────────────────────────────────────────────
@@ -234,7 +238,13 @@ async def upload_signing_attachment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid base64 data")
 
     safe_filename = os.path.basename(data.filename) or "attachment"
-    dest_dir = os.path.join(UPLOADS_DIR, "attachments", token, data.field_id)
+    try:
+        safe_field_id = str(uuid.UUID(data.field_id))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid field_id")
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large (max 10MB)")
+    dest_dir = os.path.join(UPLOADS_DIR, "attachments", token, safe_field_id)
     os.makedirs(dest_dir, exist_ok=True)
     dest_path = os.path.join(dest_dir, safe_filename)
     with open(dest_path, "wb") as f:
@@ -263,7 +273,9 @@ async def verify_access_code(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Signing session not found")
     if not recipient.access_code:
         return {"verified": True}
-    if not hmac.compare_digest(recipient.access_code, data.code.strip()):
+    import hashlib
+    supplied_hash = hashlib.sha256(data.code.strip().encode()).hexdigest()
+    if not hmac.compare_digest(recipient.access_code, supplied_hash):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid access code")
     return {"verified": True}
 
@@ -295,7 +307,9 @@ async def complete_signing(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access code required to complete signing",
             )
-        if not hmac.compare_digest(recipient_check.access_code, supplied):
+        import hashlib
+        supplied_hash = hashlib.sha256(supplied.encode()).hexdigest()
+        if not hmac.compare_digest(recipient_check.access_code, supplied_hash):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid access code",

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CloudArrowUp, CaretDown, Desktop } from "@phosphor-icons/react";
+import { ArrowLeft, UploadSimple, CaretDown, Desktop } from "@phosphor-icons/react";
 import { useAuthStore } from "@/features/auth/store";
 import {
   createEnvelope,
@@ -201,7 +201,7 @@ export default function SignDocumentPage() {
                 justifyContent: "center",
               }}
             >
-              <CloudArrowUp size={24} weight="bold" color="rgba(19,0,50,0.7)" />
+              <UploadSimple size={32} color="rgba(19,0,50,0.7)" />
             </div>
 
             <p style={{ fontSize: "16px", color: PRIMARY_TEXT, margin: 0 }}>

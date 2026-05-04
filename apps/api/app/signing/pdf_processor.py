@@ -1,7 +1,8 @@
 """PDF processing utilities using PyMuPDF (fitz) and ReportLab."""
 
+import base64
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import fitz  # PyMuPDF
@@ -562,15 +563,22 @@ def apply_fields_to_pdf(file_path: str, fields: list[dict[str, Any]]) -> bytes:
             field_type = field.get("type", "text")
 
             if field_type in ("signature", "initial"):
-                # Draw text in a styled box to simulate a signature
-                page.draw_rect(rect, color=(0.2, 0.4, 0.8), width=1)
-                page.insert_textbox(
-                    rect,
-                    value,
-                    fontsize=14,
-                    color=(0.1, 0.2, 0.6),
-                    align=1,  # center
-                )
+                if value.startswith("data:image"):
+                    try:
+                        header, encoded = value.split(",", 1)
+                        img_bytes = base64.b64decode(encoded)
+                        page.insert_image(rect, stream=img_bytes, keep_proportion=True)
+                    except Exception:
+                        page.insert_textbox(rect, "[ Signature ]", fontsize=14, color=(0.5, 0.5, 0.5), align=1)
+                else:
+                    # Fallback: draw as styled text
+                    page.insert_textbox(
+                        rect,
+                        value,
+                        fontsize=18,
+                        color=(0.1, 0.2, 0.6),
+                        align=1,
+                    )
             elif field_type == "date_signed":
                 page.insert_textbox(
                     rect,
@@ -681,7 +689,7 @@ def generate_certificate(envelope_data: dict[str, Any], audit_events: list[dict[
         ["Envelope ID:", env_id],
         ["Sent:", str(sent_at) if sent_at else "N/A"],
         ["Completed:", str(completed_at) if completed_at else "N/A"],
-        ["Certificate Generated:", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")],
+        ["Certificate Generated:", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")],
     ]
     details_table = Table(details_data, colWidths=[2 * inch, 4.5 * inch])
     details_table.setStyle(

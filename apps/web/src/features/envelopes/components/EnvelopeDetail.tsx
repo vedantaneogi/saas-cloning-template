@@ -650,7 +650,7 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
         </div>
 
         {/* Right column — Documents sidebar */}
-        <DocumentPanel documents={envelope.documents} />
+        <DocumentPanel documents={envelope.documents} envelopeId={envelope.id} />
       </div>
 
       {/* ── Void confirmation dialog ─────────────────────────────────────────── */}

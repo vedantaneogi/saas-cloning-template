@@ -46,7 +46,21 @@ export async function createField(
     value: field.value ?? null,
   };
   const res = await apiClient.post(`/documents/${documentId}/fields`, payload);
-  return res.data;
+  const f = res.data as Record<string, unknown>;
+  return {
+    id: String(f.id),
+    type: (f.type as string) as PlacedField["type"],
+    documentId: String(f.documentId ?? f.document_id ?? documentId),
+    recipientId: String(f.recipientId ?? f.recipient_id ?? field.recipientId),
+    page: (f.page as number) ?? 1,
+    x: (f.x as number) ?? 0,
+    y: (f.y as number) ?? 0,
+    width: (f.width as number) ?? 20,
+    height: (f.height as number) ?? 5,
+    required: (f.required as boolean) ?? true,
+    label: f.label as string | undefined,
+    value: f.value as string | undefined,
+  };
 }
 
 export async function updateField(

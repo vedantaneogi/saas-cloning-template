@@ -21,5 +21,8 @@
     "synthesize": "node scripts/synthesize/generate-playwright-assets.mjs && node scripts/synthesize/generate-specs.mjs",
     "generate": "node scripts/generate/generate-backend.mjs && node scripts/generate/generate-openapi-client.mjs && node scripts/generate/generate-frontend.mjs && node scripts/generate/generate-tests.mjs && node scripts/generate/generate-seeds.mjs",
     "package": "bash scripts/package/build-api-image.sh && bash scripts/package/build-web-image.sh && bash scripts/package/build-electron.sh"
+  },
+  "dependencies": {
+    "e2b": "^2.19.4"
   }
 }

@@ -31,7 +31,26 @@ export function DropZone({ onFiles, accept = ".pdf", multiple = true, className,
     e.stopPropagation();
     setIsDragging(false);
     const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) onFiles(files);
+    if (files.length === 0) return;
+    if (accept) {
+      const acceptParts = accept.split(",").map((a) => a.trim().toLowerCase());
+      const exts = acceptParts.filter((a) => a.startsWith("."));
+      const mimes = acceptParts.filter((a) => !a.startsWith(".") && a.includes("/"));
+      const filtered = files.filter((f) => {
+        const dotIdx = f.name.lastIndexOf(".");
+        const ext = dotIdx >= 0 ? f.name.slice(dotIdx).toLowerCase() : "";
+        if (ext && exts.includes(ext)) return true;
+        if (f.type && mimes.includes(f.type.toLowerCase())) return true;
+        return exts.length === 0 && mimes.length === 0;
+      });
+      if (filtered.length === 0) {
+        alert(`Only ${exts.join(", ")} files are accepted.`);
+        return;
+      }
+      onFiles(filtered);
+    } else {
+      onFiles(files);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,7 +94,7 @@ export function DropZone({ onFiles, accept = ".pdf", multiple = true, className,
               or <span className="text-[#1B0A3C] font-medium">browse to upload</span>
             </p>
             <p className="text-xs text-gray-400 mt-2">
-              Supports PDF, Word, Excel, and more
+              Supports PDF and Word documents
             </p>
           </div>
         </div>

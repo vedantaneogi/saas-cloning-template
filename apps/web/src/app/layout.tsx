@@ -24,6 +24,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <head>
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/favicon.svg" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Sacramento&family=Pinyon+Script&family=Satisfy&family=Caveat:wght@400;600&family=Yellowtail&display=swap" rel="stylesheet" />
         {/* DS Indigo — DocuSign's proprietary font family */}
         <style>{`
           @font-face {

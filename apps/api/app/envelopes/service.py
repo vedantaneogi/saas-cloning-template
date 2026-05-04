@@ -205,12 +205,21 @@ async def list_envelopes(
     count_q = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_q)).scalar_one()
 
-    query = base.options(
-        selectinload(Envelope.recipients),
-        selectinload(Envelope.owner),
+    # When DISTINCT is used (action_required / shared views), PostgreSQL requires
+    # ORDER BY columns to appear in the SELECT list. Resolve by selecting IDs via
+    # the DISTINCT subquery, then fetching full Envelope rows ordered outside it.
+    id_subq = base.with_only_columns(Envelope.id).subquery()
+    query = (
+        select(Envelope)
+        .where(Envelope.id.in_(select(id_subq.c.id)))
+        .options(
+            selectinload(Envelope.recipients),
+            selectinload(Envelope.owner),
+        )
+        .order_by(Envelope.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
-    query = query.order_by(Envelope.created_at.desc())
-    query = query.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
     return result.scalars().all(), total
 
@@ -259,9 +268,10 @@ async def send_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
     # Assign signing tokens; for serial routing only activate recipients with the minimum routing_order
     min_order = min(r.routing_order for r in envelope.recipients)
     for recipient in envelope.recipients:
+        if recipient.status in (RecipientStatus.signed, RecipientStatus.declined):
+            continue
         recipient.signing_token = str(uuid.uuid4())
         if recipient.status == RecipientStatus.pending:
-            # Only mark as "sent" the first routing group; later groups stay "pending"
             if recipient.routing_order == min_order:
                 recipient.status = RecipientStatus.sent
     # Log audit event
@@ -304,9 +314,8 @@ async def resend_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
         )
     resent_recipients = []
     for recipient in envelope.recipients:
-        if recipient.status in (RecipientStatus.sent, RecipientStatus.pending):
+        if recipient.status in (RecipientStatus.sent, RecipientStatus.delivered):
             recipient.status = RecipientStatus.sent
-            # Regenerate signing token so old links are invalidated
             recipient.signing_token = str(uuid.uuid4())
             resent_recipients.append(recipient.email)
     # Log audit event
@@ -346,9 +355,9 @@ async def add_recipient(
         role=data.role,
         routing_order=data.routing_order,
     )
-    # Set access_code explicitly after construction to ensure it is persisted
     if data.access_code:
-        recipient.access_code = data.access_code
+        import hashlib
+        recipient.access_code = hashlib.sha256(data.access_code.strip().encode()).hexdigest()
     db.add(recipient)
     await db.commit()
     await db.refresh(recipient)
@@ -372,7 +381,11 @@ async def update_recipient(
     if data.routing_order is not None:
         recipient.routing_order = data.routing_order
     if data.access_code is not None:
-        recipient.access_code = data.access_code if data.access_code != "" else None
+        if data.access_code == "":
+            recipient.access_code = None
+        else:
+            import hashlib
+            recipient.access_code = hashlib.sha256(data.access_code.strip().encode()).hexdigest()
     await db.commit()
     await db.refresh(recipient)
     return recipient
@@ -541,15 +554,23 @@ async def correct_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
             detail="Only sent or delivered envelopes can be corrected",
         )
     envelope.status = EnvelopeStatus.draft
-    # Reset recipient statuses so they can be re-sent
+    envelope.completed_at = None
+    reset_recipients = []
     for recipient in envelope.recipients:
-        if recipient.status in (RecipientStatus.sent, RecipientStatus.delivered):
+        if recipient.status != RecipientStatus.declined:
+            if recipient.status == RecipientStatus.signed:
+                reset_recipients.append(recipient.email)
             recipient.status = RecipientStatus.pending
+            recipient.signed_at = None
+            recipient.signing_token = None
     audit = AuditEvent(
         envelope_id=envelope.id,
         recipient_id=None,
         event_type="envelope_corrected",
-        details={"corrected_at": datetime.now(timezone.utc).isoformat()},
+        details={
+            "corrected_at": datetime.now(timezone.utc).isoformat(),
+            "signatures_invalidated": reset_recipients,
+        },
     )
     db.add(audit)
     await db.commit()

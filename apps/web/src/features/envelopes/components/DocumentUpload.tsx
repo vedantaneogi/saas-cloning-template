@@ -21,8 +21,23 @@ export function DocumentUpload({ documents, onAdd, onRemove }: DocumentUploadPro
   const [isDragging, setIsDragging] = useState(false);
 
   const handleFiles = (files: File[]) => {
-    const newDocs: UploadedDocument[] = files.map((file) => ({
-      id: Math.random().toString(36).slice(2),
+    const allowedExts = [".pdf", ".doc", ".docx"];
+    const maxSize = 25 * 1024 * 1024;
+    const valid = files.filter((f) => {
+      const ext = "." + f.name.split(".").pop()?.toLowerCase();
+      if (!allowedExts.includes(ext)) return false;
+      if (f.size > maxSize) return false;
+      return true;
+    });
+    if (valid.length === 0 && files.length > 0) {
+      alert("Only PDF and Word documents (max 25MB) are accepted.");
+      return;
+    }
+    if (valid.length < files.length) {
+      alert(`${files.length - valid.length} file(s) were skipped — only PDF and Word documents (max 25MB) are accepted.`);
+    }
+    const newDocs: UploadedDocument[] = valid.map((file) => ({
+      id: crypto.randomUUID(),
       name: file.name,
       size: file.size,
       file,
@@ -40,7 +55,7 @@ export function DocumentUpload({ documents, onAdd, onRemove }: DocumentUploadPro
     <div className="space-y-4">
       <DropZone
         onFiles={handleFiles}
-        accept=".pdf,.doc,.docx,.xls,.xlsx"
+        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         multiple
       />
 

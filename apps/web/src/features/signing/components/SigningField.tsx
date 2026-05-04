@@ -15,6 +15,8 @@ interface SigningFieldProps {
   allFieldValues?: Record<string, string>;
   /** Signing token — used for attachment uploads */
   signingToken?: string;
+  /** When true, parent handles positioning — field renders at relative position */
+  inlinePositioned?: boolean;
 }
 
 export function SigningField({
@@ -26,8 +28,14 @@ export function SigningField({
   onValueChange,
   allFieldValues = {},
   signingToken,
+  inlinePositioned,
 }: SigningFieldProps) {
   const isCompleted = !!value;
+
+  const posStyle: React.CSSProperties = inlinePositioned
+    ? { width: "100%", height: "100%" }
+    : { left: `${field.x}%`, top: `${field.y}%`, width: `${field.width}%`, height: `${field.height}%` };
+  const posClass = inlinePositioned ? "relative" : "absolute";
 
   // Feature: Conditional Fields — hide if the controlling checkbox is not checked
   if (field.conditionalOn) {
@@ -41,12 +49,9 @@ export function SigningField({
   if (!isForRecipient) {
     return (
       <div
-        className="absolute flex items-center justify-center rounded select-none pointer-events-none"
+        className={`${posClass} flex items-center justify-center rounded select-none pointer-events-none`}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           background: "rgba(0,0,0,0.04)",
           border: "1.5px solid rgba(0,0,0,0.12)",
           zIndex: 5,
@@ -97,14 +102,11 @@ export function SigningField({
     return (
       <div
         className={cn(
-          "absolute flex items-center justify-center rounded cursor-pointer transition-all group select-none",
+          `${posClass} flex items-center justify-center rounded cursor-pointer transition-all group select-none`,
           isCurrentField && !isCompleted && "animate-pulse",
         )}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           background: bgColor,
           border: `2px solid ${borderColor}`,
           zIndex: isCurrentField ? 15 : 10,
@@ -118,7 +120,8 @@ export function SigningField({
             <img
               src={value}
               alt="Signature"
-              className="w-full h-full object-contain p-1 pointer-events-none"
+              className="w-full h-full pointer-events-none"
+              style={{ objectFit: "contain", padding: "2px 4px" }}
             />
           ) : (
             <div className="flex items-center justify-center w-full h-full p-1">
@@ -168,12 +171,9 @@ export function SigningField({
   if (field.type === "date_signed") {
     return (
       <div
-        className="absolute flex items-center justify-center rounded cursor-pointer transition-all"
+        className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all`}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           background: bgColor,
           border: `2px solid ${borderColor}`,
           zIndex: isCurrentField ? 15 : 10,
@@ -201,12 +201,9 @@ export function SigningField({
     const isChecked = value === "checked";
     return (
       <div
-        className="absolute flex items-center justify-center rounded cursor-pointer transition-all"
+        className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all`}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           background: bgColor,
           border: `2px solid ${borderColor}`,
           zIndex: isCurrentField ? 15 : 10,
@@ -232,12 +229,9 @@ export function SigningField({
   if (["text", "name", "email", "company", "title"].includes(field.type)) {
     return (
       <div
-        className="absolute"
+        className={posClass}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           zIndex: isCurrentField ? 15 : 10,
         }}
       >
@@ -275,12 +269,9 @@ export function SigningField({
   if (field.type === "dropdown") {
     return (
       <div
-        className="absolute"
+        className={posClass}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           zIndex: isCurrentField ? 15 : 10,
         }}
       >
@@ -308,12 +299,9 @@ export function SigningField({
     const isSelected = value === "selected";
     return (
       <div
-        className="absolute flex items-center justify-center rounded cursor-pointer"
+        className={`${posClass} flex items-center justify-center rounded cursor-pointer`}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           background: bgColor,
           border: `2px solid ${borderColor}`,
           zIndex: isCurrentField ? 15 : 10,
@@ -340,16 +328,26 @@ export function SigningField({
     let displayValue = "—";
     if (formulaStr) {
       try {
-        // Replace field ID tokens with their numeric values
-        const evaluated = formulaStr.replace(/[a-zA-Z0-9_-]+/g, (token) => {
+        // Replace field ID tokens (must contain a letter/underscore) with their numeric values
+        const evaluated = formulaStr.replace(/[a-zA-Z_][a-zA-Z0-9_-]*/g, (token) => {
           const v = allFieldValues[token];
           return v !== undefined ? String(parseFloat(v) || 0) : "0";
         });
-        // Only allow safe arithmetic characters before eval-equivalent
         if (/^[\d\s+\-*/().]+$/.test(evaluated)) {
-          // eslint-disable-next-line no-new-func
-          const result = new Function(`return (${evaluated})`)() as number;
-          displayValue = isNaN(result) ? "Error" : String(result);
+          const tokens = evaluated.match(/(\d+\.?\d*|[+\-*/()])/g) ?? [];
+          let acc = 0;
+          let op = "+";
+          for (const t of tokens) {
+            if ("+-*/".includes(t)) { op = t; }
+            else if (t !== "(" && t !== ")") {
+              const n = parseFloat(t);
+              if (op === "+") acc += n;
+              else if (op === "-") acc -= n;
+              else if (op === "*") acc *= n;
+              else if (op === "/") acc = n !== 0 ? acc / n : NaN;
+            }
+          }
+          displayValue = isNaN(acc) ? "Error" : String(acc);
         } else {
           displayValue = "Invalid formula";
         }
@@ -359,12 +357,9 @@ export function SigningField({
     }
     return (
       <div
-        className="absolute flex items-center justify-center rounded"
+        className={`${posClass} flex items-center justify-center rounded`}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           background: bgColor,
           border: `2px solid ${borderColor}`,
           zIndex: isCurrentField ? 15 : 10,
@@ -382,12 +377,9 @@ export function SigningField({
     const hasFile = !!value && value !== "";
     return (
       <div
-        className="absolute flex items-center justify-center rounded cursor-pointer transition-all"
+        className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all`}
         style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
+          ...posStyle,
           background: bgColor,
           border: `2px dashed ${hasFile ? "#00B851" : borderColor}`,
           zIndex: isCurrentField ? 15 : 10,
@@ -396,28 +388,37 @@ export function SigningField({
           if (hasFile) return;
           const input = document.createElement("input");
           input.type = "file";
-          input.accept = "*/*";
+          input.accept = ".pdf,.doc,.docx,image/png,image/jpeg";
           input.onchange = async () => {
             const file = input.files?.[0];
             if (!file) return;
-            // Store filename as the field value (stub — real impl would upload)
-            onValueChange(field.id, file.name);
-            // If a token is provided, attempt to upload as base64
+            const MAX_SIZE = 10 * 1024 * 1024;
+            if (file.size > MAX_SIZE) {
+              alert("File must be under 10MB.");
+              return;
+            }
             if (signingToken) {
               try {
                 const reader = new FileReader();
                 reader.onload = async () => {
                   const base64 = (reader.result as string).split(",")[1] ?? "";
-                  await fetch(`/api/signing/${signingToken}/attachment`, {
+                  const res = await fetch(`/api/signing/${signingToken}/attachment`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ field_id: field.id, filename: file.name, data: base64 }),
                   });
+                  if (res.ok) {
+                    onValueChange(field.id, file.name);
+                  } else {
+                    alert("Attachment upload failed. Please try again.");
+                  }
                 };
                 reader.readAsDataURL(file);
               } catch {
-                // Non-fatal — filename is already stored locally
+                alert("Attachment upload failed. Please try again.");
               }
+            } else {
+              onValueChange(field.id, file.name);
             }
           };
           input.click();
@@ -452,75 +453,41 @@ export function SigningField({
     );
   }
 
-  // PAYMENT field — collect payment at signing (stub: no real payment processing)
+  // PAYMENT field — placeholder (no real payment processing)
   if (field.type === "payment") {
     const isPaid = value === "payment_completed";
     const amountDollars = field.paymentAmount != null
       ? (field.paymentAmount / 100).toFixed(2)
       : "0.00";
 
-    if (isPaid) {
-      return (
-        <div
-          className="absolute flex items-center justify-center rounded"
-          style={{
-            left: `${field.x}%`,
-            top: `${field.y}%`,
-            width: `${field.width}%`,
-            height: `${field.height}%`,
-            background: "rgba(0,184,81,0.08)",
-            border: "2px solid #00B851",
-            zIndex: isCurrentField ? 15 : 10,
-          }}
-        >
+    return (
+      <div
+        className={`${posClass} flex items-center justify-center rounded`}
+        style={{
+          ...posStyle,
+          background: isPaid ? "rgba(0,184,81,0.08)" : bgColor,
+          border: `2px solid ${isPaid ? "#00B851" : borderColor}`,
+          zIndex: isCurrentField ? 15 : 10,
+        }}
+      >
+        {isPaid ? (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#00B851" }}>
             <Check size={12} weight="bold" color="white" />
             <span className="text-xs font-bold text-white">Paid ${amountDollars}</span>
           </div>
-        </div>
-      );
-    }
-
-    return (
-      <div
-        className="absolute flex flex-col items-center justify-center rounded gap-1 p-1.5"
-        style={{
-          left: `${field.x}%`,
-          top: `${field.y}%`,
-          width: `${field.width}%`,
-          height: `${field.height}%`,
-          background: bgColor,
-          border: `2px solid ${borderColor}`,
-          zIndex: isCurrentField ? 15 : 10,
-        }}
-      >
-        <div className="flex items-center gap-1">
-          <svg viewBox="0 0 24 24" fill={borderColor} width="12" height="12">
-            <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" />
-          </svg>
-          <span className="text-xs font-bold" style={{ color: borderColor }}>
-            ${amountDollars}
-          </span>
-        </div>
-        <input
-          type="text"
-          maxLength={19}
-          placeholder="Card number"
-          className="w-full px-1.5 py-0.5 text-xs rounded outline-none border"
-          style={{ borderColor: "#D0D0D0", fontSize: "10px" }}
-          onChange={(e) => {
-            // Mask: keep only digits, group by 4
-            const digits = e.target.value.replace(/\D/g, "").slice(0, 16);
-            e.target.value = digits.replace(/(.{4})/g, "$1 ").trim();
-          }}
-        />
-        <button
-          className="w-full py-0.5 rounded text-white font-bold transition-colors"
-          style={{ background: "#1B0A3C", fontSize: "10px" }}
-          onClick={() => onValueChange(field.id, "payment_completed")}
-        >
-          Pay
-        </button>
+        ) : (
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 cursor-pointer"
+            onClick={() => onValueChange(field.id, "payment_completed")}
+          >
+            <svg viewBox="0 0 24 24" fill={borderColor} width="12" height="12">
+              <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" />
+            </svg>
+            <span className="text-xs font-bold" style={{ color: borderColor }}>
+              Pay ${amountDollars}
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -528,12 +495,9 @@ export function SigningField({
   // Fallback
   return (
     <div
-      className="absolute flex items-center justify-center rounded"
+      className={`${posClass} flex items-center justify-center rounded`}
       style={{
-        left: `${field.x}%`,
-        top: `${field.y}%`,
-        width: `${field.width}%`,
-        height: `${field.height}%`,
+        ...posStyle,
         background: bgColor,
         border: `2px solid ${borderColor}`,
         zIndex: 10,

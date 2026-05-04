@@ -107,11 +107,26 @@ async def submit_field(
     db: AsyncSession, token: str, field_id: uuid.UUID, value: str
 ) -> Field:
     result = await db.execute(
-        select(Recipient).where(Recipient.signing_token == token)
+        select(Recipient)
+        .options(selectinload(Recipient.envelope))
+        .where(Recipient.signing_token == token)
     )
     recipient = result.scalar_one_or_none()
     if not recipient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Signing session not found")
+
+    if recipient.status in (RecipientStatus.signed, RecipientStatus.declined):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot modify fields after signing is finalized",
+        )
+
+    envelope = recipient.envelope
+    if envelope.status not in (EnvelopeStatus.sent, EnvelopeStatus.delivered):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Envelope is no longer available for signing",
+        )
 
     result = await db.execute(
         select(Field).where(Field.id == field_id, Field.recipient_id == recipient.id)
@@ -130,24 +145,58 @@ async def submit_field(
 
 
 async def complete_signing(db: AsyncSession, token: str, ip_address: str | None, user_agent: str | None) -> Recipient:
+    from app.envelopes.models import RecipientRole
+
+    # Load recipient first (no lock yet)
     result = await db.execute(
-        select(Recipient)
-        .options(
-            selectinload(Recipient.envelope).options(
-                selectinload(Envelope.recipients),
-                selectinload(Envelope.documents).selectinload(Document.fields),
-            )
-        )
-        .where(Recipient.signing_token == token)
+        select(Recipient).where(Recipient.signing_token == token)
     )
     recipient = result.scalar_one_or_none()
     if not recipient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Signing session not found")
 
-    envelope = recipient.envelope
+    if recipient.role in (RecipientRole.cc, RecipientRole.viewer):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only signers and approvers can complete signing",
+        )
+    if recipient.status == RecipientStatus.signed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This recipient has already signed",
+        )
+    if recipient.status == RecipientStatus.pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This recipient has not been activated for signing yet",
+        )
+
+    # Lock the envelope row to serialize concurrent completions
+    env_result = await db.execute(
+        select(Envelope)
+        .where(Envelope.id == recipient.envelope_id)
+        .with_for_update()
+    )
+    envelope = env_result.scalar_one()
+
+    # Reload all recipients and fields under the lock
+    recip_result = await db.execute(
+        select(Recipient).where(Recipient.envelope_id == envelope.id)
+    )
+    all_recipients = list(recip_result.scalars().all())
+
+    doc_result = await db.execute(
+        select(Document)
+        .options(selectinload(Document.fields))
+        .where(Document.envelope_id == envelope.id)
+    )
+    docs = list(doc_result.scalars().all())
+
+    # Re-fetch current recipient from the locked set
+    recipient = next((r for r in all_recipients if r.signing_token == token), recipient)
 
     # Check all required fields are filled
-    for doc in envelope.documents:
+    for doc in docs:
         for field in doc.fields:
             if field.recipient_id == recipient.id and field.required and not field.value:
                 raise HTTPException(
@@ -158,7 +207,6 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
     recipient.status = RecipientStatus.signed
     recipient.signed_at = datetime.now(timezone.utc)
 
-    # Log audit event
     audit = AuditEvent(
         envelope_id=envelope.id,
         recipient_id=recipient.id,
@@ -169,25 +217,23 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
     )
     db.add(audit)
 
-    # Advance next routing group to "sent" if there are pending recipients
-    # with a higher routing_order (serial routing)
+    # Advance next routing group
     signed_order = recipient.routing_order
     pending_recipients = [
-        r for r in envelope.recipients
+        r for r in all_recipients
         if r.status == RecipientStatus.pending and r.routing_order > signed_order
     ]
     if pending_recipients:
-        # Find the next routing order group
         next_order = min(r.routing_order for r in pending_recipients)
         for r in pending_recipients:
             if r.routing_order == next_order:
                 r.status = RecipientStatus.sent
 
-    # Check if all signers have signed (includes in_person signers)
+    # Check completion — re-read from all_recipients (includes our update)
     all_signed = all(
         r.status == RecipientStatus.signed
-        for r in envelope.recipients
-        if r.role.value in ("signer", "approver", "in_person")
+        for r in all_recipients
+        if r.role in (RecipientRole.signer, RecipientRole.approver, RecipientRole.in_person)
     )
     if all_signed:
         envelope.status = EnvelopeStatus.completed
@@ -210,12 +256,18 @@ async def decline_signing(
 ) -> Recipient:
     result = await db.execute(
         select(Recipient)
-        .options(selectinload(Recipient.envelope))
+        .options(selectinload(Recipient.envelope).selectinload(Envelope.recipients))
         .where(Recipient.signing_token == token)
     )
     recipient = result.scalar_one_or_none()
     if not recipient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Signing session not found")
+
+    if recipient.status == RecipientStatus.signed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot decline — this recipient has already signed",
+        )
 
     envelope = recipient.envelope
     recipient.status = RecipientStatus.declined
@@ -223,6 +275,11 @@ async def decline_signing(
     recipient.decline_reason = reason
 
     envelope.status = EnvelopeStatus.declined
+
+    # Invalidate tokens for remaining non-signed recipients
+    for r in envelope.recipients:
+        if r.id != recipient.id and r.status in (RecipientStatus.pending, RecipientStatus.sent, RecipientStatus.delivered):
+            r.signing_token = str(uuid.uuid4())
 
     audit = AuditEvent(
         envelope_id=envelope.id,

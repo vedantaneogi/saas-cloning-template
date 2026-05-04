@@ -11,6 +11,7 @@ const COLOR_BORDER  = "rgba(19,0,50,0.1)";
 
 interface DocumentPanelProps {
   documents: EnvelopeDocument[];
+  envelopeId?: string;
 }
 
 // ─── Derive a short extension label (PDF / DOC / DOCX / …) from filename ────
@@ -67,7 +68,7 @@ function DocThumbnail({ docId, docName }: { docId: string; docName: string }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function DocumentPanel({ documents }: DocumentPanelProps) {
+export function DocumentPanel({ documents, envelopeId }: DocumentPanelProps) {
   return (
     <aside
       className="w-64 flex-shrink-0 border-l bg-white overflow-y-auto"
@@ -113,8 +114,9 @@ export function DocumentPanel({ documents }: DocumentPanelProps) {
                   <DocThumbnail docId={doc.id} docName={doc.name} />
                   {/* View overlay on hover */}
                   <div
-                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
                     style={{ background: "rgba(19,0,50,0.14)" }}
+                    onClick={() => window.open(envelopeId ? `/api/envelopes/${envelopeId}/download` : `/api/documents/${doc.id}/download`, '_blank')}
                   >
                     <span
                       className="text-xs font-semibold px-3 py-1.5 rounded"

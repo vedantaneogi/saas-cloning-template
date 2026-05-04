@@ -38,7 +38,7 @@ async def register(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Registration failed",
+            detail="An account with this email already exists.",
         )
     user = await create_user(db, data)
     token = create_access_token(subject=user.id)

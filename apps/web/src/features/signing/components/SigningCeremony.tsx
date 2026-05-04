@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { completeSigning, declineSigning, submitFieldValue } from "@/features/signing/api";
 import { SignatureCapture } from "./SignatureCapture";
@@ -9,14 +10,13 @@ import { DeclineDialog } from "./DeclineDialog";
 import { SigningField } from "./SigningField";
 import type { Envelope } from "@/features/envelopes/types";
 import type { PlacedField, FieldType } from "@/features/editor/model/types";
-import { createField } from "@/features/editor/api";
+import { createField, updateField, deleteField } from "@/features/editor/api";
 import {
   Check,
   CheckCircle,
   X as PhosphorX,
   CaretDown,
   DotsThreeVertical,
-  Sparkle,
   MagnifyingGlass,
   FileText,
   ChatText,
@@ -24,12 +24,12 @@ import {
   Printer,
   MagnifyingGlassPlus,
   MagnifyingGlassMinus,
+  Signature as SignatureIcon,
   PenNib,
   CalendarBlank,
   User,
   EnvelopeSimple,
   Buildings,
-  IdentificationBadge,
   TextT,
   CheckSquare,
   Stamp as StampIcon,
@@ -39,7 +39,16 @@ const PAGE_WIDTH = 816;
 const PAGE_HEIGHT = 1056;
 
 // Sidebar panel types
-type ActivePanel = "summarize" | "search" | "viewPages" | "comment" | "download" | null;
+type ActivePanel = "search" | "viewPages" | "comment" | "download" | null;
+
+interface SigningCommentDot {
+  id: string;
+  x: number;
+  y: number;
+  pageNum: number;
+  text: string;
+  authorName?: string;
+}
 
 interface SidebarButtonProps {
   icon: React.ReactNode;
@@ -171,7 +180,7 @@ function CompletionModal({ envelope, token, firstDocId, onSignAnother, onNoThank
     : false;
   const expiresDisplay = expiresDate
     ? expiresDate.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" })
-    : "8/31/2026";
+    : "No expiry";
 
   const docName = envelope.documents?.[0]?.name ?? envelope.subject;
 
@@ -291,9 +300,11 @@ function CompletionModal({ envelope, token, firstDocId, onSignAnother, onNoThank
 interface ShareModalProps {
   docName: string;
   onClose: () => void;
+  onSent?: () => void;
 }
 
-function ShareModal({ docName, onClose }: ShareModalProps) {
+function ShareModal({ docName, onClose, onSent }: ShareModalProps) {
+  const router = useRouter();
   const [emails, setEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState("");
   const [subject, setSubject] = useState(`Here is your signed document: ${docName}`);
@@ -321,10 +332,8 @@ function ShareModal({ docName, onClose }: ShareModalProps) {
 
   const handleSend = () => {
     setSent(true);
-    setTimeout(() => {
-      setSent(false);
-      onClose();
-    }, 1800);
+    onSent?.();
+    setTimeout(() => router.push("/agreements"), 500);
   };
 
   return (
@@ -332,7 +341,7 @@ function ShareModal({ docName, onClose }: ShareModalProps) {
       className="fixed inset-0 z-[110] flex items-center justify-center"
       style={{ background: "rgba(0,0,0,0.55)" }}
     >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden relative">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl mx-4 overflow-hidden relative">
         {/* Header */}
         <div
           className="flex items-center justify-between px-6 py-4 border-b"
@@ -439,7 +448,7 @@ function ShareModal({ docName, onClose }: ShareModalProps) {
             onClick={handleSend}
             disabled={emails.length === 0 || sent}
             className="px-5 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-40"
-            style={{ background: sent ? "#00B851" : "#1B0A3C" }}
+            style={{ background: sent ? "#00B851" : emails.length > 0 ? "#4C00FF" : "#9CA3AF" }}
           >
             {sent ? "Sent!" : "Send"}
           </button>
@@ -456,6 +465,64 @@ function ShareModal({ docName, onClose }: ShareModalProps) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Signing Comment Dot Overlay ─────────────────────────────────────────────
+
+function SigningCommentDotOverlay({ dot, onDelete }: { dot: SigningCommentDot; onDelete: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const initials = dot.authorName
+    ? dot.authorName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+    : "U";
+
+  return (
+    <div
+      style={{ position: "absolute", left: `${dot.x}%`, top: `${dot.y}%`, transform: "translate(-50%, -50%)", pointerEvents: "auto", zIndex: 40 }}
+      ref={cardRef}
+    >
+      <div
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        style={{
+          width: 12, height: 12, borderRadius: "50%", background: "#9B8FD8",
+          boxShadow: "0 0 0 3px rgba(155,143,216,0.3)", cursor: "pointer",
+          transform: open ? "scale(1.3)" : "scale(1)", transition: "transform 0.15s",
+        }}
+      />
+      {open && (
+        <div
+          style={{ position: "absolute", top: -10, left: 20, width: 260, background: "white", borderRadius: 8, border: "1px solid rgba(19,0,50,0.12)", boxShadow: "0 8px 24px rgba(19,0,50,0.14)", padding: 14, zIndex: 50 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#E8E0FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, color: "#4C00FF", flexShrink: 0 }}>
+              {initials}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(19,0,50,0.9)", margin: 0 }}>{dot.authorName || "You"}</p>
+            </div>
+            <button
+              onClick={() => { onDelete(dot.id); setOpen(false); }}
+              style={{ fontSize: 16, color: "rgba(19,0,50,0.4)", background: "none", border: "none", cursor: "pointer", lineHeight: 1, padding: "0 2px" }}
+            >×</button>
+          </div>
+          <p style={{ fontSize: 13, color: "rgba(19,0,50,0.85)", margin: 0, lineHeight: 1.5, wordBreak: "break-word" }}>{dot.text}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -485,8 +552,8 @@ function FinishSplitButton({ isComplete, isFinishing, onFinish, onFinishLater, o
     return () => document.removeEventListener("mousedown", handler);
   }, [dropdownOpen]);
 
-  const btnBg = isComplete ? "#F5A623" : "#7A6A8A";
-  const btnColor = isComplete ? "#1B0035" : "rgba(255,255,255,0.7)";
+  const btnBg = isComplete ? "#4C00FF" : "#7A6A8A";
+  const btnColor = "white";
 
   return (
     <div className="relative flex items-center" ref={dropdownRef}>
@@ -624,34 +691,18 @@ interface FieldPanelItem {
 
 const FIELD_PANEL_SECTIONS: (FieldPanelItem | "divider")[][] = [
   [
-    { type: "signature", label: "Signature", icon: <PenNib size={16} weight="bold" /> },
-    {
-      type: "initial",
-      label: "Initial",
-      icon: (
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 800,
-            color: "inherit",
-            letterSpacing: "0.04em",
-            lineHeight: 1,
-          }}
-        >
-          DS
-        </span>
-      ),
-    },
+    { type: "signature", label: "Signature", icon: <SignatureIcon size={16} weight="bold" /> },
+    { type: "initial", label: "Initial", icon: <PenNib size={16} weight="bold" /> },
     { type: "stamp", label: "Stamp", icon: <StampIcon size={16} weight="bold" /> },
     { type: "date_signed", label: "Date Signed", icon: <CalendarBlank size={16} weight="bold" /> },
   ],
   [
     { type: "name", label: "Name", icon: <User size={16} weight="bold" /> },
-    { type: "text", label: "First Name", icon: <User size={16} /> },
-    { type: "text", label: "Last Name", icon: <User size={16} /> },
+    { type: "text", label: "First Name", icon: <User size={16} weight="bold" /> },
+    { type: "text", label: "Last Name", icon: <User size={16} weight="bold" /> },
     { type: "email", label: "Email Address", icon: <EnvelopeSimple size={16} weight="bold" /> },
     { type: "company", label: "Company", icon: <Buildings size={16} weight="bold" /> },
-    { type: "title", label: "Title", icon: <IdentificationBadge size={16} weight="bold" /> },
+    { type: "title", label: "Title", icon: <TextT size={16} weight="bold" /> },
   ],
   [
     { type: "text", label: "Text", icon: <TextT size={16} weight="bold" /> },
@@ -703,6 +754,12 @@ function FieldsLeftPanel({ selectedType, selectedLabel, onSelect }: FieldsLeftPa
             return (
               <button
                 key={`${item.type}-${item.label}`}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("fieldType", item.type);
+                  e.dataTransfer.setData("fieldLabel", item.label);
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
                 onClick={() => onSelect(item.type, item.label)}
                 style={{
                   display: "flex",
@@ -712,7 +769,7 @@ function FieldsLeftPanel({ selectedType, selectedLabel, onSelect }: FieldsLeftPa
                   padding: "8px 16px",
                   border: "none",
                   background: isSelected ? "#F0EEFF" : "transparent",
-                  cursor: "pointer",
+                  cursor: "grab",
                   textAlign: "left",
                   transition: "background 0.12s",
                   color: isSelected ? "#4C00FF" : "rgba(19,0,50,0.75)",
@@ -778,7 +835,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const [zoom, setZoom] = useState(1);
   const [searchText, setSearchText] = useState("");
   const [commentMode, setCommentMode] = useState(false);
-  const [commentPopover, setCommentPopover] = useState<{ x: number; y: number; page: number } | null>(null);
+  const [commentDots, setCommentDots] = useState<SigningCommentDot[]>([]);
+  const [commentPopover, setCommentPopover] = useState<{ xPx: number; yPx: number; xPct: number; yPct: number; page: number } | null>(null);
   const [commentText, setCommentText] = useState("");
   const [downloadLoading, setDownloadLoading] = useState(false);
 
@@ -791,14 +849,16 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const documentRef = useRef<HTMLDivElement>(null);
   const fieldRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+
   // Combine server fields + locally placed fields
   const allFields = [...fields, ...localFields];
   const myFields = allFields.filter((f) => f.recipientId === recipientId);
   const requiredMyFields = myFields.filter((f) => f.required);
 
   const completedCount = requiredMyFields.filter((f) => !!fieldValues[f.id]).length;
+  const allLocalFieldsFilled = localFields.length === 0 || localFields.every((f) => !f.required || !!fieldValues[f.id]);
   const isComplete = isSelfSign
-    ? true
+    ? allLocalFieldsFilled
     : requiredMyFields.length === 0
       ? hasStarted
       : completedCount >= requiredMyFields.length;
@@ -837,19 +897,29 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
   const completeMutation = useMutation({
     mutationFn: async () => {
+      const fieldSnapshot = [...allFields];
+      const failures: string[] = [];
       for (const [fieldId, value] of Object.entries(fieldValues)) {
         try {
           await submitFieldValue(token, fieldId, value);
-        } catch {
-          // non-fatal
+        } catch (err) {
+          const field = fieldSnapshot.find((f) => f.id === fieldId);
+          const ft = field?.type ?? "unknown";
+          if (ft === "signature" || ft === "initial") {
+            throw new Error(`Failed to save ${ft}. Please try again.`);
+          }
+          failures.push(fieldId);
         }
+      }
+      if (failures.length > 0) {
+        throw new Error(`Failed to save ${failures.length} field(s). Please try again.`);
       }
       return completeSigning(token, accessCode);
     },
     onSuccess: (data) => {
       if (data.downloadUrl) setDownloadUrl(data.downloadUrl);
-      // Show completion modal — setStatus("completed") happens when modal is dismissed
-      setShowCompletionModal(true);
+      setShowShareModal(true);
+      // completedDismissed (green bar) set only after user clicks Send in share modal
     },
     onError: (err: unknown) => {
       const message =
@@ -939,10 +1009,17 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
     setZoom((z) => Math.max(0.5, parseFloat((z - 0.25).toFixed(2))));
   }, []);
 
-  // Download combined PDF
-  const handleDownloadCombined = useCallback(() => {
+  // Download combined PDF — submit current field values first so they appear in PDF
+  const handleDownloadCombined = useCallback(async () => {
+    let failed = 0;
+    for (const [fieldId, value] of Object.entries(fieldValues)) {
+      try { await submitFieldValue(token, fieldId, value); } catch { failed++; }
+    }
+    if (failed > 0) {
+      alert(`Warning: ${failed} field(s) could not be saved. The downloaded PDF may be missing some values.`);
+    }
     window.open(`/api/envelopes/${envelope.id}/download`, '_blank');
-  }, [envelope.id]);
+  }, [envelope.id, fieldValues, token]);
 
   const senderName = envelope.from || envelope.fromEmail || "the sender";
   const recipientInfo = envelope.recipients.find((r) => r.id === recipientId);
@@ -954,14 +1031,16 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const pageCount = Math.max(1, documents[0]?.pageCount ?? 1);
 
   // Self-sign: place a field on the document
-  const handlePlaceField = useCallback(async (pageNum: number, xPercent: number, yPercent: number) => {
-    if (!selectedFieldType || !isSelfSign) return;
+  const handlePlaceField = useCallback(async (pageNum: number, xPercent: number, yPercent: number, overrideType?: string, overrideLabel?: string) => {
+    const fieldType = overrideType ?? selectedFieldType;
+    const fieldLabel = overrideLabel ?? selectedFieldLabel;
+    if (!fieldType || !isSelfSign) return;
     const docId = documents[0]?.id;
     if (!docId) return;
 
     const sizes: Record<string, { width: number; height: number }> = {
-      signature: { width: 20, height: 5 },
-      initial: { width: 8, height: 4 },
+      signature: { width: 20, height: 4 },
+      initial: { width: 8, height: 3 },
       stamp: { width: 15, height: 8 },
       date_signed: { width: 15, height: 3 },
       name: { width: 20, height: 3 },
@@ -971,10 +1050,10 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
       text: { width: 20, height: 3 },
       checkbox: { width: 3, height: 3 },
     };
-    const size = sizes[selectedFieldType] ?? { width: 20, height: 3 };
+    const size = sizes[fieldType] ?? { width: 20, height: 3 };
 
     const newField: Omit<PlacedField, "id"> = {
-      type: selectedFieldType as FieldType,
+      type: fieldType as FieldType,
       recipientId,
       documentId: docId,
       page: pageNum,
@@ -983,7 +1062,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
       width: size.width,
       height: size.height,
       required: true,
-      label: selectedFieldLabel ?? undefined,
+      label: fieldLabel ?? undefined,
     };
 
     try {
@@ -991,16 +1070,26 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
       const placedField: PlacedField = { ...newField, id: created.id };
       setLocalFields((prev) => [...prev, placedField]);
 
-      if (selectedFieldType === "date_signed") {
+      if (fieldType === "date_signed") {
         const date = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
         setFieldValues((prev) => ({ ...prev, [created.id]: date }));
-      } else if (selectedFieldType === "name") {
+      } else if (fieldType === "name") {
         setFieldValues((prev) => ({ ...prev, [created.id]: recipientName }));
-      } else if (selectedFieldType === "email") {
+      } else if (fieldType === "email") {
         setFieldValues((prev) => ({ ...prev, [created.id]: recipientInfo?.email ?? "" }));
-      } else if (selectedFieldType === "signature" || selectedFieldType === "initial") {
+      } else if (fieldType === "company") {
+        setFieldValues((prev) => ({ ...prev, [created.id]: "" }));
+      } else if (fieldType === "title") {
+        setFieldValues((prev) => ({ ...prev, [created.id]: "" }));
+      } else if (fieldType === "text" && fieldLabel === "First Name") {
+        const parts = recipientName.split(" ");
+        setFieldValues((prev) => ({ ...prev, [created.id]: parts[0] ?? "" }));
+      } else if (fieldType === "text" && fieldLabel === "Last Name") {
+        const parts = recipientName.split(" ");
+        setFieldValues((prev) => ({ ...prev, [created.id]: parts.slice(1).join(" ") || "" }));
+      } else if (fieldType === "signature" || fieldType === "initial") {
         setActiveFieldId(created.id);
-        setSignatureMode(selectedFieldType === "initial" ? "initial" : "signature");
+        setSignatureMode(fieldType === "initial" ? "initial" : "signature");
         setSignatureOpen(true);
       }
     } catch {
@@ -1103,7 +1192,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
   // Post-completion flag (modal dismissed → completed state stays on signing page)
   const isPostCompletion = completedDismissed;
-  const bannerBg = isPostCompletion ? "#0A3D1F" : "#1B0035";
+  const bannerBg = "#1B0035";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "#F0EFF8" }}>
@@ -1233,87 +1322,6 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
         )}
       </div>}
 
-      {/* Comment mode banner */}
-      {commentMode && (
-        <div
-          style={{
-            background: "#1B0A3C",
-            color: "white",
-            padding: "10px 20px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            fontSize: 13,
-            fontWeight: 500,
-            flexShrink: 0,
-            zIndex: 10,
-          }}
-        >
-          <span>To add a comment, click or tap anywhere on the document</span>
-          <button
-            onClick={() => {
-              setCommentMode(false);
-              setActivePanel(null);
-              setCommentPopover(null);
-            }}
-            style={{
-              background: "rgba(255,255,255,0.2)",
-              border: "1px solid rgba(255,255,255,0.4)",
-              color: "white",
-              borderRadius: 6,
-              padding: "4px 12px",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              letterSpacing: "0.03em",
-            }}
-          >
-            EXIT
-          </button>
-        </div>
-      )}
-
-      {/* "Place and complete fields" prompt (self-signing) */}
-      {showFieldPrompt && (
-        <div
-          className="fixed inset-0 z-[90] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.3)" }}
-        >
-          <div
-            style={{
-              background: "white",
-              borderRadius: 12,
-              padding: "28px 36px",
-              maxWidth: 420,
-              textAlign: "center",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-            }}
-          >
-            <p style={{ fontSize: 16, fontWeight: 700, color: "#130032", marginBottom: 8 }}>
-              Place and complete fields
-            </p>
-            <p style={{ fontSize: 13, color: "rgba(19,0,50,0.6)", marginBottom: 24, lineHeight: 1.5 }}>
-              Make sure to fill out all your fields before finishing.
-            </p>
-            <button
-              onClick={() => { setShowFieldPrompt(false); setHasStarted(true); }}
-              style={{
-                background: "#4C00FF",
-                color: "white",
-                border: "none",
-                borderRadius: 6,
-                padding: "10px 36px",
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Main content: left panel + document area + right sidebar */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
         {/* Left FIELDS panel (self-signing mode) */}
@@ -1341,6 +1349,30 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
             position: "relative",
             cursor: selectedFieldType ? "crosshair" : commentMode ? "crosshair" : "default",
           }}
+          onDragOver={(e) => {
+            if (!isSelfSign) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={(e) => {
+            if (!isSelfSign) return;
+            e.preventDefault();
+
+            const target = e.target as HTMLElement;
+            const pageEl = target.closest("[data-page]") as HTMLElement | null;
+            if (!pageEl) return;
+            const page = Number(pageEl.dataset.page);
+            const pageInner = pageEl.querySelector("[data-page-inner]") as HTMLElement | null;
+            const rect = (pageInner ?? pageEl).getBoundingClientRect();
+            const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+            const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+
+            const droppedType = e.dataTransfer.getData("fieldType");
+            const droppedLabel = e.dataTransfer.getData("fieldLabel");
+            if (!droppedType) return;
+
+            handlePlaceField(page, xPercent, yPercent, droppedType, droppedLabel);
+          }}
           onClick={(e) => {
             const target = e.target as HTMLElement;
             const pageEl = target.closest("[data-page]") as HTMLElement | null;
@@ -1359,11 +1391,13 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
             // Comment mode
             if (commentMode) {
-              setCommentPopover({ x: e.clientX - rect.left, y: e.clientY - rect.top, page });
+              const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+              const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+              setCommentPopover({ xPx: e.clientX - rect.left, yPx: e.clientY - rect.top, xPct, yPct, page });
             }
           }}
         >
-          <div style={{ maxWidth: 864, margin: "0 auto", paddingLeft: 16, paddingRight: 16 }}>
+          <div style={{ maxWidth: 780, margin: "0 auto 0 32px", paddingRight: 16 }}>
             {/* Zoomed document wrapper */}
             <div
               style={{
@@ -1378,12 +1412,6 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
                 return (
                   <div key={pageNum} className="mb-6" data-page={pageNum}>
-                    {/* Page number label */}
-                    <div className="flex items-center gap-3 mb-2 px-2">
-                      <div className="h-px flex-1 bg-gray-200" />
-                      <span className="text-xs text-gray-400 font-medium">Page {pageNum}</span>
-                      <div className="h-px flex-1 bg-gray-200" />
-                    </div>
 
                     <div
                       className="relative bg-white shadow-lg"
@@ -1423,39 +1451,203 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                         )}
 
                         {/* Field overlays */}
-                        {pageFields.map((field) => (
-                          <div
-                            key={field.id}
-                            ref={(el) => {
-                              if (el) fieldRefs.current.set(field.id, el);
-                              else fieldRefs.current.delete(field.id);
-                            }}
-                          >
-                            <SigningField
-                              field={field}
-                              value={fieldValues[field.id]}
-                              isCurrentField={
-                                hasStarted &&
-                                requiredMyFields[currentNavIndex]?.id === field.id
+                        {pageFields.map((field) => {
+                          const isLocal = localFields.some((lf) => lf.id === field.id);
+                          const isFieldSelected = activeFieldId === field.id;
+                          return (
+                            <div
+                              key={field.id}
+                              ref={(el) => {
+                                if (el) fieldRefs.current.set(field.id, el);
+                                else fieldRefs.current.delete(field.id);
+                              }}
+                              className={isSelfSign && isLocal ? "group select-none" : undefined}
+                              style={
+                                isSelfSign && isLocal
+                                  ? {
+                                      position: "absolute",
+                                      left: `${field.x}%`,
+                                      top: `${field.y}%`,
+                                      width: `${field.width}%`,
+                                      height: `${field.height}%`,
+                                      zIndex: isFieldSelected ? 30 : 10,
+                                      border: isFieldSelected
+                                        ? "2px solid #4C00FF"
+                                        : "1px solid rgba(76,0,255,0.35)",
+                                      borderRadius: 3,
+                                      cursor: "grab",
+                                      background: `rgba(76,0,255,${isFieldSelected ? 0.06 : 0.03})`,
+                                      boxShadow: isFieldSelected
+                                        ? "0 0 0 3px rgba(76,0,255,0.15), 0 2px 8px rgba(0,0,0,0.12)"
+                                        : "0 1px 3px rgba(0,0,0,0.06)",
+                                    }
+                                  : undefined
                               }
-                              isForRecipient={field.recipientId === recipientId}
-                              onSignatureRequest={handleSignatureRequest}
-                              onValueChange={(fieldId, value) =>
-                                setFieldValues((prev) => ({ ...prev, [fieldId]: value }))
-                              }
-                              allFieldValues={fieldValues}
-                              signingToken={token}
-                            />
-                          </div>
-                        ))}
+                              onClick={isSelfSign && isLocal ? (e) => {
+                                e.stopPropagation();
+                                setActiveFieldId(field.id);
+                                setSelectedFieldType(null);
+                                setSelectedFieldLabel(null);
+                              } : undefined}
+                              onMouseDown={isSelfSign && isLocal ? (e) => {
+                                if ((e.target as HTMLElement).closest("[data-resize-handle]") || (e.target as HTMLElement).closest("[data-field-toolbar]")) return;
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setActiveFieldId(field.id);
+                                setSelectedFieldType(null);
+                                const pageInnerEl = (e.currentTarget as HTMLElement).closest("[data-page-inner]") as HTMLElement | null;
+                                if (!pageInnerEl) return;
+                                const pageRect = pageInnerEl.getBoundingClientRect();
+                                const startX = e.clientX;
+                                const startY = e.clientY;
+                                const origX = field.x;
+                                const origY = field.y;
+                                let dragging = false;
+                                let finalX = origX;
+                                let finalY = origY;
+                                (e.currentTarget as HTMLElement).style.cursor = "grabbing";
+                                const onMove = (ev: MouseEvent) => {
+                                  const dx = ev.clientX - startX;
+                                  const dy = ev.clientY - startY;
+                                  if (!dragging && Math.abs(dx) + Math.abs(dy) < 4) return;
+                                  dragging = true;
+                                  finalX = Math.max(0, Math.min(origX + (dx / pageRect.width) * 100, 100 - field.width));
+                                  finalY = Math.max(0, Math.min(origY + (dy / pageRect.height) * 100, 100 - field.height));
+                                  setLocalFields((prev) => prev.map((f) =>
+                                    f.id === field.id ? { ...f, x: finalX, y: finalY } : f
+                                  ));
+                                };
+                                const onUp = () => {
+                                  document.removeEventListener("mousemove", onMove);
+                                  document.removeEventListener("mouseup", onUp);
+                                  const el = document.querySelector(`[data-field-id="${field.id}"]`);
+                                  if (el) (el as HTMLElement).style.cursor = "grab";
+                                  if (dragging) {
+                                    updateField(field.id, { x: finalX, y: finalY }).catch(() => {});
+                                  }
+                                };
+                                document.addEventListener("mousemove", onMove);
+                                document.addEventListener("mouseup", onUp);
+                              } : undefined}
+                              data-field-id={field.id}
+                            >
+                              {/* Field content — pointer-events none so clicks go to wrapper */}
+                              <div style={isSelfSign && isLocal ? { pointerEvents: "none", width: "100%", height: "100%" } : undefined}>
+                                <SigningField
+                                  field={field}
+                                  value={fieldValues[field.id]}
+                                  isCurrentField={hasStarted && requiredMyFields[currentNavIndex]?.id === field.id}
+                                  isForRecipient={field.recipientId === recipientId}
+                                  onSignatureRequest={handleSignatureRequest}
+                                  onValueChange={(fieldId, value) => setFieldValues((prev) => ({ ...prev, [fieldId]: value }))}
+                                  allFieldValues={fieldValues}
+                                  signingToken={token}
+                                  inlinePositioned={isSelfSign && isLocal}
+                                />
+                              </div>
+
+                              {/* Label tag */}
+                              {isSelfSign && isLocal && (
+                                <div
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                  style={{ position: "absolute", top: -18, left: 0, background: "#4C00FF", color: "white", fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: "3px 3px 0 0", whiteSpace: "nowrap", pointerEvents: "none" }}
+                                >
+                                  {field.label || field.type}
+                                </div>
+                              )}
+
+                              {/* Resize handles + toolbar — only when selected */}
+                              {isSelfSign && isLocal && isFieldSelected && (
+                                <>
+                                  {(["nw", "ne", "sw", "se"] as const).map((corner) => (
+                                    <div
+                                      key={corner}
+                                      data-resize-handle
+                                      style={{
+                                        position: "absolute", width: 8, height: 8, borderRadius: "50%",
+                                        background: "white", border: "2px solid #4C00FF",
+                                        cursor: `${corner}-resize`, zIndex: 40,
+                                        ...(corner.includes("n") ? { top: -4 } : { bottom: -4 }),
+                                        ...(corner.includes("w") ? { left: -4 } : { right: -4 }),
+                                      }}
+                                      onMouseDown={(e) => {
+                                        e.stopPropagation(); e.preventDefault();
+                                        const sX = e.clientX, sY = e.clientY;
+                                        const oW = field.width, oH = field.height, oX = field.x, oY = field.y;
+                                        const pageInnerEl = (e.target as HTMLElement).closest("[data-page-inner]") as HTMLElement | null;
+                                        if (!pageInnerEl) return;
+                                        const pR = pageInnerEl.getBoundingClientRect();
+                                        let fX = oX, fY = oY, fW = oW, fH = oH;
+                                        const onMove = (ev: MouseEvent) => {
+                                          const dx = ((ev.clientX - sX) / pR.width) * 100;
+                                          const dy = ((ev.clientY - sY) / pR.height) * 100;
+                                          fX = oX; fY = oY; fW = oW; fH = oH;
+                                          if (corner.includes("e")) fW = Math.max(4, oW + dx);
+                                          if (corner.includes("w")) { fW = Math.max(4, oW - dx); fX = oX + dx; }
+                                          if (corner.includes("s")) fH = Math.max(2, oH + dy);
+                                          if (corner.includes("n")) { fH = Math.max(2, oH - dy); fY = oY + dy; }
+                                          setLocalFields((prev) => prev.map((f) => f.id === field.id ? { ...f, x: fX, y: fY, width: fW, height: fH } : f));
+                                        };
+                                        const onUp = () => {
+                                          document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp);
+                                          updateField(field.id, { x: fX, y: fY, width: fW, height: fH }).catch(() => {});
+                                        };
+                                        document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", onUp);
+                                      }}
+                                    />
+                                  ))}
+
+                                  {/* Floating toolbar — ABOVE field */}
+                                  <div
+                                    data-field-toolbar
+                                    style={{
+                                      position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)",
+                                      background: "white", border: "1px solid rgba(19,0,50,0.18)", borderRadius: 6,
+                                      boxShadow: "0 4px 16px rgba(19,0,50,0.14)",
+                                      display: "flex", alignItems: "center", gap: 2, padding: "2px 4px", height: 34, zIndex: 50, whiteSpace: "nowrap",
+                                      pointerEvents: "all",
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handlePlaceField(field.page, field.x + 3, field.y + 3, field.type, field.label); }}
+                                      style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 4, cursor: "pointer", color: "rgba(19,0,50,0.6)" }}
+                                      title="Duplicate"
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = "#F5F5F5")}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    </button>
+                                    <div style={{ width: 1, height: 16, background: "#D1D5DB" }} />
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteField(field.id).catch(() => {});
+                                        setLocalFields((prev) => prev.filter((f) => f.id !== field.id));
+                                        setFieldValues((prev) => { const n = { ...prev }; delete n[field.id]; return n; });
+                                        setActiveFieldId(null);
+                                      }}
+                                      style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 4, cursor: "pointer", color: "#EF4444" }}
+                                      title="Delete"
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = "#FEF2F2")}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
 
                         {/* Comment popover */}
                         {commentPopover && commentPopover.page === pageNum && (
                           <div
                             style={{
                               position: "absolute",
-                              left: commentPopover.x,
-                              top: commentPopover.y,
+                              left: commentPopover.xPx,
+                              top: commentPopover.yPx,
                               zIndex: 50,
                               background: "white",
                               borderRadius: 10,
@@ -1501,7 +1693,20 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                                 Cancel
                               </button>
                               <button
-                                onClick={() => { setCommentPopover(null); setCommentText(""); }}
+                                onClick={() => {
+                                  if (commentText.trim() && commentPopover) {
+                                    setCommentDots((prev) => [...prev, {
+                                      id: Math.random().toString(36).slice(2),
+                                      x: commentPopover.xPct,
+                                      y: commentPopover.yPct,
+                                      pageNum: commentPopover.page,
+                                      text: commentText.trim(),
+                                      authorName: recipientInfo?.name || "You",
+                                    }]);
+                                  }
+                                  setCommentPopover(null);
+                                  setCommentText("");
+                                }}
                                 style={{
                                   fontSize: 11,
                                   padding: "4px 10px",
@@ -1518,6 +1723,14 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                             </div>
                           </div>
                         )}
+                        {/* Comment dots */}
+                        {commentDots.filter((d) => d.pageNum === pageNum).map((dot) => (
+                          <SigningCommentDotOverlay
+                            key={dot.id}
+                            dot={dot}
+                            onDelete={(id) => setCommentDots((prev) => prev.filter((d) => d.id !== id))}
+                          />
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -1536,9 +1749,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
           {activePanel && activePanel !== "comment" && (
             <SidePanel
               title={
-                activePanel === "summarize"
-                  ? "Summarize"
-                  : activePanel === "search"
+                activePanel === "search"
                   ? "Find"
                   : activePanel === "viewPages"
                   ? "Thumbnails"
@@ -1548,32 +1759,6 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
               }
               onClose={() => setActivePanel(null)}
             >
-              {/* Summarize */}
-              {activePanel === "summarize" && (
-                <div style={{ textAlign: "center", paddingTop: 32 }}>
-                  <div
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 12,
-                      background: "#F0EEFF",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      margin: "0 auto 16px",
-                    }}
-                  >
-                    <Sparkle size={24} weight="bold" color="#4C00FF" />
-                  </div>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "#130032", marginBottom: 6 }}>
-                    Document Summary
-                  </p>
-                  <p style={{ fontSize: 12, color: "rgba(19,0,50,0.5)", lineHeight: 1.6 }}>
-                    Document summary coming soon
-                  </p>
-                </div>
-              )}
-
               {/* Search / Find */}
               {activePanel === "search" && (
                 <div>
@@ -1825,14 +2010,6 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
               overflowY: "auto",
             }}
           >
-            {/* Summarize */}
-            <SidebarButton
-              icon={<Sparkle size={22} weight="bold" />}
-              label="Summarize"
-              isActive={activePanel === "summarize"}
-              onClick={() => togglePanel("summarize")}
-            />
-
             {/* Search */}
             <SidebarButton
               icon={<MagnifyingGlass size={22} weight="bold" />}
@@ -1858,6 +2035,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                 if (commentMode) {
                   setCommentMode(false);
                   setCommentPopover(null);
+                  setCommentText("");
                   setActivePanel(null);
                 } else {
                   setCommentMode(true);
@@ -1999,6 +2177,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
         <ShareModal
           docName={documents[0]?.name ?? envelope.subject}
           onClose={() => setShowShareModal(false)}
+          onSent={() => setCompletedDismissed(true)}
         />
       )}
     </div>

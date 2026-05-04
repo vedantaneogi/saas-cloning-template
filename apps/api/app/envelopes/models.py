@@ -200,8 +200,8 @@ class Recipient(Base):
         default=RecipientStatus.pending,
         nullable=False,
     )
-    signing_token: Mapped[str] = mapped_column(
-        String(128), unique=True, nullable=False, default=lambda: str(uuid.uuid4())
+    signing_token: Mapped[str | None] = mapped_column(
+        String(128), unique=True, nullable=True, default=None
     )
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Dialog } from "@/components/ui/Dialog";
-import { X, UploadSimple } from "@phosphor-icons/react";
+import { Trash, UploadSimple, CornersOut } from "@phosphor-icons/react";
 
 interface SignatureCaptureProps {
   open: boolean;
@@ -16,26 +16,57 @@ type TabId = "type" | "draw" | "upload";
 
 const SIGNATURE_FONTS = [
   {
-    id: "dancing",
-    label: "Style 1",
-    style: "'Dancing Script', 'Brush Script MT', cursive",
+    id: "sacramento",
+    label: "Budapest",
+    style: "'Sacramento', cursive",
   },
   {
-    id: "pacifico",
-    label: "Style 2",
-    style: "'Pacifico', 'Comic Sans MS', cursive",
+    id: "great-vibes",
+    label: "Augustia",
+    style: "'Great Vibes', cursive",
+  },
+  {
+    id: "pinyon",
+    label: "Darcey Oliver",
+    style: "'Pinyon Script', cursive",
   },
   {
     id: "satisfy",
-    label: "Style 3",
-    style: "'Satisfy', 'Segoe Script', cursive",
+    label: "Gloriant",
+    style: "'Satisfy', cursive",
   },
   {
-    id: "allura",
-    label: "Style 4",
-    style: "'Allura', 'Monotype Corsiva', cursive",
+    id: "caveat",
+    label: "Harris",
+    style: "'Caveat', cursive",
+  },
+  {
+    id: "yellowtail",
+    label: "Holland",
+    style: "'Yellowtail', cursive",
   },
 ];
+
+const PURPLE = "#4C00FF";
+const DARK = "#1B0A3C";
+
+function generateInitials(name: string): string {
+  return name
+    .split(" ")
+    .filter((w) => w.length > 0)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+}
+
+function generateDocusignId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+const LEGAL_TEXT =
+  "By selecting Adopt and Sign, I agree that this mark will be the electronic representation of my signature or initials whenever I use it. I also understand that recipients of electronic documents I sign will be able to see my Docusign ID, which will include my email address.";
 
 export function SignatureCapture({
   open,
@@ -45,28 +76,49 @@ export function SignatureCapture({
   mode = "signature",
 }: SignatureCaptureProps) {
   const [tab, setTab] = useState<TabId>("type");
-  const [typedName, setTypedName] = useState(signerName);
+  const [fullName, setFullName] = useState(signerName);
+  const [initials, setInitials] = useState(generateInitials(signerName));
   const [selectedFont, setSelectedFont] = useState(SIGNATURE_FONTS[0]);
+  const [showStylePicker, setShowStylePicker] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [penColor, setPenColor] = useState("#1B0A3C");
-  const [penSize, setPenSize] = useState(2.5);
+  const penColor = DARK;
+  const penSize = 2.5;
   const [hasDrawn, setHasDrawn] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
   const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+  const pointsRef = useRef<{ x: number; y: number }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const docusignId = useMemo(() => generateDocusignId(), []);
 
   // Reset state when opened
   useEffect(() => {
     if (open) {
       setTab("type");
-      setTypedName(signerName);
+      setFullName(signerName);
+      setInitials(generateInitials(signerName));
       setSelectedFont(SIGNATURE_FONTS[0]);
+      setShowStylePicker(false);
       setUploadedImage(null);
       setHasDrawn(false);
     }
   }, [open, signerName]);
+
+  // Pre-load signature fonts when dialog opens
+  useEffect(() => {
+    if (open) {
+      SIGNATURE_FONTS.forEach((f) => {
+        document.fonts.load(`48px ${f.style}`).catch(() => {});
+      });
+    }
+  }, [open]);
+
+  // Auto-update initials when full name changes
+  useEffect(() => {
+    setInitials(generateInitials(fullName));
+  }, [fullName]);
 
   // Setup canvas when switching to draw tab
   useEffect(() => {
@@ -75,16 +127,20 @@ export function SignatureCapture({
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = penColor;
-        ctx.lineWidth = penSize;
+        ctx.strokeStyle = "#1B0A3C";
+        ctx.lineWidth = 2;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
       }
+      pointsRef.current = [];
       setHasDrawn(false);
     }
   }, [tab, penColor, penSize]);
 
-  const getCanvasPos = (e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) => {
+  const getCanvasPos = (
+    e: MouseEvent | TouchEvent,
+    canvas: HTMLCanvasElement
+  ) => {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
@@ -101,40 +157,79 @@ export function SignatureCapture({
     };
   };
 
-  const startDraw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const startDraw = (
+    e:
+      | React.MouseEvent<HTMLCanvasElement>
+      | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     e.preventDefault();
     if (!canvasRef.current) return;
     isDrawingRef.current = true;
     const pos = getCanvasPos(
-      "touches" in e ? (e.nativeEvent as TouchEvent) : (e.nativeEvent as MouseEvent),
-      canvasRef.current,
+      "touches" in e
+        ? (e.nativeEvent as TouchEvent)
+        : (e.nativeEvent as MouseEvent),
+      canvasRef.current
     );
     lastPosRef.current = pos;
+    pointsRef.current = [{ x: pos.x, y: pos.y }];
 
     const ctx = canvasRef.current.getContext("2d");
     if (ctx) {
-      ctx.strokeStyle = penColor;
-      ctx.lineWidth = penSize;
-      ctx.lineCap = "round";
+      ctx.strokeStyle = "#1B0A3C";
       ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
     }
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const draw = (
+    e:
+      | React.MouseEvent<HTMLCanvasElement>
+      | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     e.preventDefault();
-    if (!isDrawingRef.current || !canvasRef.current || !lastPosRef.current) return;
+    if (!isDrawingRef.current || !canvasRef.current || !lastPosRef.current)
+      return;
     const ctx = canvasRef.current.getContext("2d");
     if (!ctx) return;
 
     const pos = getCanvasPos(
-      "touches" in e ? (e.nativeEvent as TouchEvent) : (e.nativeEvent as MouseEvent),
-      canvasRef.current,
+      "touches" in e
+        ? (e.nativeEvent as TouchEvent)
+        : (e.nativeEvent as MouseEvent),
+      canvasRef.current
     );
 
-    ctx.beginPath();
-    ctx.moveTo(lastPosRef.current.x, lastPosRef.current.y);
-    ctx.lineTo(pos.x, pos.y);
+    pointsRef.current.push({ x: pos.x, y: pos.y });
+    const pts = pointsRef.current;
+
+    if (pts.length < 3) {
+      lastPosRef.current = pos;
+      setHasDrawn(true);
+      return;
+    }
+
+    const p1 = pts[pts.length - 3];
+    const p2 = pts[pts.length - 2];
+    const p3 = pts[pts.length - 1];
+    const cpX = (p1.x + p2.x) / 2;
+    const cpY = (p1.y + p2.y) / 2;
+    const endX = (p2.x + p3.x) / 2;
+    const endY = (p2.y + p3.y) / 2;
+
+    const dx = p3.x - p1.x;
+    const dy = p3.y - p1.y;
+    const speed = Math.sqrt(dx * dx + dy * dy);
+    const width = Math.max(0.5, Math.min(2.5, 3 - speed * 0.05));
+
+    ctx.lineWidth = width;
+    ctx.quadraticCurveTo(cpX, cpY, endX, endY);
     ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(endX, endY);
+
     lastPosRef.current = pos;
     setHasDrawn(true);
   };
@@ -142,31 +237,43 @@ export function SignatureCapture({
   const stopDraw = () => {
     isDrawingRef.current = false;
     lastPosRef.current = null;
+    pointsRef.current = [];
   };
 
   const clearCanvas = () => {
     if (!canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
     ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    pointsRef.current = [];
     setHasDrawn(false);
   };
 
-  // Convert typed signature to canvas data URL
+  // Convert typed signature to canvas data URL — auto-trimmed to text bounds
   const typeToDataUrl = (): string => {
+    const displayText = mode === "initial" ? initials : fullName || "Signature";
+    const fontStr = `48px ${selectedFont.style}`;
+
+    // Measure text first
+    const measure = document.createElement("canvas").getContext("2d")!;
+    measure.font = fontStr;
+    const metrics = measure.measureText(displayText);
+    const textW = Math.ceil(metrics.width) + 20;
+    const textH = 60;
+
+    // Render on tight canvas
     const canvas = document.createElement("canvas");
-    canvas.width = 560;
-    canvas.height = 120;
+    canvas.width = textW;
+    canvas.height = textH;
     const ctx = canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = penColor;
-    ctx.font = `48px ${selectedFont.style}`;
+    ctx.font = fontStr;
     ctx.textBaseline = "middle";
-    ctx.fillText(typedName || "Signature", 20, canvas.height / 2);
+    ctx.fillText(displayText, 10, textH / 2);
     return canvas.toDataURL();
   };
 
   const canAdopt = (): boolean => {
-    if (tab === "type") return (typedName || "").trim().length > 0;
+    if (tab === "type") return (fullName || "").trim().length > 0;
     if (tab === "draw") return hasDrawn;
     if (tab === "upload") return !!uploadedImage;
     return false;
@@ -188,6 +295,14 @@ export function SignatureCapture({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please upload an image file (PNG, JPEG, GIF, or BMP).");
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      alert("File size must be under 3MB.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (ev) => {
       setUploadedImage(ev.target?.result as string);
@@ -196,178 +311,264 @@ export function SignatureCapture({
   };
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: "type", label: "Type" },
-    { id: "draw", label: "Draw" },
-    { id: "upload", label: "Upload" },
+    { id: "type", label: "SELECT STYLE" },
+    { id: "draw", label: "DRAW" },
+    { id: "upload", label: "UPLOAD" },
   ];
 
-  const displayName = mode === "initial"
-    ? (typedName || "")
-        .split(" ")
-        .map((w) => w[0])
-        .join("")
-        .toUpperCase()
-    : typedName || "";
+  const displaySignature =
+    mode === "initial" ? initials : fullName || "";
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title={mode === "initial" ? "Adopt Your Initials" : "Adopt Your Signature"}
-      size="lg"
+      size="xl"
     >
+      {/* Subtitle */}
+      <p className="text-sm mb-5" style={{ color: "#555" }}>
+        Confirm your name, initials, and signature.
+      </p>
+
+      {/* Full Name + Initials side by side */}
+      <div className="flex gap-4 mb-5">
+        <div className="flex-1">
+          <label
+            className="block text-xs font-semibold mb-1.5"
+            style={{ color: DARK }}
+          >
+            Full Name <span style={{ color: "#E53E3E" }}>*</span>
+          </label>
+          <input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className="w-full px-3 py-2 border rounded text-sm outline-none transition-all"
+            style={{ borderColor: "#D1D5DB", color: DARK }}
+            onFocus={(e) => {
+              e.target.style.borderColor = PURPLE;
+              e.target.style.boxShadow = `0 0 0 2px ${PURPLE}22`;
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#D1D5DB";
+              e.target.style.boxShadow = "none";
+            }}
+            placeholder="Type your full name"
+          />
+        </div>
+        <div style={{ width: "140px" }}>
+          <label
+            className="block text-xs font-semibold mb-1.5"
+            style={{ color: DARK }}
+          >
+            Initials <span style={{ color: "#E53E3E" }}>*</span>
+          </label>
+          <input
+            value={initials}
+            onChange={(e) => setInitials(e.target.value.toUpperCase())}
+            className="w-full px-3 py-2 border rounded text-sm outline-none transition-all"
+            style={{ borderColor: "#D1D5DB", color: DARK }}
+            onFocus={(e) => {
+              e.target.style.borderColor = PURPLE;
+              e.target.style.boxShadow = `0 0 0 2px ${PURPLE}22`;
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#D1D5DB";
+              e.target.style.boxShadow = "none";
+            }}
+            placeholder="Initials"
+          />
+        </div>
+      </div>
+
       {/* Tabs */}
-      <div className="flex border-b -mx-6 px-6 mb-5" style={{ borderColor: "#E8E8E8" }}>
+      <div
+        className="flex items-center border-b mb-5"
+        style={{ borderColor: "#E5E7EB" }}
+      >
         {tabs.map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
-            className="px-5 py-3 text-sm font-semibold transition-all border-b-2 -mb-px"
+            onClick={() => {
+              setTab(t.id);
+              if (t.id !== "type") setShowStylePicker(false);
+            }}
+            className="px-4 py-2.5 text-xs font-bold tracking-wider transition-all border-b-2 -mb-px"
             style={{
-              borderColor: tab === t.id ? "#1B0A3C" : "transparent",
-              color: tab === t.id ? "#1B0A3C" : "#6B6B6B",
+              borderColor: tab === t.id ? PURPLE : "transparent",
+              color: tab === t.id ? PURPLE : "#9CA3AF",
             }}
           >
             {t.label}
           </button>
         ))}
+
+        {/* Change Style link - only on SELECT STYLE tab */}
+        {tab === "type" && (
+          <button
+            onClick={() => setShowStylePicker((v) => !v)}
+            className="ml-auto text-xs font-semibold transition-colors"
+            style={{ color: PURPLE }}
+          >
+            {showStylePicker ? "Hide Styles" : "Change Style"}
+          </button>
+        )}
       </div>
 
-      {/* TYPE tab */}
+      {/* Tab content area — fixed min-height prevents modal resize on tab switch */}
+      <div style={{ minHeight: 320 }}>
+      {/* SELECT STYLE tab */}
       {tab === "type" && (
-        <div className="space-y-5">
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">
-              Full Name
-            </label>
-            <input
-              value={typedName}
-              onChange={(e) => setTypedName(e.target.value)}
-              className="w-full px-4 py-2.5 border rounded-lg text-sm outline-none transition-all"
-              style={{ borderColor: "#E0E0E0" }}
-              onFocus={(e) => {
-                e.target.style.borderColor = "#1B0A3C";
-                e.target.style.boxShadow = "0 0 0 3px rgba(27,10,60,0.1)";
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = "#E0E0E0";
-                e.target.style.boxShadow = "none";
-              }}
-              placeholder="Type your full name"
-            />
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold text-gray-500 mb-2.5 uppercase tracking-wider">
-              Select Style
-            </p>
-            <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-4">
+          {/* Style picker (toggled by Change Style) */}
+          {showStylePicker && (
+            <div className="grid grid-cols-2 gap-2 mb-4">
               {SIGNATURE_FONTS.map((font) => {
                 const isSelected = selectedFont.id === font.id;
                 return (
                   <button
                     key={font.id}
-                    onClick={() => setSelectedFont(font)}
-                    className="p-3 rounded-lg border-2 text-left transition-all hover:border-gray-300"
+                    onClick={() => {
+                      setSelectedFont(font);
+                      setShowStylePicker(false);
+                    }}
+                    className="p-3 rounded border-2 text-left transition-all hover:border-gray-300"
                     style={{
-                      borderColor: isSelected ? "#1B0A3C" : "#E8E8E8",
-                      background: isSelected ? "#F0F0F0" : "white",
+                      borderColor: isSelected ? PURPLE : "#E5E7EB",
+                      background: isSelected ? `${PURPLE}08` : "white",
                     }}
                   >
                     <span
                       style={{
                         fontFamily: font.style,
                         fontSize: "20px",
-                        color: "#1B0A3C",
+                        color: DARK,
                         display: "block",
                         lineHeight: 1.4,
                       }}
                     >
-                      {displayName || "Signature"}
+                      {displaySignature || "Signature"}
                     </span>
-                    <span className="text-xs text-gray-400 mt-1 block">{font.label}</span>
+                    <span className="text-[10px] text-gray-400 mt-1 block">
+                      {font.label}
+                    </span>
                   </button>
                 );
               })}
             </div>
-          </div>
+          )}
 
-          {/* Preview */}
-          <div
-            className="rounded-xl p-5"
-            style={{ background: "#FAFAFA", border: "1px solid #F0F0F0" }}
-          >
-            <p className="text-xs text-gray-400 mb-3 uppercase tracking-wider">Preview</p>
-            <div
-              className="pb-3 border-b-2"
-              style={{ borderColor: "#1B0A3C" }}
+          {/* PREVIEW section */}
+          <div>
+            <p
+              className="text-[10px] font-bold tracking-widest mb-2"
+              style={{ color: "#9CA3AF" }}
             >
-              <span
+              PREVIEW
+            </p>
+            <div
+              className="rounded border p-4 flex gap-4"
+              style={{ borderColor: "#D1D5DB", background: "#FAFAFA" }}
+            >
+              {/* Signature preview */}
+              <div className="flex-1">
+                <p
+                  className="text-[10px] mb-1"
+                  style={{ color: "#9CA3AF" }}
+                >
+                  Signed by:
+                </p>
+                <div
+                  className="pb-2 border-b"
+                  style={{ borderColor: "#D1D5DB" }}
+                >
+                  <span
+                    style={{
+                      fontFamily: selectedFont.style,
+                      fontSize: "32px",
+                      color: DARK,
+                      display: "block",
+                      lineHeight: 1.3,
+                      minHeight: "42px",
+                    }}
+                  >
+                    {displaySignature || " "}
+                  </span>
+                </div>
+                <p
+                  className="text-[10px] mt-1.5 font-mono"
+                  style={{ color: "#9CA3AF" }}
+                >
+                  {docusignId.substring(0, 16)}...
+                </p>
+              </div>
+
+              {/* DS Initials box */}
+              <div
+                className="flex-shrink-0 flex flex-col items-center justify-center rounded border px-4 py-3"
                 style={{
-                  fontFamily: selectedFont.style,
-                  fontSize: "36px",
-                  color: "#1B0A3C",
-                  display: "block",
-                  lineHeight: 1.3,
-                  minHeight: "48px",
+                  borderColor: "#D1D5DB",
+                  background: "white",
+                  minWidth: "72px",
                 }}
               >
-                {displayName || " "}
-              </span>
+                <p
+                  className="text-[10px] font-bold mb-1"
+                  style={{ color: "#9CA3AF" }}
+                >
+                  DS
+                </p>
+                <span
+                  style={{
+                    fontFamily: selectedFont.style,
+                    fontSize: "22px",
+                    color: DARK,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {initials || ""}
+                </span>
+              </div>
             </div>
-            <p className="text-xs text-gray-400 mt-2">
-              {mode === "initial" ? "Initials" : "Signature"}
-            </p>
           </div>
         </div>
       )}
 
       {/* DRAW tab */}
       {tab === "draw" && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-4">
-            <p className="text-sm text-gray-600 flex-1">Draw your {mode === "initial" ? "initials" : "signature"} below</p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs" style={{ color: "#6B7280" }}>
+              Draw your {mode === "initial" ? "initials" : "signature"}
+            </p>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">Color:</span>
-              {["#1B0A3C", "#1565C0", "#000000"].map((color) => (
-                <button
-                  key={color}
-                  onClick={() => setPenColor(color)}
-                  className="w-5 h-5 rounded-full border-2 transition-all"
-                  style={{
-                    background: color,
-                    borderColor: penColor === color ? "#1B0A3C" : "transparent",
-                    outline: penColor === color ? "2px solid #1B0A3C" : "none",
-                    outlineOffset: "2px",
-                  }}
-                />
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">Size:</span>
-              {[1.5, 2.5, 4].map((size) => (
-                <button
-                  key={size}
-                  onClick={() => setPenSize(size)}
-                  className="w-6 h-6 rounded flex items-center justify-center border transition-all"
-                  style={{
-                    borderColor: penSize === size ? "#1B0A3C" : "#E0E0E0",
-                    background: penSize === size ? "#F0F0F0" : "white",
-                  }}
-                >
-                  <div
-                    className="rounded-full"
-                    style={{ width: size + 2, height: size + 2, background: "#1B0A3C" }}
-                  />
-                </button>
-              ))}
+              <button
+                onClick={clearCanvas}
+                className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                title="Clear"
+              >
+                <Trash size={18} weight="bold" color="#6B7280" />
+              </button>
+              <button
+                onClick={() => {
+                  if (canvasRef.current) {
+                    canvasRef.current.requestFullscreen?.();
+                  }
+                }}
+                className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                title="Fullscreen"
+              >
+                <CornersOut size={18} weight="bold" color="#6B7280" />
+              </button>
             </div>
           </div>
 
           {/* Draw canvas */}
           <div
-            className="relative rounded-xl overflow-hidden border-2"
-            style={{ borderColor: hasDrawn ? "#E0E0E0" : "#1B0A3C" }}
+            className="relative rounded overflow-hidden"
+            style={{
+              border: "2px dashed #D1D5DB",
+            }}
           >
             <canvas
               ref={canvasRef}
@@ -391,28 +592,17 @@ export function SignatureCapture({
                 left: "5%",
                 right: "5%",
                 height: "1px",
-                background: "#E0E0E0",
+                background: "#E5E7EB",
               }}
             />
             {!hasDrawn && (
               <div
                 className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                style={{ color: "#CCCCCC" }}
+                style={{ color: "#D1D5DB" }}
               >
                 <p className="text-sm">Sign here</p>
               </div>
             )}
-          </div>
-
-          <div className="flex justify-between items-center">
-            <button
-              onClick={clearCanvas}
-              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-            >
-              <X size={14} weight="regular" />
-              Clear
-            </button>
-            <p className="text-xs text-gray-400">Draw freely to create your signature</p>
           </div>
         </div>
       )}
@@ -420,13 +610,11 @@ export function SignatureCapture({
       {/* UPLOAD tab */}
       {tab === "upload" && (
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">Upload an image of your handwritten signature (PNG, JPG, or GIF)</p>
-
           {uploadedImage ? (
             <div className="space-y-3">
               <div
-                className="rounded-xl border-2 p-4 flex items-center justify-center"
-                style={{ borderColor: "#E0E0E0", minHeight: "120px" }}
+                className="rounded border-2 p-4 flex items-center justify-center"
+                style={{ borderColor: "#D1D5DB", minHeight: "120px" }}
               >
                 <img
                   src={uploadedImage}
@@ -435,25 +623,40 @@ export function SignatureCapture({
                 />
               </div>
               <button
-                onClick={() => setUploadedImage(null)}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                onClick={() => {
+                  setUploadedImage(null);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+                className="text-xs font-semibold transition-colors"
+                style={{ color: PURPLE }}
               >
                 Remove and upload different image
               </button>
             </div>
           ) : (
             <div
-              className="border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors hover:border-[#1B0A3C] hover:bg-[#FAFAFF]"
+              className="relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors hover:border-[#1B0A3C] hover:bg-gray-50"
               style={{ borderColor: "#E0E0E0" }}
               onClick={() => fileInputRef.current?.click()}
             >
-              <UploadSimple size={40} weight="regular" color="#9E9E9E" className="mx-auto mb-3" />
-              <p className="text-sm text-gray-600 font-medium">Click to upload signature image</p>
-              <p className="text-xs text-gray-400 mt-1">PNG, JPG, GIF — transparent background preferred</p>
+              <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mx-auto">
+                <UploadSimple size={24} color="#1B0A3C" />
+              </div>
+              <div className="mt-3 space-y-1">
+                <p className="text-sm font-medium" style={{ color: "#1B0A3C" }}>
+                  Drag and drop files here
+                </p>
+                <p className="text-xs text-gray-500">
+                  or <span className="font-medium" style={{ color: "#1B0A3C" }}>browse to upload</span>
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  Accepted: GIF, JPG, PNG, BMP. Max 3MB.
+                </p>
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/gif"
+                accept="image/png,image/jpeg,image/gif,image/bmp"
                 className="hidden"
                 onChange={handleFileUpload}
               />
@@ -461,37 +664,44 @@ export function SignatureCapture({
           )}
         </div>
       )}
+      </div>
+
+      {/* Legal disclaimer */}
+      <p
+        className="text-[11px] leading-relaxed mt-5"
+        style={{ color: "#6B7280" }}
+      >
+        {LEGAL_TEXT}
+      </p>
 
       {/* Footer */}
-      <div
-        className="mt-6 pt-5 border-t flex items-center justify-between"
-        style={{ borderColor: "#E8E8E8" }}
-      >
-        <p className="text-xs text-gray-400 flex-1 pr-4 leading-relaxed">
-          By clicking &ldquo;Adopt and Sign&rdquo;, you agree that this signature represents your
-          legally binding electronic signature.
-        </p>
-        <div className="flex gap-2.5 flex-shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-lg text-sm border font-medium transition-colors"
-            style={{ borderColor: "#E0E0E0", color: "#6B6B6B" }}
-            onMouseOver={(e) => (e.currentTarget.style.background = "#F5F5F5")}
-            onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleAdopt}
-            disabled={!canAdopt()}
-            className="px-5 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-40"
-            style={{ background: "#F59E0B", color: "#1B0A3C" }}
-            onMouseOver={(e) => { if (canAdopt()) e.currentTarget.style.background = "#D97706"; }}
-            onMouseOut={(e) => (e.currentTarget.style.background = "#F59E0B")}
-          >
-            Adopt and Sign
-          </button>
-        </div>
+      <div className="mt-5 flex items-center gap-3">
+        <button
+          onClick={handleAdopt}
+          disabled={!canAdopt()}
+          className="px-6 py-2.5 rounded text-sm font-bold text-white transition-all disabled:opacity-40"
+          style={{ background: PURPLE }}
+          onMouseOver={(e) => {
+            if (canAdopt())
+              e.currentTarget.style.background = "#3D00CC";
+          }}
+          onMouseOut={(e) => (e.currentTarget.style.background = PURPLE)}
+        >
+          Adopt and Sign
+        </button>
+        <button
+          onClick={onClose}
+          className="px-4 py-2.5 text-sm font-medium transition-colors"
+          style={{ color: "#6B7280" }}
+          onMouseOver={(e) =>
+            (e.currentTarget.style.color = DARK)
+          }
+          onMouseOut={(e) =>
+            (e.currentTarget.style.color = "#6B7280")
+          }
+        >
+          Cancel
+        </button>
       </div>
     </Dialog>
   );

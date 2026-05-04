@@ -97,7 +97,10 @@ async def list_envelopes(
     action_required: bool = False
     auth_failed: bool = False
 
-    if envelope_filter == "waiting_for_others":
+    if envelope_filter == "inbox":
+        statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered, EnvelopeStatus.completed]
+        status_filter = None
+    elif envelope_filter == "waiting_for_others":
         # "Waiting for Others" — envelopes the current user sent that recipients
         # have not yet fully signed.  Covers both "sent" (awaiting first open) and
         # "delivered" (opened but not yet completed).
@@ -571,18 +574,18 @@ async def upload_document(
     )
     is_doc = content_type == "application/msword" or name_lower.endswith(".doc")
 
+    ext = os.path.splitext(original_filename)[-1].lower()
+    if ext not in (".pdf", ".docx", ".doc"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported file type: '{ext}'. Accepted types: PDF, DOCX, DOC",
+        )
     if content_type and content_type not in allowed_mime_types:
-        # Only reject if the browser supplied a content type we don't recognise
         if not (is_pdf or is_docx or is_doc):
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=f"Unsupported file type: {content_type}. Accepted types: PDF, DOCX, DOC",
             )
-
-    # Preserve the original file extension so the stored file is not misidentified
-    ext = os.path.splitext(original_filename)[-1].lower()
-    if ext not in (".pdf", ".docx", ".doc"):
-        ext = ".pdf"  # safe fallback
 
     os.makedirs(settings.upload_dir, exist_ok=True)
     file_id = str(uuid.uuid4())
@@ -740,7 +743,7 @@ async def add_recipient(
         "signed_at": recipient.signed_at,
         "declined_at": recipient.declined_at,
         "decline_reason": recipient.decline_reason,
-        "access_code": recipient.access_code,
+        "access_code": "••••" if recipient.access_code else None,
         "fields": [],
     }
 
@@ -773,7 +776,7 @@ async def update_recipient(
         "signed_at": updated.signed_at,
         "declined_at": updated.declined_at,
         "decline_reason": updated.decline_reason,
-        "access_code": updated.access_code,
+        "access_code": "••••" if updated.access_code else None,
         "fields": [],
     }
 
@@ -831,6 +834,8 @@ async def update_field(
     if not field:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
     doc = await svc.get_document(db, field.document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -847,6 +852,8 @@ async def delete_field(
     if not field:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field not found")
     doc = await svc.get_document(db, field.document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -924,7 +931,7 @@ async def download_document(
         content=content,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{doc.original_filename}"'
+            "Content-Disposition": f'attachment; filename="{(doc.original_filename or "document").replace(chr(34), "").replace(chr(92), "")}"'
         },
     )
 
@@ -961,44 +968,49 @@ async def download_signed_envelope(
         )
 
     safe_subject = "".join(c for c in envelope.subject if c.isalnum() or c in " _-")[:50]
+    file_ext = os.path.splitext(doc.file_path)[-1].lower()
 
-    if envelope.status == EnvelopeStatus.completed:
-        # For completed envelopes, overlay field values onto the PDF
-        all_fields = [
-            {
-                "type": f.type.value,
-                "page": f.page,
-                "x": f.x,
-                "y": f.y,
-                "width": f.width,
-                "height": f.height,
-                "value": f.value,
-                "label": f.label,
-            }
-            for d in envelope.documents
-            for f in d.fields
-        ]
+    # Collect fields with values for the primary document only
+    all_fields = [
+        {
+            "type": f.type.value,
+            "page": f.page,
+            "x": f.x,
+            "y": f.y,
+            "width": f.width,
+            "height": f.height,
+            "value": f.value,
+            "label": f.label,
+        }
+        for f in doc.fields
+        if f.value
+    ]
 
+    if all_fields and file_ext == ".pdf":
         try:
             pdf_bytes = apply_fields_to_pdf(doc.file_path, all_fields)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to generate signed PDF: {exc}",
-            )
-
-        filename = f"signed_{safe_subject}.pdf"
+        except Exception:
+            with open(doc.file_path, "rb") as fh:
+                pdf_bytes = fh.read()
     else:
-        # For non-completed envelopes, return the original document
-        with open(doc.file_path, "rb") as f:
-            pdf_bytes = f.read()
+        with open(doc.file_path, "rb") as fh:
+            pdf_bytes = fh.read()
 
-        filename = f"{safe_subject}.pdf"
+    media_types = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".doc": "application/msword",
+    }
+    content_type = media_types.get(file_ext, "application/octet-stream")
+
+    ext = file_ext if file_ext != ".pdf" else ".pdf"
+    filename = f"signed_{safe_subject}{ext}" if envelope.status == EnvelopeStatus.completed else f"{safe_subject}{ext}"
+    safe_fn = filename.replace('"', "").replace("\\", "")
 
     return FastAPIResponse(
         content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_fn}"'},
     )
 
 
@@ -1189,15 +1201,15 @@ async def bulk_send_direct(
         db.add(recipient)
         await db.flush()
 
-        # Send the envelope
         envelope_detail = await svc.get_envelope(db, envelope.id, current_user.id)
         if envelope_detail:
             try:
                 await svc.send_envelope(db, envelope_detail)
+                created += 1
             except Exception:
-                pass  # count as created even if send fails
-
-        created += 1
+                pass
+        else:
+            created += 1
 
     await db.commit()
     return BulkSendResponse(batch_id=batch_id, total=total_rows, created=created)
@@ -1275,16 +1287,14 @@ async def bulk_send_envelopes(
         db.add(recipient)
         await db.flush()
 
-        # Send the envelope
         from app.envelopes.service import send_envelope
         envelope_detail = await svc.get_envelope(db, envelope.id, current_user.id)
         if envelope_detail:
             try:
                 await send_envelope(db, envelope_detail)
+                created += 1
             except Exception:
-                pass  # count as created even if send fails
-
-        created += 1
+                pass
 
     await db.commit()
     return BulkSendResponse(batch_id=batch_id, total=len(rows), created=created)
