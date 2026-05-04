@@ -8,6 +8,8 @@ RUN pnpm install --shamefully-hoist
 COPY . .
 ARG NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG API_INTERNAL_URL=http://localhost:8000
+ENV API_INTERNAL_URL=$API_INTERNAL_URL
 RUN pnpm build
 
 FROM base AS runner
