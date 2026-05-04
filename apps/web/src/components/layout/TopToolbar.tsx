@@ -91,7 +91,7 @@ export function TopToolbar() {
     if (pathname?.startsWith('/mail/search')) router.push('/mail/inbox')
   }
 
-  const handleLogout = () => { logout(); router.push('/sign-in') }
+  const handleLogout = () => { queryClient.clear(); logout(); router.push('/sign-in') }
 
   const handleSwitchAccount = (userId: string) => {
     switchAccount(userId); queryClient.clear(); setShowUserMenu(false); router.push('/mail/inbox')

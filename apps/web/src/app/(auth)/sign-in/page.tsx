@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { useRouter } from 'next/navigation'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
+import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
 const schema = z.object({
@@ -18,6 +19,7 @@ type FormValues = z.infer<typeof schema>
 export default function SignInPage() {
   const router = useRouter()
   const login = useAuthStore((s) => s.login)
+  const queryClient = useQueryClient()
   const [serverError, setServerError] = useState<string | null>(null)
 
   const {
@@ -32,6 +34,7 @@ export default function SignInPage() {
     setServerError(null)
     try {
       const res = await auth.login(data.email, data.password)
+      queryClient.clear()
       login(res.access_token, res.user)
       router.push('/mail/inbox')
     } catch (err) {
