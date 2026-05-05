@@ -104,7 +104,7 @@ export async function deleteEnvelope(id: string): Promise<void> {
 
 export async function addRecipient(
   envelopeId: string,
-  data: { name: string; email: string; role: string; routing_order: number },
+  data: { name: string; email: string; role: string; routing_order: number; private_message?: string },
 ): Promise<Recipient> {
   const res = await apiClient.post(`/envelopes/${envelopeId}/recipients`, data);
   return res.data;
