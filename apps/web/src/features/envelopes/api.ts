@@ -112,7 +112,7 @@ export async function addRecipient(
 
 export async function updateRecipient(
   recipientId: string,
-  data: { name?: string; email?: string; role?: string; routing_order?: number },
+  data: { name?: string; email?: string; role?: string; routing_order?: number; private_message?: string },
 ): Promise<Recipient> {
   const res = await apiClient.put(`/recipients/${recipientId}`, data);
   return res.data;
