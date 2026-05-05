@@ -1,7 +1,7 @@
 'use client'
 
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { format, addDays, addWeeks, addMonths, subDays, subWeeks, subMonths } from 'date-fns'
+import { format, addDays, addWeeks, addMonths, subDays, subWeeks, subMonths, startOfWeek, endOfWeek } from 'date-fns'
 
 interface DateNavigatorProps {
   currentDate: Date
@@ -27,35 +27,42 @@ export function DateNavigator({ currentDate, view, onDateChange }: DateNavigator
   const getLabel = () => {
     if (view === 'day') return format(currentDate, 'EEEE, MMMM d, yyyy')
     if (view === 'month') return format(currentDate, 'MMMM yyyy')
-    return format(currentDate, 'MMMM yyyy')
+    // Week/work-week: show range like "May 4-8, 2026"
+    const wStart = startOfWeek(currentDate)
+    const wEnd = endOfWeek(currentDate)
+    if (wStart.getMonth() === wEnd.getMonth()) {
+      return `${format(wStart, 'MMM d')}-${format(wEnd, 'd, yyyy')}`
+    }
+    return `${format(wStart, 'MMM d')} - ${format(wEnd, 'MMM d, yyyy')}`
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1">
+      {/* New event button — kept in toolbar per feedback */}
       <button
         onClick={goToday}
-        aria-label="Today"
-        className="px-3 py-1.5 text-sm border border-[#D2D0CE] rounded hover:bg-[#F3F2F1] transition-colors text-[#323130]"
+        aria-label="Go to today"
+        className="px-3 py-1 text-sm border border-[#D2D0CE] rounded hover:bg-[#F3F2F1] transition-colors text-[#323130] flex-shrink-0"
       >
         Today
       </button>
       <button
         onClick={goBack}
         aria-label="Previous"
-        className="p-1.5 rounded hover:bg-[#F3F2F1] transition-colors text-[#605E5C]"
+        className="p-1 rounded hover:bg-[#F3F2F1] transition-colors text-[#605E5C]"
       >
         <ChevronLeft size={16} />
       </button>
       <button
         onClick={goForward}
         aria-label="Next"
-        className="p-1.5 rounded hover:bg-[#F3F2F1] transition-colors text-[#605E5C]"
+        className="p-1 rounded hover:bg-[#F3F2F1] transition-colors text-[#605E5C]"
       >
         <ChevronRight size={16} />
       </button>
       <h2
         aria-label={`Current date range: ${getLabel()}`}
-        className="text-base font-semibold text-[#323130] min-w-[180px]"
+        className="text-sm font-semibold text-[#323130] ml-1 whitespace-nowrap"
       >
         {getLabel()}
       </h2>

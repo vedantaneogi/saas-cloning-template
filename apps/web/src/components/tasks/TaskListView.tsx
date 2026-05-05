@@ -7,7 +7,7 @@ import type { Task, Message } from '@/lib/api'
 import { TaskItem } from './TaskItem'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { CheckSquare, Plus, Flag, Mail } from 'lucide-react'
+import { CheckSquare, Plus, Flag, Mail, ClipboardList, Search, RefreshCw } from 'lucide-react'
 import { formatMessageDate } from '@/lib/utils'
 
 interface TaskListViewProps {
@@ -67,21 +67,45 @@ export function TaskListView({ listId, onSelectTask, selectedTaskId }: TaskListV
 
   return (
     <div className="flex flex-col h-full">
-      {/* Add task input */}
-      <form
-        onSubmit={handleAddTask}
-        className="flex items-center gap-2 px-4 py-3 border-b border-[#EDEBE9] bg-white flex-shrink-0"
-      >
-        <Plus size={16} className="text-[#0078D4] flex-shrink-0" />
-        <input
-          type="text"
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
-          placeholder="Add a task"
-          aria-label="Add a task"
-          className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none"
-        />
-      </form>
+      {/* Add task input — matching Outlook */}
+      <div className="border-b border-[#EDEBE9] bg-white flex-shrink-0">
+        <form
+          onSubmit={handleAddTask}
+          className="flex items-center gap-2 px-4 py-3"
+        >
+          <span className="w-5 h-5 rounded-full border-2 border-[#0078D4] flex-shrink-0" />
+          <input
+            type="text"
+            value={newTaskTitle}
+            onChange={(e) => setNewTaskTitle(e.target.value)}
+            placeholder="Add a task"
+            aria-label="Add a task"
+            className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none"
+          />
+        </form>
+        {/* Secondary action row */}
+        <div className="flex items-center justify-between px-4 pb-2">
+          <div className="flex items-center gap-1">
+            <button type="button" aria-label="Set due date" className="p-1 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors">
+              <ClipboardList size={14} />
+            </button>
+            <button type="button" aria-label="Search tasks" className="p-1 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors">
+              <Search size={14} />
+            </button>
+            <button type="button" aria-label="Sync" className="p-1 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors">
+              <RefreshCw size={14} />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => { if (newTaskTitle.trim()) createMutation.mutate(newTaskTitle.trim()) }}
+            disabled={!newTaskTitle.trim()}
+            className="text-xs text-[#0078D4] font-medium px-3 py-1 rounded hover:bg-[#EBF3FB] disabled:text-[#A19F9D] disabled:hover:bg-transparent transition-colors"
+          >
+            Add
+          </button>
+        </div>
+      </div>
 
       {/* Table header */}
       {!isFlaggedView && taskList.length > 0 && (

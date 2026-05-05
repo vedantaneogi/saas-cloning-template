@@ -535,6 +535,12 @@ export interface Conversation {
 }
 
 export const conversations = {
+  list: (params?: { folder_id?: string; limit?: number }) => {
+    const qs = params ? new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
+    ) : null
+    return request<{ items: Conversation[]; next_cursor: string | null; total_count: number }>(`/conversations${qs ? `?${qs}` : ''}`)
+  },
   get: (id: string) =>
     request<{ conversation: Conversation; messages: Message[] }>(`/conversations/${id}`),
 }
@@ -638,7 +644,7 @@ export const events = {
       body: JSON.stringify(data),
     }),
 
-  update: (id: string, data: Partial<Event>, scope?: 'single' | 'series', occurrenceStart?: string) => {
+  update: (id: string, data: Partial<Event>, scope?: 'single' | 'following' | 'series', occurrenceStart?: string) => {
     const qs = new URLSearchParams()
     if (scope) qs.set('scope', scope)
     if (occurrenceStart) qs.set('occurrence_start', occurrenceStart)
@@ -646,7 +652,7 @@ export const events = {
     return request<Event>(`/events/${id}${query}`, { method: 'PATCH', body: JSON.stringify(data) })
   },
 
-  delete: (id: string, scope?: 'single' | 'series', occurrenceStart?: string) => {
+  delete: (id: string, scope?: 'single' | 'following' | 'series', occurrenceStart?: string) => {
     const qs = new URLSearchParams()
     if (scope) qs.set('scope', scope)
     if (occurrenceStart) qs.set('occurrence_start', occurrenceStart)

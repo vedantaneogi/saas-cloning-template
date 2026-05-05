@@ -6,7 +6,7 @@ import { contacts } from '@/lib/api'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
 import { useUIStore } from '@/store/ui'
-import { Mail, Phone, Building2, MapPin, Star, Edit2, Trash2, FileText } from 'lucide-react'
+import { Mail, Phone, Building2, MapPin, Star, Edit2, Trash2, FileText, PhoneCall, ChevronDown, MoreHorizontal, Linkedin } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -15,7 +15,7 @@ interface ContactCardProps {
   onEdit?: () => void
 }
 
-const CONTACT_TABS = ['Overview', 'Contact', 'Files', 'Messages'] as const
+const CONTACT_TABS = ['Overview', 'Contact', 'Files', 'Messages', 'LinkedIn'] as const
 type ContactTab = (typeof CONTACT_TABS)[number]
 
 export function ContactCard({ contact, onEdit }: ContactCardProps) {
@@ -81,20 +81,39 @@ export function ContactCard({ contact, onEdit }: ContactCardProps) {
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2 px-6 py-3 border-b border-[#EDEBE9]">
-        <Button
-          size="sm"
-          onClick={() =>
-            openComposer({
-              to: [`${contact.display_name} <${contact.email}>`],
-            })
-          }
+      {/* Actions — matching Outlook: Call (green) | chevron | mail | ... */}
+      <div className="flex items-center gap-1.5 px-6 py-3 border-b border-[#EDEBE9]">
+        <div className="flex items-center">
+          <button
+            type="button"
+            aria-label={`Call ${contact.display_name}`}
+            className="flex items-center gap-1.5 bg-[#107C10] hover:bg-[#0B6A0B] text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors"
+          >
+            <PhoneCall size={12} /> Call
+          </button>
+          <button
+            type="button"
+            aria-label="Call options"
+            className="flex items-center bg-[#107C10] hover:bg-[#0B6A0B] text-white h-7 px-1 rounded-r border-l border-white/30 transition-colors"
+          >
+            <ChevronDown size={10} />
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => openComposer({ to: [`${contact.display_name} <${contact.email}>`] })}
           aria-label={`Email ${contact.display_name}`}
+          className="w-7 h-7 flex items-center justify-center rounded border border-[#EDEBE9] text-[#605E5C] hover:bg-[#F3F2F1] transition-colors"
         >
-          <Mail size={13} />
-          Email
-        </Button>
+          <Mail size={14} />
+        </button>
+        <button
+          type="button"
+          aria-label="More actions"
+          className="w-7 h-7 flex items-center justify-center rounded border border-[#EDEBE9] text-[#605E5C] hover:bg-[#F3F2F1] transition-colors"
+        >
+          <MoreHorizontal size={14} />
+        </button>
       </div>
 
       {/* Tabs — matching Outlook: Overview / Contact / Files / Messages */}
@@ -214,6 +233,14 @@ export function ContactCard({ contact, onEdit }: ContactCardProps) {
             <p className="text-sm text-[#323130] whitespace-pre-wrap">{contact.notes}</p>
           </div>
         )}
+
+        {/* Edit contact link */}
+        <div className="flex justify-center pt-4">
+          <button type="button" onClick={onEdit}
+            className="flex items-center gap-1.5 text-sm text-[#605E5C] hover:text-[#0078D4] transition-colors">
+            <Edit2 size={13} /> Edit contact
+          </button>
+        </div>
       </div>
       )}
 
@@ -234,6 +261,18 @@ export function ContactCard({ contact, onEdit }: ContactCardProps) {
             <p className="text-sm text-[#605E5C]">Recent messages with {contact.display_name}</p>
           </div>
           <p className="text-sm text-[#A19F9D] text-center py-8">Search your mailbox for messages from {contact.email}</p>
+        </div>
+      )}
+
+      {activeTab === 'LinkedIn' && (
+        <div className="p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Linkedin size={16} className="text-[#0A66C2]" />
+            <p className="text-sm text-[#605E5C]">LinkedIn profile</p>
+          </div>
+          <p className="text-sm text-[#A19F9D] text-center py-8">
+            Connect your LinkedIn account to see profile information for {contact.display_name}
+          </p>
         </div>
       )}
     </div>

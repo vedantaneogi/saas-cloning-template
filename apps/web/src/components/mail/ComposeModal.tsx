@@ -23,8 +23,16 @@ import {
   FileText,
   Clock,
   ShieldAlert,
+  Table,
+  Image,
+  Link,
+  Smile,
+  PencilLine,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+const COMPOSE_TABS = ['Message', 'Insert', 'Format text', 'Draw', 'Options'] as const
+type ComposeTab = (typeof COMPOSE_TABS)[number]
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -41,9 +49,10 @@ type FormValues = z.infer<typeof schema>
 interface ComposeModalProps {
   open: boolean
   onClose: () => void
+  inline?: boolean
 }
 
-export function ComposeModal({ open, onClose }: ComposeModalProps) {
+export function ComposeModal({ open, onClose, inline = false }: ComposeModalProps) {
   const router = useRouter()
   const composerDraft = useUIStore((s) => s.composerDraft)
   const setComposerDraft = useUIStore((s) => s.setComposerDraft)
@@ -68,6 +77,11 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
   const [sensitivityWarningPending, setSensitivityWarningPending] = useState<false | 'send' | { scheduled: string }>(false)
   const [dlpViolations, setDlpViolations] = useState<string[]>([])
   const [scheduledSendAt, setScheduledSendAt] = useState<string>('')
+  const [composeTab, setComposeTab] = useState<ComposeTab>('Message')
+  const [showInsertLink, setShowInsertLink] = useState(false)
+  const [insertLinkUrl, setInsertLinkUrl] = useState('')
+  const [insertLinkText, setInsertLinkText] = useState('')
+  const imageInsertRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scheduleMenuRef = useRef<HTMLDivElement>(null)
   const sigMenuRef = useRef<HTMLDivElement>(null)
@@ -79,13 +93,19 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
     queryFn: () => signatures.list(),
   })
 
-  // Apply default signature for new messages
+  // Apply default signature for new messages — use ref to prevent double insertion
+  const sigInsertedRef = useRef(false)
   useEffect(() => {
+    if (sigInsertedRef.current) return
     if (!composerDraft.replyType && signatureList.length > 0) {
       const defaultSig = signatureList.find((s) => s.is_default_new) ?? signatureList[0]
-      if (defaultSig && !bodyHtml.includes('<!-- sig -->')) {
+      if (defaultSig) {
+        sigInsertedRef.current = true
         const sigBlock = `<br/><br/><!-- sig -->${defaultSig.body_html}`
-        setBodyHtml((prev) => `${prev}${sigBlock}`)
+        setBodyHtml((prev) => {
+          if (prev.includes('<!-- sig -->')) return prev
+          return `${prev}${sigBlock}`
+        })
         setSelectedSignature(defaultSig.id)
       }
     }
@@ -202,15 +222,16 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
     setSigMenuOpen(false)
   }
 
-  // Auto-save draft every 30s
+  // Auto-save draft — only after 2 min of inactivity, and only if user typed real content
   useEffect(() => {
-    autoSaveRef.current = setInterval(() => {
-      if (subject || bodyHtml || to.length > 0) {
-        sendMutation.mutate({ draft: true })
-      }
-    }, 30000)
+    if (autoSaveRef.current) clearTimeout(autoSaveRef.current)
+    const hasRealContent = subject || to.length > 0 || (bodyHtml && !bodyHtml.match(/^(<br\/?>|\s|<!-- sig -->.*)*$/))
+    if (!hasRealContent) return
+    autoSaveRef.current = setTimeout(() => {
+      sendMutation.mutate({ draft: true })
+    }, 120000) // 2 minutes
     return () => {
-      if (autoSaveRef.current) clearInterval(autoSaveRef.current)
+      if (autoSaveRef.current) clearTimeout(autoSaveRef.current)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject, bodyHtml, to])
@@ -289,7 +310,7 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
 
   if (!open) return null
 
-  if (minimized) {
+  if (!inline && minimized) {
     return (
       <div className="fixed bottom-0 right-6 z-50 w-80">
         <div
@@ -312,6 +333,145 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
             >
               <X size={13} />
             </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Inline mode — renders inside the reading pane with no modal wrapper
+  if (inline) {
+    return (
+      <div className="flex flex-col h-full bg-white" aria-label="Compose message">
+        {/* Recipients */}
+        <div className="px-4 pt-3 space-y-1 border-b border-[#EDEBE9] pb-2 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            {/* Send button inline with To */}
+            <div className="flex items-center flex-shrink-0">
+              <button
+                type="button"
+                onClick={handleSubmit(() => handleSend())}
+                disabled={sendMutation.isPending}
+                className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors"
+              >
+                <Send size={12} /> Send
+              </button>
+              <div className="relative" ref={scheduleMenuRef}>
+                <button type="button" onClick={() => setScheduleMenuOpen((v) => !v)}
+                  className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-7 px-1 rounded-r border-l border-white/30 transition-colors">
+                  <ChevronDown size={10} />
+                </button>
+                {scheduleMenuOpen && (
+                  <div className="absolute left-0 top-full mt-0.5 z-50 w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3">
+                    <p className="text-xs font-medium text-[#605E5C] mb-2">Schedule send</p>
+                    <input type="datetime-local" value={scheduledSendAt} onChange={(e) => setScheduledSendAt(e.target.value)}
+                      className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
+                    <button type="button" disabled={!scheduledSendAt} onClick={() => { handleSend(scheduledSendAt); setScheduleMenuOpen(false) }}
+                      className="w-full text-xs bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded">Schedule</button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <RecipientField label="To" id="inline-to" value={to} onChange={setTo} placeholder="Recipients" />
+            </div>
+            {(!showCc || !showBcc) && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {!showCc && <button type="button" onClick={() => setShowCc(true)} className="text-xs text-[#0078D4] hover:underline">Cc</button>}
+                {!showBcc && <button type="button" onClick={() => setShowBcc(true)} className="text-xs text-[#0078D4] hover:underline">Bcc</button>}
+              </div>
+            )}
+          </div>
+
+          {showCc && (
+            <RecipientField label="Cc" id="inline-cc" value={cc} onChange={setCc} />
+          )}
+          {showBcc && (
+            <RecipientField label="Bcc" id="inline-bcc" value={bcc} onChange={setBcc} />
+          )}
+
+          {/* Subject */}
+          <div className="flex items-center gap-2 border-b border-[#EDEBE9] pb-1">
+            <label className="text-sm text-[#605E5C] w-8 text-right flex-shrink-0">Subj</label>
+            <input
+              type="text"
+              placeholder="Add a subject"
+              className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none py-0.5"
+              {...register('subject')}
+            />
+            {importance === 'high' && (
+              <span className="text-xs font-bold text-[#D13438] px-1.5 py-0.5 rounded flex-shrink-0 bg-[#FDE7E9]">High importance</span>
+            )}
+            {importance === 'low' && (
+              <span className="text-xs font-medium text-[#0078D4] px-1.5 py-0.5 rounded flex-shrink-0 bg-[#EBF3FB]">Low importance</span>
+            )}
+          </div>
+        </div>
+
+        {/* Body editor */}
+        <div className="flex-1 overflow-hidden min-h-0">
+          <RichTextEditor
+            content={bodyHtml}
+            onChange={setBodyHtml}
+            placeholder="Write your message..."
+            minHeight="180px"
+            className="border-0 rounded-none h-full"
+          />
+        </div>
+
+        {/* Attached files */}
+        {attachedFiles.length > 0 && (
+          <div className="px-4 py-2 border-t border-[#EDEBE9] flex flex-wrap gap-2 bg-[#FAF9F8] flex-shrink-0">
+            {attachedFiles.map((file, idx) => (
+              <div key={idx} className="flex items-center gap-1.5 bg-white border border-[#EDEBE9] rounded px-2 py-1 text-xs text-[#323130]">
+                <FileText size={12} className="text-[#0078D4] flex-shrink-0" />
+                <span className="max-w-[120px] truncate">{file.name}</span>
+                <button type="button" onClick={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))} className="text-[#605E5C] hover:text-[#D13438] ml-0.5">
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Bottom bar — attach, signature, importance, discard */}
+        <div className="flex items-center justify-between px-4 py-2 border-t border-[#EDEBE9] flex-shrink-0 bg-[#FAF9F8]">
+          <div className="flex items-center gap-1">
+            <input ref={fileInputRef} type="file" multiple className="hidden"
+              onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) setAttachedFiles((prev) => [...prev, ...files]); e.target.value = '' }} />
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-1.5 text-[#605E5C] hover:bg-[#EDEBE9] rounded">
+              <Paperclip size={16} />
+            </button>
+            {signatureList.length > 0 && (
+              <div className="relative" ref={sigMenuRef}>
+                <button type="button" onClick={() => setSigMenuOpen((v) => !v)}
+                  className={cn('p-1.5 hover:bg-[#EDEBE9] rounded flex items-center gap-0.5 text-xs', selectedSignature ? 'text-[#0078D4]' : 'text-[#605E5C]')}>
+                  Signature <ChevronDown size={10} />
+                </button>
+                {sigMenuOpen && (
+                  <div className="absolute bottom-8 left-0 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg">
+                    {signatureList.map((sig) => (
+                      <button key={sig.id} type="button" onClick={() => insertSignature(sig.id)}
+                        className={cn('w-full text-left text-sm px-3 py-2 hover:bg-[#F3F2F1]', selectedSignature === sig.id ? 'text-[#0078D4]' : 'text-[#323130]')}>
+                        {sig.name}
+                      </button>
+                    ))}
+                    {selectedSignature && (<><div className="h-px bg-[#EDEBE9]" />
+                      <button type="button" onClick={removeSignature} className="w-full text-left text-sm text-[#605E5C] px-3 py-2 hover:bg-[#F3F2F1]">Remove signature</button>
+                    </>)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => setImportance(importance === 'high' ? 'normal' : 'high')}
+              className={cn('p-1.5 rounded text-sm font-bold w-7 h-7 flex items-center justify-center', importance === 'high' ? 'text-[#D13438] bg-[#FDE7E9]' : 'text-[#605E5C] hover:bg-[#EDEBE9]')}>!</button>
+            <button type="button" onClick={() => setImportance(importance === 'low' ? 'normal' : 'low')}
+              className={cn('p-1.5 rounded w-7 h-7 flex items-center justify-center', importance === 'low' ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:bg-[#EDEBE9]')}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3v7M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            <button type="button" onClick={onClose} className="text-xs text-[#605E5C] hover:text-[#323130] px-2 py-1 hover:bg-[#EDEBE9] rounded">Discard</button>
           </div>
         </div>
       </div>
@@ -347,6 +507,180 @@ export function ComposeModal({ open, onClose }: ComposeModalProps) {
           </button>
         </div>
       </div>
+
+      {/* Compose ribbon tabs — matches Outlook compose window */}
+      <div className="flex items-center h-7 bg-white border-b border-[#EDEBE9] px-1 flex-shrink-0" role="tablist" aria-label="Compose tabs">
+        {COMPOSE_TABS.map((tab) => (
+          <button
+            key={tab}
+            role="tab"
+            aria-selected={composeTab === tab}
+            onClick={() => setComposeTab(tab)}
+            className={cn(
+              'px-2.5 h-7 text-[11px] transition-colors relative',
+              composeTab === tab
+                ? 'text-[#0078D4] font-semibold after:absolute after:bottom-0 after:left-0.5 after:right-0.5 after:h-[2px] after:bg-[#0078D4] after:rounded-t'
+                : 'text-[#323130] hover:bg-[#F3F2F1]',
+            )}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab-specific toolbar */}
+      {composeTab === 'Insert' && (
+        <div className="border-b border-[#EDEBE9] bg-white flex-shrink-0">
+          <div className="flex items-center h-9 px-2 gap-1">
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 text-[11px] text-[#323130] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+              <Paperclip size={13} /> Attach file
+            </button>
+            <div className="w-px h-5 bg-[#EDEBE9]" />
+            <button type="button" onClick={() => {
+              const table = '<table style="border-collapse:collapse;width:100%"><tr><td style="border:1px solid #EDEBE9;padding:6px">Cell 1</td><td style="border:1px solid #EDEBE9;padding:6px">Cell 2</td></tr><tr><td style="border:1px solid #EDEBE9;padding:6px">Cell 3</td><td style="border:1px solid #EDEBE9;padding:6px">Cell 4</td></tr></table><br/>'
+              setBodyHtml((prev) => {
+                const sigIdx = prev.indexOf('<!-- sig -->')
+                if (sigIdx > -1) return prev.slice(0, sigIdx) + table + prev.slice(sigIdx)
+                return prev + table
+              })
+            }} className="flex items-center gap-1 text-[11px] text-[#323130] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+              <Table size={13} /> Table
+            </button>
+            <button type="button" onClick={() => imageInsertRef.current?.click()} className="flex items-center gap-1 text-[11px] text-[#323130] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+              <Image size={13} /> Pictures
+            </button>
+            <button type="button" onClick={() => setShowInsertLink(true)} className="flex items-center gap-1 text-[11px] text-[#323130] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+              <Link size={13} /> Link
+            </button>
+            <div className="w-px h-5 bg-[#EDEBE9]" />
+            <button type="button" onClick={() => {
+              setBodyHtml((prev) => {
+                const sigIdx = prev.indexOf('<!-- sig -->')
+                const emoji = '😊'
+                if (sigIdx > -1) return prev.slice(0, sigIdx) + emoji + prev.slice(sigIdx)
+                return prev + emoji
+              })
+            }} className="flex items-center gap-1 text-[11px] text-[#323130] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+              <Smile size={13} /> Emoji
+            </button>
+          </div>
+
+          {/* Insert link inline dialog */}
+          {showInsertLink && (
+            <div className="px-3 py-2 border-t border-[#EDEBE9] bg-[#FAF9F8] space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#605E5C] w-14">Display:</span>
+                <input type="text" value={insertLinkText} onChange={(e) => setInsertLinkText(e.target.value)}
+                  placeholder="Text to display" className="flex-1 text-xs border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4] text-[#323130]" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#605E5C] w-14">URL:</span>
+                <input autoFocus type="url" value={insertLinkUrl} onChange={(e) => setInsertLinkUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && insertLinkUrl.trim()) {
+                      const text = insertLinkText.trim() || insertLinkUrl
+                      setBodyHtml((prev) => {
+                        const link = `<a href="${insertLinkUrl}">${text}</a> `
+                        const sigIdx = prev.indexOf('<!-- sig -->')
+                        if (sigIdx > -1) return prev.slice(0, sigIdx) + link + prev.slice(sigIdx)
+                        return prev + link
+                      })
+                      setShowInsertLink(false); setInsertLinkUrl(''); setInsertLinkText('')
+                    }
+                    if (e.key === 'Escape') { setShowInsertLink(false); setInsertLinkUrl(''); setInsertLinkText('') }
+                  }}
+                  placeholder="https://..." className="flex-1 text-xs border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4] text-[#323130]" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-14" />
+                <button type="button" onClick={() => {
+                  if (insertLinkUrl.trim()) {
+                    const text = insertLinkText.trim() || insertLinkUrl
+                    setBodyHtml((prev) => {
+                      const link = `<a href="${insertLinkUrl}">${text}</a> `
+                      const sigIdx = prev.indexOf('<!-- sig -->')
+                      if (sigIdx > -1) return prev.slice(0, sigIdx) + link + prev.slice(sigIdx)
+                      return prev + link
+                    })
+                  }
+                  setShowInsertLink(false); setInsertLinkUrl(''); setInsertLinkText('')
+                }} className="text-xs bg-[#0078D4] text-white px-3 py-1 rounded hover:bg-[#106EBE] transition-colors">Insert</button>
+                <button type="button" onClick={() => { setShowInsertLink(false); setInsertLinkUrl(''); setInsertLinkText('') }}
+                  className="text-xs text-[#605E5C] px-2 py-1 hover:bg-[#EDEBE9] rounded transition-colors">Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* Hidden image input for Pictures button */}
+          <input ref={imageInsertRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (!file) return
+            const reader = new FileReader()
+            reader.onload = () => {
+              const img = `<img src="${reader.result as string}" style="max-width:100%" /><br/>`
+              setBodyHtml((prev) => {
+                const sigIdx = prev.indexOf('<!-- sig -->')
+                if (sigIdx > -1) return prev.slice(0, sigIdx) + img + prev.slice(sigIdx)
+                return prev + img
+              })
+            }
+            reader.readAsDataURL(file)
+            e.target.value = ''
+          }} />
+        </div>
+      )}
+      {composeTab === 'Draw' && (
+        <div className="flex items-center h-9 px-2 gap-1 border-b border-[#EDEBE9] bg-white flex-shrink-0">
+          <button type="button" className="flex items-center gap-1 text-[11px] text-[#323130] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+            <PencilLine size={13} /> Draw with touch
+          </button>
+          <span className="text-[11px] text-[#A19F9D] px-2">Drawing tools are not available in this version</span>
+        </div>
+      )}
+      {composeTab === 'Options' && (
+        <div className="flex items-center h-9 px-2 gap-1 border-b border-[#EDEBE9] bg-white flex-shrink-0 relative">
+          <button type="button"
+            onClick={() => setImportance(importance === 'high' ? 'normal' : 'high')}
+            className={cn('flex items-center gap-1 text-[11px] px-2 py-1 rounded transition-colors',
+              importance === 'high' ? 'text-[#D13438] bg-[#FDE7E9]' : 'text-[#323130] hover:bg-[#F3F2F1]')}>
+            <AlertCircle size={13} /> High importance
+          </button>
+          <button type="button"
+            onClick={() => setImportance(importance === 'low' ? 'normal' : 'low')}
+            className={cn('flex items-center gap-1 text-[11px] px-2 py-1 rounded transition-colors',
+              importance === 'low' ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#323130] hover:bg-[#F3F2F1]')}>
+            <ChevronDown size={13} /> Low importance
+          </button>
+          <div className="w-px h-5 bg-[#EDEBE9]" />
+          <div className="relative">
+            <button type="button"
+              onClick={() => setSensitivityMenuOpen((v) => !v)}
+              className={cn('flex items-center gap-1 text-[11px] px-2 py-1 rounded transition-colors',
+                sensitivity !== 'normal' ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#323130] hover:bg-[#F3F2F1]')}>
+              <ShieldAlert size={13} /> Sensitivity{sensitivity !== 'normal' ? `: ${sensitivity}` : ''}
+            </button>
+            {sensitivityMenuOpen && (
+              <div className="absolute left-0 top-full mt-0.5 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+                {(['normal', 'personal', 'private', 'confidential'] as const).map((opt) => (
+                  <button key={opt} type="button"
+                    onClick={() => { setSensitivity(opt); setSensitivityMenuOpen(false) }}
+                    className={cn('w-full text-left text-xs px-3 py-2 hover:bg-[#F3F2F1] transition-colors flex items-center justify-between',
+                      sensitivity === opt ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>
+                    {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                    {sensitivity === opt && <span className="w-2 h-2 rounded-full bg-[#0078D4]" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="w-px h-5 bg-[#EDEBE9]" />
+          <button type="button"
+            onClick={() => showNotification('Tracking options not available')}
+            className="flex items-center gap-1 text-[11px] text-[#323130] hover:bg-[#F3F2F1] px-2 py-1 rounded transition-colors">
+            <Clock size={13} /> Delay delivery
+          </button>
+        </div>
+      )}
 
       {/* Form */}
       <form

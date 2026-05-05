@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
-import { messages, folders, conversations } from '@/lib/api'
+import { messages, folders, conversations as conversationsApi } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import { MessageListItem } from './MessageListItem'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
@@ -42,7 +42,7 @@ function groupMessages(msgs: Message[]): Array<{ group: DateGroup; items: Messag
 function ThreadChildren({ conversationId, parentId }: { conversationId: string; parentId: string }) {
   const { data } = useQuery({
     queryKey: ['conversation', conversationId],
-    queryFn: () => conversations.get(conversationId),
+    queryFn: () => conversationsApi.get(conversationId),
   })
 
   const threadMsgs = (data?.messages ?? []).filter((m: Message) => m.id !== parentId)
@@ -129,6 +129,21 @@ export function MessageList() {
   })
 
   const rawMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
+
+  // Fetch conversation list to get accurate message_count per conversation
+  const convIds = [...new Set(rawMessages.filter((m) => m.conversation_id).map((m) => m.conversation_id!))]
+  const { data: convListData } = useQuery({
+    queryKey: ['conversations-list'],
+    queryFn: () => conversationsApi.list(),
+    enabled: convIds.length > 0,
+  })
+  const convCountMap = new Map<string, number>()
+  if (convListData?.items) {
+    for (const c of convListData.items) {
+      convCountMap.set(c.id, c.message_count)
+    }
+  }
+
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
 
   const toggleThread = useCallback((threadKey: string) => {
@@ -140,13 +155,30 @@ export function MessageList() {
     })
   }, [])
 
-  // Conversation grouping: group messages by conversation_id, keep all children
+  // Conversation grouping: group by conversation_id, or by normalized subject as fallback
   type ThreadGroup = { latest: Message; children: Message[]; count: number; key: string }
   const threadGroups: ThreadGroup[] = (() => {
     if (!conversationGrouping) return rawMessages.map((m) => ({ latest: m, children: [], count: 1, key: m.id }))
     const grouped = new Map<string, { latest: Message; children: Message[] }>()
+    // Map from normalized subject to conversation key for fallback grouping
+    const subjectMap = new Map<string, string>()
+    const normalizeSubject = (s: string) => s.replace(/^(re|fw|fwd):\s*/gi, '').trim().toLowerCase()
     for (const msg of rawMessages) {
-      const key = msg.conversation_id ?? msg.id
+      let key = msg.conversation_id ?? null
+      // Fallback: group by normalized subject when no conversation_id
+      if (!key) {
+        const normSubj = normalizeSubject(msg.subject || '')
+        if (normSubj && subjectMap.has(normSubj)) {
+          key = subjectMap.get(normSubj)!
+        } else {
+          key = msg.id
+          if (normSubj) subjectMap.set(normSubj, key)
+        }
+      } else {
+        // Register this conversation_id for subject fallback matching
+        const normSubj = normalizeSubject(msg.subject || '')
+        if (normSubj && !subjectMap.has(normSubj)) subjectMap.set(normSubj, key)
+      }
       const existing = grouped.get(key)
       if (!existing) {
         grouped.set(key, { latest: msg, children: [] })
@@ -161,12 +193,18 @@ export function MessageList() {
         }
       }
     }
-    return Array.from(grouped.entries()).map(([key, { latest, children }]) => ({
-      latest: { ...latest, _conversationCount: 1 + children.length } as Message & { _conversationCount: number },
-      children: children.sort((a, b) => new Date(b.received_at ?? b.created_at).getTime() - new Date(a.received_at ?? a.created_at).getTime()),
-      count: 1 + children.length,
-      key,
-    }))
+    return Array.from(grouped.entries()).map(([key, { latest, children }]) => {
+      // Use conversation API count if available, otherwise local count
+      const apiCount = latest.conversation_id ? convCountMap.get(latest.conversation_id) : undefined
+      const localCount = 1 + children.length
+      const count = apiCount && apiCount > localCount ? apiCount : localCount
+      return {
+        latest: { ...latest, _conversationCount: count } as Message & { _conversationCount: number },
+        children: children.sort((a, b) => new Date(b.received_at ?? b.created_at).getTime() - new Date(a.received_at ?? a.created_at).getTime()),
+        count,
+        key,
+      }
+    })
   })()
 
   const messageList = threadGroups.map((g) => g.latest)
@@ -181,41 +219,75 @@ export function MessageList() {
       aria-label="Message list"
       data-automation-id="MessageList"
     >
-      {/* Toolbar — matches Outlook: folder name + Select/Filter/Sort */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#EDEBE9] bg-white flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={messageList.length > 0 && selectedMessageIds.size === messageList.length}
-            ref={(el) => {
-              if (el) el.indeterminate = selectedMessageIds.size > 0 && selectedMessageIds.size < messageList.length
-            }}
-            onChange={() => {
-              if (selectedMessageIds.size === messageList.length) clearSelection()
-              else selectAllMessages(messageList.map((m) => m.id))
-            }}
-            aria-label="Select all messages"
-            className="w-3.5 h-3.5 rounded-sm border-[#8A8886] accent-[#0078D4] cursor-pointer"
-          />
+      {/* Focused / Other tabs + toolbar icons — matches Outlook layout */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#EDEBE9] bg-white flex-shrink-0">
+        {/* Left: Focused/Other tabs (inbox) or folder name */}
+        {isInbox ? (
+          <div className="flex items-center" role="tablist" aria-label="Inbox tabs">
+            <button
+              role="tab"
+              aria-selected={focusedTab === 'focused'}
+              onClick={() => setFocusedTab('focused')}
+              className={cn(
+                'px-3 py-1 text-sm font-medium transition-colors relative',
+                focusedTab === 'focused'
+                  ? 'text-[#0078D4] font-semibold after:absolute after:bottom-[-6px] after:left-0 after:right-0 after:h-0.5 after:bg-[#0078D4]'
+                  : 'text-[#605E5C] hover:text-[#323130]'
+              )}
+            >
+              Focused
+            </button>
+            <button
+              role="tab"
+              aria-selected={focusedTab === 'other'}
+              onClick={() => setFocusedTab('other')}
+              className={cn(
+                'px-3 py-1 text-sm font-medium transition-colors relative',
+                focusedTab === 'other'
+                  ? 'text-[#0078D4] font-semibold after:absolute after:bottom-[-6px] after:left-0 after:right-0 after:h-0.5 after:bg-[#0078D4]'
+                  : 'text-[#605E5C] hover:text-[#323130]'
+              )}
+            >
+              Other
+            </button>
+          </div>
+        ) : (
           <h2 className="text-sm font-semibold text-[#323130] truncate">
             {folderName.charAt(0).toUpperCase() + folderName.slice(1)}
           </h2>
-        </div>
+        )}
+
+        {/* Right: Select, Jump, Filter, Sort + By Date */}
         <div className="flex items-center gap-0.5">
-          {/* Mark all read */}
-          {rawMessages.some((m) => !m.is_read) && (
-            <button
-              onClick={() => {
-                const unreadIds = rawMessages.filter((m) => !m.is_read).map((m) => m.id)
-                markAllReadMutation.mutate(unreadIds)
-              }}
-              aria-label="Mark all as read"
-              title="Mark all as read"
-              className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
-            >
-              <MailOpen size={14} />
-            </button>
-          )}
+          {/* Select all */}
+          <button
+            onClick={() => {
+              if (selectedMessageIds.size === messageList.length) clearSelection()
+              else selectAllMessages(messageList.map((m) => m.id))
+            }}
+            aria-label="Select all"
+            title="Select all"
+            className={cn(
+              'p-1.5 rounded transition-colors',
+              hasSelection ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:bg-[#F3F2F1]'
+            )}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect x="1.5" y="1.5" width="5" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.2"/>
+              <rect x="9.5" y="1.5" width="5" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.2"/>
+              <rect x="1.5" y="9.5" width="5" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.2"/>
+              <rect x="9.5" y="9.5" width="5" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.2"/>
+            </svg>
+          </button>
+
+          {/* Jump to */}
+          <button
+            aria-label="Jump to"
+            title="Jump to"
+            className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M5 10l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
 
           {/* Filter */}
           <button
@@ -235,6 +307,9 @@ export function MessageList() {
           >
             {sortOrder === 'desc' ? <SortDesc size={14} /> : <SortAsc size={14} />}
           </button>
+
+          {/* By Date label */}
+          <span className="text-xs text-[#605E5C] ml-0.5 whitespace-nowrap">By Date</span>
         </div>
       </div>
 
@@ -294,39 +369,6 @@ export function MessageList() {
           </div>
         </div>
       )}
-
-      {/* Focused / Other tabs — inbox only */}
-      {isInbox && (
-        <div className="flex border-b border-[#EDEBE9] bg-white flex-shrink-0" role="tablist" aria-label="Inbox tabs">
-          <button
-            role="tab"
-            aria-selected={focusedTab === 'focused'}
-            onClick={() => setFocusedTab('focused')}
-            className={cn(
-              'px-4 py-2 text-sm font-medium transition-colors relative',
-              focusedTab === 'focused'
-                ? 'text-[#0078D4] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-[#0078D4]'
-                : 'text-[#605E5C] hover:text-[#323130] hover:bg-[#F3F2F1]'
-            )}
-          >
-            Focused
-          </button>
-          <button
-            role="tab"
-            aria-selected={focusedTab === 'other'}
-            onClick={() => setFocusedTab('other')}
-            className={cn(
-              'px-4 py-2 text-sm font-medium transition-colors relative',
-              focusedTab === 'other'
-                ? 'text-[#0078D4] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-[#0078D4]'
-                : 'text-[#605E5C] hover:text-[#323130] hover:bg-[#F3F2F1]'
-            )}
-          >
-            Other
-          </button>
-        </div>
-      )}
-
 
       {/* Message list */}
       <div

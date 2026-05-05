@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File a
 from fastapi.responses import Response
 from sqlalchemy import and_, cast, desc, func, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
@@ -244,7 +245,11 @@ async def list_messages(
     total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
     total = total_result.scalar() or 0
 
-    result = await db.execute(select(Message).where(*filters).order_by(order).distinct().limit(limit + 1))
+    result = await db.execute(
+        select(Message)
+        .options(selectinload(Message.attachments))
+        .where(*filters).order_by(order).distinct().limit(limit + 1)
+    )
     messages = result.scalars().all()
 
     has_more = len(messages) > limit

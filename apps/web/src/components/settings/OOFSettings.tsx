@@ -11,10 +11,12 @@ import { cn } from '@/lib/utils'
 
 const schema = z.object({
   enabled: z.boolean(),
+  time_limited: z.boolean(),
   start: z.string().optional(),
   end: z.string().optional(),
   message_internal: z.string().optional(),
   message_external: z.string().optional(),
+  contacts_only: z.boolean(),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -38,22 +40,25 @@ export function OOFSettings() {
     values: oof
       ? {
           enabled: oof.enabled,
+          time_limited: !!(oof.start && oof.end),
           start: oof.start?.slice(0, 16) ?? '',
           end: oof.end?.slice(0, 16) ?? '',
           message_internal: oof.message_internal ?? '',
           message_external: oof.message_external ?? '',
+          contacts_only: false,
         }
-      : undefined,
+      : { enabled: false, time_limited: false, start: '', end: '', message_internal: '', message_external: '', contacts_only: false },
   })
 
   const enabled = watch('enabled')
+  const timeLimited = watch('time_limited')
 
   const saveMutation = useMutation({
     mutationFn: (data: FormValues) =>
       settings.updateOOF({
         enabled: data.enabled,
-        start: data.start ? new Date(data.start).toISOString() : null,
-        end: data.end ? new Date(data.end).toISOString() : null,
+        start: data.time_limited && data.start ? new Date(data.start).toISOString() : null,
+        end: data.time_limited && data.end ? new Date(data.end).toISOString() : null,
         message_internal: data.message_internal ?? null,
         message_external: data.message_external ?? null,
       }),
@@ -66,11 +71,11 @@ export function OOFSettings() {
     <div className="max-w-2xl p-8">
       <h2 className="text-xl font-semibold text-[#323130] mb-1">Automatic replies</h2>
       <p className="text-sm text-[#605E5C] mb-6">
-        Send automatic replies when you&apos;re out of office.
+        Use automatic replies to let others know you&apos;re on vacation or aren&apos;t available to respond to email. You can set your replies to start and end at a specific time. Otherwise, they&apos;ll continue until you turn them off.
       </p>
 
       <form onSubmit={handleSubmit((d) => saveMutation.mutate(d))} className="space-y-6">
-        {/* Toggle row */}
+        {/* Toggle */}
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -95,74 +100,85 @@ export function OOFSettings() {
           </span>
         </div>
 
-        {/* Date range */}
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-[#323130]">Date range (optional)</p>
-          <div className="flex items-end gap-3">
-            <div>
-              <label className="block text-xs text-[#605E5C] mb-1" htmlFor="oof-start">
-                Start
-              </label>
-              <input
-                id="oof-start"
-                type="datetime-local"
-                aria-label="Out of office start date"
-                className="text-sm border border-[#8A8886] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
-                {...register('start')}
-              />
-            </div>
-            <span className="text-[#605E5C] pb-2">→</span>
-            <div>
-              <label className="block text-xs text-[#605E5C] mb-1" htmlFor="oof-end">
-                End
-              </label>
-              <input
-                id="oof-end"
-                type="datetime-local"
-                aria-label="Out of office end date"
-                className="text-sm border border-[#8A8886] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
-                {...register('end')}
-              />
-            </div>
+        {/* Send replies only during a time period */}
+        <label className="flex items-center gap-2 text-sm text-[#323130] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={timeLimited}
+            onChange={(e) => setValue('time_limited', e.target.checked)}
+            className="rounded border-[#D2D0CE]"
+          />
+          Send replies only during a time period
+        </label>
+
+        {/* Date/time pickers — shown when time_limited is checked */}
+        <div className={cn('space-y-3 pl-6', !timeLimited && 'opacity-50 pointer-events-none')}>
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-[#605E5C] w-20">Start time</label>
+            <input
+              type="date"
+              className="text-sm border border-[#8A8886] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
+              {...register('start')}
+            />
+            <input
+              type="time"
+              defaultValue="09:00"
+              className="text-sm border border-[#8A8886] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-[#605E5C] w-20">End time</label>
+            <input
+              type="date"
+              className="text-sm border border-[#8A8886] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
+              {...register('end')}
+            />
+            <input
+              type="time"
+              defaultValue="09:00"
+              className="text-sm border border-[#8A8886] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
+            />
           </div>
         </div>
 
-        {/* Internal message */}
+        {/* Rich text formatting toolbar + message body */}
         <div>
-          <label className="block text-sm font-semibold text-[#323130] mb-2" htmlFor="oof-internal">
-            Reply to people inside my organization
-          </label>
+          <div className="flex items-center gap-0.5 border border-[#EDEBE9] border-b-0 rounded-t px-2 py-1.5 bg-[#FAF9F8]">
+            {/* Mini formatting toolbar icons matching Outlook */}
+            {['B', 'I', 'U'].map((l) => (
+              <button key={l} type="button" className="w-6 h-6 flex items-center justify-center text-xs font-bold text-[#323130] hover:bg-[#EDEBE9] rounded transition-colors">
+                {l}
+              </button>
+            ))}
+            <span className="w-px h-4 bg-[#EDEBE9] mx-0.5" />
+            <button type="button" className="w-6 h-6 flex items-center justify-center text-[#605E5C] hover:bg-[#EDEBE9] rounded transition-colors">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3h8M2 6h6M2 9h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            </button>
+            <button type="button" className="w-6 h-6 flex items-center justify-center text-[#605E5C] hover:bg-[#EDEBE9] rounded transition-colors">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3h8M3 6h6M4 9h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            </button>
+          </div>
           <textarea
-            id="oof-internal"
             rows={5}
-            aria-label="Out of office message for internal senders"
-            className="w-full border border-[#8A8886] rounded px-3 py-2 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] resize-none placeholder:text-[#A19F9D]"
+            aria-label="Out of office message"
+            className="w-full border border-[#EDEBE9] rounded-b px-3 py-2 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] resize-none placeholder:text-[#A19F9D]"
             placeholder="I'm out of office..."
             {...register('message_internal')}
           />
         </div>
 
-        {/* External message */}
-        <div>
-          <label className="block text-sm font-semibold text-[#323130] mb-2" htmlFor="oof-external">
-            Reply to people outside my organization
-          </label>
-          <textarea
-            id="oof-external"
-            rows={5}
-            aria-label="Out of office message for external senders"
-            className="w-full border border-[#8A8886] rounded px-3 py-2 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] resize-none placeholder:text-[#A19F9D]"
-            placeholder="I'm out of office..."
-            {...register('message_external')}
+        {/* Send replies only to contacts */}
+        <label className="flex items-center gap-2 text-sm text-[#323130] cursor-pointer">
+          <input
+            type="checkbox"
+            {...register('contacts_only')}
+            className="rounded border-[#D2D0CE]"
           />
-        </div>
+          Send replies only to contacts
+        </label>
 
         <div className="flex items-center gap-3">
-          <Button
-            type="submit"
-            loading={isSubmitting || saveMutation.isPending}
-            aria-label="Save automatic replies settings"
-          >
+          <Button type="submit" loading={isSubmitting || saveMutation.isPending}>
             Save
           </Button>
           {saveMutation.isSuccess && (

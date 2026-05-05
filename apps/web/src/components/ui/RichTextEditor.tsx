@@ -269,17 +269,36 @@ export function RichTextEditor({
   const TEXT_COLORS = ['#000000', '#D13438', '#0078D4', '#107C10', '#8764B8', '#FF8C00', '#605E5C']
   const HIGHLIGHT_COLORS = ['#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#FFC0CB', '#FFD700', 'transparent']
 
+  const [linkText, setLinkText] = useState('')
+
   const addLink = () => {
-    setLinkInput(editor?.getAttributes('link')?.href ?? '')
+    const existingHref = editor?.getAttributes('link')?.href ?? ''
+    setLinkInput(existingHref)
+    // Pre-fill display text with selected text
+    const { from, to } = editor?.state?.selection ?? { from: 0, to: 0 }
+    const selectedText = from !== to ? editor?.state?.doc.textBetween(from, to, ' ') ?? '' : ''
+    setLinkText(selectedText)
     setShowLinkDialog(true)
   }
 
   const submitLink = () => {
     if (linkInput && editor) {
-      editor.chain().focus().setLink({ href: linkInput }).run()
+      const { from, to } = editor.state.selection
+      const hasSelection = from !== to
+      if (hasSelection) {
+        // Wrap selected text with link
+        editor.chain().focus().setLink({ href: linkInput }).run()
+      } else {
+        // No selection — insert the display text (or URL) as a linked text
+        const displayText = linkText.trim() || linkInput
+        editor.chain().focus()
+          .insertContent(`<a href="${linkInput}">${displayText}</a> `)
+          .run()
+      }
     }
     setShowLinkDialog(false)
     setLinkInput('')
+    setLinkText('')
   }
 
   const addImage = () => {
@@ -488,22 +507,37 @@ export function RichTextEditor({
 
       {/* Inline link dialog */}
       {showLinkDialog && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
-          <span className="text-xs text-[#605E5C]">URL:</span>
-          <input
-            autoFocus
-            type="url"
-            value={linkInput}
-            onChange={(e) => setLinkInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submitLink()
-              if (e.key === 'Escape') { setShowLinkDialog(false); setLinkInput('') }
-            }}
-            placeholder="https://..."
-            className="flex-1 text-sm border border-[#EDEBE9] rounded px-2 py-0.5 focus:outline-none focus:border-[#0078D4] text-[#323130]"
-          />
-          <button onClick={submitLink} className="text-xs bg-[#0078D4] text-white px-3 py-1 rounded hover:bg-[#106EBE] transition-colors">Insert</button>
-          <button onClick={() => { setShowLinkDialog(false); setLinkInput('') }} className="text-xs text-[#605E5C] px-2 py-1 hover:bg-[#EDEBE9] rounded transition-colors">Cancel</button>
+        <div className="px-3 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8] space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#605E5C] w-16">Display:</span>
+            <input
+              type="text"
+              value={linkText}
+              onChange={(e) => setLinkText(e.target.value)}
+              placeholder="Text to display"
+              className="flex-1 text-sm border border-[#EDEBE9] rounded px-2 py-0.5 focus:outline-none focus:border-[#0078D4] text-[#323130]"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#605E5C] w-16">URL:</span>
+            <input
+              autoFocus
+              type="url"
+              value={linkInput}
+              onChange={(e) => setLinkInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitLink()
+                if (e.key === 'Escape') { setShowLinkDialog(false); setLinkInput(''); setLinkText('') }
+              }}
+              placeholder="https://..."
+              className="flex-1 text-sm border border-[#EDEBE9] rounded px-2 py-0.5 focus:outline-none focus:border-[#0078D4] text-[#323130]"
+            />
+          </div>
+          <div className="flex items-center gap-2 pt-0.5">
+            <span className="w-16" />
+            <button onClick={submitLink} className="text-xs bg-[#0078D4] text-white px-3 py-1 rounded hover:bg-[#106EBE] transition-colors">Insert</button>
+            <button onClick={() => { setShowLinkDialog(false); setLinkInput(''); setLinkText('') }} className="text-xs text-[#605E5C] px-2 py-1 hover:bg-[#EDEBE9] rounded transition-colors">Cancel</button>
+          </div>
         </div>
       )}
 

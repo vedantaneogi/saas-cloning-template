@@ -27,6 +27,7 @@ interface CalendarGridProps {
   calendars: Calendar[]
   onEventClick?: (event: Event) => void
   onSlotClick?: (date: Date, hour?: number) => void
+  onDayClick?: (date: Date) => void
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -44,7 +45,7 @@ function MonthView({
   events,
   calendars: calList,
   onEventClick,
-  onSlotClick,
+  onDayClick,
 }: Omit<CalendarGridProps, 'view'>) {
   const monthStart = startOfMonth(currentDate)
   const monthEnd = endOfMonth(currentDate)
@@ -91,7 +92,7 @@ function MonthView({
                       'border-r border-[#EDEBE9] last:border-r-0 p-1 cursor-pointer hover:bg-[#F3F2F1] transition-colors',
                       !inMonth && 'bg-[#FAF9F8]'
                     )}
-                    onClick={() => onSlotClick?.(day)}
+                    onClick={() => onDayClick?.(day)}
                   >
                     <div className="flex items-center justify-center mb-1">
                       <span
@@ -117,9 +118,12 @@ function MonthView({
                         />
                       ))}
                       {dayEvents.length > 3 && (
-                        <p className="text-[10px] text-[#605E5C] pl-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onDayClick?.(day) }}
+                          className="text-[10px] text-[#0078D4] hover:underline pl-1"
+                        >
                           +{dayEvents.length - 3} more
-                        </p>
+                        </button>
                       )}
                     </div>
                   </div>

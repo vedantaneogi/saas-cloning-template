@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect, KeyboardEvent } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { contacts } from '@/lib/api'
+import type { Contact } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 interface RecipientFieldProps {
@@ -17,15 +17,26 @@ interface RecipientFieldProps {
 export function RecipientField({ label, value, onChange, placeholder, id }: RecipientFieldProps) {
   const [input, setInput] = useState('')
   const [focused, setFocused] = useState(false)
-  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [suggestions, setSuggestions] = useState<Contact[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const blurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const { data: suggestions = [] } = useQuery({
-    queryKey: ['contacts-autocomplete', input],
-    queryFn: () => contacts.autocomplete(input),
-    enabled: input.length >= 2,
-    staleTime: 5000,
-  })
+  // Fetch suggestions on input change
+  const fetchSuggestions = useCallback(async (q: string) => {
+    if (q.length < 2) { setSuggestions([]); return }
+    try {
+      const results = await contacts.autocomplete(q)
+      setSuggestions(results)
+    } catch {
+      setSuggestions([])
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => fetchSuggestions(input), 200)
+    return () => clearTimeout(timer)
+  }, [input, fetchSuggestions])
 
   const addRecipient = (address: string) => {
     const trimmed = address.trim()
@@ -33,7 +44,7 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
       onChange([...value, trimmed])
     }
     setInput('')
-    setDropdownOpen(false)
+    setSuggestions([])
     inputRef.current?.focus()
   }
 
@@ -48,22 +59,22 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
     } else if (e.key === 'Backspace' && !input && value.length > 0) {
       removeRecipient(value[value.length - 1])
     } else if (e.key === 'Escape') {
-      setDropdownOpen(false)
+      setSuggestions([])
     }
   }
 
-  useEffect(() => {
-    setDropdownOpen(input.length >= 2 && suggestions.length > 0)
-  }, [input, suggestions])
+  const showDropdown = focused && input.length >= 2 && suggestions.length > 0
 
   return (
     <div className="flex items-start gap-2 min-h-[32px]">
-      <label
-        htmlFor={id}
-        className="text-sm text-[#605E5C] pt-1.5 w-8 flex-shrink-0 text-right"
-      >
-        {label}
-      </label>
+      {label && (
+        <label
+          htmlFor={id}
+          className="text-sm text-[#605E5C] pt-1.5 w-8 flex-shrink-0 text-right"
+        >
+          {label}
+        </label>
+      )}
       <div
         className={cn(
           'flex-1 flex flex-wrap items-center gap-1 min-h-[32px] border-b transition-colors py-1',
@@ -87,7 +98,7 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
             </button>
           </span>
         ))}
-        <div className="relative flex-1 min-w-[120px]">
+        <div className="relative flex-1 min-w-[120px]" ref={wrapperRef}>
           <input
             ref={inputRef}
             id={id}
@@ -95,26 +106,33 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            onFocus={() => setFocused(true)}
+            onFocus={() => {
+              if (blurTimeout.current) clearTimeout(blurTimeout.current)
+              setFocused(true)
+            }}
             onBlur={() => {
-              setFocused(false)
-              // Auto-commit any typed email on blur (e.g. when clicking Send)
-              if (input.trim()) {
-                addRecipient(input)
-              }
-              setTimeout(() => setDropdownOpen(false), 150)
+              blurTimeout.current = setTimeout(() => {
+                setFocused(false)
+                if (input.trim() && suggestions.length === 0) {
+                  addRecipient(input)
+                }
+              }, 250)
             }}
             placeholder={value.length === 0 ? placeholder : ''}
-            aria-label={label}
+            aria-label={label || 'Recipients'}
             aria-autocomplete="list"
-            aria-expanded={dropdownOpen}
+            aria-expanded={showDropdown}
             className="w-full text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent py-0.5"
           />
-          {dropdownOpen && suggestions.length > 0 && (
+          {showDropdown && (
             <ul
               role="listbox"
               aria-label={`${label} suggestions`}
-              className="absolute left-0 top-full mt-1 z-50 bg-white border border-[#EDEBE9] rounded shadow-outlook w-64 max-h-48 overflow-y-auto"
+              className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg w-72 max-h-48 overflow-y-auto"
+              style={{
+                top: (wrapperRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                left: wrapperRef.current?.getBoundingClientRect().left ?? 0,
+              }}
             >
               {suggestions.map((contact) => (
                 <li key={contact.id}>
@@ -124,6 +142,7 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
                     aria-selected={false}
                     onMouseDown={(e) => {
                       e.preventDefault()
+                      if (blurTimeout.current) clearTimeout(blurTimeout.current)
                       addRecipient(
                         contact.display_name
                           ? `${contact.display_name} <${contact.email}>`

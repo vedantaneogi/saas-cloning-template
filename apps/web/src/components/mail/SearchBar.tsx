@@ -17,10 +17,14 @@ export function SearchBar() {
   const [showFilters, setShowFilters] = useState(false)
   const [from, setFrom] = useState(searchParams.get('from') ?? '')
   const [to, setTo] = useState(searchParams.get('to') ?? '')
+  const [cc, setCc] = useState(searchParams.get('cc') ?? '')
+  const [subject, setSubject] = useState(searchParams.get('subject') ?? '')
+  const [keywords, setKeywords] = useState(searchParams.get('keywords') ?? '')
   const [hasAttachment, setHasAttachment] = useState(searchParams.get('has_attachment') === 'true')
   const [dateFrom, setDateFrom] = useState(searchParams.get('date_from') ?? '')
   const [dateTo, setDateTo] = useState(searchParams.get('date_to') ?? '')
   const [folderId, setFolderId] = useState(searchParams.get('folder_id') ?? '')
+  const [folderScope, setFolderScope] = useState<'all' | 'current' | 'subfolders' | 'favorites' | string>('all')
 
   const { data: folderList = [] } = useQuery({
     queryKey: ['folders'],
@@ -34,13 +38,16 @@ export function SearchBar() {
     setSearchQuery(q)
   }, [searchParams, setSearchQuery])
 
-  const activeFilterCount = [from, to, hasAttachment, dateFrom, dateTo, folderId].filter(Boolean).length
+  const activeFilterCount = [from, to, cc, subject, keywords, hasAttachment, dateFrom, dateTo, folderId].filter(Boolean).length
 
   const buildUrl = (q: string) => {
     const params = new URLSearchParams()
     if (q) params.set('q', q)
     if (from) params.set('from', from)
     if (to) params.set('to', to)
+    if (cc) params.set('cc', cc)
+    if (subject) params.set('subject', subject)
+    if (keywords) params.set('keywords', keywords)
     if (hasAttachment) params.set('has_attachment', 'true')
     if (dateFrom) params.set('date_from', dateFrom)
     if (dateTo) params.set('date_to', dateTo)
@@ -56,31 +63,30 @@ export function SearchBar() {
   }
 
   const clearSearch = () => {
-    setInput('')
-    setFrom('')
-    setTo('')
-    setHasAttachment(false)
-    setDateFrom('')
-    setDateTo('')
-    setFolderId('')
+    setInput(''); setFrom(''); setTo(''); setCc(''); setSubject(''); setKeywords('')
+    setHasAttachment(false); setDateFrom(''); setDateTo(''); setFolderId(''); setFolderScope('all')
     setSearchQuery('')
     router.push('/mail/inbox')
   }
 
   const clearFilter = (key: string) => {
-    if (key === 'from') setFrom('')
-    if (key === 'to') setTo('')
-    if (key === 'has_attachment') setHasAttachment(false)
-    if (key === 'date_from') setDateFrom('')
-    if (key === 'date_to') setDateTo('')
-    if (key === 'folder_id') setFolderId('')
-    // Re-navigate with updated params
+    const setters: Record<string, () => void> = {
+      from: () => setFrom(''), to: () => setTo(''), cc: () => setCc(''),
+      subject: () => setSubject(''), keywords: () => setKeywords(''),
+      has_attachment: () => setHasAttachment(false),
+      date_from: () => setDateFrom(''), date_to: () => setDateTo(''),
+      folder_id: () => setFolderId(''),
+    }
+    setters[key]?.()
     setTimeout(() => {
       const params = new URLSearchParams()
       const q = input.trim()
       if (q) params.set('q', q)
       if (key !== 'from' && from) params.set('from', from)
       if (key !== 'to' && to) params.set('to', to)
+      if (key !== 'cc' && cc) params.set('cc', cc)
+      if (key !== 'subject' && subject) params.set('subject', subject)
+      if (key !== 'keywords' && keywords) params.set('keywords', keywords)
       if (key !== 'has_attachment' && hasAttachment) params.set('has_attachment', 'true')
       if (key !== 'date_from' && dateFrom) params.set('date_from', dateFrom)
       if (key !== 'date_to' && dateTo) params.set('date_to', dateTo)
@@ -92,6 +98,9 @@ export function SearchBar() {
   const chips = [
     from && { key: 'from', label: 'From', value: from },
     to && { key: 'to', label: 'To', value: to },
+    cc && { key: 'cc', label: 'Cc', value: cc },
+    subject && { key: 'subject', label: 'Subject', value: subject },
+    keywords && { key: 'keywords', label: 'Keywords', value: keywords },
     hasAttachment && { key: 'has_attachment', label: 'Has attachment', value: '' },
     dateFrom && { key: 'date_from', label: 'After', value: dateFrom },
     dateTo && { key: 'date_to', label: 'Before', value: dateTo },
@@ -141,11 +150,22 @@ export function SearchBar() {
           <div className="mt-2 space-y-3 p-4 bg-white border border-[#EDEBE9] rounded shadow-outlook text-sm">
             <div>
               <label className="block text-sm font-medium text-[#323130] mb-1">Search in</label>
-              <select value={folderId} onChange={(e) => setFolderId(e.target.value)}
+              <select value={folderScope} onChange={(e) => {
+                const val = e.target.value
+                setFolderScope(val)
+                if (val === 'all' || val === 'current' || val === 'subfolders' || val === 'favorites') {
+                  setFolderId('')
+                } else {
+                  setFolderId(val)
+                }
+              }}
                 aria-label="Search in folder"
                 className="w-full border-b-2 border-[#0078D4] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none bg-transparent">
-                <option value="">Current folder</option>
-                <option value="">All folders</option>
+                <option value="all">All folders</option>
+                <option value="current">Current folder</option>
+                <option value="subfolders">Subfolders</option>
+                <option value="favorites">Favorites</option>
+                <option disabled>──────────</option>
                 {folderList.map((f) => (
                   <option key={f.id} value={f.id}>{f.name}</option>
                 ))}
@@ -164,9 +184,21 @@ export function SearchBar() {
                 className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
             </div>
             <div>
+              <label className="block text-sm font-medium text-[#323130] mb-1">Cc</label>
+              <input type="text" value={cc} onChange={(e) => setCc(e.target.value)}
+                aria-label="Cc"
+                className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-[#323130] mb-1">Subject</label>
-              <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
+              <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)}
                 aria-label="Subject"
+                className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#323130] mb-1">Keywords</label>
+              <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
+                aria-label="Keywords"
                 className="w-full border-b border-[#8A8886] border-t-0 border-l-0 border-r-0 px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent" />
             </div>
             <div>

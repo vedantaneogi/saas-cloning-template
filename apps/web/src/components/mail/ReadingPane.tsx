@@ -9,6 +9,12 @@ import type { Message } from '@/lib/api'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
 import { AttachmentBar } from './AttachmentBar'
+import { ComposeModal } from './ComposeModal'
+
+function ComposeInline() {
+  const closeComposer = useUIStore((s) => s.closeComposer)
+  return <ComposeModal open={true} onClose={closeComposer} inline />
+}
 import { EmailLink } from './EmailLink'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -187,7 +193,7 @@ export function ReadingPane() {
   const { data: convData } = useQuery({
     queryKey: ['conversation', message?.conversation_id],
     queryFn: () => conversations.get(message!.conversation_id!),
-    enabled: conversationGrouping && !!message?.conversation_id,
+    enabled: !!message?.conversation_id,
   })
 
   const threadMessages = (convData?.messages ?? []).filter((m) => m.id !== selectedMessageId)
@@ -364,6 +370,18 @@ export function ReadingPane() {
     setInlineBodyHtml(draft.bodyHtml ?? '')
     setInlineForwardTo('')
     setInlineReplyType(type)
+  }
+
+  const composerOpen = useUIStore((s) => s.composerOpen)
+  const closeComposer = useUIStore((s) => s.closeComposer)
+
+  // Show inline compose when composer is open
+  if (composerOpen) {
+    return (
+      <div className="flex-1 flex flex-col h-full bg-white" data-automation-id="MailReadCompose">
+        <ComposeInline />
+      </div>
+    )
   }
 
   if (!selectedMessageId) {
@@ -665,7 +683,7 @@ export function ReadingPane() {
           {/* Thread messages as stacked cards — matches Outlook */}
           {(() => {
             // Combine all thread messages: thread children + current message, sorted chronologically
-            const allThreadMsgs = conversationGrouping && threadMessages.length > 0
+            const allThreadMsgs = threadMessages.length > 0
               ? [...threadMessages, message].sort((a, b) =>
                   new Date(a.received_at ?? a.created_at).getTime() - new Date(b.received_at ?? b.created_at).getTime()
                 )

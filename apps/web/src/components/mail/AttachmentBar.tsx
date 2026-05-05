@@ -1,9 +1,28 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Paperclip, Download, Eye, ChevronDown, Copy } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Paperclip, Download, Eye, ChevronDown, Copy, Globe, Monitor, Cloud } from 'lucide-react'
 import type { Attachment } from '@/lib/api'
 import { formatFileSize } from '@/lib/utils'
+import { useAuthStore } from '@/store/auth'
+import { useUIStore } from '@/store/ui'
+
+function FileTextPreview({ blobUrl, filename }: { blobUrl: string; filename: string }) {
+  const [text, setText] = useState<string | null>(null)
+  useEffect(() => {
+    fetch(blobUrl).then((r) => r.text()).then(setText).catch(() => setText('Failed to load file content'))
+  }, [blobUrl])
+  return (
+    <div className="w-full h-[60vh] flex flex-col">
+      <div className="flex items-center gap-2 px-3 py-2 bg-[#323130] text-white text-sm rounded-t">
+        <span className="font-medium">{filename}</span>
+      </div>
+      <pre className="flex-1 bg-white border border-[#EDEBE9] rounded-b overflow-auto p-4 text-xs text-[#323130] font-mono whitespace-pre-wrap">
+        {text ?? 'Loading...'}
+      </pre>
+    </div>
+  )
+}
 
 interface AttachmentBarProps {
   attachments: Attachment[]
@@ -32,14 +51,50 @@ function AttachmentItem({ att }: { att: Attachment }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
 
-  const downloadUrl = `/api/v1/messages/${att.message_id}/attachments/${att.id}/download`
+  const showNotification = useUIStore((s) => s.showNotification)
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || '/api/v1'
+  const downloadPath = `${apiBase}/messages/${att.message_id}/attachments/${att.id}/download`
+  const token = useAuthStore((s) => s.token)
 
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
 
-  const handlePreview = () => {
+  // Fetch attachment with auth token and create blob URL for preview
+  const fetchBlob = useCallback(async () => {
+    if (blobUrl) return blobUrl
+    try {
+      const res = await fetch(downloadPath, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) return null
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      setBlobUrl(url)
+      return url
+    } catch { return null }
+  }, [downloadPath, token, blobUrl])
+
+  const handlePreview = async () => {
+    await fetchBlob()
     setPreviewOpen(true)
     setMenuOpen(false)
   }
+
+  const handleDownload = async () => {
+    const url = await fetchBlob()
+    if (url) {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = att.filename
+      a.click()
+    }
+    setMenuOpen(false)
+  }
+
+  // Cleanup blob URL
+  useEffect(() => {
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl) }
+  }, [blobUrl])
 
   return (
     <div className="relative flex items-center gap-2 bg-white border border-[#EDEBE9] rounded px-2.5 py-1.5 hover:border-[#D2D0CE] transition-colors group">
@@ -66,25 +121,59 @@ function AttachmentItem({ att }: { att: Attachment }) {
                 <span className="text-xs text-[#605E5C]">({formatFileSize(att.size_bytes)})</span>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <a href={downloadUrl} download={att.filename} className="text-xs text-[#0078D4] hover:underline flex items-center gap-1">
+                <button onClick={handleDownload} className="text-xs text-[#0078D4] hover:underline flex items-center gap-1">
                   <Download size={12} /> Download
-                </a>
+                </button>
                 <button onClick={() => setPreviewOpen(false)} className="text-[#605E5C] hover:text-[#323130] p-1">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                 </button>
               </div>
             </div>
             <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-[#FAF9F8]">
-              {att.content_type.startsWith('image/') ? (
-                <img src={downloadUrl} alt={att.filename} className="max-w-full max-h-[60vh] object-contain rounded" />
-              ) : att.content_type === 'application/pdf' ? (
-                <iframe src={downloadUrl} className="w-full h-[60vh] border-0 rounded" title={att.filename} />
+              {blobUrl && att.content_type.startsWith('image/') ? (
+                <img src={blobUrl} alt={att.filename} className="max-w-full max-h-[60vh] object-contain rounded" />
+              ) : blobUrl && att.content_type === 'application/pdf' ? (
+                <iframe src={blobUrl} className="w-full h-[60vh] border-0 rounded" title={att.filename} />
+              ) : blobUrl && (att.content_type.includes('text') || att.filename.endsWith('.csv') || att.filename.endsWith('.txt') || att.filename.endsWith('.json') || att.filename.endsWith('.xml') || att.filename.endsWith('.html')) ? (
+                <FileTextPreview blobUrl={blobUrl} filename={att.filename} />
+              ) : blobUrl && (att.content_type.includes('spreadsheet') || att.content_type.includes('excel') || att.filename.endsWith('.xlsx') || att.filename.endsWith('.xls') || att.filename.endsWith('.csv')) ? (
+                <div className="w-full h-[60vh] flex flex-col">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-[#107C41] text-white text-sm rounded-t">
+                    <span className="font-semibold">Excel</span>
+                    <span className="text-xs opacity-80">{att.filename}</span>
+                  </div>
+                  <div className="flex-1 bg-white border border-[#EDEBE9] rounded-b overflow-auto p-4">
+                    <p className="text-sm text-[#605E5C] text-center py-8">
+                      Spreadsheet preview is available when viewing real Excel files.<br/>
+                      <button onClick={handleDownload} className="text-[#0078D4] hover:underline mt-2 inline-flex items-center gap-1">
+                        <Download size={13} /> Download to open in Excel
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              ) : blobUrl && (att.content_type.includes('word') || att.filename.endsWith('.docx') || att.filename.endsWith('.doc')) ? (
+                <div className="w-full h-[60vh] flex flex-col">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-[#185ABD] text-white text-sm rounded-t">
+                    <span className="font-semibold">Word</span>
+                    <span className="text-xs opacity-80">{att.filename}</span>
+                  </div>
+                  <div className="flex-1 bg-white border border-[#EDEBE9] rounded-b overflow-auto p-4">
+                    <p className="text-sm text-[#605E5C] text-center py-8">
+                      Document preview is available when viewing real Word files.<br/>
+                      <button onClick={handleDownload} className="text-[#0078D4] hover:underline mt-2 inline-flex items-center gap-1">
+                        <Download size={13} /> Download to open in Word
+                      </button>
+                    </p>
+                  </div>
+                </div>
               ) : (
                 <div className="text-center py-12">
                   <span className="text-4xl mb-3 block">{fileIcon(att.content_type)}</span>
                   <p className="text-sm font-medium text-[#323130] mb-1">{att.filename}</p>
                   <p className="text-xs text-[#605E5C] mb-3">{formatFileSize(att.size_bytes)} — {att.content_type}</p>
-                  <a href={downloadUrl} download={att.filename} className="text-sm text-[#0078D4] hover:underline">Download to view</a>
+                  <button onClick={handleDownload} className="text-sm text-[#0078D4] hover:underline flex items-center gap-1 mx-auto">
+                    <Download size={13} /> Download to view
+                  </button>
                 </div>
               )}
             </div>
@@ -111,23 +200,40 @@ function AttachmentItem({ att }: { att: Attachment }) {
               <Eye size={14} className="text-[#605E5C]" /> Preview
             </button>
             <button
+              onClick={(e) => { e.stopPropagation(); handlePreview(); }}
+              className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
+            >
+              <Globe size={14} className="text-[#605E5C]" /> Edit in Browser
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDownload() }}
+              className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
+            >
+              <Monitor size={14} className="text-[#605E5C]" /> Edit in Excel desktop app
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); showNotification('Save to OneDrive is not available yet'); setMenuOpen(false) }}
+              className="w-full flex items-center gap-2 text-left text-sm text-[#A19F9D] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors cursor-not-allowed"
+            >
+              <Cloud size={14} /> Save to OneDrive
+            </button>
+            <button
               onClick={(e) => {
                 e.stopPropagation()
                 navigator.clipboard.writeText(att.filename)
+                showNotification(`Copied "${att.filename}" to clipboard`)
                 setMenuOpen(false)
               }}
               className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
             >
               <Copy size={14} className="text-[#605E5C]" /> Copy
             </button>
-            <a
-              href={downloadUrl}
-              download={att.filename}
-              onClick={(e) => { e.stopPropagation(); setMenuOpen(false) }}
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDownload() }}
               className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
             >
               <Download size={14} className="text-[#605E5C]" /> Download
-            </a>
+            </button>
           </div>
         )}
       </div>

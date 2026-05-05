@@ -6,7 +6,7 @@ import { categories } from '@/lib/api'
 import type { Category } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Plus, Trash2, Edit2, Check } from 'lucide-react'
+import { Plus, Trash2, Edit2, Check, Star } from 'lucide-react'
 
 const PRESET_COLORS = [
   '#0078D4', '#106EBE', '#005A9E',
@@ -54,20 +54,26 @@ export function CategorySettings() {
   })
 
   return (
-    <div className="max-w-xl p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-[#323130]">Categories</h2>
-        <Button size="sm" onClick={() => setShowNew(true)} aria-label="New category">
-          <Plus size={14} />
-          New category
-        </Button>
+    <div className="max-w-2xl p-8">
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h2 className="text-xl font-semibold text-[#323130] mb-1">Categories</h2>
+          <p className="text-sm text-[#605E5C]">
+            Categorizing your email and calendar can help you organize and track messages and events related to a project, task, or person. You can create new categories and assign them names and colors.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowNew(true)}
+          className="flex items-center gap-1.5 text-sm font-medium text-[#0078D4] border border-[#0078D4] px-3 py-1.5 rounded hover:bg-[#EBF3FB] transition-colors flex-shrink-0 ml-4"
+        >
+          <Plus size={14} /> Create new
+        </button>
       </div>
 
-      <div className="border border-[#EDEBE9] rounded overflow-hidden">
+      <div className="mt-6">
         {/* Header */}
-        <div className="grid grid-cols-[1fr,auto] px-4 py-2 bg-[#F3F2F1] border-b border-[#EDEBE9]">
-          <span className="text-xs font-medium text-[#605E5C]">Name</span>
-          <span className="text-xs font-medium text-[#605E5C]">Actions</span>
+        <div className="px-4 py-2 border-b border-[#EDEBE9]">
+          <span className="text-xs font-medium text-[#605E5C]">Category name</span>
         </div>
 
         {/* New row */}
@@ -155,7 +161,7 @@ function NewCategoryRow({
   return (
     <div className="px-4 py-3 border-b border-[#EDEBE9] space-y-2">
       <div className="flex items-center gap-3">
-        <span className="w-4 h-4 rounded-sm" style={{ backgroundColor: color }} />
+        <span className="w-4 h-4 rounded-full" style={{ backgroundColor: color }} />
         <Input
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
@@ -197,7 +203,7 @@ function CategoryRow({
     return (
       <div className="px-4 py-3 border-b border-[#EDEBE9] space-y-2">
         <div className="flex items-center gap-3">
-          <span className="w-4 h-4 rounded-sm" style={{ backgroundColor: color }} />
+          <span className="w-4 h-4 rounded-full" style={{ backgroundColor: color }} />
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -217,27 +223,25 @@ function CategoryRow({
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[#EDEBE9] hover:bg-[#F3F2F1] group transition-colors">
+    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[#EDEBE9] hover:bg-[#F3F2F1] transition-colors">
       <span
-        className="w-4 h-4 rounded-sm flex-shrink-0"
+        className="w-4 h-4 rounded-full flex-shrink-0"
         style={{ backgroundColor: category.color }}
         aria-label={`Color: ${category.color}`}
       />
       <span className="flex-1 text-sm text-[#323130]">{category.name}</span>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={onEdit}
-          aria-label={`Edit ${category.name}`}
-          className="text-[#605E5C] hover:text-[#323130] p-1"
-        >
-          <Edit2 size={13} />
+      <div className="flex items-center gap-0.5">
+        <button aria-label={`Favorite ${category.name}`}
+          className="p-1 text-[#605E5C] hover:text-[#FFB900] rounded transition-colors">
+          <Star size={14} />
         </button>
-        <button
-          onClick={onDelete}
-          aria-label={`Delete ${category.name}`}
-          className="text-[#605E5C] hover:text-[#D13438] p-1"
-        >
-          <Trash2 size={13} />
+        <button onClick={onEdit} aria-label={`Edit ${category.name}`}
+          className="p-1 text-[#605E5C] hover:text-[#323130] rounded transition-colors">
+          <Edit2 size={14} />
+        </button>
+        <button onClick={onDelete} aria-label={`Delete ${category.name}`}
+          className="p-1 text-[#605E5C] hover:text-[#D13438] rounded transition-colors">
+          <Trash2 size={14} />
         </button>
       </div>
     </div>

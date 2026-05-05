@@ -11,7 +11,8 @@ import type { Event, Contact } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft } from 'lucide-react'
+import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft, ChevronDown, Calendar as CalendarIcon } from 'lucide-react'
+import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
 
 const schema = z.object({
@@ -155,11 +156,13 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   }
 
   const saveMutation = useMutation({
-    mutationFn: ({ data, scope }: { data: FormValues; scope?: 'single' | 'series' }) => {
+    mutationFn: ({ data, scope }: { data: FormValues; scope?: 'single' | 'following' | 'series' }) => {
       const payload = buildPayload(data)
       if (event) {
-        // For single-occurrence edits, target the parent and pass the occurrence start time
         if (scope === 'single' && event.recurrence_parent_id) {
+          return events.update(event.recurrence_parent_id, payload, scope, event.start_time)
+        }
+        if (scope === 'following' && event.recurrence_parent_id) {
           return events.update(event.recurrence_parent_id, payload, scope, event.start_time)
         }
         return events.update(event.id, payload, scope)
@@ -174,8 +177,8 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (scope?: 'single' | 'series') => {
-      if (scope === 'single' && event!.recurrence_parent_id) {
+    mutationFn: (scope?: 'single' | 'following' | 'series') => {
+      if ((scope === 'single' || scope === 'following') && event!.recurrence_parent_id) {
         return events.delete(event!.recurrence_parent_id, scope, event!.start_time)
       }
       return events.delete(event!.id, scope)
@@ -204,6 +207,8 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     },
   })
 
+  const [calendarDropdownOpen, setCalendarDropdownOpen] = useState(false)
+  const currentUser = useAuthStore((s) => s.currentUser)
   const [proposeOpen, setProposeOpen] = useState(false)
   const [proposeStart, setProposeStart] = useState('')
   const [proposeEnd, setProposeEnd] = useState('')
@@ -375,11 +380,8 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
               <button
                 aria-label="This event only"
                 onClick={() => {
-                  if (scopeDialog.action === 'delete') {
-                    deleteMutation.mutate('single')
-                  } else {
-                    saveMutation.mutate({ data: scopeDialog.data, scope: 'single' })
-                  }
+                  if (scopeDialog.action === 'delete') deleteMutation.mutate('single')
+                  else saveMutation.mutate({ data: scopeDialog.data, scope: 'single' })
                 }}
                 className="text-left px-3 py-2 text-sm rounded border border-[#EDEBE9] hover:bg-[#F3F2F1] text-[#323130] transition-colors"
               >
@@ -388,28 +390,22 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
               <button
                 aria-label="This and all following events"
                 onClick={() => {
-                  if (scopeDialog.action === 'delete') {
-                    deleteMutation.mutate('series')
-                  } else {
-                    saveMutation.mutate({ data: scopeDialog.data, scope: 'series' })
-                  }
+                  if (scopeDialog.action === 'delete') deleteMutation.mutate('following')
+                  else saveMutation.mutate({ data: scopeDialog.data, scope: 'following' })
                 }}
                 className="text-left px-3 py-2 text-sm rounded border border-[#EDEBE9] hover:bg-[#F3F2F1] text-[#323130] transition-colors"
               >
                 This and all following events
               </button>
               <button
-                aria-label="All events in series"
+                aria-label="All events in the series"
                 onClick={() => {
-                  if (scopeDialog.action === 'delete') {
-                    deleteMutation.mutate('series')
-                  } else {
-                    saveMutation.mutate({ data: scopeDialog.data, scope: 'series' })
-                  }
+                  if (scopeDialog.action === 'delete') deleteMutation.mutate('series')
+                  else saveMutation.mutate({ data: scopeDialog.data, scope: 'series' })
                 }}
                 className="text-left px-3 py-2 text-sm rounded border border-[#EDEBE9] hover:bg-[#F3F2F1] text-[#323130] transition-colors"
               >
-                All events in series
+                All events in the series
               </button>
             </div>
             <Button variant="secondary" size="sm" onClick={() => setScopeDialog(null)} aria-label="Cancel">
@@ -529,9 +525,10 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
         </div>
       )}
 
+      <div className="flex flex-1 overflow-hidden">
       <form
         onSubmit={handleSubmit(handleSaveClick)}
-        className="p-4 space-y-3"
+        className="flex-1 p-4 space-y-3 overflow-y-auto outlook-scrollbar"
         aria-label={event ? 'Edit event form' : 'New event form'}
       >
         {/* Title */}
@@ -592,23 +589,66 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           </div>
         </div>
 
-        {/* Calendar */}
+        {/* Calendar — custom dropdown with color dots */}
         <div className="flex items-center gap-3">
           <span className="w-5 text-[#605E5C]">
-            <Users size={16} />
+            <CalendarIcon size={16} />
           </span>
-          <select
-            aria-label="Calendar"
-            className="text-sm text-[#323130] border-0 border-b border-[#8A8886] bg-transparent px-0 py-1 focus:outline-none focus:border-b-2 focus:border-[#0078D4] appearance-none cursor-pointer pr-5"
-            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'10\' height=\'6\' viewBox=\'0 0 10 6\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M1 1l4 4 4-4\' stroke=\'%23605E5C\' stroke-width=\'1.5\' stroke-linecap=\'round\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0 center' }}
-            {...register('calendar_id')}
-          >
-            {calendarList.map((cal) => (
-              <option key={cal.id} value={cal.id}>
-                {cal.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative flex-1">
+            {(() => {
+              const selectedCal = calendarList.find((c) => c.id === watch('calendar_id'))
+              return (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarDropdownOpen((v) => !v)}
+                    className="flex items-center gap-2 text-sm text-[#323130] border-0 border-b border-[#8A8886] bg-transparent px-0 py-1 w-full text-left focus:outline-none focus:border-b-2 focus:border-[#0078D4] cursor-pointer"
+                  >
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: selectedCal?.color ?? '#0078D4' }} />
+                    <span className="flex-1 truncate">
+                      {selectedCal?.name ?? 'Calendar'} ({currentUser?.email ?? ''})
+                    </span>
+                    <ChevronDown size={12} className="text-[#605E5C] flex-shrink-0" />
+                  </button>
+                  {calendarDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-0.5 z-50 w-full min-w-[240px] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in">
+                      {/* Account email header */}
+                      <div className="px-3 py-2 border-b border-[#EDEBE9]">
+                        <p className="text-xs text-[#605E5C]">{currentUser?.email ?? ''}</p>
+                      </div>
+                      {/* Calendar list */}
+                      <div className="py-1">
+                        {calendarList.map((cal) => {
+                          const isSelected = watch('calendar_id') === cal.id
+                          return (
+                            <button
+                              key={cal.id}
+                              type="button"
+                              onClick={() => {
+                                setValue('calendar_id', cal.id)
+                                setCalendarDropdownOpen(false)
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-[#F3F2F1] transition-colors text-left"
+                            >
+                              {isSelected ? (
+                                <Check size={14} className="text-[#323130] flex-shrink-0" />
+                              ) : (
+                                <span className="w-[14px] flex-shrink-0" />
+                              )}
+                              <span className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: cal.color }} />
+                              <span className="text-sm text-[#323130]">{cal.name}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+            {/* Hidden input to keep react-hook-form value */}
+            <input type="hidden" {...register('calendar_id')} />
+          </div>
         </div>
 
         {/* Time — Outlook style */}
@@ -1046,6 +1086,50 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
 
         {/* Actions moved to toolbar ribbon above */}
       </form>
+
+      {/* Mini day view sidebar — matches Outlook event modal */}
+      <div className="w-56 flex-shrink-0 border-l border-[#EDEBE9] bg-white overflow-y-auto outlook-scrollbar hidden lg:block">
+        <div className="px-3 py-2 border-b border-[#EDEBE9]">
+          <p className="text-xs font-medium text-[#605E5C]">
+            {startVal ? format(new Date(startVal), 'EEE, MMM d, yyyy') : format(new Date(), 'EEE, MMM d, yyyy')}
+          </p>
+        </div>
+        <div className="relative">
+          {Array.from({ length: 12 }, (_, i) => i + 8).map((hour) => {
+            const eventStart = startVal ? new Date(startVal) : null
+            const eventEnd = endVal ? new Date(endVal) : null
+            const isInEvent = eventStart && eventEnd &&
+              hour >= eventStart.getHours() && hour < eventEnd.getHours() + (eventEnd.getMinutes() > 0 ? 1 : 0)
+
+            return (
+              <div key={hour} className="flex border-b border-[#F3F2F1]" style={{ height: 32 }}>
+                <span className="w-12 text-[10px] text-[#A19F9D] text-right pr-2 pt-0.5 flex-shrink-0">
+                  {hour <= 12 ? `${hour} ${hour < 12 ? 'AM' : 'PM'}` : `${hour - 12} PM`}
+                </span>
+                <div className="flex-1 relative">
+                  {isInEvent && (
+                    <div
+                      className="absolute inset-0 bg-[#0078D4] rounded-sm mx-0.5"
+                      style={{
+                        top: eventStart && hour === eventStart.getHours() ? `${(eventStart.getMinutes() / 60) * 100}%` : 0,
+                        bottom: eventEnd && hour === (eventEnd.getHours() - (eventEnd.getMinutes() === 0 ? 1 : 0))
+                          ? `${((60 - eventEnd.getMinutes()) / 60) * 100}%` : 0,
+                      }}
+                    >
+                      {hour === (eventStart?.getHours() ?? 0) && (
+                        <span className="text-[9px] text-white px-1 truncate block leading-tight pt-0.5">
+                          {watch('title') || 'New event'}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      </div>
     </Modal>
   )
 }

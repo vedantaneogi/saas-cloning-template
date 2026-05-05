@@ -106,8 +106,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Compose Modal */}
-      {composerOpen && (
+      {/* Compose is now inline in ReadingPane — no modal needed on mail pages */}
+      {/* Show modal only on non-mail pages (calendar, contacts, tasks) */}
+      {composerOpen && !pathname?.startsWith('/mail') && (
         <ComposeModal open={composerOpen} onClose={closeComposer} />
       )}
 

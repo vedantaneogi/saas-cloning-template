@@ -383,30 +383,54 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             )}
           </div>
         </div>
+
+        {/* Attachment chips — shown like Outlook: "file.xlsx  +N" */}
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="flex items-center gap-1 mt-0.5">
+            {message.attachments.slice(0, 2).map((att) => (
+              <span key={att.id} className="inline-flex items-center gap-1 text-[11px] text-[#605E5C] bg-[#F3F2F1] rounded px-1.5 py-0.5 truncate max-w-[120px]">
+                <Paperclip size={10} className="text-[#605E5C] flex-shrink-0" />
+                {att.filename}
+              </span>
+            ))}
+            {message.attachments.length > 2 && (
+              <span className="text-[11px] text-[#605E5C]">+{message.attachments.length - 2}</span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Hover action icons — trash, flag, pin */}
-      <div className="flex-shrink-0 self-center flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Hover action icons — envelope, flag, pin top row + trash below */}
+      <div className="flex-shrink-0 self-start mt-1 flex flex-col items-end gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); markReadMutation.mutate(!message.is_read) }}
+            aria-label={message.is_read ? 'Mark as unread' : 'Mark as read'}
+            className="p-1 rounded text-[#605E5C] hover:text-[#0078D4] hover:bg-[#EBF3FB] transition-colors"
+          >
+            {message.is_read ? <Mail size={14} /> : <MailOpen size={14} />}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); flagMutation.mutate() }}
+            aria-label={message.is_flagged ? 'Remove flag' : 'Flag message'}
+            className={cn('p-1 rounded transition-colors', message.is_flagged ? 'text-[#D13438]' : 'text-[#605E5C] hover:text-[#D13438]')}
+          >
+            <Flag size={14} className={message.is_flagged ? 'fill-[#D13438]' : ''} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); pinMutation.mutate() }}
+            aria-label={message.is_pinned ? 'Unpin' : 'Pin'}
+            className={cn('p-1 rounded transition-colors', message.is_pinned ? 'text-[#FFB900]' : 'text-[#605E5C] hover:text-[#FFB900]')}
+          >
+            <Star size={14} className={message.is_pinned ? 'fill-[#FFB900]' : ''} />
+          </button>
+        </div>
         <button
           onClick={(e) => { e.stopPropagation(); deleteMutation.mutate() }}
           aria-label="Delete"
-          className="p-1 rounded text-[#605E5C] hover:text-[#D13438] hover:bg-[#FDE7E9] transition-colors"
+          className="p-1 rounded text-[#605E5C] hover:text-[#D13438] hover:bg-[#FDE7E9] transition-colors self-end"
         >
           <Trash2 size={14} />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); flagMutation.mutate() }}
-          aria-label={message.is_flagged ? 'Remove flag' : 'Flag message'}
-          className={cn('p-1 rounded transition-colors', message.is_flagged ? 'text-[#D13438]' : 'text-[#605E5C] hover:text-[#D13438]')}
-        >
-          <Flag size={14} className={message.is_flagged ? 'fill-[#D13438]' : ''} />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); pinMutation.mutate() }}
-          aria-label={message.is_pinned ? 'Unpin' : 'Pin'}
-          className={cn('p-1 rounded transition-colors', message.is_pinned ? 'text-[#FFB900]' : 'text-[#605E5C] hover:text-[#FFB900]')}
-        >
-          <Star size={14} className={message.is_pinned ? 'fill-[#FFB900]' : ''} />
         </button>
       </div>
       {/* Always-visible flag when flagged */}

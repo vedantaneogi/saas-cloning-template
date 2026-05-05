@@ -1,4 +1,4 @@
-"""Post-seed script: creates threaded conversations for demo."""
+"""Post-seed script: creates threaded conversations + contacts for all users."""
 import requests, time, sys
 
 API = 'http://localhost:8000/api/v1'
@@ -22,7 +22,58 @@ def latest(token, iid):
 def reply(token, mid, body):
     requests.post(f'{API}/messages/{mid}/reply', headers={'Authorization': f'Bearer {token}'}, json={'body_html': f'<p>{body}</p>'})
 
+def create_contact(token, data):
+    r = requests.post(f'{API}/contacts', headers={'Authorization': f'Bearer {token}'}, json=data)
+    return r.status_code == 201
+
+# ── All team members ──────────────────────────────────────────
+ALL_PEOPLE = [
+    {'first_name': 'Frank', 'last_name': 'Miller', 'display_name': 'Frank Miller', 'email': 'frank.miller@acmecorp.com', 'company': 'Acme Corp', 'job_title': 'Engineering Lead'},
+    {'first_name': 'Alice', 'last_name': 'Johnson', 'display_name': 'Alice Johnson', 'email': 'alice.johnson@acmecorp.com', 'company': 'Acme Corp', 'job_title': 'Product Manager'},
+    {'first_name': 'Bob', 'last_name': 'Smith', 'display_name': 'Bob Smith', 'email': 'bob.smith@acmecorp.com', 'company': 'Acme Corp', 'job_title': 'Designer'},
+    {'first_name': 'Carol', 'last_name': 'Williams', 'display_name': 'Carol Williams', 'email': 'carol.williams@vendor.com', 'company': 'Vendor Corp', 'job_title': 'Account Manager'},
+    {'first_name': 'David', 'last_name': 'Brown', 'display_name': 'David Brown', 'email': 'david.brown@acmecorp.com', 'company': 'Acme Corp', 'job_title': 'QA Lead'},
+    {'first_name': 'Emma', 'last_name': 'Davis', 'display_name': 'Emma Davis', 'email': 'newsletter@techdigest.com', 'company': 'Tech Digest', 'job_title': 'Editor'},
+    {'first_name': 'Grace', 'last_name': 'Wilson', 'display_name': 'Grace Wilson', 'email': 'grace.wilson@acmecorp.com', 'company': 'Acme Corp', 'job_title': 'HR Manager'},
+    {'first_name': 'Henry', 'last_name': 'Moore', 'display_name': 'Henry Moore', 'email': 'henry.moore@partner.com', 'company': 'Partner Inc', 'job_title': 'Sales Director'},
+    {'first_name': 'Isabella', 'last_name': 'Taylor', 'display_name': 'Isabella Taylor', 'email': 'isabella.taylor@acmecorp.com', 'company': 'Acme Corp', 'job_title': 'Finance'},
+    {'first_name': 'James', 'last_name': 'Anderson', 'display_name': 'James Anderson', 'email': 'james.anderson@acmecorp.com', 'company': 'Acme Corp', 'job_title': 'DevOps'},
+]
+
+USERS = [
+    'frank.miller@acmecorp.com',
+    'alice.johnson@acmecorp.com',
+    'bob.smith@acmecorp.com',
+    'david.brown@acmecorp.com',
+]
+
 try:
+    # ── Seed contacts for all users ──────────────────────────────
+    print('Seeding contacts for all users...')
+    for user_email in USERS:
+        try:
+            token = login(user_email)
+            # Get existing contacts
+            existing = requests.get(f'{API}/contacts', headers={'Authorization': f'Bearer {token}'}).json()
+            existing_emails = set()
+            items = existing.get('items', existing) if isinstance(existing, dict) else existing
+            if isinstance(items, list):
+                existing_emails = {c.get('email', '') for c in items}
+
+            created = 0
+            for person in ALL_PEOPLE:
+                if person['email'] == user_email:  # Skip self
+                    continue
+                if person['email'] in existing_emails:
+                    continue
+                if create_contact(token, person):
+                    created += 1
+            print(f'  {user_email}: {created} contacts created')
+        except Exception as e:
+            print(f'  {user_email}: contacts failed - {e}')
+
+    # ── Create threaded conversations ────────────────────────────
+    print('Creating threaded conversations...')
     tf = login('frank.miller@acmecorp.com')
     ta = login('alice.johnson@acmecorp.com')
     tb = login('bob.smith@acmecorp.com')
@@ -60,7 +111,47 @@ try:
     time.sleep(0.3)
     reply(ta, latest(ta, ai), 'Scheduled Sarah for Thursday 3 PM. Sending interview template.')
 
-    print('4 threaded conversations created successfully')
+    # Thread 5: Standalone emails with attachments (for attachment testing)
+    send(ta, 'frank.miller@acmecorp.com', 'Frank Miller', 'Q2 Sales Report - Please Review',
+         'Hi Frank,<br/><br/>Please find the Q2 sales report attached. Key highlights:<br/><ul><li>Revenue up 15% QoQ</li><li>New client acquisitions: 12</li><li>Top performing region: West Coast</li></ul><br/>Let me know your thoughts before the board meeting.<br/><br/>Thanks,<br/>Alice')
+    time.sleep(0.3)
+    send(ta, 'frank.miller@acmecorp.com', 'Frank Miller', 'Brand Guidelines + Logo Files',
+         'Hi Frank,<br/><br/>Here are the updated brand guidelines and logo files for the website redesign project.<br/><br/>Please share with the design team.<br/><br/>Best,<br/>Alice')
+
+    print('4 threaded conversations + 2 standalone emails created successfully')
+
+    # ── Upload test attachments ──────────────────────────────────
+    print('Uploading test attachments...')
+    import tempfile, os
+    tf_token = tf
+
+    # Find the attachment emails in Frank's inbox
+    msgs = requests.get(f'{API}/messages?folder_slug=inbox&limit=20&focused=true', headers={'Authorization': f'Bearer {tf_token}'}).json()
+    for msg in msgs.get('items', []):
+        if msg['subject'] == 'Q2 Sales Report - Please Review' and not msg['has_attachments']:
+            tmpf = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+            tmpf.write(b'Demo spreadsheet content for Q2 sales report')
+            tmpf.close()
+            with open(tmpf.name, 'rb') as f:
+                requests.post(f'{API}/messages/{msg["id"]}/attachments',
+                    headers={'Authorization': f'Bearer {tf_token}'},
+                    files={'file': ('Q2-Sales-Report.xlsx', f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+            os.unlink(tmpf.name)
+            print(f'  Attached Q2-Sales-Report.xlsx to "{msg["subject"][:30]}"')
+
+        if msg['subject'] == 'Brand Guidelines + Logo Files' and not msg['has_attachments']:
+            for fname, ctype in [('Brand-Guidelines-2026.pdf', 'application/pdf'), ('Logo-Primary.png', 'image/png'), ('Logo-Secondary.svg', 'image/svg+xml')]:
+                tmpf = tempfile.NamedTemporaryFile(delete=False, suffix='.tmp')
+                tmpf.write(f'Demo content for {fname}'.encode())
+                tmpf.close()
+                with open(tmpf.name, 'rb') as f:
+                    requests.post(f'{API}/messages/{msg["id"]}/attachments',
+                        headers={'Authorization': f'Bearer {tf_token}'},
+                        files={'file': (fname, f, ctype)})
+                os.unlink(tmpf.name)
+            print(f'  Attached 3 files to "{msg["subject"][:30]}"')
+
+    print('Post-seed complete!')
 except Exception as e:
-    print(f'Thread creation failed: {e}', file=sys.stderr)
+    print(f'Post-seed failed: {e}', file=sys.stderr)
     sys.exit(1)

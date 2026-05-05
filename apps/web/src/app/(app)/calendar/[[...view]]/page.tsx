@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns'
 import { events, calendars } from '@/lib/api'
@@ -26,6 +26,17 @@ export default function CalendarPage() {
   const [eventModalOpen, setEventModalOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<Event | undefined>()
   const [initialDate, setInitialDate] = useState<Date | undefined>()
+
+  // Listen for "New event" from ribbon toolbar
+  useEffect(() => {
+    const handler = () => {
+      setInitialDate(new Date())
+      setEditingEvent(undefined)
+      setEventModalOpen(true)
+    }
+    window.addEventListener('outlook:new-event', handler)
+    return () => window.removeEventListener('outlook:new-event', handler)
+  }, [])
 
   // Calculate date range for events query
   const getDateRange = () => {
@@ -71,6 +82,12 @@ export default function CalendarPage() {
     setEventModalOpen(true)
   }
 
+  const router = useRouter()
+  const handleDayClick = (date: Date) => {
+    setCurrentDate(date)
+    router.push('/calendar/day')
+  }
+
   return (
     <div className="h-full flex overflow-hidden" aria-label="CalendarModule" data-automation-id="CalendarModule">
       {/* Left sidebar */}
@@ -103,6 +120,7 @@ export default function CalendarPage() {
             calendars={calendarList}
             onEventClick={handleEventClick}
             onSlotClick={handleSlotClick}
+            onDayClick={handleDayClick}
           />
         </div>
       </div>

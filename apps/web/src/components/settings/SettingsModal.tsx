@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Mail, PenLine, GitBranch, MessageSquareReply, Tag, Settings, Zap, Shield, Search } from 'lucide-react'
+import { X, User, Settings, Mail, CalendarDays, Users, Search } from 'lucide-react'
 import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
 import { SignatureSettings } from './SignatureSettings'
@@ -13,33 +13,67 @@ import { MailSettings } from './MailSettings'
 import { QuickStepSettings } from './QuickStepSettings'
 import { DelegateSettings } from './DelegateSettings'
 
-interface SectionGroup {
-  group: string
-  items: { id: string; label: string; icon: React.ReactNode }[]
+// ─── 3-column layout matching Outlook ────────────────────────────────────────
+// Left: section icons (Account, General, Mail, Calendar, People)
+// Middle: sub-items for selected section
+// Right: content for selected sub-item
+
+interface Section {
+  id: string
+  label: string
+  icon: React.ReactNode
+  subItems: { id: string; label: string }[]
 }
 
-const SECTION_GROUPS: SectionGroup[] = [
+const SECTIONS: Section[] = [
   {
-    group: 'Account',
-    items: [
-      { id: 'general', label: 'General', icon: <Settings size={16} /> },
-      { id: 'delegates', label: 'Delegates', icon: <Shield size={16} /> },
+    id: 'account',
+    label: 'Account',
+    icon: <User size={18} />,
+    subItems: [
+      { id: 'email-account', label: 'Email account' },
+      { id: 'oof', label: 'Automatic replies' },
+      { id: 'signatures', label: 'Signatures' },
+      { id: 'categories', label: 'Categories' },
+      { id: 'storage', label: 'Storage' },
     ],
   },
   {
-    group: 'Mail',
-    items: [
-      { id: 'mail', label: 'Layout', icon: <Mail size={16} /> },
-      { id: 'signatures', label: 'Signatures', icon: <PenLine size={16} /> },
-      { id: 'rules', label: 'Rules', icon: <GitBranch size={16} /> },
-      { id: 'oof', label: 'Automatic replies', icon: <MessageSquareReply size={16} /> },
-      { id: 'categories', label: 'Categories', icon: <Tag size={16} /> },
-      { id: 'quick-steps', label: 'Quick Steps', icon: <Zap size={16} /> },
+    id: 'general',
+    label: 'General',
+    icon: <Settings size={18} />,
+    subItems: [
+      { id: 'general', label: 'General' },
+      { id: 'delegates', label: 'Delegates' },
+    ],
+  },
+  {
+    id: 'mail',
+    label: 'Mail',
+    icon: <Mail size={18} />,
+    subItems: [
+      { id: 'mail', label: 'Layout' },
+      { id: 'rules', label: 'Rules' },
+      { id: 'quick-steps', label: 'Quick Steps' },
+    ],
+  },
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    icon: <CalendarDays size={18} />,
+    subItems: [
+      { id: 'calendar-general', label: 'Calendar' },
+    ],
+  },
+  {
+    id: 'people',
+    label: 'People',
+    icon: <Users size={18} />,
+    subItems: [
+      { id: 'people-general', label: 'People' },
     ],
   },
 ]
-
-const ALL_SECTIONS = SECTION_GROUPS.flatMap((g) => g.items)
 
 function SectionContent({ section }: { section: string }) {
   switch (section) {
@@ -61,15 +95,18 @@ export function SettingsModal() {
   const openSettings = useUIStore((s) => s.openSettings)
   const [search, setSearch] = useState('')
 
+  // Determine which left-section is active based on the selected sub-item
+  const activeSection = SECTIONS.find((s) => s.subItems.some((sub) => sub.id === settingsSection)) ?? SECTIONS[0]
+  const [selectedSectionId, setSelectedSectionId] = useState(activeSection.id)
+  const displaySection = SECTIONS.find((s) => s.id === selectedSectionId) ?? SECTIONS[0]
+
   if (!settingsOpen) return null
 
+  // Filter sub-items by search
   const searchTerm = search.trim().toLowerCase()
-  const filteredGroups = searchTerm
-    ? SECTION_GROUPS.map((g) => ({
-        ...g,
-        items: g.items.filter((s) => s.label.toLowerCase().includes(searchTerm) || g.group.toLowerCase().includes(searchTerm)),
-      })).filter((g) => g.items.length > 0)
-    : SECTION_GROUPS
+  const filteredSubItems = searchTerm
+    ? SECTIONS.flatMap((s) => s.subItems).filter((sub) => sub.label.toLowerCase().includes(searchTerm))
+    : displaySection.subItems
 
   return (
     <div
@@ -80,75 +117,93 @@ export function SettingsModal() {
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className="bg-white rounded-lg shadow-outlook-lg w-[800px] max-w-[90vw] h-[600px] max-h-[85vh] flex flex-col overflow-hidden animate-fade-in"
+        className="bg-white rounded-lg shadow-outlook-lg w-[900px] max-w-[92vw] h-[620px] max-h-[85vh] flex flex-col overflow-hidden animate-fade-in"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#EDEBE9] flex-shrink-0">
-          <h1 className="text-lg font-semibold text-[#323130]">Settings</h1>
-          <button
-            onClick={closeSettings}
-            aria-label="Close settings"
-            className="w-8 h-8 flex items-center justify-center text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Body */}
+        {/* Body — 3 columns */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar */}
-          <nav className="w-52 flex-shrink-0 border-r border-[#EDEBE9] flex flex-col overflow-hidden bg-[#FAF9F8]">
-            <div className="px-3 pt-3 pb-2 flex-shrink-0">
-              <div className="flex items-center gap-2 border border-[#EDEBE9] rounded px-2 py-1.5 bg-white focus-within:border-[#0078D4]">
-                <Search size={13} className="text-[#A19F9D] flex-shrink-0" />
+          {/* Left column — section icons */}
+          <nav className="w-[72px] flex-shrink-0 border-r border-[#EDEBE9] flex flex-col bg-[#FAF9F8]">
+            <div className="px-3 py-4 flex-shrink-0">
+              <h1 className="text-sm font-semibold text-[#323130]">Settings</h1>
+            </div>
+            <div className="px-2 pb-2 flex-shrink-0">
+              <div className="flex items-center gap-1 border border-[#EDEBE9] rounded px-1.5 py-1 bg-white focus-within:border-[#0078D4]">
+                <Search size={11} className="text-[#A19F9D] flex-shrink-0" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search settings"
+                  placeholder="Search"
                   aria-label="Search settings"
-                  className="flex-1 text-xs text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent"
+                  className="w-full text-[10px] text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent"
                 />
               </div>
             </div>
-            <ul className="flex-1 overflow-y-auto outlook-scrollbar py-1">
-              {filteredGroups.map((group) => (
-                <li key={group.group}>
-                  <p className="px-4 pt-3 pb-1 text-[10px] font-semibold text-[#0078D4] uppercase tracking-wide flex items-center gap-1.5">
-                    {group.group}
-                  </p>
-                  <ul>
-                    {group.items.map((item) => {
-                      const isActive = settingsSection === item.id
-                      return (
-                        <li key={item.id}>
-                          <button
-                            onClick={() => openSettings(item.id)}
-                            aria-current={isActive ? 'page' : undefined}
-                            className={cn(
-                              'relative w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors text-left',
-                              isActive
-                                ? 'text-[#0078D4] font-medium bg-[#EBF3FB]'
-                                : 'text-[#323130] hover:bg-[#EDEBE9]',
-                            )}
-                          >
-                            {isActive && (
-                              <span className="absolute left-0 top-1 bottom-1 w-[3px] bg-[#0078D4] rounded-r" />
-                            )}
-                            <span className={isActive ? 'text-[#0078D4]' : 'text-[#605E5C]'}>{item.icon}</span>
-                            {item.label}
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </li>
-              ))}
+            <ul className="flex-1 overflow-y-auto outlook-scrollbar">
+              {SECTIONS.map((section) => {
+                const isActive = selectedSectionId === section.id
+                return (
+                  <li key={section.id}>
+                    <button
+                      onClick={() => {
+                        setSelectedSectionId(section.id)
+                        // Auto-select first sub-item
+                        if (section.subItems.length > 0) {
+                          openSettings(section.subItems[0].id)
+                        }
+                      }}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={cn(
+                        'relative w-full flex flex-col items-center gap-0.5 px-1 py-2.5 transition-colors',
+                        isActive
+                          ? 'text-[#0078D4] bg-[#EBF3FB]'
+                          : 'text-[#605E5C] hover:bg-[#EDEBE9]',
+                      )}
+                    >
+                      {isActive && (
+                        <span className="absolute left-0 top-2 bottom-2 w-[3px] bg-[#0078D4] rounded-r" />
+                      )}
+                      <span>{section.icon}</span>
+                      <span className="text-[9px] leading-tight">{section.label}</span>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           </nav>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto outlook-scrollbar">
+          {/* Middle column — sub-items */}
+          <nav className="w-[170px] flex-shrink-0 border-r border-[#EDEBE9] flex flex-col bg-white overflow-y-auto outlook-scrollbar">
+            {filteredSubItems.map((sub) => {
+              const isActive = settingsSection === sub.id
+              return (
+                <button
+                  key={sub.id}
+                  onClick={() => openSettings(sub.id)}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={cn(
+                    'relative w-full text-left text-sm px-4 py-2.5 transition-colors border-l-[3px]',
+                    isActive
+                      ? 'text-[#0078D4] font-medium bg-[#EBF3FB] border-l-[#0078D4]'
+                      : 'text-[#323130] hover:bg-[#F3F2F1] border-l-transparent',
+                  )}
+                >
+                  {sub.label}
+                </button>
+              )
+            })}
+          </nav>
+
+          {/* Right column — content */}
+          <div className="flex-1 overflow-y-auto outlook-scrollbar relative">
+            {/* Close button */}
+            <button
+              onClick={closeSettings}
+              aria-label="Close settings"
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors z-10"
+            >
+              <X size={18} />
+            </button>
             <SectionContent section={settingsSection} />
           </div>
         </div>

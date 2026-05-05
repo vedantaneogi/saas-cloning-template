@@ -6,13 +6,13 @@ import { z } from 'zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { contacts } from '@/lib/api'
 import type { Contact } from '@/lib/api'
-import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { X, User, Mail, MessageSquare, Phone, MapPin, Building2, Tag, AlignLeft, Camera, Plus } from 'lucide-react'
 
 const schema = z.object({
   first_name: z.string().min(1, 'First name is required'),
   last_name: z.string().optional(),
-  display_name: z.string().min(1, 'Display name is required'),
+  display_name: z.string().optional().default(''),
   email: z.string().email('Valid email required'),
   phone: z.string().optional(),
   company: z.string().optional(),
@@ -26,6 +26,28 @@ interface ContactFormProps {
   contact?: Contact
   onSuccess?: () => void
   onCancel?: () => void
+}
+
+// Underline-style input matching Outlook contact form
+function UnderlineInput({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div>
+      <label className="block text-xs text-[#605E5C] mb-0.5">{label}</label>
+      <input
+        {...props}
+        className="w-full border-0 border-b border-[#EDEBE9] px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent placeholder:text-[#A19F9D] transition-colors"
+      />
+    </div>
+  )
+}
+
+function AddFieldButton({ label, onClick }: { label: string; onClick?: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="flex items-center gap-1.5 text-sm text-[#0078D4] hover:underline py-1 transition-colors">
+      <Plus size={13} /> {label}
+    </button>
+  )
 }
 
 export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) {
@@ -53,6 +75,10 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
 
   const mutation = useMutation({
     mutationFn: (data: FormValues) => {
+      // Auto-generate display_name from first + last
+      if (!data.display_name || data.display_name.trim() === '') {
+        data.display_name = [data.first_name, data.last_name].filter(Boolean).join(' ')
+      }
       if (contact) {
         return contacts.update(contact.id, data)
       }
@@ -67,98 +93,134 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
   return (
     <form
       onSubmit={handleSubmit((d) => mutation.mutate(d))}
-      className="p-6 space-y-4"
+      className="flex flex-col h-full"
       aria-label={contact ? 'Edit contact form' : 'New contact form'}
     >
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="first_name">
-            First name *
-          </label>
-          <Input
-            id="first_name"
-            aria-label="First name"
-            error={!!errors.first_name}
-            {...register('first_name')}
-          />
-          {errors.first_name && (
-            <p className="text-xs text-[#D13438] mt-1">{errors.first_name.message}</p>
-          )}
+      {/* Close button */}
+      {onCancel && (
+        <div className="flex justify-end p-3 pb-0">
+          <button type="button" onClick={onCancel} aria-label="Close" className="p-1 text-[#605E5C] hover:bg-[#F3F2F1] rounded">
+            <X size={18} />
+          </button>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="last_name">
-            Last name
-          </label>
-          <Input id="last_name" aria-label="Last name" {...register('last_name')} />
+      )}
+
+      <div className="flex-1 overflow-y-auto outlook-scrollbar px-6 pb-6 space-y-5">
+        {/* Name section — avatar + first/last name */}
+        <div className="flex items-start gap-4 pt-2">
+          <span className="w-5 text-[#605E5C] mt-6 flex-shrink-0">
+            <User size={16} />
+          </span>
+          <div className="w-16 h-16 rounded-full bg-[#EDEBE9] flex items-center justify-center flex-shrink-0 mt-1">
+            <Camera size={20} className="text-[#A19F9D]" />
+          </div>
+          <div className="flex-1 space-y-2">
+            <UnderlineInput label="First name" {...register('first_name')} placeholder="" />
+            {errors.first_name && <p className="text-xs text-[#D13438]">{errors.first_name.message}</p>}
+            <UnderlineInput label="Last name" {...register('last_name')} placeholder="" />
+          </div>
         </div>
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="display_name">
-          Display name *
-        </label>
-        <Input
-          id="display_name"
-          aria-label="Display name"
-          error={!!errors.display_name}
-          {...register('display_name')}
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="email">
-          Email *
-        </label>
-        <Input
-          id="email"
-          type="email"
-          aria-label="Email"
-          error={!!errors.email}
-          {...register('email')}
-        />
-        {errors.email && (
-          <p className="text-xs text-[#D13438] mt-1">{errors.email.message}</p>
-        )}
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="phone">
-          Phone
-        </label>
-        <Input id="phone" type="tel" aria-label="Phone" {...register('phone')} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="company">
-            Company
-          </label>
-          <Input id="company" aria-label="Company" {...register('company')} />
+        <div className="pl-9">
+          <AddFieldButton label="Add name field" />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="job_title">
-            Job title
-          </label>
-          <Input id="job_title" aria-label="Job title" {...register('job_title')} />
+
+        {/* Email section */}
+        <div className="flex items-start gap-4">
+          <span className="w-5 text-[#605E5C] mt-5 flex-shrink-0">
+            <Mail size={16} />
+          </span>
+          <div className="flex-1 space-y-2">
+            <UnderlineInput label="Email address" type="email" {...register('email')} placeholder="" />
+            {errors.email && <p className="text-xs text-[#D13438]">{errors.email.message}</p>}
+            <AddFieldButton label="Add email" />
+          </div>
         </div>
+
+        {/* Chat section */}
+        <div className="flex items-start gap-4">
+          <span className="w-5 text-[#605E5C] mt-1 flex-shrink-0">
+            <MessageSquare size={16} />
+          </span>
+          <div className="flex-1">
+            <AddFieldButton label="Add chat" />
+          </div>
+        </div>
+
+        {/* Phone section */}
+        <div className="flex items-start gap-4">
+          <span className="w-5 text-[#605E5C] mt-5 flex-shrink-0">
+            <Phone size={16} />
+          </span>
+          <div className="flex-1 space-y-2">
+            <UnderlineInput label="Mobile phone number" type="tel" {...register('phone')} placeholder="" />
+            <AddFieldButton label="Add phone" />
+          </div>
+        </div>
+
+        {/* Address section */}
+        <div className="flex items-start gap-4">
+          <span className="w-5 text-[#605E5C] mt-1 flex-shrink-0">
+            <MapPin size={16} />
+          </span>
+          <div className="flex-1">
+            <AddFieldButton label="Add address" />
+          </div>
+        </div>
+
+        {/* Company section */}
+        <div className="flex items-start gap-4">
+          <span className="w-5 text-[#605E5C] mt-5 flex-shrink-0">
+            <Building2 size={16} />
+          </span>
+          <div className="flex-1 space-y-2">
+            <UnderlineInput label="Company" {...register('company')} placeholder="" />
+            <AddFieldButton label="Add work field" />
+          </div>
+        </div>
+
+        {/* Categorize section */}
+        <div className="flex items-start gap-4">
+          <span className="w-5 text-[#605E5C] mt-1 flex-shrink-0">
+            <Tag size={16} />
+          </span>
+          <div className="flex-1">
+            <AddFieldButton label="Categorize" />
+          </div>
+        </div>
+
+        {/* Add others */}
+        <div className="flex items-start gap-4">
+          <span className="w-5 text-[#605E5C] mt-1 flex-shrink-0">
+            <AlignLeft size={16} />
+          </span>
+          <div className="flex-1">
+            <AddFieldButton label="Add others" />
+          </div>
+        </div>
+
+        {/* Notes section */}
+        <div className="flex items-start gap-4">
+          <span className="w-5 text-[#605E5C] mt-5 flex-shrink-0">
+            <MessageSquare size={16} />
+          </span>
+          <div className="flex-1">
+            <label className="block text-xs text-[#605E5C] mb-0.5">Notes</label>
+            <textarea
+              rows={3}
+              className="w-full border-0 border-b border-[#EDEBE9] px-0 py-1.5 text-sm text-[#323130] focus:outline-none focus:border-b-2 focus:border-[#0078D4] bg-transparent resize-none placeholder:text-[#A19F9D]"
+              {...register('notes')}
+            />
+          </div>
+        </div>
+
+        {/* Hidden fields for form data */}
+        <input type="hidden" {...register('display_name')} value="" />
       </div>
 
-      <div>
-        <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="notes">
-          Notes
-        </label>
-        <textarea
-          id="notes"
-          aria-label="Notes"
-          rows={3}
-          className="w-full border border-[#8A8886] rounded px-3 py-1.5 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:border-[#0078D4] resize-none placeholder:text-[#A19F9D]"
-          {...register('notes')}
-        />
-      </div>
-
-      <div className="flex items-center gap-2 pt-2">
-        <Button type="submit" loading={isSubmitting || mutation.isPending}>
-          {contact ? 'Save changes' : 'Create contact'}
+      {/* Footer buttons */}
+      <div className="flex items-center gap-2 px-6 py-4 border-t border-[#EDEBE9] flex-shrink-0">
+        <Button type="submit" loading={isSubmitting || mutation.isPending} disabled={isSubmitting || mutation.isPending}>
+          Save
         </Button>
         {onCancel && (
           <Button type="button" variant="secondary" onClick={onCancel}>
