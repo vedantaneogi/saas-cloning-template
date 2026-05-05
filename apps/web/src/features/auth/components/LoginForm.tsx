@@ -223,13 +223,13 @@ export function LoginForm() {
               </button>
 
               <div className="text-center">
-                <button
-                  type="button"
+                <Link
+                  href="/forgot-password"
                   className="text-sm hover:underline"
                   style={{ color: "#1B0A3C" }}
                 >
                   Reset password
-                </button>
+                </Link>
               </div>
             </form>
           </div>

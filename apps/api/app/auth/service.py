@@ -1,3 +1,6 @@
+import uuid as _uuid
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,4 +39,32 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
         return None
     if not verify_password(password, user.hashed_password):
         return None
+    return user
+
+
+async def create_password_reset_token(db: AsyncSession, user: User) -> str:
+    token = str(_uuid.uuid4())
+    user.reset_token = token
+    user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+    await db.commit()
+    return token
+
+
+async def reset_password_with_token(db: AsyncSession, token: str, new_password: str) -> User | None:
+    result = await db.execute(select(User).where(User.reset_token == token))
+    user = result.scalar_one_or_none()
+    if not user or not user.reset_token_expires:
+        return None
+    if user.reset_token_expires < datetime.now(timezone.utc):
+        return None
+    if verify_password(new_password, user.hashed_password):
+        from fastapi import HTTPException, status as http_status
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from your current password.",
+        )
+    user.hashed_password = hash_password(new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    await db.commit()
     return user

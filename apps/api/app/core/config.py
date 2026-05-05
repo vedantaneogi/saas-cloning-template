@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_samesite: str = "lax"
 
+    resend_api_key: str | None = None
+    email_from: str = "DocuSign Clone <onboarding@resend.dev>"
+
 
 @lru_cache
 def get_settings() -> Settings:

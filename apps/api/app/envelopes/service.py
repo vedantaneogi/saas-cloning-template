@@ -15,6 +15,7 @@ from app.envelopes.models import (
     Field,
     Folder,
     Recipient,
+    RecipientRole,
     RecipientStatus,
 )
 from app.envelopes.schemas import (
@@ -232,6 +233,7 @@ async def get_envelope(
         .options(
             selectinload(Envelope.documents).selectinload(Document.fields),
             selectinload(Envelope.recipients).selectinload(Recipient.fields),
+            selectinload(Envelope.owner),
         )
         .where(Envelope.id == envelope_id, Envelope.user_id == user_id)
     )
@@ -282,8 +284,82 @@ async def send_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
         details={"subject": envelope.subject, "sent_at": envelope.sent_at.isoformat()},
     )
     db.add(audit)
+    # Snapshot all data needed for emails BEFORE commit — after commit SQLAlchemy
+    # expires every attribute on tracked objects, causing greenlet errors on access.
+    sender_name = envelope.owner.name if envelope.owner else "DocuSign Clone"
+    sender_email = envelope.owner.email if envelope.owner else ""
+    envelope_subject = envelope.subject
+    envelope_message = envelope.message
+    envelope_id = envelope.id
+    recipient_data = [
+        {
+            "email": r.email,
+            "name": r.name or "",
+            "role": r.role,
+            "status": r.status,
+            "signing_token": r.signing_token,
+            "private_message": r.private_message,
+        }
+        for r in envelope.recipients
+    ]
     await db.commit()
     await db.refresh(envelope)
+
+    # Send signing invitation emails to first-routing-order recipients
+    from app.core.email import send_signing_invitation, send_cc_notification
+    import logging as _logging
+    _svc_logger = _logging.getLogger(__name__)
+    email_failures: list[str] = []
+    for r in recipient_data:
+        if r["status"] == RecipientStatus.sent and r["signing_token"]:
+            # Skip email for self-sign (signer == sender). Guard against empty sender_email.
+            if sender_email and r["email"].lower() == sender_email.lower():
+                continue
+            try:
+                await send_signing_invitation(
+                    recipient_email=r["email"],
+                    recipient_name=r["name"],
+                    sender_name=sender_name,
+                    sender_email=sender_email,
+                    envelope_subject=envelope_subject,
+                    envelope_message=envelope_message,
+                    signing_token=r["signing_token"],
+                    is_reminder=False,
+                    private_message=r["private_message"] or None,
+                )
+            except Exception as exc:
+                _svc_logger.error(
+                    "envelope %s: signing invite failed for %s: %s",
+                    envelope_id, r["email"], exc,
+                )
+                email_failures.append(r["email"])
+
+    # Send CC/viewer notifications
+    for r in recipient_data:
+        if r["role"] in (RecipientRole.cc, RecipientRole.viewer) and r["signing_token"]:
+            try:
+                await send_cc_notification(
+                    cc_email=r["email"],
+                    cc_name=r["name"],
+                    sender_name=sender_name,
+                    sender_email=sender_email,
+                    envelope_subject=envelope_subject,
+                    envelope_message=envelope_message,
+                    signing_token=r["signing_token"],
+                )
+            except Exception as exc:
+                _svc_logger.error(
+                    "envelope %s: CC notification failed for %s: %s",
+                    envelope_id, r["email"], exc,
+                )
+                email_failures.append(r["email"])
+
+    if email_failures:
+        _svc_logger.warning(
+            "envelope %s sent but emails failed for: %s",
+            envelope.id, ", ".join(email_failures),
+        )
+
     return envelope
 
 
@@ -313,11 +389,13 @@ async def resend_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
             detail="Can only resend a sent or delivered envelope",
         )
     resent_recipients = []
+    resent_recipient_objs = []
     for recipient in envelope.recipients:
         if recipient.status in (RecipientStatus.sent, RecipientStatus.delivered):
             recipient.status = RecipientStatus.sent
             recipient.signing_token = str(uuid.uuid4())
             resent_recipients.append(recipient.email)
+            resent_recipient_objs.append(recipient)
     # Log audit event
     audit = AuditEvent(
         envelope_id=envelope.id,
@@ -328,6 +406,24 @@ async def resend_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
     db.add(audit)
     await db.commit()
     await db.refresh(envelope)
+
+    # Send reminder emails to resent recipients
+    from app.core.email import send_signing_invitation
+    sender_name = envelope.owner.name if envelope.owner else "DocuSign Clone"
+    sender_email = envelope.owner.email if envelope.owner else ""
+    for recipient in resent_recipient_objs:
+        await send_signing_invitation(
+            recipient_email=recipient.email,
+            recipient_name=recipient.name or "",
+            sender_name=sender_name,
+            sender_email=sender_email,
+            envelope_subject=envelope.subject,
+            envelope_message=envelope.message,
+            signing_token=recipient.signing_token,
+            is_reminder=True,
+            private_message=recipient.private_message or None,
+        )
+
     return envelope
 
 
@@ -354,6 +450,7 @@ async def add_recipient(
         email=data.email,
         role=data.role,
         routing_order=data.routing_order,
+        private_message=data.private_message or None,
     )
     if data.access_code:
         import hashlib
@@ -386,6 +483,8 @@ async def update_recipient(
         else:
             import hashlib
             recipient.access_code = hashlib.sha256(data.access_code.strip().encode()).hexdigest()
+    if data.private_message is not None:
+        recipient.private_message = data.private_message or None
     await db.commit()
     await db.refresh(recipient)
     return recipient

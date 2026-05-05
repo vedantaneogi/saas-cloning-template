@@ -174,6 +174,7 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
     # Lock the envelope row to serialize concurrent completions
     env_result = await db.execute(
         select(Envelope)
+        .options(selectinload(Envelope.owner))
         .where(Envelope.id == recipient.envelope_id)
         .with_for_update()
     )
@@ -194,6 +195,13 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
 
     # Re-fetch current recipient from the locked set
     recipient = next((r for r in all_recipients if r.signing_token == token), recipient)
+
+    # Re-check status under lock — prevents double-completion from concurrent requests
+    if recipient.status == RecipientStatus.signed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This recipient has already signed",
+        )
 
     # Check all required fields are filled
     for doc in docs:
@@ -248,6 +256,39 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
 
     await db.commit()
     await db.refresh(recipient)
+
+    # Send email notifications after commit
+    from app.core.email import send_signing_invitation, send_completion_notification
+
+    owner = envelope.owner
+
+    # If next routing group was just activated, email those recipients
+    if pending_recipients:
+        next_order_val = min(r.routing_order for r in pending_recipients)
+        sender_name = owner.name if owner else "DocuSign Clone"
+        sender_email = owner.email if owner else ""
+        for r in pending_recipients:
+            if r.routing_order == next_order_val and r.signing_token:
+                await send_signing_invitation(
+                    recipient_email=r.email,
+                    recipient_name=r.name or "",
+                    sender_name=sender_name,
+                    sender_email=sender_email,
+                    envelope_subject=envelope.subject,
+                    envelope_message=envelope.message,
+                    signing_token=r.signing_token,
+                    is_reminder=False,
+                )
+
+    # If envelope is now fully completed, notify the owner
+    if all_signed and owner:
+        await send_completion_notification(
+            owner_email=owner.email,
+            owner_name=owner.name or "",
+            envelope_subject=envelope.subject,
+            envelope_id=str(envelope.id),
+        )
+
     return recipient
 
 
@@ -256,7 +297,10 @@ async def decline_signing(
 ) -> Recipient:
     result = await db.execute(
         select(Recipient)
-        .options(selectinload(Recipient.envelope).selectinload(Envelope.recipients))
+        .options(
+            selectinload(Recipient.envelope).selectinload(Envelope.recipients),
+            selectinload(Recipient.envelope).selectinload(Envelope.owner),
+        )
         .where(Recipient.signing_token == token)
     )
     recipient = result.scalar_one_or_none()
@@ -293,4 +337,18 @@ async def decline_signing(
 
     await db.commit()
     await db.refresh(recipient)
+
+    # Notify envelope owner that a recipient declined
+    from app.core.email import send_declined_notification
+
+    if envelope.owner:
+        await send_declined_notification(
+            owner_email=envelope.owner.email,
+            owner_name=envelope.owner.name or "",
+            envelope_subject=envelope.subject,
+            decliner_name=recipient.name or recipient.email,
+            decliner_email=recipient.email,
+            reason=reason,
+        )
+
     return recipient

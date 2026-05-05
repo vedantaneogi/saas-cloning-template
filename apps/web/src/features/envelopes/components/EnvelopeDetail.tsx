@@ -412,6 +412,18 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
                       <CopySimple size={14} weight="bold" />
                       Copy ID
                     </button>
+                    {envelope.status === "completed" && (
+                      <button
+                        onClick={() => { certificateMutation.mutate(); setShowMoreMenu(false); }}
+                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
+                        style={{ color: COLOR_PRIMARY }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <Certificate size={14} weight="bold" />
+                        Download Certificate
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setTemplateName(envelope.subject);
@@ -650,7 +662,7 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
         </div>
 
         {/* Right column — Documents sidebar */}
-        <DocumentPanel documents={envelope.documents} envelopeId={envelope.id} />
+        <DocumentPanel documents={envelope.documents} envelopeId={envelope.id} envelopeStatus={envelope.status} />
       </div>
 
       {/* ── Void confirmation dialog ─────────────────────────────────────────── */}

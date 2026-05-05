@@ -103,14 +103,14 @@ export function SigningField({
       <div
         className={cn(
           `${posClass} flex items-center justify-center rounded cursor-pointer transition-all group select-none`,
-          isCurrentField && !isCompleted && "animate-pulse",
+          isForRecipient && !isCompleted && "animate-pulse",
         )}
         style={{
           ...posStyle,
           background: bgColor,
           border: `2px solid ${borderColor}`,
-          zIndex: isCurrentField ? 15 : 10,
-          animationDuration: "2s",
+          zIndex: isCurrentField ? 15 : (isForRecipient && !isCompleted ? 12 : 10),
+          animationDuration: isCurrentField ? "1s" : "2.5s",
         }}
         onClick={handleClick}
       >
@@ -225,8 +225,8 @@ export function SigningField({
     );
   }
 
-  // TEXT, NAME, EMAIL, COMPANY, TITLE fields — inline input
-  if (["text", "name", "email", "company", "title"].includes(field.type)) {
+  // TEXT, NAME, EMAIL, COMPANY, TITLE, NUMBER fields — inline input
+  if (["text", "name", "email", "company", "title", "number"].includes(field.type)) {
     return (
       <div
         className={posClass}
@@ -236,7 +236,7 @@ export function SigningField({
         }}
       >
         <input
-          type={field.type === "email" ? "email" : "text"}
+          type={field.type === "email" ? "email" : field.type === "number" ? "number" : "text"}
           value={value || ""}
           onChange={(e) => onValueChange(field.id, e.target.value)}
           placeholder={
@@ -244,6 +244,7 @@ export function SigningField({
             field.type === "email" ? "Email Address" :
             field.type === "company" ? "Company Name" :
             field.type === "title" ? "Title" :
+            field.type === "number" ? "0" :
             field.label || "Enter text"
           }
           className="w-full h-full px-2 text-xs outline-none rounded"
@@ -486,6 +487,35 @@ export function SigningField({
             <span className="text-xs font-bold" style={{ color: borderColor }}>
               Pay ${amountDollars}
             </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // APPROVE field — one-click approval button
+  if (field.type === "approve") {
+    const isApproved = !!value;
+    return (
+      <div
+        className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all select-none`}
+        style={{
+          ...posStyle,
+          background: isApproved ? "rgba(0,184,81,0.08)" : bgColor,
+          border: `2px solid ${isApproved ? "#00B851" : borderColor}`,
+          zIndex: isCurrentField ? 15 : 10,
+        }}
+        onClick={() => { if (!isApproved) onValueChange(field.id, "approved"); }}
+      >
+        {isApproved ? (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#00B851" }}>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            <span className="text-xs font-bold text-white">Approved</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: borderColor }}>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            <span className="text-xs font-bold text-white">Approve</span>
           </div>
         )}
       </div>

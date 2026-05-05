@@ -1,9 +1,12 @@
 import csv
 import io
+import logging
 import os
 import shutil
 import uuid
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import (
     APIRouter,
@@ -125,6 +128,11 @@ async def list_envelopes(
         # we don't currently track failed auth attempts per-envelope.
         auth_failed = True
         status_filter = None
+    elif envelope_filter == "sent":
+        # "Sent" folder — all envelopes authored by current user that are in
+        # progress: covers both "sent" (not yet opened) and "delivered" (opened).
+        statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered]
+        status_filter = None
 
     items, total = await svc.list_envelopes(
         db,
@@ -203,7 +211,7 @@ async def get_envelope_tasks(
     # After send(), the first routing group gets status "sent"; later groups stay
     # "pending". We include all three pre-signed statuses so we don't miss anyone.
     action_id_result = await db.execute(
-        select(Envelope.id)
+        select(Envelope.id, Envelope.updated_at)
         .join(Recipient, Recipient.envelope_id == Envelope.id)
         .where(
             func.lower(Recipient.email) == current_user.email.lower(),
@@ -385,7 +393,14 @@ async def get_envelope(
     envelope = await svc.get_envelope(db, envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
-    return envelope
+    response = EnvelopeDetailResponse.model_validate(envelope)
+    if hasattr(envelope, "owner") and envelope.owner is not None:
+        response.from_name = envelope.owner.name
+        response.from_email = envelope.owner.email
+    else:
+        response.from_name = current_user.name
+        response.from_email = current_user.email
+    return response
 
 
 @router.put("/envelopes/{envelope_id}", response_model=EnvelopeResponse)
@@ -494,6 +509,7 @@ async def save_envelope_as_template(
     # Build roles list from the envelope's recipients (placeholder roles)
     roles = [
         {
+            "recipient_id": str(r.id),
             "name": r.name,
             "email": r.email,
             "role": r.role.value,
@@ -1152,6 +1168,7 @@ async def bulk_send_direct(
 
     batch_id = str(uuid.uuid4())
     created = 0
+    failed = 0
     total_rows = len(rows)
 
     for row in rows:
@@ -1206,13 +1223,15 @@ async def bulk_send_direct(
             try:
                 await svc.send_envelope(db, envelope_detail)
                 created += 1
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("bulk-send-direct: envelope %s failed for %s: %s", envelope.id, email, exc)
+                failed += 1
         else:
-            created += 1
+            logger.error("bulk-send-direct: envelope %s not found after create for %s", envelope.id, email)
+            failed += 1
 
     await db.commit()
-    return BulkSendResponse(batch_id=batch_id, total=total_rows, created=created)
+    return BulkSendResponse(batch_id=batch_id, total=total_rows, created=created, failed=failed)
 
 
 @router.post(
@@ -1261,6 +1280,7 @@ async def bulk_send_envelopes(
 
     batch_id = str(uuid.uuid4())
     created = 0
+    failed = 0
 
     for row in rows:
         name = (row.get("name") or "").strip()
@@ -1293,11 +1313,15 @@ async def bulk_send_envelopes(
             try:
                 await send_envelope(db, envelope_detail)
                 created += 1
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("bulk-send: envelope %s failed for %s: %s", envelope.id, email, exc)
+                failed += 1
+        else:
+            logger.error("bulk-send: envelope %s not found after create for %s", envelope.id, email)
+            failed += 1
 
     await db.commit()
-    return BulkSendResponse(batch_id=batch_id, total=len(rows), created=created)
+    return BulkSendResponse(batch_id=batch_id, total=len(rows), created=created, failed=failed)
 
 
 # ── Folder endpoints ───────────────────────────────────────────────────────────

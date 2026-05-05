@@ -12,6 +12,7 @@ const COLOR_BORDER  = "rgba(19,0,50,0.1)";
 interface DocumentPanelProps {
   documents: EnvelopeDocument[];
   envelopeId?: string;
+  envelopeStatus?: string;
 }
 
 // ─── Derive a short extension label (PDF / DOC / DOCX / …) from filename ────
@@ -68,7 +69,7 @@ function DocThumbnail({ docId, docName }: { docId: string; docName: string }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function DocumentPanel({ documents, envelopeId }: DocumentPanelProps) {
+export function DocumentPanel({ documents, envelopeId, envelopeStatus }: DocumentPanelProps) {
   return (
     <aside
       className="w-64 flex-shrink-0 border-l bg-white overflow-y-auto"
@@ -116,7 +117,15 @@ export function DocumentPanel({ documents, envelopeId }: DocumentPanelProps) {
                   <div
                     className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
                     style={{ background: "rgba(19,0,50,0.14)" }}
-                    onClick={() => window.open(envelopeId ? `/api/envelopes/${envelopeId}/download` : `/api/documents/${doc.id}/download`, '_blank')}
+                    onClick={() => {
+                      if (!envelopeId) {
+                        window.open(`/api/documents/${doc.id}/download`, '_blank');
+                      } else if (envelopeStatus === "completed") {
+                        window.open(`/api/envelopes/${envelopeId}/download`, '_blank');
+                      } else {
+                        window.location.assign(`/envelope/${envelopeId}/edit?preview=true`);
+                      }
+                    }}
                   >
                     <span
                       className="text-xs font-semibold px-3 py-1.5 rounded"

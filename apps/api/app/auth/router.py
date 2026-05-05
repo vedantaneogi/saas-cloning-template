@@ -3,8 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
-from app.auth.schemas import UserCreate, UserLogin, UserResponse
-from app.auth.service import authenticate_user, create_user, get_user_by_email
+from app.auth.schemas import ForgotPasswordRequest, ResetPasswordRequest, UserCreate, UserLogin, UserResponse
+from app.auth.service import (
+    authenticate_user,
+    create_password_reset_token,
+    create_user,
+    get_user_by_email,
+    reset_password_with_token,
+)
 from app.core.config import get_settings
 from app.core.security import create_access_token
 from app.db.session import get_db
@@ -79,6 +85,38 @@ def logout(response: Response) -> dict:
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    user = await get_user_by_email(db, data.email)
+    if user:
+        token = await create_password_reset_token(db, user)
+        from app.core.email import send_password_reset_email
+        await send_password_reset_email(
+            email=user.email,
+            name=user.name,
+            reset_token=token,
+        )
+    # Always return 200 — don't leak whether email exists
+    return {"message": "If an account with that email exists, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    user = await reset_password_with_token(db, data.token, data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset link.",
+        )
+    return {"message": "Password has been reset. You can now log in."}
 
 
 @router.get("/config")

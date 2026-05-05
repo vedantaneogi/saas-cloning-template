@@ -2,6 +2,7 @@
 
 import base64
 import io
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -715,7 +716,8 @@ def generate_certificate(envelope_data: dict[str, Any], audit_events: list[dict[
         for event in audit_events:
             ts = str(event.get("created_at", ""))[:19]
             evt = str(event.get("event_type", ""))
-            details = str(event.get("details") or "")[:60]
+            raw = event.get("details") or {}
+            details = json.dumps(raw, default=str)[:80]
             audit_data.append([ts, evt, details])
 
         audit_table = Table(audit_data, colWidths=[2 * inch, 2 * inch, 2.5 * inch])

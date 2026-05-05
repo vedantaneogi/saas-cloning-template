@@ -87,6 +87,7 @@ class RecipientCreate(BaseModel):
     role: RecipientRole = RecipientRole.signer
     routing_order: int = 1
     access_code: Optional[str] = None
+    private_message: Optional[str] = None
 
 
 class RecipientUpdate(BaseModel):
@@ -95,6 +96,7 @@ class RecipientUpdate(BaseModel):
     role: Optional[RecipientRole] = None
     routing_order: Optional[int] = None
     access_code: Optional[str] = None
+    private_message: Optional[str] = None
 
 
 class RecipientResponse(BaseModel):
@@ -112,6 +114,7 @@ class RecipientResponse(BaseModel):
     declined_at: Optional[datetime] = None
     decline_reason: Optional[str] = None
     access_code: Optional[str] = None
+    private_message: Optional[str] = None
     fields: List[FieldResponse] = []
 
 
@@ -166,6 +169,8 @@ class EnvelopeResponse(BaseModel):
 class EnvelopeDetailResponse(EnvelopeResponse):
     documents: List[DocumentResponse] = []
     recipients: List[RecipientResponse] = []
+    from_name: Optional[str] = None
+    from_email: Optional[str] = None
 
 
 class RecipientSummary(BaseModel):
@@ -251,6 +256,7 @@ class BulkSendResponse(BaseModel):
     batch_id: str
     total: int
     created: int
+    failed: int = 0
 
 
 class BulkSendStatusResponse(BaseModel):

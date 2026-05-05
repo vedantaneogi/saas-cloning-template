@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, type ReactNode } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CaretUp, CaretDown, X, Trash, Info, Desktop, Question, GearSix, PencilSimple, AddressBook, UserPlus, Layout, Key, ChatText, Eye, UserCircle } from "@phosphor-icons/react";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -14,6 +14,7 @@ import {
   addRecipient as addRecipientAPI,
   updateRecipient as updateRecipientAPI,
   setRecipientAccessCode,
+  setRecipientPrivateMessage,
 } from "@/features/envelopes/api";
 import { getRecipientColor } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
@@ -25,6 +26,7 @@ interface RecipientForm {
   role: string;
   order: number;
   color: string;
+  privateMessage?: string;
 }
 
 const formatSize = (bytes: number) => {
@@ -76,6 +78,10 @@ export default function PrepareEnvelopePage() {
   const [accessCodeDialog, setAccessCodeDialog] = useState<{ recipientId: string; currentCode: string } | null>(null);
   const [accessCodeInput, setAccessCodeInput] = useState("");
 
+  // ── Private message dialog ─────────────────────────────────────────────────
+  const [privateMessageDialog, setPrivateMessageDialog] = useState<{ recipientId: string } | null>(null);
+  const [privateMessageInput, setPrivateMessageInput] = useState("");
+
   // ── File state ─────────────────────────────────────────────────────────────
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ id: string; name: string; size: number }>>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -97,6 +103,16 @@ export default function PrepareEnvelopePage() {
 
   // ── Bulk send modal ────────────────────────────────────────────────────────
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("bulk") === "true") {
+      setBulkModalOpen(true);
+      setBulkStep(1);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [bulkStep, setBulkStep] = useState<1 | 2 | 3>(1);
   const [bulkMethod, setBulkMethod] = useState<"manual" | "csv">("manual");
   const [bulkCsvFile, setBulkCsvFile] = useState<File | null>(null);
@@ -253,6 +269,7 @@ export default function PrepareEnvelopePage() {
             email: r.email.trim(),
             role: r.role,
             routing_order: r.order,
+            private_message: r.privateMessage || undefined,
           });
         } else {
           // New recipient — add to envelope.
@@ -261,6 +278,7 @@ export default function PrepareEnvelopePage() {
             email: r.email.trim(),
             role: r.role,
             routing_order: r.order,
+            private_message: r.privateMessage || undefined,
           });
         }
       }
@@ -974,7 +992,26 @@ export default function PrepareEnvelopePage() {
                             type="number"
                             min={1}
                             value={recipient.order}
-                            onChange={(e) => updateRecipient(recipient.id, { order: parseInt(e.target.value) || 1 })}
+                            onChange={(e) => {
+                              const raw = parseInt(e.target.value) || 1;
+                              const clamped = Math.max(1, Math.min(recipients.length, raw));
+                              setRecipients((prev) => {
+                                const others = prev
+                                  .filter((r) => r.id !== recipient.id)
+                                  .sort((a, b) => a.order - b.order);
+                                const result: typeof prev = [];
+                                let oi = 0;
+                                for (let pos = 1; pos <= prev.length; pos++) {
+                                  if (pos === clamped) {
+                                    result.push({ ...prev.find((r) => r.id === recipient.id)!, order: pos });
+                                  } else if (oi < others.length) {
+                                    result.push({ ...others[oi], order: pos });
+                                    oi++;
+                                  }
+                                }
+                                return result;
+                              });
+                            }}
                             style={{ width: "60px", padding: "6px 8px", border: "1px solid rgba(19,0,50,0.25)", borderRadius: "4px", fontSize: "14px" }}
                           />
                         </div>
@@ -1172,22 +1209,42 @@ export default function PrepareEnvelopePage() {
                               <button
                                 className="w-full text-left hover:bg-gray-50 transition-colors flex items-start gap-3"
                                 style={{ padding: "12px 16px" }}
-                                onClick={() =>
-                                  setCustomizeDropdownOpen((prev) => ({
-                                    ...prev,
-                                    [recipient.id]: false,
-                                  }))
-                                }
+                                onClick={() => {
+                                  setCustomizeDropdownOpen((prev) => ({ ...prev, [recipient.id]: false }));
+                                  setPrivateMessageInput(recipient.privateMessage || "");
+                                  setPrivateMessageDialog({ recipientId: recipient.id });
+                                }}
                               >
                                 <ChatText size={20} weight="bold" color="#555" style={{ flexShrink: 0, marginTop: "2px" }} />
                                 <div>
                                   <div style={{ fontSize: "14px", fontWeight: 500, color: "#1B0A3C" }}>Add private message</div>
-                                  <div style={{ fontSize: "12px", color: "#888", marginTop: "2px" }}>Include a personal note with this recipient.</div>
+                                  <div style={{ fontSize: "12px", color: "#888", marginTop: "2px" }}>
+                                    {recipient.privateMessage ? "Edit personal note for this recipient." : "Include a personal note with this recipient."}
+                                  </div>
                                 </div>
                               </button>
                             </div>
                           )}
                         </div>
+
+                        {/* Private message indicator */}
+                        {recipient.privateMessage && (
+                          <div title={recipient.privateMessage}>
+                            <label className="block font-semibold mb-1 invisible" style={{ fontSize: "12px" }}>&nbsp;</label>
+                            <button
+                              onClick={() => {
+                                setPrivateMessageInput(recipient.privateMessage || "");
+                                setPrivateMessageDialog({ recipientId: recipient.id });
+                              }}
+                              className="flex items-center gap-1 rounded transition-colors hover:bg-purple-50"
+                              style={{ padding: "8px 10px", border: "1px solid rgba(76,0,255,0.3)", background: "rgba(76,0,255,0.05)", borderRadius: "4px" }}
+                              title="Private message set — click to edit"
+                            >
+                              <ChatText size={14} weight="bold" color="#4C00FF" />
+                              <span style={{ fontSize: "12px", color: "#4C00FF", fontWeight: 500 }}>Note</span>
+                            </button>
+                          </div>
+                        )}
 
                         {/* Remove button */}
                         {recipients.length > 1 && (
@@ -1481,7 +1538,7 @@ export default function PrepareEnvelopePage() {
         type="file"
         accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
         multiple
-        className="hidden"
+        style={{ position: "absolute", width: 0, height: 0, opacity: 0, overflow: "hidden", pointerEvents: "none" }}
         onChange={(e) => {
           if (e.target.files) handleFilesDrop(e.target.files);
           e.target.value = "";
@@ -1575,6 +1632,89 @@ export default function PrepareEnvelopePage() {
                 }}
               >
                 Save Code
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Private Message Dialog */}
+      {privateMessageDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => setPrivateMessageDialog(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl"
+            style={{ width: "440px", maxWidth: "90vw", padding: "28px", position: "relative" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <ChatText size={18} weight="bold" color="#4C00FF" />
+                <h2 style={{ fontSize: "17px", fontWeight: 600, color: "rgba(19,0,50,0.9)", margin: 0 }}>
+                  Private Message
+                </h2>
+              </div>
+              <button
+                onClick={() => setPrivateMessageDialog(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}
+              >
+                <X size={18} weight="bold" color="#555" />
+              </button>
+            </div>
+            <p style={{ fontSize: "13px", color: "rgba(19,0,50,0.6)", marginBottom: "16px" }}>
+              This note will be included in the email sent to this recipient. It is private and not visible to other recipients.
+            </p>
+            <textarea
+              value={privateMessageInput}
+              onChange={(e) => setPrivateMessageInput(e.target.value)}
+              placeholder="Add a personal note for this recipient…"
+              autoFocus
+              rows={4}
+              className="w-full focus:outline-none resize-none"
+              style={{
+                border: "1px solid rgba(19,0,50,0.25)",
+                borderRadius: "4px",
+                padding: "10px 14px",
+                fontSize: "14px",
+                color: "rgba(19,0,50,0.9)",
+                marginBottom: "20px",
+              }}
+              onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)"; }}
+              onBlur={(e) => { e.target.style.borderColor = "rgba(19,0,50,0.25)"; e.target.style.boxShadow = "none"; }}
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setPrivateMessageDialog(null)}
+                style={{
+                  padding: "8px 18px", borderRadius: "4px",
+                  border: "1px solid rgba(19,0,50,0.25)", background: "white",
+                  color: "rgba(19,0,50,0.9)", fontSize: "14px", cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!privateMessageDialog) return;
+                  const recipId = privateMessageDialog.recipientId;
+                  const msg = privateMessageInput.trim();
+                  updateRecipient(recipId, { privateMessage: msg || undefined });
+                  if (!recipId.startsWith("r")) {
+                    setRecipientPrivateMessage(recipId, msg).catch(() => {});
+                  }
+                  setPrivateMessageDialog(null);
+                }}
+                style={{
+                  padding: "8px 18px", borderRadius: "4px",
+                  background: "#4C00FF", color: "white",
+                  fontSize: "14px", fontWeight: 500, cursor: "pointer",
+                  border: "none",
+                }}
+              >
+                Save Message
               </button>
             </div>
           </div>

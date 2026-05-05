@@ -207,6 +207,7 @@ class Recipient(Base):
     declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decline_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     access_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    private_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     envelope: Mapped["Envelope"] = relationship("Envelope", back_populates="recipients")

@@ -93,8 +93,16 @@ async def list_templates_paginated(
 async def create_envelope_from_template(
     db: AsyncSession, template: Template, user_id: int
 ) -> uuid.UUID:
-    from app.envelopes.models import Envelope, EnvelopeStatus
+    import os
+    import shutil
+    from sqlalchemy import select as _select
+    from app.envelopes.models import (
+        Document, Envelope, EnvelopeStatus, Field, FieldType, Recipient, RecipientRole,
+    )
+    from app.core.config import get_settings
+    settings = get_settings()
 
+    # 1. Create envelope
     envelope = Envelope(
         user_id=user_id,
         subject=template.name,
@@ -102,6 +110,80 @@ async def create_envelope_from_template(
         status=EnvelopeStatus.draft,
     )
     db.add(envelope)
+    await db.flush()
+
+    # 2. Copy source documents; build old_doc_id -> new Document map
+    doc_id_map: dict[str, Document] = {}
+    for old_doc_id_str in (template.document_ids or []):
+        result = await db.execute(
+            _select(Document).where(Document.id == uuid.UUID(old_doc_id_str))
+        )
+        orig = result.scalar_one_or_none()
+        if not orig:
+            continue
+        ext = os.path.splitext(orig.filename)[1]
+        new_filename = f"{uuid.uuid4()}{ext}"
+        new_path = os.path.join(settings.upload_dir, new_filename)
+        try:
+            shutil.copy2(orig.file_path, new_path)
+        except Exception:
+            continue
+        new_doc = Document(
+            envelope_id=envelope.id,
+            filename=new_filename,
+            original_filename=orig.original_filename,
+            file_path=new_path,
+            page_count=orig.page_count,
+            file_size=orig.file_size,
+            order=orig.order,
+        )
+        db.add(new_doc)
+        await db.flush()
+        doc_id_map[old_doc_id_str] = new_doc
+
+    # 3. Create recipients from roles; build old_recipient_id -> new Recipient map
+    recipient_id_map: dict[str, Recipient] = {}
+    for role_data in (template.roles or []):
+        try:
+            role_val = RecipientRole(role_data.get("role", "signer"))
+        except ValueError:
+            role_val = RecipientRole.signer
+        recip = Recipient(
+            envelope_id=envelope.id,
+            name=role_data.get("name", ""),
+            email=role_data.get("email", ""),
+            role=role_val,
+            routing_order=role_data.get("routing_order", 1),
+        )
+        db.add(recip)
+        await db.flush()
+        old_rid = role_data.get("recipient_id")
+        if old_rid:
+            recipient_id_map[old_rid] = recip
+
+    # 4. Recreate fields using the remapped doc/recipient IDs
+    for fc in (template.fields_config or []):
+        new_doc = doc_id_map.get(fc.get("document_id", ""))
+        new_rec = recipient_id_map.get(fc.get("recipient_id", ""))
+        if not new_doc or not new_rec:
+            continue
+        try:
+            ftype = FieldType(fc.get("type"))
+        except ValueError:
+            continue
+        db.add(Field(
+            document_id=new_doc.id,
+            recipient_id=new_rec.id,
+            type=ftype,
+            page=fc.get("page", 1),
+            x=float(fc.get("x", 0.0)),
+            y=float(fc.get("y", 0.0)),
+            width=float(fc.get("width", 100.0)),
+            height=float(fc.get("height", 40.0)),
+            required=bool(fc.get("required", True)),
+            label=fc.get("label"),
+        ))
+
     await db.commit()
     await db.refresh(envelope)
     return envelope.id

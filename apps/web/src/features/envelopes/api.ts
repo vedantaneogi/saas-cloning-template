@@ -364,6 +364,14 @@ export async function setRecipientAccessCode(
   await apiClient.put(`/recipients/${recipientId}`, { access_code: accessCode });
 }
 
+// Recipient private message
+export async function setRecipientPrivateMessage(
+  recipientId: string,
+  message: string,
+): Promise<void> {
+  await apiClient.put(`/recipients/${recipientId}`, { private_message: message });
+}
+
 // Verify access code for signing
 export async function verifySigningAccessCode(
   token: string,

@@ -26,6 +26,8 @@ class User(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    reset_token_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     envelopes: Mapped[list["Envelope"]] = relationship(  # noqa: F821

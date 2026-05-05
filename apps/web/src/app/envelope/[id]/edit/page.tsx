@@ -887,6 +887,16 @@ export default function EditorPage() {
     }
   }, [isLoading]);
 
+  // Auto-open preview when navigated here with ?preview=true (e.g. from detail page "View")
+  useEffect(() => {
+    if (!isLoading && typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("preview") === "true") {
+        setShowPreviewModal(true);
+      }
+    }
+  }, [isLoading]);
+
   const handleCloseWelcome = () => {
     setShowWelcomeModal(false);
     if (typeof window !== "undefined") {
@@ -931,12 +941,8 @@ export default function EditorPage() {
   const sendMutation = useMutation({
     mutationFn: async () => {
       if (saveTimeout.current) clearTimeout(saveTimeout.current);
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await saveFields(id, state.fields as any);
-      } catch (e) {
-        console.error("Field save failed:", e);
-      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await saveFields(id, state.fields as any);
       return sendEnvelope(id);
     },
     onSuccess: () => {

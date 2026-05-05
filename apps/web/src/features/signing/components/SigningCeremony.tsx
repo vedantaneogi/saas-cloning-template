@@ -11,6 +11,7 @@ import { SigningField } from "./SigningField";
 import type { Envelope } from "@/features/envelopes/types";
 import type { PlacedField, FieldType } from "@/features/editor/model/types";
 import { createField, updateField, deleteField } from "@/features/editor/api";
+import { useAuthStore } from "@/features/auth/store";
 import {
   Check,
   CheckCircle,
@@ -804,11 +805,13 @@ interface SigningCeremonyProps {
   /** The access code the signer already verified */
   accessCode?: string;
   isSelfSign?: boolean;
+  /** True only when sender == signer. Controls share modal — recipients skip it since backend notifies owner. */
+  isActuallySelfSign?: boolean;
 }
 
 type SigningStatus = "signing" | "completed" | "declined";
 
-export function SigningCeremony({ token, envelope, recipientId, fields, accessCode, isSelfSign }: SigningCeremonyProps) {
+export function SigningCeremony({ token, envelope, recipientId, fields, accessCode, isSelfSign, isActuallySelfSign }: SigningCeremonyProps) {
   const [status, setStatus] = useState<SigningStatus>("signing");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -827,6 +830,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
   // Modal / completion state
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const completionUser = useAuthStore((s) => s.user);
+  const [completionCountdown, setCompletionCountdown] = useState(5);
   const [showShareModal, setShowShareModal] = useState(false);
   const [completedDismissed, setCompletedDismissed] = useState(false);
 
@@ -858,10 +863,20 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const completedCount = requiredMyFields.filter((f) => !!fieldValues[f.id]).length;
   const allLocalFieldsFilled = localFields.length === 0 || localFields.every((f) => !f.required || !!fieldValues[f.id]);
   const isComplete = isSelfSign
-    ? allLocalFieldsFilled
+    ? (requiredMyFields.length > 0 ? completedCount >= requiredMyFields.length : allLocalFieldsFilled)
     : requiredMyFields.length === 0
       ? hasStarted
       : completedCount >= requiredMyFields.length;
+
+  useEffect(() => {
+    if (status !== "completed" || !completionUser) return;
+    if (completionCountdown <= 0) {
+      window.location.href = "/agreements";
+      return;
+    }
+    const t = setTimeout(() => setCompletionCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [status, completionUser, completionCountdown]);
 
   const scrollToField = useCallback((fieldId: string) => {
     const fieldEl = fieldRefs.current.get(fieldId);
@@ -918,8 +933,12 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
     },
     onSuccess: (data) => {
       if (data.downloadUrl) setDownloadUrl(data.downloadUrl);
-      setShowShareModal(true);
-      // completedDismissed (green bar) set only after user clicks Send in share modal
+      if (isActuallySelfSign) {
+        setShowShareModal(true);
+      } else {
+        // Recipient flow: show completion screen. Backend already notified envelope owner.
+        setStatus("completed");
+      }
     },
     onError: (err: unknown) => {
       const message =
@@ -1144,13 +1163,20 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                 Download Signed Document
               </a>
             )}
-            <a
-              href="/"
-              className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold border transition-colors no-underline"
-              style={{ borderColor: "#E0E0E0", color: "#6B6B6B" }}
-            >
-              Return to Home
-            </a>
+            {completionUser ? (
+              <a
+                href="/agreements"
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold border transition-colors no-underline"
+                style={{ borderColor: "#1B0A3C", color: "#1B0A3C" }}
+              >
+                Go to Agreements
+                <span className="text-xs opacity-50 ml-1">({completionCountdown}s)</span>
+              </a>
+            ) : (
+              <div className="w-full py-3 rounded-xl text-sm text-gray-500 border text-center" style={{ borderColor: "#E0E0E0" }}>
+                You can safely close this tab
+              </div>
+            )}
           </div>
           <p className="text-xs text-gray-400 mt-6">
             Powered by <span className="font-bold" style={{ color: "#1B0A3C" }}>DocuSign Clone</span>
@@ -1218,7 +1244,9 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
             </div>
           ) : (
             <span className="text-xs" style={{ color: "rgba(255,255,255,0.70)" }}>
-              Drag and drop fields from the left panel onto the document
+              {isSelfSign
+                ? "Drag and drop fields from the left panel onto the document"
+                : "Click each field in the document to fill it in, then click Finish"}
             </span>
           )}
         </div>

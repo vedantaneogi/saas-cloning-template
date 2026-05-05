@@ -13,8 +13,7 @@ export default function SigningPage() {
   const { token } = useParams<{ token: string }>();
   const [accessCodeVerified, setAccessCodeVerified] = useState(false);
   const [verifiedAccessCode, setVerifiedAccessCode] = useState<string | undefined>(undefined);
-  const [hasConsented, setHasConsented] = useState(false);
-  const [declinedConsent, setDeclinedConsent] = useState(false);
+  const [consentGiven, setConsentGiven] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["signing-session", token],
@@ -76,41 +75,7 @@ export default function SigningPage() {
     );
   }
 
-  if (declinedConsent) {
-    return (
-      <div
-        className="min-h-screen flex items-center justify-center p-4"
-        style={{ background: "linear-gradient(135deg, #1B0A3C, #2D0A7A)" }}
-      >
-        <div className="bg-white rounded-2xl shadow-2xl p-10 max-w-md w-full text-center">
-          <div
-            className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5"
-            style={{ background: "#FFF3E0" }}
-          >
-            <Warning size={28} color="#F57C00" weight="fill" />
-          </div>
-          <h1 className="text-xl font-bold mb-3" style={{ color: "#1B0A3C" }}>
-            Electronic Consent Declined
-          </h1>
-          <p className="text-gray-600 mb-3 leading-relaxed">
-            You have chosen not to receive electronic records. No signature has been applied.
-          </p>
-          <p className="text-sm text-gray-400 mb-8">
-            Please contact the sender to arrange an alternative signing method.
-          </p>
-          <a
-            href="/"
-            className="inline-block px-8 py-3 rounded-xl text-sm font-bold text-white no-underline"
-            style={{ background: "#1B0A3C" }}
-          >
-            Return to Home
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  // Access code gate (before consent)
+  // Access code gate
   if (data.requiresAccessCode && !accessCodeVerified) {
     return (
       <AccessCodeGate
@@ -127,19 +92,21 @@ export default function SigningPage() {
     );
   }
 
-  // Self-sign detection: signer email matches sender email
-  const signerEmail = data.recipientEmail || data.envelope.recipients?.find((r: { id: string; email?: string }) => r.id === data.recipientId)?.email;
-  const senderEmail = data.envelope.fromEmail;
-  const isSelfSign = !!(signerEmail && senderEmail && signerEmail.toLowerCase() === senderEmail.toLowerCase());
+  const signerEmail =
+    data.recipientEmail ||
+    data.envelope.recipients?.find((r: { id: string; email?: string }) => r.id === data.recipientId)?.email ||
+    data.envelope.fromEmail;
+  const isActuallySelfSign = !!(signerEmail && data.envelope.fromEmail && signerEmail.toLowerCase() === data.envelope.fromEmail.toLowerCase());
 
-  if (!hasConsented && !isSelfSign) {
+  // External recipients must consent before signing; self-signers skip the gate.
+  if (!isActuallySelfSign && !consentGiven) {
     return (
       <ConsentGate
         senderName={data.envelope.from || data.envelope.fromEmail || "Sender"}
         documentName={data.envelope.subject}
-        recipientName={data.recipientName}
-        onConsent={() => setHasConsented(true)}
-        onDecline={() => setDeclinedConsent(true)}
+        recipientName={data.recipientName || signerEmail}
+        onConsent={() => setConsentGiven(true)}
+        onDecline={() => window.location.href = "/"}
       />
     );
   }
@@ -151,7 +118,8 @@ export default function SigningPage() {
       recipientId={data.recipientId}
       fields={data.fields ?? []}
       accessCode={verifiedAccessCode}
-      isSelfSign={isSelfSign}
+      isSelfSign={isActuallySelfSign}
+      isActuallySelfSign={isActuallySelfSign}
     />
   );
 }

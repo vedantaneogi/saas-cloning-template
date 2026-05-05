@@ -2,8 +2,9 @@
 
 import { Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MagnifyingGlass, DotsThree, X, CaretDown, SlidersHorizontal } from "@phosphor-icons/react";
-import { getBulkBatches } from "@/features/envelopes/api";
+import { useRouter } from "next/navigation";
+import { MagnifyingGlass, DotsThree, X, CaretDown, SlidersHorizontal, PaperPlaneTilt } from "@phosphor-icons/react";
+import { getBulkBatches, createEnvelope } from "@/features/envelopes/api";
 import { EnvelopeSidebar } from "@/features/envelopes/components/EnvelopeSidebar";
 
 // ── Design tokens (matching agreements list page) ─────────────────────────────
@@ -115,13 +116,28 @@ function ProgressCell({ batch }: { batch: BatchRow }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function BulkSendBatchPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<string>("all");
   const [sharedAccessOpen, setSharedAccessOpen] = useState(false);
+  const [sharedAccessFilter, setSharedAccessFilter] = useState<"mine" | "shared">("mine");
+  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
+  const [searchField, setSearchField] = useState<"name" | "id">("name");
   const [kebabOpen, setKebabOpen] = useState<string | null>(null);
   const [dateFilterActive, setDateFilterActive] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleStartBulkSend = async () => {
+    setIsCreating(true);
+    try {
+      const env = await createEnvelope({ subject: "Bulk Send", recipients: [] });
+      router.push(`/envelope/${env.id}/prepare?bulk=true`);
+    } catch {
+      setIsCreating(false);
+    }
+  };
 
   const hasActiveFilters = dateFilterActive || statusFilter !== "all";
   const clearAllFilters = () => { setDateFilterActive(false); setStatusFilter("all"); setPendingStatus("all"); };
@@ -133,10 +149,10 @@ export default function BulkSendBatchPage() {
 
   // ── Filter client-side ────────────────────────────────────────────────────
   const filtered = batches.filter((b) => {
+    const q = search.trim().toLowerCase();
     const matchSearch =
-      search.trim() === "" ||
-      b.name.toLowerCase().includes(search.toLowerCase()) ||
-      b.batch_id.toLowerCase().includes(search.toLowerCase());
+      q === "" ||
+      (searchField === "name" ? b.name.toLowerCase().includes(q) : b.batch_id.toLowerCase().includes(q));
     const matchStatus =
       statusFilter === "all" || b.status.toLowerCase() === statusFilter.toLowerCase();
     return matchSearch && matchStatus;
@@ -145,6 +161,7 @@ export default function BulkSendBatchPage() {
   const closeAll = () => {
     setStatusDropdownOpen(false);
     setSharedAccessOpen(false);
+    setAdvancedSearchOpen(false);
     setKebabOpen(null);
   };
 
@@ -182,47 +199,75 @@ export default function BulkSendBatchPage() {
             Bulk Send
           </h1>
 
-          {/* Right: Shared Access dropdown */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          {/* Right: Start Bulk Send + Shared Access */}
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => setSharedAccessOpen((o) => !o)}
+              onClick={handleStartBulkSend}
+              disabled={isCreating}
               className="flex items-center gap-2"
               style={{
-                border: `1px solid ${BORDER_COLOR}`,
+                background: PRIMARY_COLOR,
+                color: "white",
+                border: "none",
                 borderRadius: "4px",
-                padding: "7px 14px",
+                padding: "8px 18px",
                 fontSize: "13px",
-                fontWeight: 500,
-                color: PRIMARY_TEXT,
-                background: "white",
-                cursor: "pointer",
+                fontWeight: 600,
+                cursor: isCreating ? "not-allowed" : "pointer",
                 fontFamily: DS_FONT,
+                opacity: isCreating ? 0.7 : 1,
               }}
             >
-              Shared Access
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <PaperPlaneTilt size={15} weight="bold" />
+              {isCreating ? "Creating…" : "Start Bulk Send"}
             </button>
-            {sharedAccessOpen && (
-              <div
-                className="absolute right-0 mt-1 bg-white rounded shadow-lg z-10 py-1"
-                style={{ border: `1px solid ${BORDER_COLOR}`, minWidth: "180px", top: "100%" }}
+
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setSharedAccessOpen((o) => !o)}
+                className="flex items-center gap-2"
+                style={{
+                  border: `1px solid ${BORDER_COLOR}`,
+                  borderRadius: "4px",
+                  padding: "7px 14px",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  color: PRIMARY_TEXT,
+                  background: "white",
+                  cursor: "pointer",
+                  fontFamily: DS_FONT,
+                }}
               >
-                <button
-                  className="w-full text-left hover:bg-gray-50"
-                  style={{ padding: "9px 16px", fontSize: "13px", color: PRIMARY_TEXT, fontFamily: DS_FONT }}
+                {sharedAccessFilter === "mine" ? "My Envelopes" : "Shared With Me"}
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              {sharedAccessOpen && (
+                <div
+                  className="absolute right-0 mt-1 bg-white rounded shadow-lg z-10 py-1"
+                  style={{ border: `1px solid ${BORDER_COLOR}`, minWidth: "180px", top: "100%" }}
                 >
-                  My Envelopes
-                </button>
-                <button
-                  className="w-full text-left hover:bg-gray-50"
-                  style={{ padding: "9px 16px", fontSize: "13px", color: PRIMARY_TEXT, fontFamily: DS_FONT }}
-                >
-                  Shared With Me
-                </button>
-              </div>
-            )}
+                  {(["mine", "shared"] as const).map((opt) => (
+                    <button
+                      key={opt}
+                      className="w-full text-left hover:bg-gray-50 flex items-center gap-2"
+                      style={{
+                        padding: "9px 16px",
+                        fontSize: "13px",
+                        color: sharedAccessFilter === opt ? PRIMARY_COLOR : PRIMARY_TEXT,
+                        fontFamily: DS_FONT,
+                        fontWeight: sharedAccessFilter === opt ? 600 : 400,
+                      }}
+                      onClick={() => { setSharedAccessFilter(opt); setSharedAccessOpen(false); }}
+                    >
+                      {sharedAccessFilter === opt && <span style={{ color: PRIMARY_COLOR, fontSize: "10px" }}>✓</span>}
+                      {opt === "mine" ? "My Envelopes" : "Shared With Me"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -342,21 +387,50 @@ export default function BulkSendBatchPage() {
         </div>
 
         {/* Advanced search dropdown */}
-        <button
-          className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded"
-          style={{
-            borderColor: BORDER_COLOR,
-            color: SECONDARY_TEXT,
-            background: "white",
-            borderRadius: "4px",
-            fontFamily: DS_FONT,
-            fontWeight: 400,
-            cursor: "pointer",
-          }}
-        >
-          Advanced search
-          <CaretDown size={14} weight="regular" />
-        </button>
+        <div style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => setAdvancedSearchOpen((o) => !o)}
+            className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded"
+            style={{
+              borderColor: advancedSearchOpen ? PRIMARY_COLOR : BORDER_COLOR,
+              color: advancedSearchOpen ? PRIMARY_TEXT : SECONDARY_TEXT,
+              background: advancedSearchOpen ? "rgba(19,0,50,0.04)" : "white",
+              borderRadius: "4px",
+              fontFamily: DS_FONT,
+              fontWeight: 400,
+              cursor: "pointer",
+            }}
+          >
+            Advanced search
+            <CaretDown size={14} weight="regular" />
+          </button>
+          {advancedSearchOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setAdvancedSearchOpen(false)} />
+              <div className="absolute left-0 top-full mt-1 bg-white rounded shadow-lg border z-20 py-4 px-5" style={{ borderColor: BORDER_COLOR, minWidth: "220px", borderRadius: "8px" }}>
+                <p style={{ fontSize: "14px", fontWeight: 600, color: PRIMARY_TEXT, margin: "0 0 10px", fontFamily: DS_FONT }}>Search by</p>
+                {([["name", "Batch Name"], ["id", "Batch ID"]] as const).map(([val, label]) => (
+                  <label key={val} className="flex items-center gap-3 py-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="bulk-search-field"
+                      checked={searchField === val}
+                      onChange={() => setSearchField(val)}
+                      style={{ accentColor: PRIMARY_COLOR, width: "16px", height: "16px" }}
+                    />
+                    <span style={{ fontSize: "14px", color: PRIMARY_TEXT, fontFamily: DS_FONT }}>{label}</span>
+                  </label>
+                ))}
+                <div className="flex justify-end mt-3 pt-3" style={{ borderTop: `1px solid ${BORDER_COLOR}` }}>
+                  <button
+                    onClick={() => setAdvancedSearchOpen(false)}
+                    style={{ background: PRIMARY_COLOR, color: "white", border: "none", borderRadius: "4px", padding: "6px 18px", cursor: "pointer", fontSize: "13px", fontWeight: 500, fontFamily: DS_FONT }}
+                  >Apply</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Clear All */}
         {hasActiveFilters && (
@@ -451,6 +525,26 @@ export default function BulkSendBatchPage() {
                   <p style={{ fontSize: "14px", color: MUTED_TEXT, fontFamily: DS_FONT, margin: 0, maxWidth: "320px" }}>
                     Batch sends will appear here once you send to multiple recipients.
                   </p>
+                  <button
+                    onClick={handleStartBulkSend}
+                    disabled={isCreating}
+                    style={{
+                      marginTop: "8px",
+                      background: PRIMARY_COLOR,
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "10px 24px",
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      cursor: isCreating ? "not-allowed" : "pointer",
+                      fontFamily: DS_FONT,
+                      width: "fit-content",
+                      opacity: isCreating ? 0.7 : 1,
+                    }}
+                  >
+                    {isCreating ? "Creating…" : "Start Bulk Send"}
+                  </button>
                 </div>
               </div>
             </td>

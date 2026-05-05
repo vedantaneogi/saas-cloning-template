@@ -494,7 +494,7 @@ export function EnvelopeList() {
 
   const filterToStatus: Record<string, string | undefined> = {
     inbox: undefined, // uses backend "inbox" filter
-    sent: "sent",
+    sent: undefined, // uses backend "sent" filter (covers sent + delivered)
     completed: "completed",
     // "action-required", "deleted", "waiting", "expiring", "auth-failed" all use
     // backend virtual filters instead of a single status value.
@@ -512,6 +512,7 @@ export function EnvelopeList() {
   // Used when the sidebar filter has special multi-status or non-status semantics.
   const filterToBackendFilter: Record<string, string | undefined> = {
     inbox: "inbox",
+    sent: "sent",
     waiting: "waiting_for_others",
     deleted: "deleted",
     expiring: "expiring_soon",
