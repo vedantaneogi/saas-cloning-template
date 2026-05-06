@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { messages, folders, conversations as conversationsApi } from '@/lib/api'
@@ -67,8 +67,30 @@ export function MessageList() {
   const conversationGrouping = useMailStore((s) => s.conversationGrouping)
   const sortBy = useMailStore((s) => s.sortBy)
   const sortOrder = useMailStore((s) => s.sortOrder)
+  const setSortBy = useMailStore((s) => s.setSortBy)
   const setSortOrder = useMailStore((s) => s.setSortOrder)
   const isInbox = selectedFolderSlug === 'inbox'
+
+  // Filter & sort dropdown state
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false)
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const [jumpMenuOpen, setJumpMenuOpen] = useState(false)
+  const [activeFilter, setActiveFilter] = useState<string | null>(null)
+  const filterRef = useRef<HTMLDivElement>(null)
+  const sortRef = useRef<HTMLDivElement>(null)
+  const jumpRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!filterMenuOpen && !sortMenuOpen && !jumpMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (filterMenuOpen && filterRef.current && !filterRef.current.contains(t)) setFilterMenuOpen(false)
+      if (sortMenuOpen && sortRef.current && !sortRef.current.contains(t)) setSortMenuOpen(false)
+      if (jumpMenuOpen && jumpRef.current && !jumpRef.current.contains(t)) setJumpMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [filterMenuOpen, sortMenuOpen, jumpMenuOpen])
   const queryClient = useQueryClient()
   const selectedMessageIds = useMailStore((s) => s.selectedMessageIds)
   const selectAllMessages = useMailStore((s) => s.selectAllMessages)
@@ -128,7 +150,19 @@ export function MessageList() {
     enabled: !isFollowupView,
   })
 
-  const rawMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
+  const allMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
+
+  // Apply client-side filter
+  const rawMessages = activeFilter ? allMessages.filter((msg) => {
+    switch (activeFilter) {
+      case 'unread': return !msg.is_read
+      case 'flagged': return msg.is_flagged
+      case 'has_attachment': return msg.has_attachments
+      case 'to_me': return true // All messages in inbox are "to me"
+      case 'mentions': return true // Placeholder
+      default: return true
+    }
+  }) : allMessages
 
   // Fetch conversation list to get accurate message_count per conversation
   const convIds = [...new Set(rawMessages.filter((m) => m.conversation_id).map((m) => m.conversation_id!))]
@@ -155,30 +189,15 @@ export function MessageList() {
     })
   }, [])
 
-  // Conversation grouping: group by conversation_id, or by normalized subject as fallback
+  // Conversation grouping: group strictly by conversation_id only
+  // Messages without a conversation_id are standalone (never grouped by subject)
   type ThreadGroup = { latest: Message; children: Message[]; count: number; key: string }
   const threadGroups: ThreadGroup[] = (() => {
     if (!conversationGrouping) return rawMessages.map((m) => ({ latest: m, children: [], count: 1, key: m.id }))
     const grouped = new Map<string, { latest: Message; children: Message[] }>()
-    // Map from normalized subject to conversation key for fallback grouping
-    const subjectMap = new Map<string, string>()
-    const normalizeSubject = (s: string) => s.replace(/^(re|fw|fwd):\s*/gi, '').trim().toLowerCase()
     for (const msg of rawMessages) {
-      let key = msg.conversation_id ?? null
-      // Fallback: group by normalized subject when no conversation_id
-      if (!key) {
-        const normSubj = normalizeSubject(msg.subject || '')
-        if (normSubj && subjectMap.has(normSubj)) {
-          key = subjectMap.get(normSubj)!
-        } else {
-          key = msg.id
-          if (normSubj) subjectMap.set(normSubj, key)
-        }
-      } else {
-        // Register this conversation_id for subject fallback matching
-        const normSubj = normalizeSubject(msg.subject || '')
-        if (normSubj && !subjectMap.has(normSubj)) subjectMap.set(normSubj, key)
-      }
+      // Only group by explicit conversation_id — no subject fallback
+      const key = msg.conversation_id ?? msg.id
       const existing = grouped.get(key)
       if (!existing) {
         grouped.set(key, { latest: msg, children: [] })
@@ -281,35 +300,101 @@ export function MessageList() {
           </button>
 
           {/* Jump to */}
-          <button
-            aria-label="Jump to"
-            title="Jump to"
-            className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M5 10l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
+          <div className="relative" ref={jumpRef}>
+            <button
+              onClick={() => { setJumpMenuOpen((v) => !v); setFilterMenuOpen(false); setSortMenuOpen(false) }}
+              aria-label="Jump to"
+              title="Jump to"
+              className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M5 10l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            {jumpMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-36 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+                {(['Today', 'Yesterday', 'This week', 'Last week', 'Older'] as DateGroup[]).map((g) => (
+                  <button key={g} onClick={() => {
+                    const el = document.querySelector(`[data-date-group="${g}"]`)
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    setJumpMenuOpen(false)
+                  }}
+                    className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
+                  >{g}</button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Filter */}
-          <button
-            aria-label="Filter"
-            title="Filter"
-            className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          </button>
+          <div className="relative" ref={filterRef}>
+            <button
+              onClick={() => { setFilterMenuOpen((v) => !v); setJumpMenuOpen(false); setSortMenuOpen(false) }}
+              aria-label="Filter"
+              title="Filter"
+              className={cn('p-1.5 rounded transition-colors', activeFilter ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:bg-[#F3F2F1]')}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            </button>
+            {filterMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'unread', label: 'Unread' },
+                  { key: 'to_me', label: 'To me' },
+                  { key: 'flagged', label: 'Flagged' },
+                  { key: 'has_attachment', label: 'Has attachments' },
+                  { key: 'mentions', label: 'Mentions me' },
+                ].map(({ key, label }) => (
+                  <button key={key} onClick={() => {
+                    setActiveFilter(key === 'all' ? null : key)
+                    setFilterMenuOpen(false)
+                  }}
+                    className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors',
+                      (activeFilter === key || (key === 'all' && !activeFilter)) ? 'text-[#0078D4] font-medium' : 'text-[#323130]'
+                    )}
+                  >{label}</button>
+                ))}
+              </div>
+            )}
+          </div>
 
-          {/* Sort */}
+          {/* Sort direction */}
           <button
             onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
             aria-label={`Sort ${sortOrder === 'desc' ? 'oldest first' : 'newest first'}`}
-            title={`Sorted: By Date ${sortOrder === 'desc' ? '(Newest)' : '(Oldest)'}`}
+            title={`Sorted: ${sortBy === 'date' ? 'By Date' : sortBy === 'from' ? 'By From' : sortBy === 'subject' ? 'By Subject' : 'By Size'} ${sortOrder === 'desc' ? '(Newest)' : '(Oldest)'}`}
             className="p-1.5 text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
           >
             {sortOrder === 'desc' ? <SortDesc size={14} /> : <SortAsc size={14} />}
           </button>
 
-          {/* By Date label */}
-          <span className="text-xs text-[#605E5C] ml-0.5 whitespace-nowrap">By Date</span>
+          {/* Sort field dropdown */}
+          <div className="relative" ref={sortRef}>
+            <button
+              onClick={() => { setSortMenuOpen((v) => !v); setFilterMenuOpen(false); setJumpMenuOpen(false) }}
+              className="text-xs text-[#605E5C] ml-0.5 whitespace-nowrap hover:bg-[#F3F2F1] px-1 py-0.5 rounded transition-colors cursor-pointer"
+            >
+              {sortBy === 'date' ? 'By Date' : sortBy === 'from' ? 'By From' : sortBy === 'subject' ? 'By Subject' : 'By Size'}
+            </button>
+            {sortMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-32 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+                {([
+                  { key: 'date', label: 'By Date' },
+                  { key: 'from', label: 'By From' },
+                  { key: 'subject', label: 'By Subject' },
+                  { key: 'size', label: 'By Size' },
+                ] as const).map(({ key, label }) => (
+                  <button key={key} onClick={() => {
+                    setSortBy(key)
+                    setSortMenuOpen(false)
+                  }}
+                    className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors',
+                      sortBy === key ? 'text-[#0078D4] font-medium' : 'text-[#323130]'
+                    )}
+                  >{label}</button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -393,7 +478,7 @@ export function MessageList() {
             />
           ) : (
             groupMessages(messageList).map(({ group, items }) => (
-              <div key={group}>
+              <div key={group} data-date-group={group}>
                 <div className="px-3 py-1 mt-1">
                   <span className="text-xs font-semibold text-[#605E5C] uppercase tracking-wide">{group}</span>
                 </div>

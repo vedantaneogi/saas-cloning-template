@@ -425,8 +425,11 @@ export const messages = {
     q?: string
     from?: string
     to?: string
+    cc?: string
     subject?: string
+    keywords?: string
     has_attachment?: boolean
+    is_read?: boolean
     date_from?: string
     date_to?: string
     folder_id?: string

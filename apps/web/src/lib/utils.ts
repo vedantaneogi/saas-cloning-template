@@ -42,6 +42,18 @@ export function formatFullDate(dateStr: string | null | undefined): string {
   }
 }
 
+/** Outlook-style short date: "Sat 5/2/2026 1:22 PM" */
+export function formatOutlookDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  try {
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) return ''
+    return format(date, 'EEE M/d/yyyy h:mm a')
+  } catch {
+    return ''
+  }
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`

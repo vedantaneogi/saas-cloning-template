@@ -349,8 +349,11 @@ async def search_messages(
     q: Optional[str] = None,
     from_addr: Optional[str] = Query(None, alias="from"),
     to_addr: Optional[str] = Query(None, alias="to"),
+    cc: Optional[str] = None,
     subject: Optional[str] = None,
+    keywords: Optional[str] = None,
     has_attachment: Optional[bool] = None,
+    is_read: Optional[bool] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
     folder_id: Optional[uuid.UUID] = None,
@@ -373,10 +376,22 @@ async def search_messages(
         filters.append(Message.from_address.ilike(f"%{from_addr}%"))
     if to_addr:
         filters.append(cast(Message.to_addresses, String).ilike(f"%{to_addr}%"))
+    if cc:
+        filters.append(cast(Message.cc_addresses, String).ilike(f"%{cc}%"))
     if subject:
         filters.append(Message.subject.ilike(f"%{subject}%"))
+    if keywords:
+        term = f"%{keywords}%"
+        filters.append(
+            or_(
+                Message.subject.ilike(term),
+                Message.body_text.ilike(term),
+            )
+        )
     if has_attachment is not None:
         filters.append(Message.has_attachments == has_attachment)
+    if is_read is not None:
+        filters.append(Message.is_read == is_read)
     if date_from:
         filters.append(Message.received_at >= date_from)
     if date_to:

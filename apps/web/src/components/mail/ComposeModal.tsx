@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { messages, signatures } from '@/lib/api'
 import { useUIStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
+import { useEditorStore } from '@/store/editor'
 import { RecipientField } from './RecipientField'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { Button } from '@/components/ui/Button'
@@ -111,6 +112,52 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signatureList])
+
+  // Register compose callbacks so ribbon can control attach, signature, importance, discard
+  const setOnAttach = useEditorStore((s) => s.setOnAttach)
+  const setOnDiscard = useEditorStore((s) => s.setOnDiscard)
+  const setStoreImportance = useEditorStore((s) => s.setImportance)
+  const setStoreSignatures = useEditorStore((s) => s.setSignatures)
+  const setStoreSelectedSigId = useEditorStore((s) => s.setSelectedSignatureId)
+  const setOnInsertSignature = useEditorStore((s) => s.setOnInsertSignature)
+  const setOnRemoveSignature = useEditorStore((s) => s.setOnRemoveSignature)
+
+  useEffect(() => {
+    if (!inline) return
+    setOnAttach(() => fileInputRef.current?.click())
+    setOnDiscard(() => onClose())
+    return () => { setOnAttach(null); setOnDiscard(null) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inline])
+
+  // Re-register signature callbacks whenever dependencies change (avoids stale closures)
+  useEffect(() => {
+    if (!inline) return
+    setOnInsertSignature((sigId: string) => insertSignature(sigId))
+    setOnRemoveSignature(() => removeSignature())
+    return () => { setOnInsertSignature(null); setOnRemoveSignature(null) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inline, signatureList, bodyHtml, selectedSignature])
+
+  // Sync importance and signatures to store for ribbon access
+  useEffect(() => {
+    if (inline) setStoreImportance(importance)
+  }, [inline, importance, setStoreImportance])
+
+  useEffect(() => {
+    if (inline) setStoreSignatures(signatureList)
+  }, [inline, signatureList, setStoreSignatures])
+
+  useEffect(() => {
+    if (inline) setStoreSelectedSigId(selectedSignature)
+  }, [inline, selectedSignature, setStoreSelectedSigId])
+
+  // Listen for importance changes from ribbon
+  const storeImportance = useEditorStore((s) => s.importance)
+  useEffect(() => {
+    if (inline && storeImportance !== importance) setImportance(storeImportance)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeImportance])
 
   const { register, handleSubmit, watch } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -416,6 +463,8 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
             placeholder="Write your message..."
             minHeight="180px"
             className="border-0 rounded-none h-full"
+            hideToolbar
+            registerGlobal
           />
         </div>
 
@@ -434,46 +483,9 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
           </div>
         )}
 
-        {/* Bottom bar — attach, signature, importance, discard */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-[#EDEBE9] flex-shrink-0 bg-[#FAF9F8]">
-          <div className="flex items-center gap-1">
-            <input ref={fileInputRef} type="file" multiple className="hidden"
-              onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) setAttachedFiles((prev) => [...prev, ...files]); e.target.value = '' }} />
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-1.5 text-[#605E5C] hover:bg-[#EDEBE9] rounded">
-              <Paperclip size={16} />
-            </button>
-            {signatureList.length > 0 && (
-              <div className="relative" ref={sigMenuRef}>
-                <button type="button" onClick={() => setSigMenuOpen((v) => !v)}
-                  className={cn('p-1.5 hover:bg-[#EDEBE9] rounded flex items-center gap-0.5 text-xs', selectedSignature ? 'text-[#0078D4]' : 'text-[#605E5C]')}>
-                  Signature <ChevronDown size={10} />
-                </button>
-                {sigMenuOpen && (
-                  <div className="absolute bottom-8 left-0 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg">
-                    {signatureList.map((sig) => (
-                      <button key={sig.id} type="button" onClick={() => insertSignature(sig.id)}
-                        className={cn('w-full text-left text-sm px-3 py-2 hover:bg-[#F3F2F1]', selectedSignature === sig.id ? 'text-[#0078D4]' : 'text-[#323130]')}>
-                        {sig.name}
-                      </button>
-                    ))}
-                    {selectedSignature && (<><div className="h-px bg-[#EDEBE9]" />
-                      <button type="button" onClick={removeSignature} className="w-full text-left text-sm text-[#605E5C] px-3 py-2 hover:bg-[#F3F2F1]">Remove signature</button>
-                    </>)}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <button type="button" onClick={() => setImportance(importance === 'high' ? 'normal' : 'high')}
-              className={cn('p-1.5 rounded text-sm font-bold w-7 h-7 flex items-center justify-center', importance === 'high' ? 'text-[#D13438] bg-[#FDE7E9]' : 'text-[#605E5C] hover:bg-[#EDEBE9]')}>!</button>
-            <button type="button" onClick={() => setImportance(importance === 'low' ? 'normal' : 'low')}
-              className={cn('p-1.5 rounded w-7 h-7 flex items-center justify-center', importance === 'low' ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:bg-[#EDEBE9]')}>
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3v7M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </button>
-            <button type="button" onClick={onClose} className="text-xs text-[#605E5C] hover:text-[#323130] px-2 py-1 hover:bg-[#EDEBE9] rounded">Discard</button>
-          </div>
-        </div>
+        {/* Hidden file input for ribbon attach button */}
+        <input ref={fileInputRef} type="file" multiple className="hidden"
+          onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) setAttachedFiles((prev) => [...prev, ...files]); e.target.value = '' }} />
       </div>
     )
   }
