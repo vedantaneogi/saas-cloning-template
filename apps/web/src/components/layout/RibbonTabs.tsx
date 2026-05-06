@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
+import { useEditorStore } from '@/store/editor'
 import { messages, folders, quickSteps, settings, categories } from '@/lib/api'
 import {
   Menu, ReplyAll, Trash2, Archive, MailOpen, Zap,
@@ -187,54 +188,392 @@ export function RibbonTabs() {
 
 // ─── Compose Message Ribbon (shown when composing inline) ────────────────────
 function ComposeMessageRibbon() {
+  const editor = useEditorStore((s) => s.editor)
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  const [highlightPickerOpen, setHighlightPickerOpen] = useState(false)
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkText, setLinkText] = useState('')
+  const colorBtnRef = useRef<HTMLDivElement>(null)
+  const highlightBtnRef = useRef<HTMLDivElement>(null)
+  const linkBtnRef = useRef<HTMLDivElement>(null)
+  const colorRef = useRef<HTMLDivElement>(null)
+  const highlightRef = useRef<HTMLDivElement>(null)
+  const linkRef = useRef<HTMLDivElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+
+  const TEXT_COLORS = ['#000000', '#D13438', '#0078D4', '#107C10', '#8764B8', '#FF8C00', '#605E5C']
+  const HIGHLIGHT_COLORS = ['#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#FFC0CB', '#FFD700', 'transparent']
+
+  const FONT_FAMILIES = ['Aptos', 'Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana']
+  const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36']
+
+  const getPos = (ref: React.RefObject<HTMLDivElement | null>) => {
+    const rect = ref.current?.getBoundingClientRect()
+    return rect ? { top: rect.bottom + 4, left: rect.left } : { top: 0, left: 0 }
+  }
+
+  // Close pickers on outside click
+  useEffect(() => {
+    if (!colorPickerOpen && !highlightPickerOpen && !linkDialogOpen) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (colorPickerOpen && colorRef.current && !colorRef.current.contains(t) && colorBtnRef.current && !colorBtnRef.current.contains(t)) setColorPickerOpen(false)
+      if (highlightPickerOpen && highlightRef.current && !highlightRef.current.contains(t) && highlightBtnRef.current && !highlightBtnRef.current.contains(t)) setHighlightPickerOpen(false)
+      if (linkDialogOpen && linkRef.current && !linkRef.current.contains(t) && linkBtnRef.current && !linkBtnRef.current.contains(t)) setLinkDialogOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [colorPickerOpen, highlightPickerOpen, linkDialogOpen])
+
+  const run = (cmd: () => void) => {
+    if (!editor) return
+    cmd()
+  }
+
+  const openLinkDialog = () => {
+    if (!editor) return
+    const { from, to } = editor.state.selection
+    const selectedText = from !== to ? editor.state.doc.textBetween(from, to, ' ') : ''
+    setLinkText(selectedText)
+    setLinkUrl(editor.getAttributes('link')?.href ?? '')
+    setLinkDialogOpen(true)
+  }
+
+  const submitLink = () => {
+    if (!editor || !linkUrl) return
+    const { from, to } = editor.state.selection
+    if (from !== to) {
+      editor.chain().focus().setLink({ href: linkUrl }).run()
+    } else {
+      editor.chain().focus().insertContent(`<a href="${linkUrl}">${linkText.trim() || linkUrl}</a> `).run()
+    }
+    setLinkDialogOpen(false)
+    setLinkUrl('')
+    setLinkText('')
+  }
+
+  const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !editor) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      editor.chain().focus().setImage({ src: reader.result as string }).run()
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  const currentFont = editor?.getAttributes('textStyle')?.fontFamily || 'Aptos'
+  const currentColor = editor?.getAttributes('textStyle')?.color || '#000000'
+
   return (
     <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Formatting toolbar">
-      {/* Font controls placeholder */}
-      <span className="text-xs text-[#605E5C] px-2">Aptos</span>
-      <select className="text-xs border border-[#EDEBE9] rounded px-1 py-0.5 text-[#323130] bg-white focus:outline-none w-12">
-        <option>12</option><option>10</option><option>11</option><option>14</option><option>16</option><option>18</option><option>24</option>
+      {/* Font family */}
+      <select
+        value={currentFont}
+        onChange={(e) => run(() => editor!.chain().focus().setFontFamily(e.target.value).run())}
+        className="text-xs border border-[#EDEBE9] rounded px-1 py-0.5 text-[#323130] bg-white focus:outline-none w-20 h-7"
+        title="Font family"
+      >
+        {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
       </select>
+
+      {/* Font size */}
+      <select
+        onChange={(e) => run(() => {
+          const size = e.target.value
+          editor!.chain().focus().setFontSize(`${size}pt`).run()
+        })}
+        className="text-xs border border-[#EDEBE9] rounded px-1 py-0.5 text-[#323130] bg-white focus:outline-none w-12 h-7"
+        title="Font size"
+        defaultValue="12"
+      >
+        {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
+
       <RibbonSep />
-      <RibbonBtn label="Bold"><span className="font-bold text-sm">B</span></RibbonBtn>
-      <RibbonBtn label="Italic"><span className="italic text-sm">I</span></RibbonBtn>
-      <RibbonBtn label="Underline"><span className="underline text-sm">U</span></RibbonBtn>
-      <RibbonBtn label="Strikethrough"><span className="line-through text-sm">S</span></RibbonBtn>
-      <RibbonSep />
-      <RibbonBtn label="Text color">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 12h8M6 2l-4 9h2l1-2.5h6L12 11h2L10 2H6z" stroke="currentColor" strokeWidth="1.1"/><rect x="2" y="13" width="12" height="2" fill="#D13438" rx="0.5"/></svg>
+
+      {/* Bold */}
+      <RibbonBtn label="Bold" active={editor?.isActive('bold')} onClick={() => run(() => editor!.chain().focus().toggleBold().run())}>
+        <span className="font-bold text-sm">B</span>
       </RibbonBtn>
-      <RibbonBtn label="Highlight">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 12h10M5 3l6 8H5V3z" fill="#FFD700" stroke="currentColor" strokeWidth="0.8"/></svg>
+      {/* Italic */}
+      <RibbonBtn label="Italic" active={editor?.isActive('italic')} onClick={() => run(() => editor!.chain().focus().toggleItalic().run())}>
+        <span className="italic text-sm">I</span>
       </RibbonBtn>
+      {/* Underline */}
+      <RibbonBtn label="Underline" active={editor?.isActive('underline')} onClick={() => run(() => editor!.chain().focus().toggleUnderline().run())}>
+        <span className="underline text-sm">U</span>
+      </RibbonBtn>
+      {/* Strikethrough */}
+      <RibbonBtn label="Strikethrough" active={editor?.isActive('strike')} onClick={() => run(() => editor!.chain().focus().toggleStrike().run())}>
+        <span className="line-through text-sm">S</span>
+      </RibbonBtn>
+
       <RibbonSep />
-      <RibbonBtn label="Bullets">
+
+      {/* Text color */}
+      <div ref={colorBtnRef}>
+        <RibbonBtn label="Text color" onClick={() => { setPopupPos(getPos(colorBtnRef)); setColorPickerOpen((v) => !v); setHighlightPickerOpen(false) }}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 12h8M6 2l-4 9h2l1-2.5h6L12 11h2L10 2H6z" stroke="currentColor" strokeWidth="1.1"/><rect x="2" y="13" width="12" height="2" fill={currentColor} rx="0.5"/></svg>
+        </RibbonBtn>
+      </div>
+      {colorPickerOpen && (
+        <div ref={colorRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-2 flex gap-1 animate-fade-in" style={{ top: popupPos.top, left: popupPos.left }}>
+          {TEXT_COLORS.map((c) => (
+            <button key={c} type="button" title={c}
+              onClick={() => { run(() => editor!.chain().focus().setColor(c).run()); setColorPickerOpen(false) }}
+              className="w-6 h-6 rounded border border-[#D2D0CE] hover:scale-110 transition-transform" style={{ backgroundColor: c }} />
+          ))}
+          <button type="button" title="Remove color"
+            onClick={() => { run(() => editor!.chain().focus().unsetColor().run()); setColorPickerOpen(false) }}
+            className="w-6 h-6 rounded border border-[#D2D0CE] hover:scale-110 transition-transform text-[10px] text-[#605E5C]">x</button>
+        </div>
+      )}
+
+      {/* Highlight */}
+      <div ref={highlightBtnRef}>
+        <RibbonBtn label="Highlight" active={editor?.isActive('highlight')} onClick={() => { setPopupPos(getPos(highlightBtnRef)); setHighlightPickerOpen((v) => !v); setColorPickerOpen(false) }}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 12h10M5 3l6 8H5V3z" fill="#FFD700" stroke="currentColor" strokeWidth="0.8"/></svg>
+        </RibbonBtn>
+      </div>
+      {highlightPickerOpen && (
+        <div ref={highlightRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-2 flex gap-1 animate-fade-in" style={{ top: popupPos.top, left: popupPos.left }}>
+          {HIGHLIGHT_COLORS.map((c) => (
+            <button key={c} type="button" title={c === 'transparent' ? 'No highlight' : c}
+              onClick={() => {
+                if (c === 'transparent') run(() => editor!.chain().focus().unsetHighlight().run())
+                else run(() => editor!.chain().focus().toggleHighlight({ color: c }).run())
+                setHighlightPickerOpen(false)
+              }}
+              className="w-6 h-6 rounded border border-[#D2D0CE] hover:scale-110 transition-transform"
+              style={{ backgroundColor: c === 'transparent' ? '#fff' : c }}>
+              {c === 'transparent' && <span className="text-[8px] text-[#D13438]">/</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <RibbonSep />
+
+      {/* Bullets */}
+      <RibbonBtn label="Bullets" active={editor?.isActive('bulletList')} onClick={() => run(() => editor!.chain().focus().toggleBulletList().run())}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="2" cy="3" r="1.2" fill="currentColor"/><circle cx="2" cy="7" r="1.2" fill="currentColor"/><circle cx="2" cy="11" r="1.2" fill="currentColor"/><path d="M5 3h7M5 7h7M5 11h7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
       </RibbonBtn>
-      <RibbonBtn label="Numbering">
+      {/* Numbering */}
+      <RibbonBtn label="Numbering" active={editor?.isActive('orderedList')} onClick={() => run(() => editor!.chain().focus().toggleOrderedList().run())}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><text x="0" y="4.5" fontSize="5" fill="currentColor" fontFamily="Arial">1.</text><text x="0" y="8.5" fontSize="5" fill="currentColor" fontFamily="Arial">2.</text><text x="0" y="12.5" fontSize="5" fill="currentColor" fontFamily="Arial">3.</text><path d="M5 3h7M5 7h7M5 11h7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
       </RibbonBtn>
+
       <RibbonSep />
-      <RibbonBtn label="Align left">
+
+      {/* Alignment */}
+      <RibbonBtn label="Align left" active={editor?.isActive({ textAlign: 'left' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('left').run())}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M1 6h8M1 9h12M1 12h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
       </RibbonBtn>
-      <RibbonBtn label="Align center">
+      <RibbonBtn label="Align center" active={editor?.isActive({ textAlign: 'center' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('center').run())}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M3 6h8M1 9h12M3 12h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
       </RibbonBtn>
-      <RibbonBtn label="Align right">
+      <RibbonBtn label="Align right" active={editor?.isActive({ textAlign: 'right' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('right').run())}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M5 6h8M1 9h12M5 12h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
       </RibbonBtn>
+
       <RibbonSep />
-      <RibbonBtn label="Link">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 8l2-2M4.5 9.5a2.5 2.5 0 010-3.5l1-1a2.5 2.5 0 013.5 0M9.5 4.5a2.5 2.5 0 010 3.5l-1 1a2.5 2.5 0 01-3.5 0" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
-      </RibbonBtn>
-      <RibbonBtn label="Insert image">
+
+      {/* Link */}
+      <div ref={linkBtnRef}>
+        <RibbonBtn label="Link" onClick={() => { setPopupPos(getPos(linkBtnRef)); openLinkDialog() }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 8l2-2M4.5 9.5a2.5 2.5 0 010-3.5l1-1a2.5 2.5 0 013.5 0M9.5 4.5a2.5 2.5 0 010 3.5l-1 1a2.5 2.5 0 01-3.5 0" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
+        </RibbonBtn>
+      </div>
+      {linkDialogOpen && (
+        <div ref={linkRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-64 animate-fade-in space-y-2" style={{ top: popupPos.top, left: popupPos.left }}>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#605E5C] w-12">Display:</span>
+              <input type="text" value={linkText} onChange={(e) => setLinkText(e.target.value)} placeholder="Text to display"
+                className="flex-1 text-xs border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#605E5C] w-12">URL:</span>
+              <input autoFocus type="url" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://..."
+                onKeyDown={(e) => { if (e.key === 'Enter') submitLink(); if (e.key === 'Escape') setLinkDialogOpen(false) }}
+                className="flex-1 text-xs border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]" />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={submitLink} className="text-xs bg-[#0078D4] text-white px-3 py-1 rounded hover:bg-[#106EBE]">Insert</button>
+              <button onClick={() => setLinkDialogOpen(false)} className="text-xs text-[#605E5C] px-2 py-1 hover:bg-[#EDEBE9] rounded">Cancel</button>
+            </div>
+        </div>
+      )}
+
+      {/* Insert image */}
+      <RibbonBtn label="Insert image" onClick={() => imageInputRef.current?.click()}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.1"/><circle cx="4.5" cy="5.5" r="1.2" fill="currentColor"/><path d="M1 10l3-3 2 2 3-3 4 4" stroke="currentColor" strokeWidth="1"/></svg>
       </RibbonBtn>
+      <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+
       <RibbonSep />
-      <RibbonBtn label="More formatting">
-        <MoreHorizontal size={15} />
+
+      {/* More formatting — Outlook: increase/decrease indent, clear formatting, etc. */}
+      <MoreFormattingBtn editor={editor} />
+
+      <RibbonSep />
+
+      {/* Link + Image (already above, but Outlook puts them after ...) */}
+
+      {/* Attach file */}
+      <RibbonBtn label="Attach file" onClick={() => useEditorStore.getState().triggerAttach()}>
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8.5 2.5v9a2.5 2.5 0 01-5 0V4a1.5 1.5 0 013 0v7a.5.5 0 01-1 0V4.5" stroke="#0078D4" strokeWidth="1.2" strokeLinecap="round"/></svg>
+      </RibbonBtn>
+
+      <RibbonSep />
+
+      {/* Signature */}
+      <SignatureRibbonBtn />
+
+      <RibbonSep />
+
+      {/* Importance */}
+      <ImportanceRibbonBtns />
+
+      <RibbonSep />
+
+      {/* Discard */}
+      <RibbonBtn label="Discard" onClick={() => useEditorStore.getState().onDiscard?.()}>
+        <Trash2 size={14} />
       </RibbonBtn>
     </div>
+  )
+}
+
+function SignatureRibbonBtn() {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const sigs = useEditorStore((s) => s.signatures)
+  const selectedId = useEditorStore((s) => s.selectedSignatureId)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  if (sigs.length === 0) return null
+
+  return (
+    <>
+      <div ref={btnRef}>
+        <RibbonBtn label="Signature" active={!!selectedId} onClick={() => {
+          if (btnRef.current) {
+            const r = btnRef.current.getBoundingClientRect()
+            setPos({ top: r.bottom + 4, left: r.left })
+          }
+          setOpen((v) => !v)
+        }}>
+          <div className="flex items-center gap-0.5">
+            <Pencil size={14} />
+            <ChevronDown size={8} />
+          </div>
+        </RibbonBtn>
+      </div>
+      {open && (
+        <div ref={menuRef} className="fixed z-[200] w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in" style={{ top: pos.top, left: pos.left }}>
+          {sigs.map((sig) => (
+            <button key={sig.id} type="button"
+              onClick={() => { useEditorStore.getState().onInsertSignature?.(sig.id); setOpen(false) }}
+              className={cn('w-full text-left text-sm px-3 py-2 hover:bg-[#F3F2F1]', selectedId === sig.id ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>
+              {sig.name}
+              {selectedId === sig.id && <span className="ml-1 text-xs">✓</span>}
+            </button>
+          ))}
+          {selectedId && (
+            <>
+              <div className="h-px bg-[#EDEBE9]" />
+              <button type="button" onClick={() => { useEditorStore.getState().onRemoveSignature?.(); setOpen(false) }}
+                className="w-full text-left text-sm text-[#605E5C] px-3 py-2 hover:bg-[#F3F2F1]">Remove signature</button>
+            </>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+function ImportanceRibbonBtns() {
+  const importance = useEditorStore((s) => s.importance)
+  const setImportance = useEditorStore((s) => s.setImportance)
+
+  return (
+    <>
+      <RibbonBtn label="High importance" active={importance === 'high'}
+        onClick={() => setImportance(importance === 'high' ? 'normal' : 'high')}>
+        <span className={cn('text-sm font-bold', importance === 'high' ? 'text-[#D13438]' : '')}>!</span>
+      </RibbonBtn>
+      <RibbonBtn label="Low importance" active={importance === 'low'}
+        onClick={() => setImportance(importance === 'low' ? 'normal' : 'low')}>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3v7M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      </RibbonBtn>
+    </>
+  )
+}
+
+function MoreFormattingBtn({ editor }: { editor: ReturnType<typeof useEditorStore.getState>['editor'] }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const run = (cmd: () => void) => { if (editor) cmd(); setOpen(false) }
+
+  return (
+    <>
+      <div ref={btnRef}>
+        <RibbonBtn label="More formatting" onClick={() => {
+          if (btnRef.current) {
+            const r = btnRef.current.getBoundingClientRect()
+            setPos({ top: r.bottom + 4, left: r.left })
+          }
+          setOpen((v) => !v)
+        }}>
+          <MoreHorizontal size={15} />
+        </RibbonBtn>
+      </div>
+      {open && (
+        <div ref={menuRef} className="fixed z-[200] w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in" style={{ top: pos.top, left: pos.left }}>
+          <button onClick={() => run(() => editor!.chain().focus().setBlockquote().run())}
+            className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Quote</button>
+          <button onClick={() => run(() => editor!.chain().focus().setHorizontalRule().run())}
+            className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Horizontal line</button>
+          <button onClick={() => run(() => editor!.chain().focus().clearNodes().unsetAllMarks().run())}
+            className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Clear formatting</button>
+          <div className="h-px bg-[#EDEBE9]" />
+          <button onClick={() => run(() => editor!.chain().focus().toggleCodeBlock().run())}
+            className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Code block</button>
+          <button onClick={() => run(() => editor!.chain().focus().setHeading({ level: 1 }).run())}
+            className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Heading 1</button>
+          <button onClick={() => run(() => editor!.chain().focus().setHeading({ level: 2 }).run())}
+            className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Heading 2</button>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -645,13 +984,16 @@ function HomeRibbon() {
 
           {/* Snooze — not shown for sent folder */}
           {!isSentFolder && (
-            <div className="relative" ref={snoozeToolbarRef}>
+            <div ref={snoozeToolbarRef}>
               <RibbonBtn label="Snooze" active={!!message?.snooze_until} onClick={() => setSnoozeToolbarOpen((v) => !v)}>
                 <Clock size={15} className={message?.snooze_until ? 'text-[#0078D4]' : ''} />
                 <span className="flex items-center gap-0.5">Snooze <ChevronDown size={8} /></span>
               </RibbonBtn>
-              {snoozeToolbarOpen && (
-                <div className="absolute left-0 top-full mt-0.5 z-50 w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+              {snoozeToolbarOpen && (() => {
+                const rect = snoozeToolbarRef.current?.getBoundingClientRect()
+                return (
+                <div className="fixed z-[200] w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+                  style={{ top: rect ? rect.bottom + 4 : 0, left: rect?.left ?? 0 }}>
                   <p className="px-3 py-1.5 text-xs font-semibold text-[#605E5C] border-b border-[#EDEBE9]">Snooze until</p>
                   {[
                     { label: 'Later today (3 hours)', getTime: () => { const d = new Date(); d.setHours(d.getHours() + 3); return d.toISOString() } },
@@ -670,7 +1012,8 @@ function HomeRibbon() {
                     </>
                   )}
                 </div>
-              )}
+                )
+              })()}
             </div>
           )}
         </>

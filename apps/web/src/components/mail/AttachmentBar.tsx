@@ -3,10 +3,127 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Paperclip, Download, Eye, ChevronDown, Copy, Globe, Monitor, Cloud } from 'lucide-react'
 import type { Attachment } from '@/lib/api'
-import { formatFileSize, cn } from '@/lib/utils'
+import { formatFileSize } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import { useUIStore } from '@/store/ui'
 
+// ── Excel preview component using SheetJS ────────────────────────
+function ExcelPreview({ blobUrl, filename }: { blobUrl: string; filename: string }) {
+  const [sheetData, setSheetData] = useState<{ headers: string[]; rows: string[][]; sheetNames: string[]; activeSheet: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [activeSheet, setActiveSheet] = useState('')
+
+  const parseSheet = useCallback(async (sheetName?: string) => {
+    try {
+      const XLSX = (await import('xlsx'))
+      const res = await fetch(blobUrl)
+      const buf = await res.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array' })
+      const name = sheetName || wb.SheetNames[0]
+      const ws = wb.Sheets[name]
+      const json = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' })
+      const headers = (json[0] || []).map(String)
+      const rows = json.slice(1).map((r) => r.map(String))
+      setSheetData({ headers, rows, sheetNames: wb.SheetNames, activeSheet: name })
+      setActiveSheet(name)
+    } catch {
+      setError('Could not parse spreadsheet')
+    }
+  }, [blobUrl])
+
+  useEffect(() => { parseSheet() }, [parseSheet])
+
+  if (error) {
+    return (
+      <div className="w-full h-[70vh] flex items-center justify-center">
+        <p className="text-sm text-[#605E5C]">{error}</p>
+      </div>
+    )
+  }
+  if (!sheetData) {
+    return (
+      <div className="w-full h-[70vh] flex items-center justify-center">
+        <p className="text-sm text-[#605E5C]">Loading spreadsheet...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full h-[70vh] flex flex-col">
+      {/* Excel-style green toolbar */}
+      <div className="flex items-center gap-3 px-3 py-1.5 bg-[#107C41] text-white text-sm">
+        <span className="font-semibold">Excel</span>
+        <span className="text-xs opacity-80">{filename}</span>
+      </div>
+      {/* Formula bar */}
+      <div className="flex items-center border-b border-[#EDEBE9] bg-white">
+        <div className="px-2 py-1 border-r border-[#EDEBE9] text-xs text-[#605E5C] w-16 text-center">A1</div>
+        <div className="flex-1 px-2 py-1 text-xs text-[#323130]">
+          {sheetData.headers[0] || ''}
+        </div>
+      </div>
+      {/* Spreadsheet grid */}
+      <div className="flex-1 overflow-auto bg-white border border-[#EDEBE9]">
+        <table className="border-collapse text-xs w-full">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-[#F3F2F1]">
+              <th className="border border-[#D2D0CE] px-2 py-1 text-center text-[#605E5C] font-normal w-10 bg-[#F3F2F1]" />
+              {sheetData.headers.map((_, ci) => (
+                <th key={ci} className="border border-[#D2D0CE] px-2 py-1 text-center text-[#605E5C] font-normal min-w-[80px] bg-[#F3F2F1]">
+                  {String.fromCharCode(65 + ci)}
+                </th>
+              ))}
+            </tr>
+            <tr className="bg-[#E8F0FE]">
+              <th className="border border-[#D2D0CE] px-2 py-1 text-center text-[#605E5C] font-semibold text-[10px] w-10 bg-[#F3F2F1]">1</th>
+              {sheetData.headers.map((h, ci) => (
+                <th key={ci} className="border border-[#D2D0CE] px-2 py-1 text-left text-[#323130] font-semibold bg-[#E8F0FE] whitespace-nowrap">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sheetData.rows.map((row, ri) => (
+              <tr key={ri} className="hover:bg-[#F3F2F1]">
+                <td className="border border-[#D2D0CE] px-2 py-1 text-center text-[#605E5C] font-normal text-[10px] bg-[#F3F2F1] w-10">
+                  {ri + 2}
+                </td>
+                {row.map((cell, ci) => (
+                  <td key={ci} className="border border-[#D2D0CE] px-2 py-1 text-[#323130] whitespace-nowrap">
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* Sheet tabs */}
+      {sheetData.sheetNames.length > 0 && (
+        <div className="flex items-center border-t border-[#EDEBE9] bg-[#F3F2F1]">
+          {sheetData.sheetNames.map((name) => (
+            <button
+              key={name}
+              onClick={() => parseSheet(name)}
+              className={`px-3 py-1.5 text-xs border-r border-[#D2D0CE] transition-colors ${
+                activeSheet === name
+                  ? 'bg-white text-[#323130] font-medium'
+                  : 'text-[#605E5C] hover:bg-[#EDEBE9]'
+              }`}
+            >
+              {name}
+            </button>
+          ))}
+          <div className="flex-1 bg-[#F3F2F1]" />
+          <span className="text-[10px] text-[#A19F9D] px-2">Workbook Statistics</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Text file preview ────────────────────────────────────────────
 function FileTextPreview({ blobUrl, filename }: { blobUrl: string; filename: string }) {
   const [text, setText] = useState<string | null>(null)
   useEffect(() => {
@@ -60,86 +177,54 @@ function WordPreview({ blobUrl, filename }: { blobUrl: string; filename: string 
   )
 }
 
-function ExcelPreview({ blobUrl, filename }: { blobUrl: string; filename: string }) {
-  const [sheets, setSheets] = useState<{ name: string; html: string }[] | null>(null)
-  const [activeSheet, setActiveSheet] = useState(0)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const buf = await fetch(blobUrl).then((r) => r.arrayBuffer())
-        const XLSX = await import('xlsx')
-        const wb = XLSX.read(buf, { type: 'array' })
-        const out = wb.SheetNames.map((name) => ({
-          name,
-          html: XLSX.utils.sheet_to_html(wb.Sheets[name], { editable: false }),
-        }))
-        if (!cancelled) setSheets(out)
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to render spreadsheet')
-      }
-    })()
-    return () => { cancelled = true }
-  }, [blobUrl])
-  return (
-    <div className="w-full h-[60vh] flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-2 bg-[#107C41] text-white text-sm rounded-t">
-        <span className="font-semibold">Excel</span>
-        <span className="text-xs opacity-80 truncate">{filename}</span>
-      </div>
-      <div className="flex-1 bg-white border border-[#EDEBE9] border-t-0 rounded-b overflow-hidden flex flex-col">
-        {error ? (
-          <p className="text-[#D13438] p-4 text-sm">{error}</p>
-        ) : sheets === null ? (
-          <p className="text-[#605E5C] p-4 text-sm">Rendering spreadsheet…</p>
-        ) : (
-          <>
-            <div className="flex-1 overflow-auto excel-preview-table text-xs text-[#323130]"
-              dangerouslySetInnerHTML={{ __html: sheets[activeSheet]?.html ?? '' }}
-            />
-            {sheets.length > 1 && (
-              <div className="flex items-center gap-0 border-t border-[#EDEBE9] bg-[#F3F2F1] px-2">
-                {sheets.map((s, i) => (
-                  <button key={s.name} onClick={() => setActiveSheet(i)}
-                    className={cn(
-                      'px-3 py-1 text-xs border-r border-[#EDEBE9]',
-                      i === activeSheet ? 'bg-white text-[#107C41] font-semibold' : 'text-[#605E5C] hover:bg-white/60'
-                    )}>
-                    {s.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
 interface AttachmentBarProps {
   attachments: Attachment[]
 }
 
-function fileIcon(contentType: string): string {
+function fileIcon(contentType: string, filename?: string): string {
   if (contentType.startsWith('image/')) return '🖼️'
   if (contentType === 'application/pdf') return '📄'
-  if (contentType.includes('word')) return '📝'
-  if (contentType.includes('excel') || contentType.includes('spreadsheet')) return '📊'
+  if (contentType.includes('word') || filename?.endsWith('.docx') || filename?.endsWith('.doc')) return '📝'
+  if (contentType.includes('excel') || contentType.includes('spreadsheet') || filename?.endsWith('.xlsx') || filename?.endsWith('.xls')) return '📊'
   if (contentType.includes('powerpoint') || contentType.includes('presentation')) return '📋'
   if (contentType.includes('zip') || contentType.includes('compressed')) return '🗜️'
   return '📎'
 }
 
+function isExcelFile(contentType: string, filename: string): boolean {
+  return contentType.includes('spreadsheet') || contentType.includes('excel') ||
+    filename.endsWith('.xlsx') || filename.endsWith('.xls') || filename.endsWith('.csv')
+}
+
+function isWordFile(contentType: string, filename: string): boolean {
+  return contentType.includes('word') || filename.endsWith('.docx') || filename.endsWith('.doc')
+}
+
+function isTextFile(contentType: string, filename: string): boolean {
+  return contentType.includes('text') || filename.endsWith('.csv') || filename.endsWith('.txt') ||
+    filename.endsWith('.json') || filename.endsWith('.xml') || filename.endsWith('.html')
+}
+
+/** Get the app name for "Edit in X desktop app" label */
+function getDesktopAppName(contentType: string, filename: string): string {
+  if (isExcelFile(contentType, filename)) return 'Excel'
+  if (isWordFile(contentType, filename)) return 'Word'
+  if (contentType.includes('powerpoint') || contentType.includes('presentation')) return 'PowerPoint'
+  return 'Desktop'
+}
+
+
 function AttachmentItem({ att }: { att: Attachment }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
 
   useEffect(() => {
     if (!menuOpen) return
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) setMenuOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -153,7 +238,6 @@ function AttachmentItem({ att }: { att: Attachment }) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
 
-  // Fetch attachment with auth token and create blob URL for preview
   const fetchBlob = useCallback(async () => {
     if (blobUrl) return blobUrl
     try {
@@ -180,8 +264,36 @@ function AttachmentItem({ att }: { att: Attachment }) {
       const a = document.createElement('a')
       a.href = url
       a.download = att.filename
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
     }
+    setMenuOpen(false)
+  }
+
+  const handleEditInBrowser = async () => {
+    // Open preview in the browser (same as Preview for demo)
+    await handlePreview()
+  }
+
+  const handleEditDesktop = async () => {
+    // Download the file, then open it with the OS default app
+    const url = await fetchBlob()
+    if (url) {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = att.filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      showNotification(`"${att.filename}" downloaded — open it in ${getDesktopAppName(att.content_type, att.filename)} to edit`)
+    }
+    setMenuOpen(false)
+  }
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(att.filename)
+    showNotification(`Copied "${att.filename}" to clipboard`)
     setMenuOpen(false)
   }
 
@@ -190,55 +302,59 @@ function AttachmentItem({ att }: { att: Attachment }) {
     return () => { if (blobUrl) URL.revokeObjectURL(blobUrl) }
   }, [blobUrl])
 
+  const icon = fileIcon(att.content_type, att.filename)
+  const appName = getDesktopAppName(att.content_type, att.filename)
+
   return (
     <div className="relative flex items-center gap-2 bg-white border border-[#EDEBE9] rounded px-2.5 py-1.5 hover:border-[#D2D0CE] transition-colors group">
-      <span className="text-base leading-none" aria-hidden="true">
-        {fileIcon(att.content_type)}
-      </span>
+      <span className="text-base leading-none" aria-hidden="true">{icon}</span>
       <div className="min-w-0">
-        <p className="text-xs font-medium text-[#323130] truncate max-w-[140px]">
-          {att.filename}
-        </p>
-        <p className="text-[10px] text-[#605E5C]">
-          {formatFileSize(att.size_bytes)}
-        </p>
+        <p className="text-xs font-medium text-[#323130] truncate max-w-[140px]">{att.filename}</p>
+        <p className="text-[10px] text-[#605E5C]">{formatFileSize(att.size_bytes)}</p>
       </div>
 
-      {/* Preview modal */}
+      {/* ── Preview modal ──────────────────────────────────────── */}
       {previewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPreviewOpen(false)}>
-          <div className="bg-white rounded-lg shadow-outlook-lg max-w-3xl max-h-[80vh] w-full mx-4 flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50" onClick={() => setPreviewOpen(false)}>
+          <div
+            className="bg-white rounded-lg shadow-outlook-lg w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Title bar */}
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base">{fileIcon(att.content_type)}</span>
+                <span className="text-base">{icon}</span>
                 <span className="text-sm font-medium text-[#323130] truncate">{att.filename}</span>
                 <span className="text-xs text-[#605E5C]">({formatFileSize(att.size_bytes)})</span>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-3 flex-shrink-0">
                 <button onClick={handleDownload} className="text-xs text-[#0078D4] hover:underline flex items-center gap-1">
                   <Download size={12} /> Download
                 </button>
-                <button onClick={() => setPreviewOpen(false)} className="text-[#605E5C] hover:text-[#323130] p-1">
+                <button onClick={() => setPreviewOpen(false)} className="text-[#605E5C] hover:text-[#323130] p-1 rounded hover:bg-[#EDEBE9]">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-[#FAF9F8]">
+            {/* Content */}
+            <div className="flex-1 overflow-auto bg-[#FAF9F8]">
               {blobUrl && att.content_type.startsWith('image/') ? (
-                <img src={blobUrl} alt={att.filename} className="max-w-full max-h-[60vh] object-contain rounded" />
+                <div className="flex items-center justify-center p-4 h-full">
+                  <img src={blobUrl} alt={att.filename} className="max-w-full max-h-[70vh] object-contain rounded" />
+                </div>
               ) : blobUrl && att.content_type === 'application/pdf' ? (
-                <iframe src={blobUrl} className="w-full h-[60vh] border-0 rounded" title={att.filename} />
-              ) : blobUrl && (att.content_type.includes('text') || att.filename.endsWith('.csv') || att.filename.endsWith('.txt') || att.filename.endsWith('.json') || att.filename.endsWith('.xml') || att.filename.endsWith('.html')) ? (
-                <FileTextPreview blobUrl={blobUrl} filename={att.filename} />
-              ) : blobUrl && (att.content_type.includes('spreadsheet') || att.content_type.includes('excel') || att.filename.endsWith('.xlsx') || att.filename.endsWith('.xls')) ? (
+                <iframe src={blobUrl} className="w-full h-[75vh] border-0" title={att.filename} />
+              ) : blobUrl && isExcelFile(att.content_type, att.filename) ? (
                 <ExcelPreview blobUrl={blobUrl} filename={att.filename} />
-              ) : blobUrl && (att.content_type.includes('word') || att.filename.endsWith('.docx')) ? (
+              ) : blobUrl && isTextFile(att.content_type, att.filename) ? (
+                <FileTextPreview blobUrl={blobUrl} filename={att.filename} />
+              ) : blobUrl && isWordFile(att.content_type, att.filename) ? (
                 <WordPreview blobUrl={blobUrl} filename={att.filename} />
               ) : (
-                <div className="text-center py-12">
-                  <span className="text-4xl mb-3 block">{fileIcon(att.content_type)}</span>
+                <div className="text-center py-16">
+                  <span className="text-5xl mb-4 block">{icon}</span>
                   <p className="text-sm font-medium text-[#323130] mb-1">{att.filename}</p>
-                  <p className="text-xs text-[#605E5C] mb-3">{formatFileSize(att.size_bytes)} — {att.content_type}</p>
+                  <p className="text-xs text-[#605E5C] mb-4">{formatFileSize(att.size_bytes)} — {att.content_type}</p>
                   <button onClick={handleDownload} className="text-sm text-[#0078D4] hover:underline flex items-center gap-1 mx-auto">
                     <Download size={13} /> Download to view
                   </button>
@@ -249,10 +365,18 @@ function AttachmentItem({ att }: { att: Attachment }) {
         </div>
       )}
 
-      {/* Dropdown chevron */}
-      <div ref={menuRef}>
+      {/* ── Dropdown chevron ───────────────────────────────────── */}
+      <div>
         <button
-          onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v) }}
+          ref={btnRef}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!menuOpen && btnRef.current) {
+              const rect = btnRef.current.getBoundingClientRect()
+              setMenuPos({ top: rect.bottom + 4, left: Math.max(rect.right - 200, 8) })
+            }
+            setMenuOpen((v) => !v)
+          }}
           aria-label={`Options for ${att.filename}`}
           className="text-[#605E5C] hover:text-[#323130] p-0.5 rounded hover:bg-[#EDEBE9] transition-colors"
         >
@@ -260,47 +384,42 @@ function AttachmentItem({ att }: { att: Attachment }) {
         </button>
 
         {menuOpen && (
-          <div className="absolute right-0 bottom-full mb-1 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+          <div ref={menuRef} className="fixed z-[200] w-[200px] bg-white border border-[#EDEBE9] rounded-lg shadow-outlook-lg py-1 animate-fade-in" style={{ top: menuPos.top, left: menuPos.left }}>
             <button
               onClick={(e) => { e.stopPropagation(); handlePreview() }}
-              className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
+              className="w-full flex items-center gap-3 text-left text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors"
             >
-              <Eye size={14} className="text-[#605E5C]" /> Preview
+              <Eye size={16} className="text-[#0078D4] flex-shrink-0" /> Preview
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); handlePreview(); }}
-              className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
+              onClick={(e) => { e.stopPropagation(); handleEditInBrowser() }}
+              className="w-full flex items-center gap-3 text-left text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors"
             >
-              <Globe size={14} className="text-[#605E5C]" /> Edit in Browser
+              <Globe size={16} className="text-[#605E5C] flex-shrink-0" /> Edit in Browser
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); handleDownload() }}
-              className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
+              onClick={(e) => { e.stopPropagation(); handleEditDesktop() }}
+              className="w-full flex items-center gap-3 text-left text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors"
             >
-              <Monitor size={14} className="text-[#605E5C]" /> Edit in Excel desktop app
+              <Monitor size={16} className="text-[#605E5C] flex-shrink-0" /> Edit in {appName} desktop app
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); showNotification('Save to OneDrive is not available yet'); setMenuOpen(false) }}
-              className="w-full flex items-center gap-2 text-left text-sm text-[#A19F9D] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors cursor-not-allowed"
+              disabled
+              className="w-full flex items-center gap-3 text-left text-sm text-[#A19F9D] px-3 py-2 cursor-not-allowed"
             >
-              <Cloud size={14} /> Save to OneDrive
+              <Cloud size={16} className="flex-shrink-0" /> Save to OneDrive
             </button>
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                navigator.clipboard.writeText(att.filename)
-                showNotification(`Copied "${att.filename}" to clipboard`)
-                setMenuOpen(false)
-              }}
-              className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
+              onClick={(e) => { e.stopPropagation(); handleCopy() }}
+              className="w-full flex items-center gap-3 text-left text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors"
             >
-              <Copy size={14} className="text-[#605E5C]" /> Copy
+              <Copy size={16} className="text-[#605E5C] flex-shrink-0" /> Copy
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); handleDownload() }}
-              className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
+              className="w-full flex items-center gap-3 text-left text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1] transition-colors"
             >
-              <Download size={14} className="text-[#605E5C]" /> Download
+              <Download size={16} className="text-[#605E5C] flex-shrink-0" /> Download
             </button>
           </div>
         )}
@@ -314,7 +433,7 @@ export function AttachmentBar({ attachments }: AttachmentBarProps) {
 
   return (
     <div
-      className="border-t border-[#EDEBE9] bg-[#FAF9F8] px-4 py-2"
+      className="bg-[#FAF9F8] px-4 py-2"
       aria-label="Attachments"
     >
       <div className="flex items-center gap-1.5 mb-2">

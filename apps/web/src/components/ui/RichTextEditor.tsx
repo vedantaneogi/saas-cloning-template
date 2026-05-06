@@ -10,6 +10,8 @@ import Image from '@tiptap/extension-image'
 import Color from '@tiptap/extension-color'
 import { TextStyle } from '@tiptap/extension-text-style'
 import Highlight from '@tiptap/extension-highlight'
+import FontFamily from '@tiptap/extension-font-family'
+import FontSize from '@tiptap/extension-font-size'
 import Mention from '@tiptap/extension-mention'
 import { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion'
 import tippy, { Instance as TippyInstance } from 'tippy.js'
@@ -30,12 +32,11 @@ import {
   ImageIcon,
   Highlighter,
   Type,
-  Minus,
-  Plus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { contacts } from '@/lib/api'
 import type { Contact } from '@/lib/api'
+import { useEditorStore } from '@/store/editor'
 
 // ── Mention suggestion list component ─────────────────────────────────────────
 interface MentionListProps extends SuggestionProps {
@@ -138,6 +139,10 @@ interface RichTextEditorProps {
   minHeight?: string
   className?: string
   readOnly?: boolean
+  /** When true, hides the built-in toolbar (ribbon controls the editor instead) */
+  hideToolbar?: boolean
+  /** When true, registers the editor in the global store for ribbon access */
+  registerGlobal?: boolean
 }
 
 interface ToolbarButtonProps {
@@ -178,13 +183,18 @@ export function RichTextEditor({
   minHeight = '200px',
   className,
   readOnly = false,
+  hideToolbar = false,
+  registerGlobal = false,
 }: RichTextEditorProps) {
+  const setGlobalEditor = useEditorStore((s) => s.setEditor)
   const editor = useEditor({
     extensions: [
       StarterKit,
       Underline,
       TextStyle,
       Color,
+      FontFamily,
+      FontSize,
       Highlight.configure({ multicolor: true }),
       Image.configure({
         inline: true,
@@ -250,6 +260,14 @@ export function RichTextEditor({
       },
     },
   })
+
+  // Register editor globally so the ribbon toolbar can control it
+  useEffect(() => {
+    if (registerGlobal && editor) {
+      setGlobalEditor(editor)
+      return () => setGlobalEditor(null)
+    }
+  }, [registerGlobal, editor, setGlobalEditor])
 
   // Sync external content changes back to editor (e.g. signature insertion)
   useEffect(() => {
@@ -325,7 +343,7 @@ export function RichTextEditor({
         className
       )}
     >
-      {!readOnly && (
+      {!readOnly && !hideToolbar && (
         <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
           {/* Undo / Redo */}
           <ToolbarButton

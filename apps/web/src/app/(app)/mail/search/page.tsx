@@ -34,18 +34,23 @@ function attachmentIcon(filename: string, contentType: string) {
   return <FileIcon size={14} className="text-[#605E5C]" />
 }
 
-function MailResults({ q, from, to, hasAttachment, dateFrom, dateTo, folderId }: {
-  q?: string; from?: string; to?: string; hasAttachment?: string; dateFrom?: string; dateTo?: string; folderId?: string
+function MailResults({ q, from, to, cc, subject, keywords, hasAttachment, readStatus, dateFrom, dateTo, folderId }: {
+  q?: string; from?: string; to?: string; cc?: string; subject?: string; keywords?: string;
+  hasAttachment?: string; readStatus?: string; dateFrom?: string; dateTo?: string; folderId?: string
 }) {
-  const enabled = !!(q || from || to || hasAttachment || dateFrom || dateTo || folderId)
+  const enabled = !!(q || from || to || cc || subject || keywords || hasAttachment || readStatus || dateFrom || dateTo || folderId)
   const { data, isLoading } = useQuery({
-    queryKey: ['messages-search', q, from, to, hasAttachment, dateFrom, dateTo, folderId],
+    queryKey: ['messages-search', q, from, to, cc, subject, keywords, hasAttachment, readStatus, dateFrom, dateTo, folderId],
     queryFn: () =>
       messages.search({
         q: q || undefined,
         from: from || undefined,
         to: to || undefined,
+        cc: cc || undefined,
+        subject: subject || undefined,
+        keywords: keywords || undefined,
         has_attachment: hasAttachment === 'true' ? true : hasAttachment === 'false' ? false : undefined,
+        is_read: readStatus === 'read' ? true : readStatus === 'unread' ? false : undefined,
         date_from: dateFrom ? `${dateFrom}T00:00:00` : undefined,
         date_to: dateTo ? `${dateTo}T23:59:59` : undefined,
         folder_id: folderId || undefined,
@@ -192,7 +197,11 @@ function SearchResults() {
   const q = searchParams.get('q') ?? ''
   const from = searchParams.get('from') ?? undefined
   const to = searchParams.get('to') ?? undefined
+  const cc = searchParams.get('cc') ?? undefined
+  const subject = searchParams.get('subject') ?? undefined
+  const keywords = searchParams.get('keywords') ?? undefined
   const hasAttachment = searchParams.get('has_attachment') ?? undefined
+  const readStatus = searchParams.get('read_status') ?? undefined
   const dateFrom = searchParams.get('date_from') ?? undefined
   const dateTo = searchParams.get('date_to') ?? undefined
   const folderId = searchParams.get('folder_id') ?? undefined
@@ -228,7 +237,7 @@ function SearchResults() {
 
       <div className="flex-1 overflow-y-auto outlook-scrollbar" role="list" aria-label={`Search results · ${type}`}>
         {(type === 'all' || type === 'mail') && (
-          <MailResults q={q} from={from} to={to} hasAttachment={hasAttachment} dateFrom={dateFrom} dateTo={dateTo} folderId={folderId} />
+          <MailResults q={q} from={from} to={to} cc={cc} subject={subject} keywords={keywords} hasAttachment={hasAttachment} readStatus={readStatus} dateFrom={dateFrom} dateTo={dateTo} folderId={folderId} />
         )}
         {type === 'files' && <FilesResults q={q || undefined} />}
         {type === 'teams' && <TeamsResults q={q || undefined} />}
