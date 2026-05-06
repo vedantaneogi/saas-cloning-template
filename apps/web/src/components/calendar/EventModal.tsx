@@ -159,11 +159,13 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     mutationFn: ({ data, scope }: { data: FormValues; scope?: 'single' | 'following' | 'series' }) => {
       const payload = buildPayload(data)
       if (event) {
-        if (scope === 'single' && event.recurrence_parent_id) {
-          return events.update(event.recurrence_parent_id, payload, scope, event.start_time)
+        // Virtual occurrence ids aren't in the DB — use the parent for any scoped update.
+        const targetId = event.recurrence_parent_id ?? event.id
+        if (scope === 'single' || scope === 'following') {
+          return events.update(targetId, payload, scope, event.start_time)
         }
-        if (scope === 'following' && event.recurrence_parent_id) {
-          return events.update(event.recurrence_parent_id, payload, scope, event.start_time)
+        if (scope === 'series') {
+          return events.update(targetId, payload, scope)
         }
         return events.update(event.id, payload, scope)
       }
@@ -178,8 +180,14 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
 
   const deleteMutation = useMutation({
     mutationFn: (scope?: 'single' | 'following' | 'series') => {
-      if ((scope === 'single' || scope === 'following') && event!.recurrence_parent_id) {
-        return events.delete(event!.recurrence_parent_id, scope, event!.start_time)
+      // Virtual occurrences carry a synthetic id but recurrence_parent_id points to the real parent row.
+      // For any scoped delete on a recurring event, target the parent.
+      const targetId = event!.recurrence_parent_id ?? event!.id
+      if (scope === 'single' || scope === 'following') {
+        return events.delete(targetId, scope, event!.start_time)
+      }
+      if (scope === 'series') {
+        return events.delete(targetId, scope)
       }
       return events.delete(event!.id, scope)
     },

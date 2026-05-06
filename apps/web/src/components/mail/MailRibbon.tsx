@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
-import { messages, folders, quickSteps } from '@/lib/api'
+import { messages, folders, quickSteps, categories as categoriesApi } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import {
   Reply,
@@ -16,6 +16,8 @@ import {
   ChevronDown,
   Flag,
   FolderInput,
+  Tag,
+  CheckCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -61,13 +63,17 @@ function RibbonSep() {
 export function MailRibbon() {
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
+  const selectedFolderSlug = useMailStore((s) => s.selectedFolderSlug)
+  const selectedFolderId = useMailStore((s) => s.selectedFolderId)
   const openComposer = useUIStore((s) => s.openComposer)
   const showNotification = useUIStore((s) => s.showNotification)
   const queryClient = useQueryClient()
   const [qsOpen, setQsOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
+  const [catOpen, setCatOpen] = useState(false)
   const qsRef = useRef<HTMLDivElement>(null)
   const moveRef = useRef<HTMLDivElement>(null)
+  const catRef = useRef<HTMLDivElement>(null)
 
   const message = selectedMessageId
     ? queryClient.getQueryData<Message>(['message', selectedMessageId])
@@ -81,6 +87,11 @@ export function MailRibbon() {
   const { data: folderList = [] } = useQuery({
     queryKey: ['folders'],
     queryFn: () => folders.list(),
+  })
+
+  const { data: categoryList = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.list(),
   })
 
   useEffect(() => {
@@ -100,6 +111,15 @@ export function MailRibbon() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [moveOpen])
+
+  useEffect(() => {
+    if (!catOpen) return
+    const handler = (e: MouseEvent) => {
+      if (catRef.current && !catRef.current.contains(e.target as Node)) setCatOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [catOpen])
 
   const deleteMutation = useMutation({
     mutationFn: () => messages.delete(selectedMessageId!),
@@ -160,6 +180,42 @@ export function MailRibbon() {
     },
   })
 
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      const folderId = selectedFolderId ?? folderList.find((f) => f.slug === selectedFolderSlug)?.id
+      const res = await messages.list({
+        folder_slug: folderId ? undefined : selectedFolderSlug,
+        folder_id: folderId,
+        is_read: false,
+        per_page: 500,
+      })
+      const ids = res.items.map((m) => m.id)
+      if (ids.length === 0) return { affected: 0 }
+      return messages.bulk('mark_read', ids)
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      showNotification(result.affected > 0 ? `Marked ${result.affected} as read` : 'No unread messages')
+    },
+  })
+
+  const categorizeMutation = useMutation({
+    mutationFn: (categoryIds: string[]) =>
+      messages.update(selectedMessageId!, { category_ids: categoryIds } as never),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+    },
+  })
+
+  const toggleCategory = (catId: string) => {
+    const current = (message?.categories ?? []).map((c) => c.id)
+    const next = current.includes(catId) ? current.filter((id) => id !== catId) : [...current, catId]
+    categorizeMutation.mutate(next)
+  }
+  const messageCategoryIds = new Set((message?.categories ?? []).map((c) => c.id))
+
   const hasMsg = !!selectedMessageId
 
   return (
@@ -215,6 +271,36 @@ export function MailRibbon() {
         )}
       </div>
 
+      {/* Categorize */}
+      <div className="relative" ref={catRef}>
+        <RibbonBtn disabled={!hasMsg} label="Categorize" onClick={() => setCatOpen((v) => !v)}>
+          <Tag size={16} />
+          <span className="flex items-center gap-0.5">Categorize <ChevronDown size={10} /></span>
+        </RibbonBtn>
+        {catOpen && (
+          <div className="absolute left-0 top-full mt-0.5 z-50 w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
+            {categoryList.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-[#605E5C]">No categories yet</div>
+            ) : (
+              categoryList.map((c) => {
+                const checked = messageCategoryIds.has(c.id)
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => toggleCategory(c.id)}
+                    className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+                  >
+                    <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: c.color }} />
+                    <span className="flex-1 truncate">{c.name}</span>
+                    {checked && <span className="text-[#0078D4] text-xs">✓</span>}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        )}
+      </div>
+
       <RibbonSep />
 
       {/* Reply / Reply all / Forward */}
@@ -250,6 +336,15 @@ export function MailRibbon() {
       >
         <Flag size={16} className={message?.is_flagged ? 'text-[#D13438]' : ''} />
         <span>Flag / Unflag</span>
+      </RibbonBtn>
+
+      <RibbonBtn
+        disabled={markAllReadMutation.isPending}
+        label="Mark all as read"
+        onClick={() => markAllReadMutation.mutate()}
+      >
+        <CheckCheck size={16} />
+        <span>Mark all read</span>
       </RibbonBtn>
 
       <RibbonSep />

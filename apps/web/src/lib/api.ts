@@ -626,13 +626,12 @@ export const events = {
     page?: number
     per_page?: number
   }) => {
-    const qs = new URLSearchParams(
-      Object.fromEntries(
-        Object.entries(params)
-          .filter(([, v]) => v !== undefined)
-          .map(([k, v]) => [k, String(v)])
-      )
-    )
+    const qs = new URLSearchParams()
+    if (params.calendar_id) qs.set('calendar_id', params.calendar_id)
+    if (params.start) qs.set('start_after', params.start)
+    if (params.end) qs.set('start_before', params.end)
+    if (params.page !== undefined) qs.set('page', String(params.page))
+    if (params.per_page !== undefined) qs.set('per_page', String(params.per_page))
     return request<PaginatedResponse<Event>>(`/events?${qs}`).then((r) => r.items)
   },
 

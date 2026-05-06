@@ -28,6 +28,6 @@ for (const shot of shots) {
     await page.waitForURL(`${BASE}/mail/inbox`)
     await page.goto(`${BASE}${shot.url}`)
     await page.waitForTimeout(2000)
-    await page.screenshot({ path: `clone-screenshots/${shot.name}.png`, animations: 'disabled' })
+    await page.screenshot({ path: `clone-screenshots/_current/${shot.name}.png`, animations: 'disabled' })
   })
 }

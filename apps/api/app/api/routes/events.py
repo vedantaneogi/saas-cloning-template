@@ -1,6 +1,6 @@
 import calendar as _cal
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -25,6 +25,31 @@ from app.schemas.calendar import (
 router = APIRouter(prefix="/events", tags=["Events"])
 
 
+_ICAL_DAY_TO_INT = {
+    "SU": 0, "MO": 1, "TU": 2, "WE": 3, "TH": 4, "FR": 5, "SA": 6,
+}
+
+
+def _normalize_days_of_week(raw: Any) -> set[int]:
+    """Accept ints (0..6, ical Sun=0) or iCal day codes (MO/TU/...) — return ints."""
+    if not raw:
+        return set()
+    out: set[int] = set()
+    for item in raw:
+        if isinstance(item, int):
+            out.add(item % 7)
+        elif isinstance(item, str):
+            code = item.strip().upper()[:2]
+            if code in _ICAL_DAY_TO_INT:
+                out.add(_ICAL_DAY_TO_INT[code])
+            else:
+                try:
+                    out.add(int(item) % 7)
+                except (ValueError, TypeError):
+                    pass
+    return out
+
+
 def _expand_recurring_event(
     event: Event,
     start_after: datetime,
@@ -33,19 +58,38 @@ def _expand_recurring_event(
 ) -> list[EventOut]:
     """Generate virtual EventOut instances for a recurring event within [start_after, start_before]."""
     rule = event.recurrence_rule or {}
-    frequency: str = rule.get("frequency", "daily")
+    # Normalize frequency (seed uses 'WEEKLY', UI sends 'weekly' — accept both)
+    frequency: str = str(rule.get("frequency", "daily")).lower()
     interval: int = max(1, int(rule.get("interval", 1)))
     end_date_str: Any = rule.get("end_date")
     count_limit: Any = rule.get("count")
-    days_of_week: set[int] = set(rule.get("days_of_week") or [])  # 0=Sun … 6=Sat
+    # Normalize days_of_week: accept ints or iCal codes (MO/TU/WE/TH/FR/SA/SU)
+    days_of_week: set[int] = _normalize_days_of_week(rule.get("days_of_week"))  # 0=Sun … 6=Sat
 
     duration = event.end_time - event.start_time
     current = event.start_time
     occurrences: list[EventOut] = []
     total = 0
 
+    # Normalize timezone awareness so comparisons don't blow up.
+    # event.start_time is TZ-aware (TIMESTAMPTZ); URL query params arrive naive.
+    if current.tzinfo is not None:
+        if start_after.tzinfo is None:
+            start_after = start_after.replace(tzinfo=timezone.utc)
+        if start_before.tzinfo is None:
+            start_before = start_before.replace(tzinfo=timezone.utc)
+    else:
+        if start_after.tzinfo is not None:
+            start_after = start_after.replace(tzinfo=None)
+        if start_before.tzinfo is not None:
+            start_before = start_before.replace(tzinfo=None)
+
     # For weekly+specific days we step 1 day at a time
     step_daily = frequency == "weekly" and len(days_of_week) > 0
+
+    # Bail if frequency is unrecognized — prevents infinite loop
+    if frequency not in {"daily", "weekly", "monthly", "yearly"}:
+        return []
 
     exceptions: set[str] = {str(e) for e in (rule.get("exceptions") or [])}
 

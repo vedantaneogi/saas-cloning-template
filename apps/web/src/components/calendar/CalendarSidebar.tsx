@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, isSameMonth } from 'date-fns'
-import { ChevronLeft, ChevronRight, EyeOff, Share2, X, Check, Globe, Copy, UserPlus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, EyeOff, Share2, X, Check, Globe, Copy, UserPlus, Trash2, Plus } from 'lucide-react'
 import { calendars } from '@/lib/api'
 import type { Calendar } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -139,6 +139,20 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
       <MiniCalendar selectedDate={selectedDate} onDateSelect={onDateSelect} />
 
       <div className="h-px bg-[#EDEBE9] mx-3" />
+
+      {/* Add calendar — prominent link, matches Outlook */}
+      <button
+        type="button"
+        onClick={() => {
+          // Focus the subscribe email input below
+          const el = document.querySelector<HTMLInputElement>('input[aria-label="Subscribe to another person\'s calendar"]')
+          el?.focus()
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }}
+        className="mx-3 mt-3 flex items-center gap-2 text-sm text-[#0078D4] hover:bg-[#EDEBE9] rounded px-2 py-1.5 transition-colors"
+      >
+        <Plus size={14} /> <span className="font-medium">Add calendar</span>
+      </button>
 
       {/* Calendar list */}
       <div className="flex-1 overflow-y-auto outlook-scrollbar p-3 space-y-4">

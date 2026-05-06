@@ -12,6 +12,8 @@ interface ComposerDraft {
   replyType?: 'reply' | 'reply_all' | 'forward'
 }
 
+type CalendarFilter = 'all' | 'mine' | 'invites' | 'no-allday'
+
 interface UIState {
   composerOpen: boolean
   composerDraft: ComposerDraft
@@ -20,6 +22,8 @@ interface UIState {
   sidebarWidth: number
   readingPaneWidth: number
   notificationMessage: string | null
+  calendarSplitView: boolean
+  calendarFilter: CalendarFilter
 
   openComposer: (draft?: Partial<ComposerDraft>) => void
   closeComposer: () => void
@@ -30,6 +34,8 @@ interface UIState {
   setReadingPaneWidth: (width: number) => void
   showNotification: (message: string) => void
   clearNotification: () => void
+  setCalendarSplitView: (v: boolean) => void
+  setCalendarFilter: (f: CalendarFilter) => void
 }
 
 const DEFAULT_DRAFT: ComposerDraft = {
@@ -48,6 +54,8 @@ export const useUIStore = create<UIState>((set) => ({
   sidebarWidth: 240,
   readingPaneWidth: 500,
   notificationMessage: null,
+  calendarSplitView: false,
+  calendarFilter: 'all',
 
   openComposer: (draft) =>
     set({
@@ -75,6 +83,9 @@ export const useUIStore = create<UIState>((set) => ({
   },
 
   clearNotification: () => set({ notificationMessage: null }),
+
+  setCalendarSplitView: (v) => set({ calendarSplitView: v }),
+  setCalendarFilter: (f) => set({ calendarFilter: f }),
 }))
 
 export function draftFromReply(message: Message, type: 'reply' | 'reply_all' | 'forward'): Partial<ComposerDraft> {

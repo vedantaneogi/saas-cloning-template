@@ -1001,6 +1001,21 @@ function CalendarHomeRibbon() {
   const router = useRouter()
   const pathname = usePathname()
   const currentView = pathname?.split('/calendar/')?.[1] ?? 'month'
+  const splitView = useUIStore((s) => s.calendarSplitView)
+  const setSplitView = useUIStore((s) => s.setCalendarSplitView)
+  const calendarFilter = useUIStore((s) => s.calendarFilter)
+  const setCalendarFilter = useUIStore((s) => s.setCalendarFilter)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const filterRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!filterOpen) return
+    const handler = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [filterOpen])
 
   return (
     <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Calendar toolbar">
@@ -1034,8 +1049,42 @@ function CalendarHomeRibbon() {
 
       <RibbonSep />
 
+      {/* Split view */}
+      <RibbonBtn label="Split view" active={splitView} onClick={() => setSplitView(!splitView)}>
+        <PanelRight size={15} /><span>Split view</span>
+      </RibbonBtn>
+
+      {/* Filter */}
+      <div className="relative" ref={filterRef}>
+        <RibbonBtn label="Filter" active={calendarFilter !== 'all'} onClick={() => setFilterOpen((v) => !v)}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          <span>{calendarFilter === 'all' ? 'Filter' : 'Filter applied'}</span>
+        </RibbonBtn>
+        {filterOpen && (
+          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
+            {([
+              ['all', 'Show all events'],
+              ['mine', 'Only my events'],
+              ['invites', 'Only invites'],
+              ['no-allday', 'Hide all-day events'],
+            ] as const).map(([val, label]) => (
+              <button key={val} onClick={() => { setCalendarFilter(val); setFilterOpen(false) }}
+                className={cn(
+                  'w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors flex items-center justify-between',
+                  calendarFilter === val ? 'text-[#0078D4]' : 'text-[#323130]'
+                )}>
+                <span>{label}</span>
+                {calendarFilter === val && <span className="text-xs">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <RibbonSep />
+
       {/* Share & Print */}
-      <RibbonBtn label="Share" onClick={() => {}}>
+      <RibbonBtn label="Share" onClick={() => window.dispatchEvent(new CustomEvent('outlook:share-calendar'))}>
         <Share2 size={15} /><span>Share</span>
       </RibbonBtn>
       <RibbonBtn label="Print" onClick={() => window.print()}>

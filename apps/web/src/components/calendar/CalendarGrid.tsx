@@ -28,6 +28,7 @@ interface CalendarGridProps {
   onEventClick?: (event: Event) => void
   onSlotClick?: (date: Date, hour?: number) => void
   onDayClick?: (date: Date) => void
+  onDayNavigate?: (date: Date) => void
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -46,6 +47,7 @@ function MonthView({
   calendars: calList,
   onEventClick,
   onDayClick,
+  onDayNavigate,
 }: Omit<CalendarGridProps, 'view'>) {
   const monthStart = startOfMonth(currentDate)
   const monthEnd = endOfMonth(currentDate)
@@ -95,16 +97,19 @@ function MonthView({
                     onClick={() => onDayClick?.(day)}
                   >
                     <div className="flex items-center justify-center mb-1">
-                      <span
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onDayNavigate?.(day) }}
+                        aria-label={`Open ${format(day, 'EEEE, MMMM d')} day view`}
                         className={cn(
-                          'w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium',
-                          isToday(day) && 'bg-[#0078D4] text-white',
+                          'w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium hover:bg-[#EDEBE9] transition-colors',
+                          isToday(day) && 'bg-[#0078D4] text-white hover:bg-[#106EBE]',
                           !isToday(day) && inMonth && 'text-[#323130]',
                           !isToday(day) && !inMonth && 'text-[#A19F9D]'
                         )}
                       >
                         {format(day, 'd')}
-                      </span>
+                      </button>
                     </div>
                     <div className="space-y-0.5">
                       {dayEvents.slice(0, 3).map((event) => (
@@ -119,7 +124,7 @@ function MonthView({
                       ))}
                       {dayEvents.length > 3 && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); onDayClick?.(day) }}
+                          onClick={(e) => { e.stopPropagation(); onDayNavigate?.(day) }}
                           className="text-[10px] text-[#0078D4] hover:underline pl-1"
                         >
                           +{dayEvents.length - 3} more

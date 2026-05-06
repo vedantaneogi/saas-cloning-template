@@ -39,11 +39,13 @@ export default function CalendarPage() {
   }, [])
 
   // Calculate date range for events query
+  // Month view widens to startOfWeek(startOfMonth) → endOfWeek(endOfMonth)
+  // so events on leading/trailing days the grid paints are included.
   const getDateRange = () => {
     if (view === 'month') {
       return {
-        start: format(startOfMonth(currentDate), "yyyy-MM-dd'T'HH:mm:ss"),
-        end: format(endOfMonth(currentDate), "yyyy-MM-dd'T'HH:mm:ss"),
+        start: format(startOfWeek(startOfMonth(currentDate)), "yyyy-MM-dd'T'HH:mm:ss"),
+        end: format(endOfWeek(endOfMonth(currentDate)), "yyyy-MM-dd'T'HH:mm:ss"),
       }
     }
     if (view === 'week' || view === 'work-week') {
@@ -83,7 +85,15 @@ export default function CalendarPage() {
   }
 
   const router = useRouter()
+  // Click anywhere in a month-view day cell — open new event modal at that date.
+  // Outlook opens compose; previously this jumped to Day view, which was wrong.
   const handleDayClick = (date: Date) => {
+    setInitialDate(date)
+    setEditingEvent(undefined)
+    setEventModalOpen(true)
+  }
+  // Click on the day number / "+N more" — navigate to that day's Day view.
+  const handleDayNavigate = (date: Date) => {
     setCurrentDate(date)
     router.push('/calendar/day')
   }
@@ -121,6 +131,7 @@ export default function CalendarPage() {
             onEventClick={handleEventClick}
             onSlotClick={handleSlotClick}
             onDayClick={handleDayClick}
+            onDayNavigate={handleDayNavigate}
           />
         </div>
       </div>
