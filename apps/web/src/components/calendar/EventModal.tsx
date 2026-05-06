@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -117,6 +117,16 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   const repeatFrequency = watch('repeat_frequency')
   const repeatEndType = watch('repeat_end_type')
   const repeatDays = watch('repeat_days_of_week') ?? []
+  const watchedCalendarId = watch('calendar_id')
+
+  // Backfill calendar_id once the calendars query resolves. The form is created
+  // with calendar_id='' if the query hadn't returned yet — which makes Zod's
+  // .min(1) validation silently fail on Save, so the modal looks frozen.
+  useEffect(() => {
+    if (!event && !watchedCalendarId && defaultCalendar?.id) {
+      setValue('calendar_id', defaultCalendar.id, { shouldValidate: false })
+    }
+  }, [event, watchedCalendarId, defaultCalendar?.id, setValue])
 
   const toggleDay = (day: number) => {
     const current = repeatDays
