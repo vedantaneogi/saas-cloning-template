@@ -43,43 +43,43 @@ importers:
         specifier: ^5.56.2
         version: 5.100.9(react@19.2.5)
       '@tiptap/extension-color':
-        specifier: ^3.22.5
-        version: 3.22.5(@tiptap/extension-text-style@3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))
+        specifier: ^2.27.2
+        version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/extension-text-style@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))
       '@tiptap/extension-font-family':
-        specifier: ^3.22.5
-        version: 3.22.5(@tiptap/extension-text-style@3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))
+        specifier: ^2.27.2
+        version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/extension-text-style@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))
       '@tiptap/extension-font-size':
         specifier: 3.0.0-next.3
-        version: 3.0.0-next.3(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/extension-text-style@3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))
+        version: 3.0.0-next.3(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/extension-text-style@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))
       '@tiptap/extension-highlight':
-        specifier: ^3.22.5
-        version: 3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
+        specifier: ^2.27.2
+        version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
       '@tiptap/extension-image':
         specifier: ^2.27.2
         version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
       '@tiptap/extension-link':
-        specifier: ^2.7.1
+        specifier: ^2.27.2
         version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2)
       '@tiptap/extension-mention':
         specifier: ^2.27.2
         version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2)(@tiptap/suggestion@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2))
       '@tiptap/extension-placeholder':
-        specifier: ^2.7.1
+        specifier: ^2.27.2
         version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2)
       '@tiptap/extension-text-align':
-        specifier: ^2.7.1
+        specifier: ^2.27.2
         version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
       '@tiptap/extension-text-style':
-        specifier: ^3.22.5
-        version: 3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
+        specifier: ^2.27.2
+        version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
       '@tiptap/extension-underline':
-        specifier: ^2.7.1
+        specifier: ^2.27.2
         version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
       '@tiptap/react':
-        specifier: ^2.7.1
+        specifier: ^2.27.2
         version: 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@tiptap/starter-kit':
-        specifier: ^2.7.1
+        specifier: ^2.27.2
         version: 2.27.2
       '@tiptap/suggestion':
         specifier: ^2.27.2
@@ -503,10 +503,11 @@ packages:
     peerDependencies:
       '@tiptap/core': ^2.7.0
 
-  '@tiptap/extension-color@3.22.5':
-    resolution: {integrity: sha512-4aTygOUlTFBYCvJy67SeKVdXCQw7du3Rj+N5ZutVnDnrpfzUBWsO7f+I+iDS8eMQFbWxVFLlWxGMcTbjtk1a+Q==}
+  '@tiptap/extension-color@2.27.2':
+    resolution: {integrity: sha512-sOKCP8/2V3sRM3FdWgMe1lFE5ewsWNCRafiVoujS1+TTHGCj4jw6W+LiumBUk7cRI8kXW/rqGWVC4RVdknYUCA==}
     peerDependencies:
-      '@tiptap/extension-text-style': 3.22.5
+      '@tiptap/core': ^2.7.0
+      '@tiptap/extension-text-style': ^2.7.0
 
   '@tiptap/extension-document@2.27.2':
     resolution: {integrity: sha512-CFhAYsPnyYnosDC4639sCJnBUnYH4Cat9qH5NZWHVvdgtDwu8GZgZn2eSzaKSYXWH1vJ9DSlCK+7UyC3SNXIBA==}
@@ -525,10 +526,11 @@ packages:
       '@tiptap/core': ^2.7.0
       '@tiptap/pm': ^2.7.0
 
-  '@tiptap/extension-font-family@3.22.5':
-    resolution: {integrity: sha512-UAFIHmj4YbqJcCkBomrhy02cxBu7D2gQzVcurpNP1NdimqbWW2k+Km4SGss7hzZQXSETHtUKDkrAYgD8/UoY1A==}
+  '@tiptap/extension-font-family@2.27.2':
+    resolution: {integrity: sha512-Lc3fAF/t3QXuG5AiOjGiCoyxJH7QyAOj5P+X4O6NfFtHST2wxoqIKqnlXkROv+g49Th/ypVGQ/z47wb6EG4iQg==}
     peerDependencies:
-      '@tiptap/extension-text-style': 3.22.5
+      '@tiptap/core': ^2.7.0
+      '@tiptap/extension-text-style': ^2.7.0
 
   '@tiptap/extension-font-size@3.0.0-next.3':
     resolution: {integrity: sha512-JmmrCboLvDH4HG1nOAMkiwmeFluliXaeEh5+RDxOofuzxsHjSYVJpNP846eLtMnjkUAxjvh7tBz7GTjATm3OuQ==}
@@ -553,10 +555,10 @@ packages:
     peerDependencies:
       '@tiptap/core': ^2.7.0
 
-  '@tiptap/extension-highlight@3.22.5':
-    resolution: {integrity: sha512-byWruAOKcqRN0OuzVSKqLLrced3M9AZaR2pD1BV3aUZHzMzeBjLBfByh8s4lExH2Z547xQUdHHnUflBQ572I5A==}
+  '@tiptap/extension-highlight@2.27.2':
+    resolution: {integrity: sha512-ZjlktDdMjruMJFAVz0TbQf0v92Jqkc7Ri1iZJqBXuLid+r+GxUzl2CVAV7qq5yagkGQgvAG+WGsMk880HgR3MA==}
     peerDependencies:
-      '@tiptap/core': 3.22.5
+      '@tiptap/core': ^2.7.0
 
   '@tiptap/extension-history@2.27.2':
     resolution: {integrity: sha512-+hSyqERoFNTWPiZx4/FCyZ/0eFqB9fuMdTB4AC/q9iwu3RNWAQtlsJg5230bf/qmyO6bZxRUc0k8p4hrV6ybAw==}
@@ -633,11 +635,6 @@ packages:
     resolution: {integrity: sha512-Omk+uxjJLyEY69KStpCw5fA9asvV+MGcAX2HOxyISDFoLaL49TMrNjhGAuz09P1L1b0KGXo4ml7Q3v/Lfy4WPA==}
     peerDependencies:
       '@tiptap/core': ^2.7.0
-
-  '@tiptap/extension-text-style@3.22.5':
-    resolution: {integrity: sha512-jt63jy8YbhZJUGMxTUzeivLhowGtFp6YbCFrrmZJ7G6IHu8X8LJzO81ksz5nT5l8DKpldGwnINUfA6iE91JIAg==}
-    peerDependencies:
-      '@tiptap/core': 3.22.5
 
   '@tiptap/extension-text@2.27.2':
     resolution: {integrity: sha512-Xk7nYcigljAY0GO9hAQpZ65ZCxqOqaAlTPDFcKerXmlkQZP/8ndx95OgUb1Xf63kmPOh3xypurGS2is3v0MXSA==}
@@ -2080,9 +2077,10 @@ snapshots:
     dependencies:
       '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
 
-  '@tiptap/extension-color@3.22.5(@tiptap/extension-text-style@3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))':
+  '@tiptap/extension-color@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/extension-text-style@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))':
     dependencies:
-      '@tiptap/extension-text-style': 3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
+      '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
+      '@tiptap/extension-text-style': 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
 
   '@tiptap/extension-document@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))':
     dependencies:
@@ -2099,14 +2097,15 @@ snapshots:
       '@tiptap/pm': 2.27.2
       tippy.js: 6.3.7
 
-  '@tiptap/extension-font-family@3.22.5(@tiptap/extension-text-style@3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))':
-    dependencies:
-      '@tiptap/extension-text-style': 3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
-
-  '@tiptap/extension-font-size@3.0.0-next.3(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/extension-text-style@3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))':
+  '@tiptap/extension-font-family@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/extension-text-style@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))':
     dependencies:
       '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
-      '@tiptap/extension-text-style': 3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
+      '@tiptap/extension-text-style': 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
+
+  '@tiptap/extension-font-size@3.0.0-next.3(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/extension-text-style@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2)))':
+    dependencies:
+      '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
+      '@tiptap/extension-text-style': 2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))
 
   '@tiptap/extension-gapcursor@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2)':
     dependencies:
@@ -2121,7 +2120,7 @@ snapshots:
     dependencies:
       '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
 
-  '@tiptap/extension-highlight@3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))':
+  '@tiptap/extension-highlight@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))':
     dependencies:
       '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
 
@@ -2185,10 +2184,6 @@ snapshots:
       '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
 
   '@tiptap/extension-text-style@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))':
-    dependencies:
-      '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
-
-  '@tiptap/extension-text-style@3.22.5(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))':
     dependencies:
       '@tiptap/core': 2.27.2(@tiptap/pm@2.27.2)
 
