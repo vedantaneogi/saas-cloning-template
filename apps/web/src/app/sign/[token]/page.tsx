@@ -6,14 +6,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Warning } from "@phosphor-icons/react";
 import { getSigningSession, verifySigningAccessCode } from "@/features/signing/api";
 import { AccessCodeGate } from "@/features/signing/components/AccessCodeGate";
-import { ConsentGate } from "@/features/signing/components/ConsentGate";
 import { SigningCeremony } from "@/features/signing/components/SigningCeremony";
 
 export default function SigningPage() {
   const { token } = useParams<{ token: string }>();
   const [accessCodeVerified, setAccessCodeVerified] = useState(false);
   const [verifiedAccessCode, setVerifiedAccessCode] = useState<string | undefined>(undefined);
-  const [consentGiven, setConsentGiven] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["signing-session", token],
@@ -97,19 +95,6 @@ export default function SigningPage() {
     data.envelope.recipients?.find((r: { id: string; email?: string }) => r.id === data.recipientId)?.email ||
     data.envelope.fromEmail;
   const isActuallySelfSign = !!(signerEmail && data.envelope.fromEmail && signerEmail.toLowerCase() === data.envelope.fromEmail.toLowerCase());
-
-  // External recipients must consent before signing; self-signers skip the gate.
-  if (!isActuallySelfSign && !consentGiven) {
-    return (
-      <ConsentGate
-        senderName={data.envelope.from || data.envelope.fromEmail || "Sender"}
-        documentName={data.envelope.subject}
-        recipientName={data.recipientName || signerEmail}
-        onConsent={() => setConsentGiven(true)}
-        onDecline={() => window.location.href = "/"}
-      />
-    );
-  }
 
   return (
     <SigningCeremony
