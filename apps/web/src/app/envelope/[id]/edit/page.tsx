@@ -819,14 +819,16 @@ export default function EditorPage() {
     enabled: !!envelope,
   });
 
-  const editorRecipients = (envelope?.recipients ?? []).map((r, idx) => ({
-    id: r.id,
-    name: r.name,
-    email: r.email,
-    role: r.role,
-    order: (r as any).order ?? idx + 1,
-    color: getRecipientColor(idx),
-  }));
+  const editorRecipients = (envelope?.recipients ?? [])
+    .filter((r) => !["cc", "viewer"].includes((r.role as string)?.toLowerCase()))
+    .map((r, idx) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      role: r.role,
+      order: (r as any).order ?? idx + 1,
+      color: getRecipientColor(idx),
+    }));
 
   // Build page image URLs from ALL documents (concatenated).
   // Also build a DocumentSection array for the PageNavigator so it can show

@@ -406,7 +406,16 @@ export async function getSigningSession(token: string): Promise<{
   fields: Field[];
 }> {
   const res = await apiClient.get(`/signing/${token}`);
-  return res.data;
+  const data = res.data;
+  // Map snake_case field keys to camelCase so SigningCeremony filters work
+  if (data.fields) {
+    data.fields = data.fields.map((f: Record<string, unknown>) => ({
+      ...f,
+      recipientId: f.recipientId ?? f.recipient_id,
+      documentId: f.documentId ?? f.document_id,
+    }));
+  }
+  return data;
 }
 
 export async function submitFieldValue(
