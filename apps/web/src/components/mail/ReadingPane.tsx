@@ -412,6 +412,10 @@ export function ReadingPane() {
               if (a.email === currentUserEmail) return 'You'
               return a.name || a.email
             }).join(', ')
+            const bccDisplay = msg.bcc_addresses?.map((a: { email: string; name?: string }) => {
+              if (a.email === currentUserEmail) return 'You'
+              return a.name || a.email
+            }).join(', ')
 
             // Look at the NEXT-OLDER message (idx + 1 in DESC order). If it's from the
             // current user and collapsed, render the "You replied on..." bar above it.
@@ -457,6 +461,14 @@ export function ReadingPane() {
                       {ccDisplay && (
                         <p className="text-xs text-[#605E5C] mt-0.5">
                           <span className="font-medium text-[#323130]">Cc:</span> {ccDisplay}
+                        </p>
+                      )}
+                      {/* Bcc only ever populates on the sender's copy (the delivery
+                          path strips it for everyone else), so this line surfaces who
+                          you BCC'd when reviewing your sent items. */}
+                      {bccDisplay && (
+                        <p className="text-xs text-[#605E5C] mt-0.5">
+                          <span className="font-medium text-[#323130]">Bcc:</span> {bccDisplay}
                         </p>
                       )}
                     </div>
@@ -529,19 +541,20 @@ export function ReadingPane() {
 
       {/* Inline reply editor — pinned at bottom */}
       {inlineReplyType && (() => {
-        // Compute the preview of who the reply will land on so the user can verify
-        // Reply-All actually picks up everyone (To + Cc minus self) before sending.
-        const replyPreviewTo = inlineReplyType !== 'forward'
-          ? (message.from_name ?? message.from_address)
-          : null
-        const replyPreviewCc = inlineReplyType === 'reply_all'
+        // Compute the recipient sets so we can show them as chips before sending.
+        // Reply: just the original sender. Reply-all: also includes original
+        // To (minus self) + original Cc.
+        const replyToRecipients: { name?: string; email: string }[] = inlineReplyType !== 'forward'
+          ? [{ name: message.from_name ?? undefined, email: message.from_address }]
+          : []
+        const replyCcRecipients: { name?: string; email: string }[] = inlineReplyType === 'reply_all'
           ? [
               ...(message.to_addresses ?? []).filter(
                 (a) => (a.email ?? '').toLowerCase() !== (currentUserEmail ?? '').toLowerCase()
               ),
               ...(message.cc_addresses ?? []),
-            ].map((a) => a.name || a.email).filter(Boolean).join(', ')
-          : ''
+            ]
+          : []
         return (
         <div className="border-t border-[#EDEBE9] bg-white flex-shrink-0">
           <div className="flex items-center justify-between px-4 py-2 bg-[#FAF9F8] border-b border-[#EDEBE9]">
@@ -569,16 +582,39 @@ export function ReadingPane() {
               </button>
             </div>
           </div>
-          {/* To/Cc preview so the user sees exactly who'll get the reply. */}
+          {/* To/Cc preview rendered as Outlook-style chip pills so the user sees
+              exactly who'll receive the reply before sending. */}
           {inlineReplyType !== 'forward' && (
-            <div className="px-4 py-1.5 border-b border-[#EDEBE9] text-xs text-[#605E5C] space-y-0.5 bg-white">
-              <p>
-                <span className="font-medium text-[#323130]">To:</span> {replyPreviewTo}
-              </p>
-              {inlineReplyType === 'reply_all' && replyPreviewCc && (
-                <p>
-                  <span className="font-medium text-[#323130]">Cc:</span> {replyPreviewCc}
-                </p>
+            <div className="px-4 py-2 border-b border-[#EDEBE9] space-y-1 bg-white">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[#323130] w-7 flex-shrink-0">To</span>
+                <div className="flex flex-wrap gap-1">
+                  {replyToRecipients.map((r) => (
+                    <span
+                      key={r.email}
+                      className="inline-flex items-center gap-1 bg-[#EBF3FB] text-[#0078D4] text-xs px-2 py-0.5 rounded-full"
+                      title={r.email}
+                    >
+                      {r.name || r.email}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {inlineReplyType === 'reply_all' && replyCcRecipients.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-xs font-semibold text-[#323130] w-7 flex-shrink-0 pt-0.5">Cc</span>
+                  <div className="flex flex-wrap gap-1">
+                    {replyCcRecipients.map((r) => (
+                      <span
+                        key={r.email}
+                        className="inline-flex items-center gap-1 bg-[#F3F2F1] text-[#605E5C] text-xs px-2 py-0.5 rounded-full"
+                        title={r.email}
+                      >
+                        {r.name || r.email}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
