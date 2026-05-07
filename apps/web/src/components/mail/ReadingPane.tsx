@@ -347,10 +347,11 @@ export function ReadingPane() {
 
   if (!message) return null
 
-  // Build chronological thread
+  // Build thread newest-first to match Outlook (selected message floats to the top,
+  // older messages render below it so users can scroll into the history.)
   const allThreadMsgs = threadMessages.length > 0
     ? [...threadMessages, message].sort((a, b) =>
-        new Date(a.received_at ?? a.created_at).getTime() - new Date(b.received_at ?? b.created_at).getTime()
+        new Date(b.received_at ?? b.created_at).getTime() - new Date(a.received_at ?? a.created_at).getTime()
       )
     : [message]
 
@@ -394,23 +395,27 @@ export function ReadingPane() {
           {/* Calendar invitation actions — Accept / Tentative / Decline / Propose */}
           {message.event_id && <InviteActions message={message} />}
 
-          {/* Thread messages — Outlook-style cards */}
+          {/* Thread messages — Outlook-style cards (newest first). The currently
+              selected message is always expanded; older messages from the current
+              user collapse to a "You replied on..." bar that the next-older message
+              renders above itself. */}
           {allThreadMsgs.map((msg, idx) => {
-            const isLast = idx === allThreadMsgs.length - 1
+            const isSelected = msg.id === selectedMessageId
             const senderName = msg.from_name || msg.from_address.split('@')[0]
             const isMine = isSentByCurrentUser(msg)
-            const isCollapsed = !isLast && isMine && expandedThreadMsgId !== msg.id
+            const isCollapsed = !isSelected && isMine && expandedThreadMsgId !== msg.id
             const toDisplay = msg.to_addresses?.map((a: { email: string; name?: string }) => {
               if (a.email === currentUserEmail) return 'You'
               return a.name || a.email
             }).join(', ')
 
-            // Look ahead: if NEXT message is from current user, show "You replied on..." bar after this card
+            // Look at the NEXT-OLDER message (idx + 1 in DESC order). If it's from the
+            // current user and collapsed, render the "You replied on..." bar above it.
             const nextMsg = allThreadMsgs[idx + 1]
             const nextIsMine = nextMsg && isSentByCurrentUser(nextMsg)
-            const showReplyBar = nextIsMine && expandedThreadMsgId !== nextMsg.id
+            const showReplyBar = nextIsMine && expandedThreadMsgId !== nextMsg.id && nextMsg.id !== selectedMessageId
 
-            // Collapsed — just show the "You replied on..." bar (rendered by the PREVIOUS message's showReplyBar)
+            // Collapsed — its "You replied on..." bar is rendered by its NEWER neighbour's showReplyBar.
             if (isCollapsed) return null
 
             return (
@@ -470,8 +475,8 @@ export function ReadingPane() {
                     </button>
                   </div>
 
-                  {/* Reply / Forward buttons — only on last message */}
-                  {isLast && !inlineReplyType && (
+                  {/* Reply / Forward buttons — only on the selected (top, newest) message */}
+                  {isSelected && !inlineReplyType && (
                     <div className="px-4 pb-4 ml-[52px] flex items-center gap-2">
                       <button
                         onClick={() => openInlineReply('reply')}
@@ -504,8 +509,8 @@ export function ReadingPane() {
                   </button>
                 )}
 
-                {/* Separator line between messages (not after last) */}
-                {!isLast && !showReplyBar && <div className="h-px bg-[#EDEBE9] my-1" />}
+                {/* Separator line between messages (skip after the oldest) */}
+                {idx < allThreadMsgs.length - 1 && !showReplyBar && <div className="h-px bg-[#EDEBE9] my-1" />}
               </div>
             )
           })}

@@ -1,9 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { X } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { X, Mail, UserPlus } from 'lucide-react'
 import { contacts } from '@/lib/api'
 import type { Contact } from '@/lib/api'
+import { Avatar } from '@/components/ui/Avatar'
+import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
 
 interface RecipientFieldProps {
@@ -12,6 +15,87 @@ interface RecipientFieldProps {
   onChange: (recipients: string[]) => void
   placeholder?: string
   id?: string
+}
+
+// Pulls "alice@x.com" out of either bare emails or "Name <alice@x.com>" formatted strings.
+function extractEmail(addr: string): string {
+  const match = addr.match(/<([^>]+)>/)
+  return (match ? match[1] : addr).trim()
+}
+
+function extractName(addr: string): string {
+  const match = addr.match(/^(.+?)\s*<[^>]+>/)
+  return match ? match[1].trim() : ''
+}
+
+interface ChipPopoverProps {
+  recipient: string
+  anchor: { x: number; y: number }
+  onClose: () => void
+}
+
+function ChipPopover({ recipient, anchor, onClose }: ChipPopoverProps) {
+  const email = extractEmail(recipient)
+  const name = extractName(recipient)
+  const openComposer = useUIStore((s) => s.openComposer)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  const { data: matches } = useQuery({
+    queryKey: ['contact-lookup', email],
+    queryFn: () => contacts.autocomplete(email),
+    staleTime: 60000,
+  })
+  const contact = matches?.[0]
+
+  // Click-outside dismiss
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [onClose])
+
+  const displayName = contact?.display_name || name || email
+
+  return (
+    <div
+      ref={cardRef}
+      className="fixed z-[9999] w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 animate-fade-in"
+      style={{ left: anchor.x, top: anchor.y }}
+      role="dialog"
+      aria-label={`Contact card for ${displayName}`}
+    >
+      <div className="flex items-center gap-3 mb-2">
+        <Avatar name={displayName} size="md" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#323130] truncate">{displayName}</p>
+          <p className="text-xs text-[#605E5C] truncate">{email}</p>
+        </div>
+      </div>
+      {contact && (contact.job_title || contact.company || contact.phone) && (
+        <div className="space-y-0.5 mb-2 pb-2 border-b border-[#EDEBE9]">
+          {contact.job_title && <p className="text-xs text-[#605E5C] truncate">{contact.job_title}</p>}
+          {contact.company && <p className="text-xs text-[#605E5C] truncate">{contact.company}</p>}
+          {contact.phone && <p className="text-xs text-[#605E5C] truncate">{contact.phone}</p>}
+        </div>
+      )}
+      <div className="flex items-center gap-3 pt-1">
+        <button
+          type="button"
+          onClick={() => { openComposer({ to: [recipient] }); onClose() }}
+          className="flex items-center gap-1 text-xs text-[#0078D4] hover:underline"
+        >
+          <Mail size={11} /> Send email
+        </button>
+        {!contact && (
+          <span className="flex items-center gap-1 text-xs text-[#A19F9D]">
+            <UserPlus size={11} /> Not in contacts
+          </span>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export function RecipientField({ label, value, onChange, placeholder, id }: RecipientFieldProps) {
@@ -65,6 +149,10 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
 
   const showDropdown = focused && input.length >= 2 && suggestions.length > 0
 
+  // Chip click → contact card popover (Outlook behaviour). Anchor coords are
+  // captured on the click and dismissed via outside-click in ChipPopover.
+  const [chipPopover, setChipPopover] = useState<{ recipient: string; x: number; y: number } | null>(null)
+
   return (
     <div className="flex items-start gap-2 min-h-[32px]">
       {label && (
@@ -82,22 +170,37 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
         )}
         onClick={() => inputRef.current?.focus()}
       >
-        {value.map((recipient) => (
-          <span
-            key={recipient}
-            className="inline-flex items-center gap-1 bg-[#EBF3FB] text-[#0078D4] text-xs px-2 py-0.5 rounded-full"
-          >
-            {recipient}
-            <button
-              type="button"
-              onClick={() => removeRecipient(recipient)}
-              aria-label={`Remove ${recipient}`}
-              className="hover:text-[#005A9E] transition-colors"
+        {value.map((recipient) => {
+          const displayLabel = extractName(recipient) || extractEmail(recipient)
+          return (
+            <span
+              key={recipient}
+              className="inline-flex items-center gap-1 bg-[#EBF3FB] text-[#0078D4] text-xs px-2 py-0.5 rounded-full hover:bg-[#C7E0F4] transition-colors"
             >
-              <X size={10} />
-            </button>
-          </span>
-        ))}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  setChipPopover({ recipient, x: rect.left, y: rect.bottom + 4 })
+                }}
+                className="text-left truncate max-w-[200px]"
+                title={recipient}
+                aria-label={`Open contact card for ${displayLabel}`}
+              >
+                {displayLabel}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); removeRecipient(recipient) }}
+                aria-label={`Remove ${recipient}`}
+                className="hover:text-[#005A9E] transition-colors"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          )
+        })}
         <div className="relative flex-1 min-w-[120px]" ref={wrapperRef}>
           <input
             ref={inputRef}
@@ -165,6 +268,13 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
           )}
         </div>
       </div>
+      {chipPopover && (
+        <ChipPopover
+          recipient={chipPopover.recipient}
+          anchor={{ x: chipPopover.x, y: chipPopover.y }}
+          onClose={() => setChipPopover(null)}
+        />
+      )}
     </div>
   )
 }

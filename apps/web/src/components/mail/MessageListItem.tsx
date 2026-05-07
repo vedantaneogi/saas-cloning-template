@@ -573,6 +573,19 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
                 {opt.label}
               </button>
             ))}
+            {message.snooze_until && new Date(message.snooze_until) > new Date() && (
+              <button
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // Cleared by sending null — backend treats null as "not snoozed".
+                  snoozeMutation.mutate(null as unknown as string)
+                }}
+                className="w-full text-left text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1] border-t border-[#EDEBE9]"
+              >
+                Unsnooze
+              </button>
+            )}
           </SubMenu>
 
           <MenuItem

@@ -390,35 +390,39 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   if (inline) {
     return (
       <div className="flex flex-col h-full bg-white" aria-label="Compose message">
-        {/* Recipients */}
-        <div className="px-4 pt-3 space-y-1 border-b border-[#EDEBE9] pb-2 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            {/* Send button inline with To */}
-            <div className="flex items-center flex-shrink-0">
-              <button
-                type="button"
-                onClick={handleSubmit(() => handleSend())}
-                disabled={sendMutation.isPending}
-                className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors"
-              >
-                <Send size={12} /> Send
+        {/* Send bar — Send button sits at the top of the pane like the Outlook screenshot,
+            not inline with the To field. */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-[#EDEBE9] flex-shrink-0">
+          <div className="flex items-center flex-shrink-0">
+            <button
+              type="button"
+              onClick={handleSubmit(() => handleSend())}
+              disabled={sendMutation.isPending}
+              className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors"
+            >
+              <Send size={12} /> Send
+            </button>
+            <div className="relative" ref={scheduleMenuRef}>
+              <button type="button" onClick={() => setScheduleMenuOpen((v) => !v)}
+                className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-7 px-1 rounded-r border-l border-white/30 transition-colors">
+                <ChevronDown size={10} />
               </button>
-              <div className="relative" ref={scheduleMenuRef}>
-                <button type="button" onClick={() => setScheduleMenuOpen((v) => !v)}
-                  className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-7 px-1 rounded-r border-l border-white/30 transition-colors">
-                  <ChevronDown size={10} />
-                </button>
-                {scheduleMenuOpen && (
-                  <div className="absolute left-0 top-full mt-0.5 z-50 w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3">
-                    <p className="text-xs font-medium text-[#605E5C] mb-2">Schedule send</p>
-                    <input type="datetime-local" value={scheduledSendAt} onChange={(e) => setScheduledSendAt(e.target.value)}
-                      className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
-                    <button type="button" disabled={!scheduledSendAt} onClick={() => { handleSend(scheduledSendAt); setScheduleMenuOpen(false) }}
-                      className="w-full text-xs bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded">Schedule</button>
-                  </div>
-                )}
-              </div>
+              {scheduleMenuOpen && (
+                <div className="absolute left-0 top-full mt-0.5 z-50 w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3">
+                  <p className="text-xs font-medium text-[#605E5C] mb-2">Schedule send</p>
+                  <input type="datetime-local" value={scheduledSendAt} onChange={(e) => setScheduledSendAt(e.target.value)}
+                    className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
+                  <button type="button" disabled={!scheduledSendAt} onClick={() => { handleSend(scheduledSendAt); setScheduleMenuOpen(false) }}
+                    className="w-full text-xs bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded">Schedule</button>
+                </div>
+              )}
             </div>
+          </div>
+        </div>
+
+        {/* Recipients */}
+        <div className="px-4 pt-2 space-y-1 border-b border-[#EDEBE9] pb-2 flex-shrink-0">
+          <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <RecipientField label="To" id="inline-to" value={to} onChange={setTo} placeholder="Recipients" />
             </div>

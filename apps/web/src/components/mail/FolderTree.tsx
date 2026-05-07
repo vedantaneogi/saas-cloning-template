@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Pencil,
   Play,
+  Clock,
 } from 'lucide-react'
 import { folders, messages, rules } from '@/lib/api'
 import type { Folder as FolderType } from '@/lib/api'
@@ -32,6 +33,34 @@ const SYSTEM_ICONS: Record<string, React.ReactNode> = {
   archive: <Archive size={16} />,
   junk: <AlertTriangle size={16} />,
   deleted: <Trash2 size={16} />,
+}
+
+// Virtual "Snoozed" surface — there's no DB folder for snoozed messages, just a
+// list filter (snooze_until > now). Lives next to the system folders so users
+// can re-find anything they snoozed without scanning the inbox.
+function SnoozedFolderEntry({ currentSlug }: { currentSlug: string }) {
+  const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
+  const setSelectedFolderId = useMailStore((s) => s.setSelectedFolderId)
+  const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
+  const isActive = currentSlug === 'snoozed'
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setSelectedFolderSlug('snoozed')
+        setSelectedFolderId(null)
+        setSelectedMessageId(null)
+      }}
+      className={cn(
+        'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-sm transition-colors text-left',
+        isActive ? 'bg-[#EBF3FB] text-[#0078D4] font-medium' : 'text-[#323130] hover:bg-[#F3F2F1]'
+      )}
+      aria-current={isActive ? 'page' : undefined}
+    >
+      <Clock size={16} />
+      Snoozed
+    </button>
+  )
 }
 
 interface FolderItemProps {
@@ -423,6 +452,11 @@ export function FolderTree() {
                     currentSlug={currentSlug}
                   />
                 ))}
+                {/* Snoozed — virtual cross-folder view (snoozed messages are
+                    filtered out of the inbox; this surface re-shows them). */}
+                <li>
+                  <SnoozedFolderEntry currentSlug={currentSlug} />
+                </li>
                 {userFolders.map((folder) => (
                   <FolderItem
                     key={folder.id}

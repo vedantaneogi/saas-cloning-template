@@ -381,6 +381,7 @@ export const messages = {
     is_read?: boolean
     is_flagged?: boolean
     focused?: boolean
+    snoozed?: boolean
     conversation_grouping?: boolean
     from_addr?: string
   }) => {

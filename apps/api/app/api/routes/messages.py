@@ -163,6 +163,7 @@ async def list_messages(
     search: Optional[str] = None,
     from_addr: Optional[str] = None,
     focused: Optional[bool] = None,
+    snoozed: Optional[bool] = None,
     sort: str = "received_at:desc",
     cursor: Optional[str] = None,
     limit: int = Query(default=50, le=200),
@@ -226,9 +227,15 @@ async def list_messages(
             )
         )
 
-    # Exclude snoozed messages (snooze_until is in the future)
+    # Snooze handling. Default behaviour hides snoozed messages from any folder so
+    # they don't clutter the inbox; the dedicated "Snoozed" view passes snoozed=true
+    # and we invert the predicate so only currently-snoozed rows come back.
     now = rl_state.clock.now()
-    filters.append(or_(Message.snooze_until.is_(None), Message.snooze_until <= now))
+    if snoozed:
+        filters.append(Message.snooze_until.is_not(None))
+        filters.append(Message.snooze_until > now)
+    else:
+        filters.append(or_(Message.snooze_until.is_(None), Message.snooze_until <= now))
 
     # Cursor-based pagination: cursor is the last message id
     if cursor:
@@ -241,7 +248,8 @@ async def list_messages(
         except ValueError:
             pass
 
-    # Build sort
+    # Build sort. Pinned messages always float to the top regardless of secondary sort —
+    # mirrors Outlook's "Pin to top" behaviour.
     sort_field, sort_dir = (sort.split(":") + ["desc"])[:2]
     sort_col = getattr(Message, sort_field, Message.received_at)
     order = desc(sort_col) if sort_dir == "desc" else sort_col
@@ -252,7 +260,10 @@ async def list_messages(
     result = await db.execute(
         select(Message)
         .options(selectinload(Message.attachments))
-        .where(*filters).order_by(order).distinct().limit(limit + 1)
+        .where(*filters)
+        .order_by(desc(Message.is_pinned), order)
+        .distinct()
+        .limit(limit + 1)
     )
     messages = result.scalars().all()
 
@@ -583,7 +594,10 @@ async def update_message(
         msg.body_html = body.body_html
     if body.body_text is not None:
         msg.body_text = body.body_text
-    if body.snooze_until is not None:
+    # Use model_fields_set so an explicit `snooze_until: null` from the client
+    # clears the column (Outlook's "Unsnooze" path) without affecting other PATCHes
+    # that simply omit the field.
+    if "snooze_until" in body.model_fields_set:
         msg.snooze_until = body.snooze_until
     if body.scheduled_send_at is not None:
         msg.scheduled_send_at = body.scheduled_send_at

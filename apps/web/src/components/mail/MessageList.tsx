@@ -126,6 +126,7 @@ export function MessageList() {
   )?.id
 
   const isFollowupView = selectedFolderSlug === 'followup'
+  const isSnoozedView = selectedFolderSlug === 'snoozed'
 
   const { data: followupData, isLoading: followupLoading } = useQuery({
     queryKey: ['messages-followup'],
@@ -136,16 +137,18 @@ export function MessageList() {
   const focusedParam = isInbox ? (focusedTab === 'focused' ? true : false) : undefined
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder, focusedParam],
+    queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder, focusedParam, isSnoozedView],
     queryFn: () =>
       messages.list({
-        folder_slug: selectedFolderSlug,
-        folder_id: folderId,
+        // Snoozed is a virtual cross-folder view — don't pin it to a folder.
+        folder_slug: isSnoozedView ? undefined : selectedFolderSlug,
+        folder_id: isSnoozedView ? undefined : folderId,
         conversation_grouping: conversationGrouping,
         sort: sortBy,
         order: sortOrder,
         per_page: 50,
         focused: focusedParam,
+        snoozed: isSnoozedView ? true : undefined,
       }),
     enabled: !isFollowupView,
   })
