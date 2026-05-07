@@ -380,12 +380,15 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             {message.categories && message.categories.length > 0 && (
               <span className="flex items-center gap-0.5" aria-label="Categories">
                 {message.categories.slice(0, 3).map((cat) => (
-                  <span
+                  <Tag
                     key={cat.id}
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: cat.color }}
-                    title={cat.name}
-                  />
+                    size={11}
+                    className="flex-shrink-0"
+                    style={{ color: cat.color }}
+                    aria-label={cat.name}
+                  >
+                    <title>{cat.name}</title>
+                  </Tag>
                 ))}
               </span>
             )}
