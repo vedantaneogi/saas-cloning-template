@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DropZone } from "@/components/ui/DropZone";
 import { FileText, X } from "@phosphor-icons/react";
+import { useToast, ToastContainer } from "@/components/ui/Toast";
 
 interface UploadedDocument {
   id: string;
@@ -19,6 +20,7 @@ interface DocumentUploadProps {
 
 export function DocumentUpload({ documents, onAdd, onRemove }: DocumentUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const { toasts, addToast, dismissToast } = useToast();
 
   const handleFiles = (files: File[]) => {
     const allowedExts = [".pdf", ".doc", ".docx"];
@@ -30,11 +32,11 @@ export function DocumentUpload({ documents, onAdd, onRemove }: DocumentUploadPro
       return true;
     });
     if (valid.length === 0 && files.length > 0) {
-      alert("Only PDF and Word documents (max 10MB) are accepted.");
+      addToast("Only PDF and Word documents (max 10MB) are accepted.", "error");
       return;
     }
     if (valid.length < files.length) {
-      alert(`${files.length - valid.length} file(s) were skipped — only PDF and Word documents (max 10MB) are accepted.`);
+      addToast(`${files.length - valid.length} file(s) were skipped — only PDF and Word documents (max 10MB) are accepted.`, "error");
     }
     const newDocs: UploadedDocument[] = valid.map((file) => ({
       id: crypto.randomUUID(),
@@ -52,6 +54,7 @@ export function DocumentUpload({ documents, onAdd, onRemove }: DocumentUploadPro
   };
 
   return (
+    <>
     <div className="space-y-4">
       <DropZone
         onFiles={handleFiles}
@@ -90,5 +93,7 @@ export function DocumentUpload({ documents, onAdd, onRemove }: DocumentUploadPro
         </div>
       )}
     </div>
+    <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
   );
 }

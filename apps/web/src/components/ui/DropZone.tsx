@@ -3,6 +3,7 @@
 import { DragEvent, useRef, useState } from "react";
 import { UploadSimple } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { useToast, ToastContainer } from "@/components/ui/Toast";
 
 interface DropZoneProps {
   onFiles: (files: File[]) => void;
@@ -15,6 +16,7 @@ interface DropZoneProps {
 export function DropZone({ onFiles, accept = ".pdf", multiple = true, className, children }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { toasts, addToast, dismissToast } = useToast();
 
   const handleDrag = (e: DragEvent) => {
     e.preventDefault();
@@ -44,7 +46,7 @@ export function DropZone({ onFiles, accept = ".pdf", multiple = true, className,
         return exts.length === 0 && mimes.length === 0;
       });
       if (filtered.length === 0) {
-        alert(`Only ${exts.join(", ")} files are accepted.`);
+        addToast(`Only ${exts.join(", ")} files are accepted.`, "error");
         return;
       }
       onFiles(filtered);
@@ -59,6 +61,7 @@ export function DropZone({ onFiles, accept = ".pdf", multiple = true, className,
   };
 
   return (
+    <>
     <div
       className={cn(
         "relative border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer",
@@ -100,5 +103,7 @@ export function DropZone({ onFiles, accept = ".pdf", multiple = true, className,
         </div>
       )}
     </div>
+    <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
   );
 }

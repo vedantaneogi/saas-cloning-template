@@ -534,6 +534,7 @@ export function WelcomeHero() {
   const user = useAuthStore((s) => s.user);
   const displayName = user?.name ?? "there";
   const router = useRouter();
+  const { toasts, addToast, dismissToast } = useToast();
   const [startOpen, setStartOpen] = useState(false);
   const [envelopesHovered, setEnvelopesHovered] = useState(false);
   const [templatesHovered, setTemplatesHovered] = useState(false);
@@ -554,7 +555,7 @@ export function WelcomeHero() {
       router.push(`/envelope/${envelope.id}/prepare?mode=template`);
     },
     onError: () => {
-      alert("Failed to start template creation. Please try again.");
+      addToast("Failed to start template creation. Please try again.", "error");
     },
   });
 
@@ -824,6 +825,7 @@ export function WelcomeHero() {
     {signModalOpen && (
       <SignDocumentModal onClose={() => setSignModalOpen(false)} />
     )}
+    <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </>
   );
 }

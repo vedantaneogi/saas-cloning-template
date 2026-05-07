@@ -11,6 +11,7 @@ import { TemplateList } from "@/features/templates/components/TemplateList";
 import { getTemplates, createTemplate } from "@/features/templates/api";
 import { createEnvelope } from "@/features/envelopes/api";
 import { SlidersHorizontal, X, MagnifyingGlass, DotsSixVertical } from "@phosphor-icons/react";
+import { useToast, ToastContainer } from "@/components/ui/Toast";
 
 const PRIMARY_COLOR = "#260559";
 const PRIMARY_TEXT = "rgba(19, 0, 50, 0.9)";
@@ -30,6 +31,7 @@ const SECTION_LABELS: Record<SectionId, string> = {
 export default function TemplatesPage() {
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { toasts, addToast, dismissToast } = useToast();
   const [activeSection, setActiveSection] = useState<SectionId>("my-templates");
   const [search, setSearch] = useState("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -100,7 +102,7 @@ export default function TemplatesPage() {
       router.push(`/envelope/${envelope.id}/prepare?mode=template`);
     },
     onError: () => {
-      alert("Failed to start template creation. Please try again.");
+      addToast("Failed to start template creation. Please try again.", "error");
     },
   });
 
@@ -118,6 +120,7 @@ export default function TemplatesPage() {
       : "Search Favorites";
 
   return (
+    <>
     <div className="flex flex-1 overflow-hidden min-h-0" style={{ fontFamily: DS_FONT }}>
       <TemplateSidebar
         activeSection={activeSection}
@@ -737,5 +740,7 @@ export default function TemplatesPage() {
         </div>
       </Dialog>
     </div>
+    <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
   );
 }

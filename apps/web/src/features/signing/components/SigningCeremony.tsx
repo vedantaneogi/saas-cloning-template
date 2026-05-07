@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { completeSigning, declineSigning, submitFieldValue } from "@/features/signing/api";
+import { useToast, ToastContainer } from "@/components/ui/Toast";
 import { SignatureCapture } from "./SignatureCapture";
 import { FieldNavigator } from "./FieldNavigator";
 import { DeclineDialog } from "./DeclineDialog";
@@ -813,6 +814,7 @@ interface SigningCeremonyProps {
 type SigningStatus = "signing" | "completed" | "declined";
 
 export function SigningCeremony({ token, envelope, recipientId, fields, accessCode, isSelfSign, isActuallySelfSign }: SigningCeremonyProps) {
+  const { toasts, addToast, dismissToast } = useToast();
   const [status, setStatus] = useState<SigningStatus>("signing");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -984,7 +986,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
       const message =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
         "Something went wrong. Please try again.";
-      alert(`Could not complete signing: ${message}`);
+      addToast(`Could not complete signing: ${message}`, "error");
     },
   });
 
@@ -998,7 +1000,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
       const message =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
         "Something went wrong. Please try again.";
-      alert(`Could not decline: ${message}`);
+      addToast(`Could not decline: ${message}`, "error");
     },
   });
 
@@ -1074,7 +1076,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
       try { await submitFieldValue(token, fieldId, value); } catch { failed++; }
     }
     if (failed > 0) {
-      alert(`Warning: ${failed} field(s) could not be saved. The downloaded PDF may be missing some values.`);
+      addToast(`Warning: ${failed} field(s) could not be saved. The downloaded PDF may be missing some values.`, "error");
     }
     window.open(`/api/envelopes/${envelope.id}/download`, '_blank');
   }, [envelope.id, fieldValues, token]);
@@ -1153,7 +1155,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
         setSignatureOpen(true);
       }
     } catch {
-      alert("Could not place field. Please try again.");
+      addToast("Could not place field. Please try again.", "error");
     }
 
     setSelectedFieldType(null);
@@ -1262,6 +1264,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const bannerBg = "#1B0035";
 
   return (
+    <>
     <div className="min-h-screen flex flex-col" style={{ background: "#F0EFF8" }}>
 
       {/* ── Dark banner header (DocuSign-style) ──────────────────────────── */}
@@ -2297,5 +2300,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
         />
       )}
     </div>
+    <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
   );
 }

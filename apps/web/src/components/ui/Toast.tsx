@@ -106,7 +106,7 @@ export function ToastContainer({
       style={{
         position: "fixed",
         bottom: "24px",
-        right: "24px",
+        left: "24px",
         zIndex: 9999,
         display: "flex",
         flexDirection: "column",

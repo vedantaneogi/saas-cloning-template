@@ -24,6 +24,7 @@ import type { CommentDot } from "@/features/editor/components/DocumentCanvas";
 import { FieldPalette } from "@/features/editor/components/FieldPalette";
 import { getRecipientColor } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
+import { useToast, ToastContainer } from "@/components/ui/Toast";
 import type { FieldType, PlacedField, EditorState, EditorRecipient } from "@/features/editor/model/types";
 import { FIELD_LABELS, FIELD_DEFAULT_SIZES } from "@/features/editor/model/types";
 
@@ -1342,6 +1343,7 @@ export default function EditorPage() {
   const searchParams = useSearchParams();
   const isTemplateMode = searchParams.get("mode") === "template";
   const currentUser = useAuthStore((s) => s.user);
+  const { toasts, addToast, dismissToast } = useToast();
   const [draggedFieldType, setDraggedFieldType] = useState<FieldType | null>(null);
   const [showNoFieldsModal, setShowNoFieldsModal] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
@@ -1562,7 +1564,7 @@ export default function EditorPage() {
       router.push(`/agreements?filter=sent`);
     },
     onError: (err: Error) => {
-      alert(`Send failed: ${err.message || "Unknown error"}`);
+      addToast(`Send failed: ${err.message || "Unknown error"}`, "error");
     },
   });
 
@@ -1593,7 +1595,7 @@ export default function EditorPage() {
       router.push("/templates");
     } catch (err) {
       console.error("Failed to save template:", err);
-      alert("Failed to save template. Please try again.");
+      addToast("Failed to save template. Please try again.", "error");
       setIsSavingTemplate(false);
       setShowTemplateNameModal(false);
     }
@@ -2254,7 +2256,7 @@ export default function EditorPage() {
                 });
               } catch (err) {
                 console.error("Failed to save advanced options:", err);
-                alert("Failed to save advanced options. Your local changes are preserved.");
+                addToast("Failed to save advanced options. Your local changes are preserved.", "error");
               }
               setAdvancedOptionsOpen(false);
             }}
@@ -2273,6 +2275,7 @@ export default function EditorPage() {
           </button>
         </div>
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </>
   );
 }

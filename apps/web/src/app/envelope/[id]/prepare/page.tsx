@@ -21,6 +21,7 @@ import {
 } from "@/features/envelopes/api";
 import { getRecipientColor } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
+import { useToast, ToastContainer } from "@/components/ui/Toast";
 
 interface RecipientForm {
   id: string;
@@ -51,6 +52,7 @@ export default function PrepareEnvelopePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
+  const { toasts, addToast, dismissToast } = useToast();
 
   // ── Section collapse state — all open by default ──────────────────────────
   const [documentsOpen, setDocumentsOpen] = useState(true);
@@ -353,7 +355,7 @@ export default function PrepareEnvelopePage() {
           : typeof err === "object" && err !== null && "message" in err
             ? String((err as { message: unknown }).message)
             : "An unexpected error occurred. Please try again.";
-      alert(`Failed to save envelope: ${message}`);
+      addToast(`Failed to save envelope: ${message}`, "error");
     },
   });
 
@@ -468,6 +470,7 @@ export default function PrepareEnvelopePage() {
 
   // ──────────────────────────────────────────────────────────────────────────
   return (
+    <>
     <div
       className="min-h-screen"
       style={{ background: "#F5F5F5" }}
@@ -531,7 +534,7 @@ export default function PrepareEnvelopePage() {
             <button
               onClick={async () => {
                 if (!hasDocuments) {
-                  alert("Please upload at least one document before saving as a template.");
+                  addToast("Please upload at least one document before saving as a template.", "error");
                   return;
                 }
                 try {
@@ -590,7 +593,7 @@ export default function PrepareEnvelopePage() {
                   await saveEnvelopeAsTemplate(id, templateName.trim() || undefined);
                   router.push("/templates");
                 } catch {
-                  alert("Failed to save template. Please try again.");
+                  addToast("Failed to save template. Please try again.", "error");
                 }
               }}
               disabled={isUploading}
@@ -618,7 +621,7 @@ export default function PrepareEnvelopePage() {
                 if (!canProceed) {
                   setTriedToProceed(true);
                   if (isUploading) {
-                    alert("Please wait for all documents to finish uploading before proceeding.");
+                    addToast("Please wait for all documents to finish uploading before proceeding.", "error");
                     return;
                   }
                   const missing: string[] = [];
@@ -626,7 +629,7 @@ export default function PrepareEnvelopePage() {
                   if (!hasValidRecipient) missing.push("fill in a valid recipient name and email");
                   if (hasInvalidEmail) missing.push("enter a valid email address for all recipients");
                   if (hasDuplicateEmails) missing.push("remove duplicate recipient emails");
-                  alert(`Please ${missing.join(" and ")} before proceeding.`);
+                  addToast(`Please ${missing.join(" and ")} before proceeding.`, "error");
                   return;
                 }
                 saveAndContinueMutation.mutate();
@@ -2720,8 +2723,16 @@ export default function PrepareEnvelopePage() {
                         // ── CSV-driven bulk send: one envelope per CSV row ──
                         const docs = uploadedFileObjectsRef.current;
                         if (docs.length === 0) {
+                          // No docs yet — populate recipients from CSV, close modal, let user upload docs
+                          setRecipients(validRows.map((r, i) => ({
+                            id: `csv-${i}`,
+                            name: r.name,
+                            email: r.email,
+                            role: "signer" as const,
+                            order: i + 1,
+                            color: getRecipientColor(i),
+                          })));
                           setBulkModalOpen(false);
-                          document.querySelector('[class*="Add documents"]')?.scrollIntoView({ behavior: "smooth" });
                           return;
                         }
                         setBulkSending(true);
@@ -2745,7 +2756,7 @@ export default function PrepareEnvelopePage() {
                           }
                         } catch (err) {
                           const msg = err instanceof Error ? err.message : "Bulk send failed. Please try again.";
-                          alert(`Bulk send error: ${msg}`);
+                          addToast(`Bulk send error: ${msg}`, "error");
                         } finally {
                           setBulkSending(false);
                         }
@@ -2794,5 +2805,7 @@ export default function PrepareEnvelopePage() {
         </div>
       )}
     </div>
+    <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
   );
 }
