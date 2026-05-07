@@ -560,9 +560,10 @@ async def create_message(
 
     rl_state.event_log.append("message_created", {"id": str(msg.id), "is_draft": msg.is_draft})
 
-    # OOF auto-reply: when sending (not draft), check if any recipient has OOF enabled
+    # OOF auto-reply: when sending (not draft), check if any recipient has OOF enabled.
+    # Uses augmented_cc so anyone added via an @ mention also triggers OOF when relevant.
     if not body.is_draft:
-        all_recipients = list(body.to_addresses or []) + list(body.cc_addresses or [])
+        all_recipients = list(body.to_addresses or []) + list(augmented_cc)
         for recipient in all_recipients:
             rec_email = recipient.get("email", "") if isinstance(recipient, dict) else ""
             if not rec_email:
@@ -611,9 +612,10 @@ async def create_message(
             await _update_folder_counts(db, inbox_folder.id)
             rl_state.event_log.append("oof_auto_reply", {"from": rec_email, "to": current_user.email})
 
-    # Deliver message to each recipient's inbox
+    # Deliver message to each recipient's inbox. Use augmented_cc so anyone the
+    # sender @-mentioned in the body actually receives the email.
     if not body.is_draft:
-        await _deliver_to_recipients(db, msg, body.to_addresses, body.cc_addresses, body.bcc_addresses, current_user)
+        await _deliver_to_recipients(db, msg, body.to_addresses, augmented_cc, body.bcc_addresses, current_user)
 
     return MessageOut.model_validate(msg)
 
