@@ -390,22 +390,23 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   if (inline) {
     return (
       <div className="flex flex-col h-full bg-white" aria-label="Compose message">
-        {/* Send bar — Send button sits at the top of the pane like the Outlook screenshot,
-            not inline with the To field. */}
-        <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-[#EDEBE9] flex-shrink-0">
+        {/* Send bar — sits flush at the top of the pane like Outlook's compose,
+            with a heavier Send button + chevron for Schedule send. */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-3 border-b border-[#EDEBE9] flex-shrink-0">
           <div className="flex items-center flex-shrink-0">
             <button
               type="button"
               onClick={handleSubmit(() => handleSend())}
               disabled={sendMutation.isPending}
-              className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors"
+              className="flex items-center gap-2 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-sm font-semibold pl-3 pr-3 h-8 rounded-l transition-colors"
             >
-              <Send size={12} /> Send
+              <Send size={14} /> Send
             </button>
             <div className="relative" ref={scheduleMenuRef}>
               <button type="button" onClick={() => setScheduleMenuOpen((v) => !v)}
-                className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-7 px-1 rounded-r border-l border-white/30 transition-colors">
-                <ChevronDown size={10} />
+                aria-label="Schedule send"
+                className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-8 px-1.5 rounded-r border-l border-white/30 transition-colors">
+                <ChevronDown size={12} />
               </button>
               {scheduleMenuOpen && (
                 <div className="absolute left-0 top-full mt-0.5 z-50 w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3">

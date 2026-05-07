@@ -231,7 +231,7 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
             <ul
               role="listbox"
               aria-label={`${label} suggestions`}
-              className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg w-72 max-h-48 overflow-y-auto"
+              className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg w-80 max-h-72 overflow-y-auto"
               style={{
                 top: (wrapperRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
                 left: wrapperRef.current?.getBoundingClientRect().left ?? 0,
@@ -252,14 +252,19 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
                           : contact.email
                       )
                     }}
-                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-[#F3F2F1] transition-colors"
+                    className="w-full text-left flex items-start gap-3 px-3 py-2.5 hover:bg-[#F3F2F1] transition-colors"
                   >
-                    <div className="w-6 h-6 rounded-full bg-[#0078D4] text-white flex items-center justify-center text-[10px] font-medium flex-shrink-0">
-                      {contact.display_name?.[0]?.toUpperCase() ?? contact.email[0].toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{contact.display_name}</p>
+                    <Avatar name={contact.display_name || contact.email} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-[#323130]">{contact.display_name}</p>
                       <p className="text-xs text-[#605E5C] truncate">{contact.email}</p>
+                      {(contact.job_title || contact.company) && (
+                        <p className="text-[11px] text-[#8A8886] truncate mt-0.5">
+                          {contact.job_title}
+                          {contact.job_title && contact.company ? ' · ' : ''}
+                          {contact.company}
+                        </p>
+                      )}
                     </div>
                   </button>
                 </li>
