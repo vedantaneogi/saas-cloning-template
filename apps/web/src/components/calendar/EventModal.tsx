@@ -1,18 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { events, calendars, contacts } from '@/lib/api'
-import type { Event, Contact, EventAttendee as EventAttendeeT } from '@/lib/api'
+import { events, calendars, contacts, categories as categoriesApi } from '@/lib/api'
+import type { Event, Contact, EventAttendee as EventAttendeeT, Category } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
-import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft, ChevronDown, Calendar as CalendarIcon } from 'lucide-react'
+import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft, ChevronDown, Calendar as CalendarIcon, Tag } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
 
@@ -181,6 +181,40 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     setInvitedAttendees(invitees)
   }, [event, eventDetail, currentUser?.email])
 
+  // Categorize section — full category list + applied IDs for this event.
+  const { data: allCategories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.list(),
+  })
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
+  const [categorySearch, setCategorySearch] = useState('')
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
+  const categoryPickerRef = useRef<HTMLDivElement>(null)
+
+  // Seed selectedCategoryIds whenever the event detail comes back.
+  useEffect(() => {
+    if (!eventDetail?.categories) return
+    setSelectedCategoryIds(eventDetail.categories.map((c) => c.id))
+  }, [eventDetail])
+
+  // Outside-click for the picker.
+  useEffect(() => {
+    if (!categoryPickerOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (categoryPickerRef.current && !categoryPickerRef.current.contains(e.target as Node)) {
+        setCategoryPickerOpen(false)
+        setCategorySearch('')
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [categoryPickerOpen])
+
+  const selectedCategories: Category[] = allCategories.filter((c) => selectedCategoryIds.includes(c.id))
+  const filteredCategories = allCategories.filter((c) =>
+    c.name.toLowerCase().includes(categorySearch.trim().toLowerCase())
+  )
+
   const toggleDay = (day: number) => {
     const current = repeatDays
     const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day]
@@ -221,6 +255,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
         is_organizer: false,
         is_required: true,
       })),
+      category_ids: selectedCategoryIds,
     }
   }
 
@@ -1183,6 +1218,91 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
         </div>
 
         {/* Reminder moved to toolbar ribbon */}
+
+        {/* Categorize — pick / create category tags applied to this event */}
+        {isOrganizer && (
+        <div className="flex items-start gap-3" ref={categoryPickerRef}>
+          <span className="w-5 text-[#605E5C] pt-1.5">
+            <Tag size={16} />
+          </span>
+          <div className="flex-1 relative">
+            <div
+              className={cn(
+                'flex flex-wrap items-center gap-1.5 min-h-[34px] border rounded px-2 py-1 cursor-text bg-white transition-colors',
+                categoryPickerOpen ? 'border-[#0078D4]' : 'border-[#EDEBE9] hover:border-[#8A8886]'
+              )}
+              onClick={() => setCategoryPickerOpen(true)}
+            >
+              {selectedCategories.length === 0 ? (
+                <span className="text-sm text-[#A19F9D]">Add categories</span>
+              ) : (
+                selectedCategories.map((cat) => (
+                  <span
+                    key={cat.id}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: `${cat.color}1F`, color: cat.color }}
+                  >
+                    <Tag size={11} style={{ color: cat.color }} />
+                    {cat.name}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${cat.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedCategoryIds((prev) => prev.filter((id) => id !== cat.id))
+                      }}
+                      className="hover:opacity-70"
+                    >
+                      <XIcon size={10} />
+                    </button>
+                  </span>
+                ))
+              )}
+            </div>
+            {categoryPickerOpen && (
+              <div className="absolute left-0 top-full mt-0.5 z-50 w-72 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 max-h-64 overflow-y-auto">
+                <div className="px-2 py-1.5 border-b border-[#EDEBE9]">
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-[#F3F2F1] rounded">
+                    <Search size={11} className="text-[#605E5C] flex-shrink-0" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={categorySearch}
+                      onChange={(e) => setCategorySearch(e.target.value)}
+                      placeholder="Search for a category"
+                      aria-label="Search categories"
+                      className="flex-1 text-xs bg-transparent focus:outline-none text-[#323130] placeholder:text-[#A19F9D]"
+                    />
+                  </div>
+                </div>
+                {filteredCategories.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-[#A19F9D]">No categories match.</p>
+                ) : (
+                  filteredCategories.map((cat) => {
+                    const active = selectedCategoryIds.includes(cat.id)
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCategoryIds((prev) =>
+                            prev.includes(cat.id) ? prev.filter((id) => id !== cat.id) : [...prev, cat.id]
+                          )
+                        }}
+                        className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+                      >
+                        <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
+                        <span className="flex-1 text-left truncate">{cat.name}</span>
+                        {active && <span className="text-[#0078D4] text-xs font-bold">✓</span>}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        )}
 
         {/* Description — Outlook-style rich text editor with image insert (paste/embed). */}
         <div className="flex items-start gap-3">

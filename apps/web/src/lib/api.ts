@@ -215,6 +215,7 @@ export interface EventAttendee {
 export interface EventDetail {
   event: Event
   attendees: EventAttendee[]
+  categories?: Category[]
 }
 
 export interface EventAttendeeIn {
