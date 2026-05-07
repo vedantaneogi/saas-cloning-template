@@ -2720,7 +2720,8 @@ export default function PrepareEnvelopePage() {
                         // ── CSV-driven bulk send: one envelope per CSV row ──
                         const docs = uploadedFileObjectsRef.current;
                         if (docs.length === 0) {
-                          alert("Please upload at least one document before sending.");
+                          setBulkModalOpen(false);
+                          document.querySelector('[class*="Add documents"]')?.scrollIntoView({ behavior: "smooth" });
                           return;
                         }
                         setBulkSending(true);
