@@ -1282,7 +1282,7 @@ function MoreDropdown(
 }
 
 // ─── Sweep dialog — three modes matching Outlook's bulk cleanup ─────────────
-function SweepDialog({ senderEmail, senderName, onClose }: {
+export function SweepDialog({ senderEmail, senderName, onClose }: {
   senderEmail: string
   senderName: string
   onClose: () => void

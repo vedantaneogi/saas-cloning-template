@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X, Plus, Edit2 } from 'lucide-react'
+import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X, Plus, Edit2, Wind } from 'lucide-react'
+import { SweepDialog } from '@/components/layout/RibbonTabs'
 import type { Message } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
 import { Avatar } from '@/components/ui/Avatar'
@@ -48,6 +49,17 @@ function SubMenu({ icon, label, open, onOpenChange, children }: {
 }) {
   const btnRef = useRef<HTMLButtonElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  // Delayed-close timer so moving the cursor from the parent into the submenu
+  // doesn't trigger a close in the gap. Submenu cancels the timer on enter.
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelClose = () => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null }
+  }
+  const scheduleClose = () => {
+    cancelClose()
+    closeTimer.current = setTimeout(() => onOpenChange(false), 200)
+  }
+  useEffect(() => () => cancelClose(), [])
 
   useEffect(() => {
     if (!open) { setPos(null); return }
@@ -55,13 +67,13 @@ function SubMenu({ icon, label, open, onOpenChange, children }: {
       const rect = btnRef.current?.getBoundingClientRect()
       if (!rect) return
       const submenuW = 220
-      const submenuH = Math.min(360, window.innerHeight - 16)
       // Open to the right by default; flip left if we'd overflow viewport.
       let left = rect.right
       if (left + submenuW > window.innerWidth - 8) left = Math.max(8, rect.left - submenuW)
-      // Anchor to the button's top, but keep the panel inside the viewport.
-      let top = rect.top
-      if (top + submenuH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - submenuH - 8)
+      // Anchor the submenu's TOP to the trigger button so the chevron sits next
+      // to the option you hovered. If the submenu is too tall to fit below, it
+      // scrolls internally rather than shifting away from the trigger.
+      const top = Math.max(8, rect.top)
       setPos({ top, left })
     }
     compute()
@@ -70,7 +82,10 @@ function SubMenu({ icon, label, open, onOpenChange, children }: {
   }, [open])
 
   return (
-    <div onMouseEnter={() => onOpenChange(true)} onMouseLeave={() => onOpenChange(false)}>
+    <div
+      onMouseEnter={() => { cancelClose(); onOpenChange(true) }}
+      onMouseLeave={scheduleClose}
+    >
       <button
         ref={btnRef}
         role="menuitem"
@@ -88,8 +103,8 @@ function SubMenu({ icon, label, open, onOpenChange, children }: {
           // never gets clipped — and we flip horizontally near the right edge.
           className="fixed min-w-[180px] max-w-[240px] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 z-[60] max-h-[80vh] overflow-y-auto outlook-scrollbar"
           style={{ top: pos.top, left: pos.left }}
-          onMouseEnter={() => onOpenChange(true)}
-          onMouseLeave={() => onOpenChange(false)}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
         >
           {children}
         </div>
@@ -112,6 +127,7 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   const [snoozeOpen, setSnoozeOpen] = useState(false)
   const [catOpen, setCatOpen] = useState(false)
   const [catSearch, setCatSearch] = useState('')
+  const [sweepOpen, setSweepOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
   const [downloadOpen, setDownloadOpen] = useState(false)
@@ -508,28 +524,33 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
         </span>
       )}
 
-      {/* Right-click context menu — matches real Outlook order exactly. We compute
-          a top position that keeps the natural-height menu inside the viewport
-          (flips upward when the click is near the bottom). overflow-y stays
-          AUTO so we still scroll if the user is on a tiny window, but submenus
-          escape via fixed positioning so they never get clipped. */}
+      {/* Right-click context menu. The natural full menu is taller than most
+          viewports, so we cap height to fit the screen and force overflow-y:
+          scroll so the scrollbar is *always visible* — the user knows there's
+          more to reach. Submenus escape via fixed positioning. */}
       {contextMenu && (() => {
-        const desired = 540 // approximate full menu height
         const maxLeft = window.innerWidth - 232
         const left = Math.max(8, Math.min(contextMenu.x, maxLeft))
-        const room = window.innerHeight - contextMenu.y
+        // Anchor at the click; if the click is near the bottom, push the top
+        // up so the menu fits comfortably in the viewport (still scrollable).
+        const desired = Math.min(540, window.innerHeight - 16)
+        const room = window.innerHeight - contextMenu.y - 8
         const top = room < desired
-          ? Math.max(8, window.innerHeight - Math.min(desired, window.innerHeight - 16) - 8)
+          ? Math.max(8, window.innerHeight - desired - 8)
           : contextMenu.y
         return (
         <div
           ref={menuRef}
           role="menu"
-          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1 overflow-y-auto outlook-scrollbar"
+          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1"
           style={{
             left,
             top,
+            // Always-on scrollbar (overflow-y:scroll, not auto) so the user
+            // can see there's more content below; the native scrollbar gives
+            // the affordance the slim outlook-scrollbar lacked.
             maxHeight: 'calc(100vh - 16px)',
+            overflowY: 'scroll',
           }}
         >
           {/* 1. Reply / Reply all / Forward */}
@@ -731,6 +752,12 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             onClick={() => createTaskMutation.mutate()}
           />
 
+          <MenuItem
+            icon={<Wind size={14} />}
+            label="Sweep"
+            onClick={() => { setSweepOpen(true); setContextMenu(null) }}
+          />
+
           <MenuSep />
 
           {/* 4. Rules / Report / Block / Ignore — exact Outlook order */}
@@ -878,6 +905,15 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
         </div>
         )
       })()}
+
+      {/* Sweep dialog — opened via the right-click menu entry */}
+      {sweepOpen && message.from_address && (
+        <SweepDialog
+          senderEmail={message.from_address}
+          senderName={message.from_name ?? message.from_address}
+          onClose={() => setSweepOpen(false)}
+        />
+      )}
     </div>
   )
 }
