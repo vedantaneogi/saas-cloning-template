@@ -474,11 +474,29 @@ async def create_message(
     if not folder_id:
         _err("folder_required", "Could not resolve folder", 400)
 
+    # Ensure every sent message lives inside a conversation so the recipient's
+    # eventual reply lands on the same thread as the sender's original copy.
+    # (Drafts skip — they have no recipients yet.)
+    conv_id = body.conversation_id
+    if not conv_id and not body.is_draft:
+        from app.models.conversation import Conversation
+        conv = Conversation(
+            id=uuid.uuid4(),
+            user_id=current_user.id,
+            subject=body.subject or "",
+            last_message_at=now,
+            message_count=1,
+            has_attachments=False,
+        )
+        db.add(conv)
+        await db.flush()
+        conv_id = conv.id
+
     msg = Message(
         id=uuid.uuid4(),
         user_id=current_user.id,
         folder_id=folder_id,
-        conversation_id=body.conversation_id,
+        conversation_id=conv_id,
         in_reply_to_id=body.in_reply_to_id,
         reply_type=body.reply_type,
         from_address=current_user.email,
