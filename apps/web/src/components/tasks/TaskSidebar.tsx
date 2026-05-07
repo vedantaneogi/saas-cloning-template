@@ -1,9 +1,11 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useState, useRef, useEffect } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { taskLists } from '@/lib/api'
 import { Sun, Star, Calendar, Flag, List, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useUIStore } from '@/store/ui'
 
 interface TaskSidebarProps {
   selectedListId: string | null
@@ -19,10 +21,42 @@ const SMART_LISTS = [
 ]
 
 export function TaskSidebar({ selectedListId, onSelect }: TaskSidebarProps) {
+  const queryClient = useQueryClient()
+  const showNotification = useUIStore((s) => s.showNotification)
+  const [newListMode, setNewListMode] = useState(false)
+  const [newListName, setNewListName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
   const { data: lists = [] } = useQuery({
     queryKey: ['task-lists'],
     queryFn: () => taskLists.list(),
   })
+
+  const createListMutation = useMutation({
+    mutationFn: (name: string) => taskLists.create({ name }),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['task-lists'] })
+      setNewListName('')
+      setNewListMode(false)
+      onSelect(created.id)
+      showNotification(`List "${created.name}" created`)
+    },
+    onError: () => showNotification('Failed to create list'),
+  })
+
+  // Focus the input the moment we enter creation mode.
+  useEffect(() => {
+    if (newListMode) inputRef.current?.focus()
+  }, [newListMode])
+
+  const submitNewList = () => {
+    const name = newListName.trim()
+    if (!name) {
+      setNewListMode(false)
+      return
+    }
+    createListMutation.mutate(name)
+  }
 
   return (
     <nav
@@ -87,13 +121,33 @@ export function TaskSidebar({ selectedListId, onSelect }: TaskSidebarProps) {
       )}
 
       <div className="p-2 border-t border-[#EDEBE9]">
-        <button
-          className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-[#605E5C] hover:bg-[#EDEBE9] transition-colors"
-          aria-label="New list"
-        >
-          <Plus size={16} />
-          New list
-        </button>
+        {newListMode ? (
+          <div className="flex items-center gap-2 px-2 py-1.5 bg-white border border-[#0078D4] rounded">
+            <List size={14} className="text-[#0078D4] flex-shrink-0" />
+            <input
+              ref={inputRef}
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitNewList()
+                if (e.key === 'Escape') { setNewListName(''); setNewListMode(false) }
+              }}
+              onBlur={submitNewList}
+              placeholder="List name"
+              aria-label="New list name"
+              className="flex-1 text-sm text-[#323130] focus:outline-none bg-transparent"
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => setNewListMode(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-[#605E5C] hover:bg-[#EDEBE9] transition-colors"
+            aria-label="New list"
+          >
+            <Plus size={16} />
+            New list
+          </button>
+        )}
       </div>
     </nav>
   )
