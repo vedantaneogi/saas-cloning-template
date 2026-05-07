@@ -857,12 +857,24 @@ function HomeRibbon() {
   })
 
   const moveMutation = useMutation({
-    mutationFn: (folderId: string) => messages.move(selectedMessageId!, folderId),
+    mutationFn: async (folderId: string) => {
+      // Multi-select takes precedence — fall back to single-message move when only
+      // one row is highlighted. Previously this only ever moved selectedMessageId,
+      // which made the ribbon Move-to silently no-op for bulk selection.
+      if (selectedMessageIds.size > 0) {
+        return messages.bulk('move', Array.from(selectedMessageIds), { folder_id: folderId })
+      }
+      if (selectedMessageId) {
+        return messages.move(selectedMessageId, folderId)
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['folders'] })
       setSelectedMessageId(null)
+      clearSelection()
       setMoveOpen(false)
+      showNotification('Moved')
     },
   })
 
@@ -889,6 +901,7 @@ function HomeRibbon() {
   const isSentFolder = selectedFolderSlug === 'sent'
 
   const selectedMessageIds = useMailStore((s) => s.selectedMessageIds)
+  const clearSelection = useMailStore((s) => s.clearSelection)
   const hasMsg = !!selectedMessageId || selectedMessageIds.size > 0
 
   return (
