@@ -244,17 +244,20 @@ def _build_invite_html(ev: Event, organizer: User, updated: bool) -> str:
     where = ev.location or "—"
     desc = ev.description or ""
     label = "Updated invitation" if updated else "You're invited"
+    desc_block = (
+        f"<p style='margin-top:12px;font-size:13px;color:#323130;'>{desc}</p>" if desc else ""
+    )
     return (
-        f"<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#323130;\">"
-        f"<p style=\"margin:0 0 8px 0;color:#605E5C;font-size:12px;\">{label}</p>"
-        f"<h2 style=\"margin:0 0 12px 0;font-size:18px;\">{ev.title}</h2>"
-        f"<table style=\"font-size:13px;line-height:1.5;\">"
-        f"<tr><td style=\"color:#605E5C;padding-right:8px;\">When</td><td>{when}</td></tr>"
-        f"<tr><td style=\"color:#605E5C;padding-right:8px;\">Where</td><td>{where}</td></tr>"
-        f"<tr><td style=\"color:#605E5C;padding-right:8px;\">Organizer</td><td>{organizer.display_name} &lt;{organizer.email}&gt;</td></tr>"
+        f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
+        f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>{label}</p>"
+        f"<h2 style='margin:0 0 12px 0;font-size:18px;'>{ev.title}</h2>"
+        f"<table style='font-size:13px;line-height:1.5;'>"
+        f"<tr><td style='color:#605E5C;padding-right:8px;'>When</td><td>{when}</td></tr>"
+        f"<tr><td style='color:#605E5C;padding-right:8px;'>Where</td><td>{where}</td></tr>"
+        f"<tr><td style='color:#605E5C;padding-right:8px;'>Organizer</td><td>{organizer.display_name} &lt;{organizer.email}&gt;</td></tr>"
         f"</table>"
-        f"{('<p style=\"margin-top:12px;font-size:13px;color:#323130;\">' + desc + '</p>') if desc else ''}"
-        f"<p style=\"margin-top:16px;font-size:12px;color:#605E5C;\">Use the buttons above to respond.</p>"
+        f"{desc_block}"
+        f"<p style='margin-top:16px;font-size:12px;color:#605E5C;'>Use the buttons above to respond.</p>"
         f"</div>"
     )
 
@@ -338,12 +341,12 @@ async def _notify_organizer_response(
         subject = f"New time proposed: {ev.title}"
         body_text = f"{responder.display_name} proposed a new time for '{ev.title}'.\n\nProposed: {proposed_when}\nOriginal: {when}"
         body_html = (
-            f"<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#323130;\">"
-            f"<p style=\"margin:0 0 8px 0;color:#605E5C;font-size:12px;\">New time proposed</p>"
-            f"<p style=\"margin:0 0 12px 0;font-size:14px;\"><strong>{responder.display_name}</strong> proposed a new time for <strong>{ev.title}</strong>.</p>"
-            f"<table style=\"font-size:13px;line-height:1.5;\">"
-            f"<tr><td style=\"color:#605E5C;padding-right:8px;\">Proposed</td><td>{proposed_when}</td></tr>"
-            f"<tr><td style=\"color:#605E5C;padding-right:8px;\">Original</td><td>{when}</td></tr>"
+            f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
+            f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>New time proposed</p>"
+            f"<p style='margin:0 0 12px 0;font-size:14px;'><strong>{responder.display_name}</strong> proposed a new time for <strong>{ev.title}</strong>.</p>"
+            f"<table style='font-size:13px;line-height:1.5;'>"
+            f"<tr><td style='color:#605E5C;padding-right:8px;'>Proposed</td><td>{proposed_when}</td></tr>"
+            f"<tr><td style='color:#605E5C;padding-right:8px;'>Original</td><td>{when}</td></tr>"
             f"</table></div>"
         )
     else:
@@ -352,10 +355,10 @@ async def _notify_organizer_response(
         subject = f"{verb}: {ev.title}"
         body_text = f"{responder.display_name} {verb.lower()} the invitation to '{ev.title}' ({when})."
         body_html = (
-            f"<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#323130;\">"
-            f"<p style=\"margin:0 0 8px 0;color:#605E5C;font-size:12px;\">RSVP update</p>"
-            f"<p style=\"margin:0 0 12px 0;font-size:14px;\"><strong>{responder.display_name}</strong> {verb.lower()} the invitation to <strong>{ev.title}</strong>.</p>"
-            f"<p style=\"font-size:13px;color:#605E5C;\">When: {when}</p></div>"
+            f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
+            f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>RSVP update</p>"
+            f"<p style='margin:0 0 12px 0;font-size:14px;'><strong>{responder.display_name}</strong> {verb.lower()} the invitation to <strong>{ev.title}</strong>.</p>"
+            f"<p style='font-size:13px;color:#605E5C;'>When: {when}</p></div>"
         )
 
     msg = Message(
