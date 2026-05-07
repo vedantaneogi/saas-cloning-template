@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
 import { useEditorStore } from '@/store/editor'
-import { messages, folders, quickSteps, settings, categories } from '@/lib/api'
+import { messages, folders, quickSteps, settings, categories, tasks } from '@/lib/api'
 import {
   Menu, ReplyAll, Trash2, Archive, MailOpen, Zap,
   ChevronDown, ChevronRight, Flag, FolderInput, Printer, MoreHorizontal,
@@ -1090,6 +1090,19 @@ function HomeRibbon() {
               }
               setMoreOpen(false)
             }}
+            onCreateTask={() => {
+              if (hasMsg && message) {
+                tasks.create({
+                  title: message.subject || '(no subject)',
+                  body: message.body_text ?? null,
+                  source_message_id: message.id,
+                } as never).then(() => {
+                  queryClient.invalidateQueries({ queryKey: ['tasks'] })
+                  showNotification('Task created from message')
+                }).catch(() => showNotification('Failed to create task'))
+              }
+              setMoreOpen(false)
+            }}
             onPrint={() => { window.print(); setMoreOpen(false) }}
             onClose={() => setMoreOpen(false)}
           />
@@ -1116,12 +1129,13 @@ interface MoreDropdownProps {
   onBlock: () => void
   onSweep: () => void
   onCleanupThread: () => void
+  onCreateTask: () => void
   onPrint: () => void
   onClose: () => void
 }
 
 function MoreDropdown(
-  { hasMsg, message, anchorRef, onBlock, onPin, onSnooze, onSweep, onCleanupThread, onPrint, onClose }: MoreDropdownProps
+  { hasMsg, message, anchorRef, onBlock, onPin, onSnooze, onSweep, onCleanupThread, onCreateTask, onPrint, onClose }: MoreDropdownProps
 ) {
   const router = useRouter()
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -1211,6 +1225,12 @@ function MoreDropdown(
           {message?.is_pinned ? 'Unpin' : 'Pin / Unpin'}
         </button>
       )}
+
+      <button onClick={onCreateTask} disabled={!hasMsg}
+        className="w-full flex items-center gap-2 text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] disabled:opacity-40">
+        <CheckSquare size={14} className="text-[#605E5C]" />
+        Create task from message
+      </button>
 
       {/* Snooze submenu */}
       <div className="relative" onMouseEnter={() => setSnoozeSubOpen(true)} onMouseLeave={() => setSnoozeSubOpen(false)}>
@@ -1490,12 +1510,24 @@ function CalendarHomeRibbon() {
   const calendarFilter = useUIStore((s) => s.calendarFilter)
   const setCalendarFilter = useUIStore((s) => s.setCalendarFilter)
   const [filterOpen, setFilterOpen] = useState(false)
-  const filterRef = useRef<HTMLDivElement>(null)
+  // Filter button ref + computed dropdown coords. We render the menu in a
+  // fixed-positioned element so the toolbar's `overflow-x-auto` (which forces
+  // overflow-y to clip) doesn't swallow it.
+  const filterBtnRef = useRef<HTMLDivElement>(null)
+  const filterMenuRef = useRef<HTMLDivElement>(null)
+  const [filterPos, setFilterPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
 
   useEffect(() => {
     if (!filterOpen) return
+    if (filterBtnRef.current) {
+      const rect = filterBtnRef.current.getBoundingClientRect()
+      setFilterPos({ top: rect.bottom + 2, left: rect.left })
+    }
     const handler = (e: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
+      const t = e.target as Node
+      if (filterMenuRef.current?.contains(t)) return
+      if (filterBtnRef.current?.contains(t)) return
+      setFilterOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -1539,31 +1571,35 @@ function CalendarHomeRibbon() {
       </RibbonBtn>
 
       {/* Filter */}
-      <div className="relative" ref={filterRef}>
+      <div ref={filterBtnRef}>
         <RibbonBtn label="Filter" active={calendarFilter !== 'all'} onClick={() => setFilterOpen((v) => !v)}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
           <span>{calendarFilter === 'all' ? 'Filter' : 'Filter applied'}</span>
         </RibbonBtn>
-        {filterOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-            {([
-              ['all', 'Show all events'],
-              ['mine', 'Only my events'],
-              ['invites', 'Only invites'],
-              ['no-allday', 'Hide all-day events'],
-            ] as const).map(([val, label]) => (
-              <button key={val} onClick={() => { setCalendarFilter(val); setFilterOpen(false) }}
-                className={cn(
-                  'w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors flex items-center justify-between',
-                  calendarFilter === val ? 'text-[#0078D4]' : 'text-[#323130]'
-                )}>
-                <span>{label}</span>
-                {calendarFilter === val && <span className="text-xs">✓</span>}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
+      {filterOpen && (
+        <div
+          ref={filterMenuRef}
+          style={{ top: filterPos.top, left: filterPos.left }}
+          className="fixed z-[200] w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+        >
+          {([
+            ['all', 'Show all events'],
+            ['mine', 'Only my events'],
+            ['invites', 'Only invites'],
+            ['no-allday', 'Hide all-day events'],
+          ] as const).map(([val, label]) => (
+            <button key={val} onClick={() => { setCalendarFilter(val); setFilterOpen(false) }}
+              className={cn(
+                'w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors flex items-center justify-between',
+                calendarFilter === val ? 'text-[#0078D4]' : 'text-[#323130]'
+              )}>
+              <span>{label}</span>
+              {calendarFilter === val && <span className="text-xs">✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       <RibbonSep />
 
