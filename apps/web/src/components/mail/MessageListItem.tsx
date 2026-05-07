@@ -394,17 +394,27 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
           </div>
         </div>
 
-        {/* Snooze indicator — shows on every list rendering whenever the message
-            is currently snoozed (Snoozed view + any other surface that lists it). */}
+        {/* Snooze indicator + one-click Unsnooze. Shows on every list rendering
+            whenever the message is currently snoozed (Snoozed view + any other
+            surface that lists it). */}
         {message.snooze_until && new Date(message.snooze_until) > new Date() && (
-          <div className="flex items-center gap-1 mt-0.5 text-[11px] text-[#0078D4]">
-            <Clock size={10} />
-            <span>
+          <div className="flex items-center gap-2 mt-0.5 text-[11px]">
+            <span className="flex items-center gap-1 text-[#0078D4]">
+              <Clock size={10} />
               Resurfaces {new Date(message.snooze_until).toLocaleString(undefined, {
                 weekday: 'short', month: 'short', day: 'numeric',
                 hour: 'numeric', minute: '2-digit',
               })}
             </span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); snoozeMutation.mutate(null) }}
+              disabled={snoozeMutation.isPending}
+              aria-label="Unsnooze and return to inbox"
+              className="text-[#0078D4] hover:bg-[#EBF3FB] border border-[#0078D4] rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-50"
+            >
+              Unsnooze
+            </button>
           </div>
         )}
 
