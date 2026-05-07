@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -164,6 +165,7 @@ async def list_messages(
     from_addr: Optional[str] = None,
     focused: Optional[bool] = None,
     snoozed: Optional[bool] = None,
+    category_ids: list[uuid.UUID] = Query(default=[]),
     sort: str = "received_at:desc",
     cursor: Optional[str] = None,
     limit: int = Query(default=50, le=200),
@@ -183,6 +185,14 @@ async def list_messages(
         filters.append(Message.importance == importance)
     if from_addr:
         filters.append(Message.from_address.ilike(f"%{from_addr}%"))
+    if category_ids:
+        # Filter to messages tagged with any of the requested categories.
+        cat_subq = (
+            select(MessageCategory.message_id)
+            .where(MessageCategory.category_id.in_(category_ids))
+            .scalar_subquery()
+        )
+        filters.append(Message.id.in_(cat_subq))
 
     # Focused inbox: messages from known contacts or with high importance are "focused"
     if focused is not None:
@@ -474,6 +484,33 @@ async def create_message(
     if not folder_id:
         _err("folder_required", "Could not resolve folder", 400)
 
+    # @ mention handling: parse mention spans out of body_html and auto-Cc anyone
+    # who isn't already a recipient. Mirrors Outlook — typing @alice in the body
+    # adds her to the To/Cc bar so she gets the message in her inbox. The TipTap
+    # Mention extension renders <span data-type="mention" data-id="email">@Name</span>.
+    augmented_cc = list(body.cc_addresses or [])
+    if body.body_html and not body.is_draft:
+        existing_emails = {
+            (a.get("email") or "").lower()
+            for a in (body.to_addresses or []) + augmented_cc + (body.bcc_addresses or [])
+            if isinstance(a, dict)
+        }
+        existing_emails.add(current_user.email.lower())
+        # Match either order of attributes — TipTap doesn't guarantee a fixed sequence.
+        mention_re = re.compile(
+            r'<span\b[^>]*\bdata-type=["\']mention["\'][^>]*\bdata-id=["\']([^"\']+)["\']'
+            r'|<span\b[^>]*\bdata-id=["\']([^"\']+)["\'][^>]*\bdata-type=["\']mention["\']',
+            re.IGNORECASE,
+        )
+        for match in mention_re.finditer(body.body_html):
+            email = (match.group(1) or match.group(2) or "").strip().lower()
+            if not email or "@" not in email or email in existing_emails:
+                continue
+            existing_emails.add(email)
+            mentioned_user = await db.execute(select(User).where(User.email == email))
+            mu = mentioned_user.scalar_one_or_none()
+            augmented_cc.append({"email": email, "name": (mu.display_name if mu else email)})
+
     # Ensure every sent message lives inside a conversation so the recipient's
     # eventual reply lands on the same thread as the sender's original copy.
     # (Drafts skip — they have no recipients yet.)
@@ -502,7 +539,7 @@ async def create_message(
         from_address=current_user.email,
         from_name=current_user.display_name,
         to_addresses=body.to_addresses,
-        cc_addresses=body.cc_addresses,
+        cc_addresses=augmented_cc,
         bcc_addresses=body.bcc_addresses,
         subject=body.subject,
         body_html=body.body_html,

@@ -382,16 +382,21 @@ export const messages = {
     is_flagged?: boolean
     focused?: boolean
     snoozed?: boolean
+    category_ids?: string[]
     conversation_grouping?: boolean
     from_addr?: string
   }) => {
     const qs = new URLSearchParams()
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined) {
-        // Map per_page to limit (backend expects 'limit')
-        const key = k === 'per_page' ? 'limit' : k
-        qs.set(key, String(v))
+      if (v === undefined) return
+      // Map per_page to limit (backend expects 'limit')
+      const key = k === 'per_page' ? 'limit' : k
+      // Repeated query params for arrays (FastAPI Query(default=[])).
+      if (Array.isArray(v)) {
+        v.forEach((entry) => qs.append(key, String(entry)))
+        return
       }
+      qs.set(key, String(v))
     })
     return request<PaginatedResponse<Message>>(`/messages?${qs}`)
   },
