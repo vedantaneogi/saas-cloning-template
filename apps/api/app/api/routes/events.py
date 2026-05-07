@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -427,8 +427,22 @@ async def list_events(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Events I'm invited to but don't own (excluding declined invites — Outlook hides those).
+    invited_event_ids_subq = (
+        select(EventAttendee.event_id)
+        .where(
+            EventAttendee.email == current_user.email,
+            EventAttendee.response_status != "declined",
+        )
+        .scalar_subquery()
+    )
+    ownership_filter = or_(
+        Event.user_id == current_user.id,
+        Event.id.in_(invited_event_ids_subq),
+    )
+
     # 1. Fetch non-recurring events in the date range
-    filters = [Event.user_id == current_user.id, Event.is_recurring.is_(False)]
+    filters = [ownership_filter, Event.is_recurring.is_(False)]
     if calendar_id:
         filters.append(Event.calendar_id == calendar_id)
     if start_after:
@@ -443,7 +457,7 @@ async def list_events(
 
     # 2. Fetch recurring parent events (may start before the requested window)
     rec_filters = [
-        Event.user_id == current_user.id,
+        ownership_filter,
         Event.is_recurring.is_(True),
         Event.recurrence_parent_id.is_(None),
     ]
@@ -487,7 +501,26 @@ async def get_event(
     attendees_result = await db.execute(
         select(EventAttendee).where(EventAttendee.event_id == event_id)
     )
-    attendees = attendees_result.scalars().all()
+    attendees = list(attendees_result.scalars().all())
+
+    # Backfill: events created before the organizer-attendee fix don't have a row
+    # for the owner. Synthesize one on the fly so invitees can always see who
+    # scheduled the meeting. Read-only — not persisted.
+    has_organizer = any(a.is_organizer for a in attendees)
+    if not has_organizer:
+        owner_result = await db.execute(select(User).where(User.id == ev.user_id))
+        owner_user = owner_result.scalar_one_or_none()
+        if owner_user:
+            attendees.insert(0, EventAttendee(
+                id=uuid.uuid5(uuid.NAMESPACE_URL, f"{ev.id}/organizer"),
+                event_id=ev.id,
+                email=owner_user.email,
+                display_name=owner_user.display_name,
+                is_organizer=True,
+                is_required=True,
+                response_status="accepted",
+            ))
+
     return EventDetail(
         event=EventOut.model_validate(ev),
         attendees=[EventAttendeeOut.model_validate(a) for a in attendees],
@@ -525,6 +558,10 @@ async def create_event(
     await db.flush()
 
     invitee_emails: list[str] = []
+    organizer_in_body = any(
+        att.is_organizer or att.email.lower() == current_user.email.lower()
+        for att in body.attendees
+    )
     for att in body.attendees:
         attendee = EventAttendee(
             id=uuid.uuid4(),
@@ -537,6 +574,18 @@ async def create_event(
         db.add(attendee)
         if not att.is_organizer:
             invitee_emails.append(att.email)
+
+    # Ensure the organizer always has an attendee row so invitees can see who scheduled the event.
+    if not organizer_in_body:
+        db.add(EventAttendee(
+            id=uuid.uuid4(),
+            event_id=ev.id,
+            email=current_user.email,
+            display_name=current_user.display_name,
+            is_organizer=True,
+            is_required=True,
+            response_status="accepted",
+        ))
 
     await db.flush()
     await _send_calendar_invite(db, ev, invitee_emails, current_user, updated=False)
@@ -555,6 +604,12 @@ async def update_event(
 ):
     ev = await _get_event_or_404(db, event_id, current_user.id)
     now = rl_state.clock.now()
+
+    # Snapshot fields we use to detect material changes (for "Updated:" emails).
+    prev_start = ev.start_time
+    prev_end = ev.end_time
+    prev_location = ev.location
+    prev_title = ev.title
 
     # scope=single: add occurrence to exceptions on parent, create override row
     if scope == "single" and occurrence_start is not None and ev.is_recurring:
@@ -638,6 +693,10 @@ async def update_event(
         await db.execute(
             EventAttendee.__table__.delete().where(EventAttendee.event_id == ev.id)
         )
+        organizer_in_body = any(
+            att.is_organizer or att.email.lower() == current_user.email.lower()
+            for att in body.attendees
+        )
         for att in body.attendees:
             db.add(EventAttendee(
                 id=uuid.uuid4(),
@@ -652,9 +711,55 @@ async def update_event(
                     existing_emails.append(att.email)
                 else:
                     new_emails.append(att.email)
+        # Re-insert the organizer row that the wholesale delete above wiped out.
+        if not organizer_in_body:
+            db.add(EventAttendee(
+                id=uuid.uuid4(),
+                event_id=ev.id,
+                email=current_user.email,
+                display_name=current_user.display_name,
+                is_organizer=True,
+                is_required=True,
+                response_status="accepted",
+            ))
 
     ev.updated_at = now
     await db.flush()
+
+    # If a material field changed (time / title / location), notify every current
+    # attendee with an "Updated:" email — covers the case where the organizer accepts
+    # a proposed time without touching the attendee list. Clear stale proposals once
+    # the new time is committed.
+    material_changed = (
+        ev.start_time != prev_start
+        or ev.end_time != prev_end
+        or ev.location != prev_location
+        or ev.title != prev_title
+    )
+    if material_changed:
+        att_result = await db.execute(
+            select(EventAttendee).where(
+                EventAttendee.event_id == ev.id,
+                EventAttendee.is_organizer.is_(False),
+            )
+        )
+        all_attendee_rows = att_result.scalars().all()
+        all_attendee_emails = [a.email for a in all_attendee_rows]
+        # Skip attendees we've already emailed via the new/existing-email branches above.
+        already_emailed = set(new_emails) | set(existing_emails)
+        material_emails = [e for e in all_attendee_emails if e not in already_emailed]
+        if material_emails:
+            await _send_calendar_invite(db, ev, material_emails, current_user, updated=True)
+        # Time has changed → outstanding proposed_new_time values are no longer relevant.
+        # Anyone who proposed a time and now sees the meeting moved is treated as
+        # implicitly accepted (their proposal was honored/superseded by the organizer).
+        if ev.start_time != prev_start or ev.end_time != prev_end:
+            for a in all_attendee_rows:
+                if a.proposed_new_time is not None:
+                    a.proposed_new_time = None
+                    a.response_status = "accepted"
+            await db.flush()
+
     if new_emails:
         await _send_calendar_invite(db, ev, new_emails, current_user, updated=False)
     if existing_emails:

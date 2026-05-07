@@ -19,17 +19,37 @@ function ComposeInline() {
 function InviteActions({ message }: { message: Message }) {
   const queryClient = useQueryClient()
   const showNotification = useUIStore((s) => s.showNotification)
+  const currentUserEmail = useAuthStore((s) => s.currentUser?.email?.toLowerCase())
   const [proposeOpen, setProposeOpen] = useState(false)
   const [proposeStart, setProposeStart] = useState('')
   const [proposeEnd, setProposeEnd] = useState('')
-  const [responded, setResponded] = useState<'accepted' | 'tentative' | 'declined' | null>(null)
+
+  // Pull the event detail so we can show the persisted RSVP state and the full attendee
+  // list (Outlook shows this on every invite — invitees see who else is invited).
+  const { data: detail } = useQuery({
+    queryKey: ['event-detail', message.event_id],
+    queryFn: () => events.get(message.event_id!),
+    enabled: !!message.event_id,
+  })
+
+  const currentUserId = useAuthStore((s) => s.currentUser?.id)
+  const isOrganizer = !!detail?.event && detail.event.user_id === currentUserId
+  const myAttendee = detail?.attendees?.find(
+    (a) => a.email.toLowerCase() === (currentUserEmail ?? '')
+  )
+  const responded = (myAttendee?.response_status && myAttendee.response_status !== 'none')
+    ? myAttendee.response_status
+    : null
+  const otherInvitees = (detail?.attendees ?? []).filter(
+    (a) => a.email.toLowerCase() !== (currentUserEmail ?? '')
+  )
 
   const respondMutation = useMutation({
     mutationFn: (response: 'accepted' | 'tentative' | 'declined') =>
       events.respond(message.event_id!, response),
     onSuccess: (_d, response) => {
-      setResponded(response)
       queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['event-detail', message.event_id] })
       showNotification(
         response === 'accepted' ? 'Accepted invitation'
         : response === 'tentative' ? 'Marked tentative'
@@ -48,6 +68,7 @@ function InviteActions({ message }: { message: Message }) {
     onSuccess: () => {
       setProposeOpen(false)
       queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['event-detail', message.event_id] })
       showNotification('New time proposed')
     },
   })
@@ -56,7 +77,31 @@ function InviteActions({ message }: { message: Message }) {
     <div className="mb-3 border border-[#0078D4] bg-[#EBF3FB] rounded p-3 space-y-2">
       <p className="text-xs font-semibold text-[#0078D4] flex items-center gap-1">
         <CalendarDays size={12} /> Calendar invitation
+        {isOrganizer ? (
+          <span className="ml-2 text-[#605E5C] font-normal">· You're the organizer</span>
+        ) : responded ? (
+          <span className="ml-2 text-[#605E5C] font-normal">
+            · You responded: <strong className="text-[#323130]">{responded}</strong>
+          </span>
+        ) : null}
       </p>
+      {!isOrganizer && myAttendee?.proposed_new_time && (
+        <div className="bg-[#FFF4CE] border border-[#F4D58A] rounded p-2 -mt-1">
+          <p className="text-xs text-[#8A6116] flex items-center gap-1">
+            <Clock size={11} />
+            <span>
+              You proposed{' '}
+              <strong>
+                {new Date(myAttendee.proposed_new_time.start_time).toLocaleString(undefined, {
+                  weekday: 'short', month: 'short', day: 'numeric',
+                  hour: 'numeric', minute: '2-digit',
+                })}
+              </strong>. Awaiting organizer.
+            </span>
+          </p>
+        </div>
+      )}
+      {!isOrganizer && (
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -104,11 +149,9 @@ function InviteActions({ message }: { message: Message }) {
         >
           <Clock size={11} /> Propose new time
         </button>
-        {responded && (
-          <span className="text-xs text-[#605E5C] ml-1">Response sent.</span>
-        )}
       </div>
-      {proposeOpen && (
+      )}
+      {!isOrganizer && proposeOpen && (
         <div className="flex flex-wrap items-end gap-2 pt-1 border-t border-[#C7E0F4]">
           <label className="text-xs text-[#605E5C] flex flex-col">
             Start
@@ -138,6 +181,41 @@ function InviteActions({ message }: { message: Message }) {
           >
             Send proposal
           </button>
+        </div>
+      )}
+      {otherInvitees.length > 0 && (
+        <div className="pt-1 border-t border-[#C7E0F4]">
+          <p className="text-xs text-[#605E5C] mb-1">
+            {isOrganizer ? 'Invitees:' : 'Other attendees:'}
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {otherInvitees.map((a) => {
+              const tone =
+                a.response_status === 'accepted' ? 'bg-[#107C10] text-white border-[#107C10]'
+                : a.response_status === 'tentative' ? 'bg-[#FFB900] text-white border-[#FFB900]'
+                : a.response_status === 'declined' ? 'bg-[#D13438] text-white border-[#D13438]'
+                : 'bg-white text-[#605E5C] border-[#D2D0CE]'
+              return (
+                <span
+                  key={a.id}
+                  className={cn('text-xs px-2 py-0.5 rounded border', tone)}
+                  title={`${a.email}${a.is_organizer ? ' (organizer)' : ''}: ${a.response_status}`}
+                >
+                  {a.display_name || a.email}
+                  {a.is_organizer ? (
+                    <span className="ml-1 opacity-80">· organizer</span>
+                  ) : (
+                    <span className="ml-1 opacity-80">
+                      · {a.response_status === 'accepted' ? 'accepted'
+                          : a.response_status === 'tentative' ? 'tentative'
+                          : a.response_status === 'declined' ? 'declined'
+                          : 'pending'}
+                    </span>
+                  )}
+                </span>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

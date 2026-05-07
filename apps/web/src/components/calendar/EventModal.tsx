@@ -11,6 +11,7 @@ import type { Event, Contact, EventAttendee as EventAttendeeT } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft, ChevronDown, Calendar as CalendarIcon } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -63,7 +64,31 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   const now = initialDate ?? new Date()
   const nowPlus1 = new Date(now.getTime() + 60 * 60 * 1000)
 
-  const existingDays = event?.recurrence_rule?.days_of_week ?? []
+  // Seed-style recurrence_rule uses iCal day codes (MO/TU/...) and uppercase
+  // frequency ("WEEKLY"). The form expects lowercase + integer day indices,
+  // so without normalisation Zod fails silently → Save looks like a no-op.
+  const ICAL_DAY_TO_INT: Record<string, number> = {
+    SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6,
+  }
+  const existingDays: number[] = (() => {
+    const raw = event?.recurrence_rule?.days_of_week as unknown
+    if (!Array.isArray(raw)) return []
+    return (raw as Array<number | string>).map((d) => {
+      if (typeof d === 'number') return ((d % 7) + 7) % 7
+      if (typeof d === 'string') {
+        const code = d.toUpperCase().slice(0, 2)
+        return ICAL_DAY_TO_INT[code] ?? 0
+      }
+      return 0
+    })
+  })()
+  const FREQ_VALUES = new Set(['daily', 'weekly', 'monthly', 'yearly'])
+  const normalizedFreq: 'daily' | 'weekly' | 'monthly' | 'yearly' = (() => {
+    const raw = event?.recurrence_rule?.frequency
+    if (!raw) return 'weekly'
+    const lower = String(raw).toLowerCase()
+    return (FREQ_VALUES.has(lower) ? lower : 'weekly') as 'daily' | 'weekly' | 'monthly' | 'yearly'
+  })()
 
   const {
     register,
@@ -85,7 +110,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           is_online_meeting: event.is_online_meeting,
           reminder_minutes: event.reminder_minutes,
           repeat: event.is_recurring,
-          repeat_frequency: event.recurrence_rule?.frequency ?? 'weekly',
+          repeat_frequency: normalizedFreq,
           repeat_interval: event.recurrence_rule?.interval ?? 1,
           repeat_end_type: event.recurrence_rule?.end_date ? 'date' : event.recurrence_rule?.count ? 'count' : 'never',
           repeat_end_date: event.recurrence_rule?.end_date ?? '',
@@ -133,10 +158,14 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   const [invitedAttendees, setInvitedAttendees] = useState<{ email: string; name: string }[]>([])
 
   // Pull the full attendee list when editing — the list endpoint doesn't include them.
+  // For recurring events the calendar list passes a virtual-occurrence id (uuid5) that
+  // doesn't exist in the DB; fall back to the recurrence parent id so the lookup hits a
+  // real row and returns its attendees.
+  const detailId = event?.recurrence_parent_id ?? event?.id
   const { data: eventDetail } = useQuery({
-    queryKey: ['event-detail', event?.id],
-    queryFn: () => events.get(event!.id),
-    enabled: !!event,
+    queryKey: ['event-detail', detailId],
+    queryFn: () => events.get(detailId!),
+    enabled: !!detailId,
   })
 
   const loadedAttendees: EventAttendeeT[] = eventDetail?.attendees ?? []
@@ -213,6 +242,13 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] })
+      // Refresh the attendee panel — proposed_new_time may have been cleared and
+      // RSVP statuses bumped to "accepted" for anyone whose proposal was honored.
+      queryClient.invalidateQueries({ queryKey: ['event-detail', event?.id] })
+      queryClient.invalidateQueries({ queryKey: ['event-detail', event?.recurrence_parent_id] })
+      // Inbox messages reference the event_id — make those refetch too so the
+      // organizer's "Other attendees" status chips update.
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
       setScopeDialog(null)
       onClose()
     },
@@ -239,18 +275,28 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   })
 
   const respondMutation = useMutation({
-    mutationFn: (response: 'accepted' | 'tentative' | 'declined') =>
-      events.respond(event!.id, response),
+    mutationFn: (response: 'accepted' | 'tentative' | 'declined') => {
+      // For recurring virtual occurrences event.id is a synthesized uuid5 that
+      // doesn't exist in the DB — use the parent id so the RSVP lands on the row.
+      const targetId = event?.recurrence_parent_id ?? event!.id
+      return events.respond(targetId, response)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['event-detail', event?.recurrence_parent_id ?? event?.id] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
     },
   })
 
   const proposeMutation = useMutation({
-    mutationFn: ({ start_time, end_time }: { start_time: string; end_time: string }) =>
-      events.proposeTime(event!.id, start_time, end_time),
+    mutationFn: ({ start_time, end_time }: { start_time: string; end_time: string }) => {
+      const targetId = event?.recurrence_parent_id ?? event!.id
+      return events.proposeTime(targetId, start_time, end_time)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['event-detail', event?.recurrence_parent_id ?? event?.id] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
       setProposeOpen(false)
     },
   })
@@ -285,9 +331,29 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   const myAttendee = !isOrganizer
     ? attendees.find((a) => a.email.toLowerCase() === (currentUser?.email ?? '').toLowerCase())
     : undefined
-  // Invitees the organizer can review (with their RSVP status + any proposed time).
-  const invitees = attendees.filter((a) => !a.is_organizer)
-  const proposals = invitees.filter((a) => a.proposed_new_time)
+  // Whom to show in the "Invitees" / "Other attendees" panel:
+  //  - organizer view: everyone except the organizer (i.e. just the invitees)
+  //  - attendee view:  everyone except yourself (so you see the organizer + co-invitees)
+  const peoplePanel = isOrganizer
+    ? attendees.filter((a) => !a.is_organizer)
+    : attendees.filter((a) => a.email.toLowerCase() !== (currentUser?.email ?? '').toLowerCase())
+  // Aggregate counts for the at-a-glance status line ("2 accepted · 1 declined …").
+  const peopleStats = peoplePanel.reduce(
+    (acc, a) => {
+      if (a.is_organizer) return acc
+      acc[a.response_status as 'accepted' | 'tentative' | 'declined' | 'none'] =
+        (acc[a.response_status as 'accepted' | 'tentative' | 'declined' | 'none'] ?? 0) + 1
+      return acc
+    },
+    { accepted: 0, tentative: 0, declined: 0, none: 0 } as Record<string, number>
+  )
+  // Proposed-time chips are only meaningful to the organizer (they decide).
+  const proposals = attendees.filter((a) => !a.is_organizer && a.proposed_new_time)
+  // Collapse long lists ("+ N more") — Outlook does this past the first few rows.
+  const [peopleExpanded, setPeopleExpanded] = useState(false)
+  const PEOPLE_PREVIEW_LIMIT = 3
+  const visiblePeople = peopleExpanded ? peoplePanel : peoplePanel.slice(0, PEOPLE_PREVIEW_LIMIT)
+  const hiddenCount = peoplePanel.length - visiblePeople.length
 
   // Attendees invite field
   const [inviteQuery, setInviteQuery] = useState('')
@@ -361,7 +427,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
       open={open}
       onClose={onClose}
       title={event ? 'Edit event' : 'New event'}
-      size="lg"
+      size="xl"
     >
       {/* Outlook-style toolbar ribbon */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8] flex-shrink-0">
@@ -472,14 +538,28 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
         </div>
       )}
 
-      {/* Organizer view: invitee status summary + any proposed times */}
-      {isOrganizer && event && invitees.length > 0 && (
+      {/* Attendee status summary (organizer + attendees both see this) + organizer-only proposals */}
+      {event && peoplePanel.length > 0 && (
         <div className="px-4 pt-3 pb-2 border-b border-[#EDEBE9] space-y-2">
-          <p className="text-xs font-semibold text-[#605E5C]">
-            Invitees ({invitees.length})
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-[#605E5C]">
+              {isOrganizer ? `Invitees (${peoplePanel.length})` : `Other attendees (${peoplePanel.length})`}
+            </p>
+            {/* Aggregate counts — shown when there's at least one non-organizer invitee */}
+            {(peopleStats.accepted + peopleStats.tentative + peopleStats.declined + peopleStats.none) > 0 && (
+              <p className="text-[11px] text-[#605E5C]">
+                <span className="text-[#107C10]">{peopleStats.accepted} accepted</span>
+                <span className="mx-1.5 text-[#A19F9D]">·</span>
+                <span className="text-[#8A6116]">{peopleStats.tentative} tentative</span>
+                <span className="mx-1.5 text-[#A19F9D]">·</span>
+                <span className="text-[#A4262C]">{peopleStats.declined} declined</span>
+                <span className="mx-1.5 text-[#A19F9D]">·</span>
+                <span>{peopleStats.none} pending</span>
+              </p>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1.5">
-            {invitees.map((a) => {
+            {visiblePeople.map((a) => {
               const statusColor =
                 a.response_status === 'accepted' ? 'bg-[#107C10] text-white border-[#107C10]'
                 : a.response_status === 'tentative' ? 'bg-[#FFB900] text-white border-[#FFB900]'
@@ -489,17 +569,62 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
                 <span
                   key={a.id}
                   className={cn('text-xs px-2 py-0.5 rounded border', statusColor)}
-                  title={`${a.email}: ${a.response_status}`}
+                  title={`${a.email}${a.is_organizer ? ' (organizer)' : ''}: ${a.response_status}`}
                 >
                   {a.display_name || a.email}
-                  {a.response_status !== 'none' && (
-                    <span className="ml-1 opacity-80">· {a.response_status}</span>
+                  {a.is_organizer ? (
+                    <span className="ml-1 opacity-80">· organizer</span>
+                  ) : (
+                    <span className="ml-1 opacity-80">
+                      · {a.response_status === 'accepted' ? 'accepted'
+                          : a.response_status === 'tentative' ? 'tentative'
+                          : a.response_status === 'declined' ? 'declined'
+                          : 'pending'}
+                    </span>
                   )}
                 </span>
               )
             })}
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setPeopleExpanded(true)}
+                aria-label={`Show ${hiddenCount} more attendees`}
+                className="text-xs px-2 py-0.5 rounded border border-dashed border-[#0078D4] text-[#0078D4] hover:bg-[#EBF3FB] transition-colors"
+              >
+                + {hiddenCount} more
+              </button>
+            )}
+            {peopleExpanded && peoplePanel.length > PEOPLE_PREVIEW_LIMIT && (
+              <button
+                type="button"
+                onClick={() => setPeopleExpanded(false)}
+                aria-label="Collapse attendee list"
+                className="text-xs px-2 py-0.5 rounded border border-dashed border-[#605E5C] text-[#605E5C] hover:bg-[#F3F2F1] transition-colors"
+              >
+                Show less
+              </button>
+            )}
           </div>
-          {proposals.length > 0 && (
+          {/* Attendee's own proposal — read-only summary so they remember they proposed
+              and can see when. Only render when the current user has a pending proposal. */}
+          {!isOrganizer && myAttendee?.proposed_new_time && (
+            <div className="bg-[#FFF4CE] border border-[#F4D58A] rounded p-2">
+              <p className="text-xs text-[#8A6116] flex items-center gap-1">
+                <Clock size={11} />
+                <span>
+                  You proposed{' '}
+                  <strong>
+                    {format(new Date(myAttendee.proposed_new_time.start_time), 'EEE MMM d, h:mm a')}
+                    {' '}–{' '}
+                    {format(new Date(myAttendee.proposed_new_time.end_time), 'h:mm a')}
+                  </strong>
+                  . Awaiting organizer.
+                </span>
+              </p>
+            </div>
+          )}
+          {isOrganizer && proposals.length > 0 && (
             <div className="bg-[#FFF4CE] border border-[#F4D58A] rounded p-2 space-y-1">
               <p className="text-xs font-semibold text-[#8A6116] flex items-center gap-1">
                 <Clock size={11} /> New time proposals
@@ -663,7 +788,9 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           )}
         </div>
 
-        {/* Attendees */}
+        {/* Attendees — only the organizer can edit the invite list. Attendees see the
+            "Other attendees" status panel above instead. */}
+        {isOrganizer && (
         <div className="flex items-start gap-3">
           <span className="w-5 text-[#605E5C] pt-2">
             <Users size={16} />
@@ -706,6 +833,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
             )}
           </div>
         </div>
+        )}
 
         {/* Calendar — custom dropdown with color dots */}
         <div className="flex items-center gap-3">
@@ -1056,27 +1184,21 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
 
         {/* Reminder moved to toolbar ribbon */}
 
-        {/* Description — card style matching Outlook */}
+        {/* Description — Outlook-style rich text editor with image insert (paste/embed). */}
         <div className="flex items-start gap-3">
           <span className="w-5 text-[#605E5C] pt-1.5">
             <AlignLeft size={16} />
           </span>
-          <div className="flex-1 border border-[#EDEBE9] rounded overflow-hidden">
-            <textarea
+          <div className="flex-1">
+            <RichTextEditor
+              content={watch('description') ?? ''}
+              onChange={(html) => setValue('description', html, { shouldDirty: true })}
               placeholder="Add a description or attach documents"
-              aria-label="Description"
-              rows={6}
-              className="w-full text-sm px-3 py-2 focus:outline-none text-[#323130] placeholder:text-[#A19F9D] resize-y border-0"
-              {...register('description')}
+              minHeight="140px"
             />
-            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-[#EDEBE9] bg-[#FAF9F8]">
-              <button type="button" className="p-1 text-[#605E5C] hover:bg-[#EDEBE9] rounded" title="Attach file">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7.5 1.5L3 6l4.5 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M2 12.5h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-              </button>
-              <button type="button" className="p-1 text-[#605E5C] hover:bg-[#EDEBE9] rounded" title="Insert image">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.2"/><circle cx="4.5" cy="5.5" r="1.5" fill="currentColor"/><path d="M1 10l3-3 2 2 3-3 4 4" stroke="currentColor" strokeWidth="1.1"/></svg>
-              </button>
-            </div>
+            {/* Hidden input keeps the value flowing through react-hook-form so it
+                lands in buildPayload alongside the rest of the event fields. */}
+            <input type="hidden" {...register('description')} />
           </div>
         </div>
 

@@ -54,10 +54,12 @@ export function Modal({ open, onClose, title, size = 'md', children, className }
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
 
-      {/* Panel */}
+      {/* Panel — max-h-[90vh] caps height for any size so the inner overflow-auto
+          scrolls instead of the page when content is tall (e.g. EventModal with
+          scheduling assistant expanded). */}
       <div
         className={cn(
-          'relative bg-white rounded shadow-outlook-lg w-full flex flex-col',
+          'relative bg-white rounded shadow-outlook-lg w-full flex flex-col max-h-[90vh]',
           sizes[size],
           size === 'full' && 'h-[90vh]',
           'animate-fade-in',

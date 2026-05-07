@@ -192,23 +192,27 @@ async def list_messages(
             .scalar_subquery()
         )
         if focused:
-            # Focused = from a known contact OR high importance OR flagged OR a reply to user's sent message
+            # Focused = known contact / high importance / flagged / reply / **calendar** —
+            # invites + RSVP notifications always belong in Focused, never Other.
             filters.append(
                 or_(
                     Message.from_address.in_(contact_emails_subq),
                     Message.importance == "high",
                     Message.is_flagged.is_(True),
                     Message.in_reply_to_id.is_not(None),
+                    Message.event_id.is_not(None),
                 )
             )
         else:
-            # Other = NOT focused (from unknown senders, normal importance, not flagged, not a reply)
+            # Other = the inverse of the focused predicate (calendar messages are
+            # explicitly excluded so they never leak into Other).
             filters.append(
                 ~or_(
                     Message.from_address.in_(contact_emails_subq),
                     Message.importance == "high",
                     Message.is_flagged.is_(True),
                     Message.in_reply_to_id.is_not(None),
+                    Message.event_id.is_not(None),
                 )
             )
     if search:

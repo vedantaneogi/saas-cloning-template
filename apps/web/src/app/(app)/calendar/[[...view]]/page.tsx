@@ -154,8 +154,10 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Event modal */}
+      {/* Event modal — keyed so the form resets between openings (react-hook-form
+          only seeds defaultValues on mount). */}
       <EventModal
+        key={editingEvent?.id ?? `new-${initialDate?.toISOString() ?? ''}`}
         open={eventModalOpen}
         onClose={() => setEventModalOpen(false)}
         initialDate={initialDate}
