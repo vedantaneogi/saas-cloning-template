@@ -71,6 +71,7 @@ class EventCreate(BaseModel):
     status: str = "busy"
     sensitivity: str = "normal"
     attendees: list[EventAttendeeIn] = []
+    category_ids: Optional[list[uuid.UUID]] = None
 
 
 class EventUpdate(BaseModel):
@@ -89,6 +90,7 @@ class EventUpdate(BaseModel):
     status: Optional[str] = None
     sensitivity: Optional[str] = None
     attendees: Optional[list[EventAttendeeIn]] = None
+    category_ids: Optional[list[uuid.UUID]] = None
 
 
 class EventOut(BaseModel):

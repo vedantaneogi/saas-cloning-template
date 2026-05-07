@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.calendar import Event, EventAttendee
+from app.models.calendar import Event, EventAttendee, EventCategory
+from app.models.category import Category
 from app.models.folder import Folder
 from app.models.message import Message
 from app.models.user import User
@@ -23,6 +24,7 @@ from app.schemas.calendar import (
     ProposeTimeRequest,
     RespondRequest,
 )
+from app.schemas.message import CategoryOut
 
 router = APIRouter(prefix="/events", tags=["Events"])
 
@@ -193,6 +195,7 @@ class EventList(BaseModel):
 class EventDetail(BaseModel):
     event: EventOut
     attendees: list[EventAttendeeOut]
+    categories: list[CategoryOut] = []
 
 
 async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID, user_id: uuid.UUID) -> Event:
@@ -521,9 +524,18 @@ async def get_event(
                 response_status="accepted",
             ))
 
+    # Categories applied to this event
+    cat_result = await db.execute(
+        select(Category)
+        .join(EventCategory, EventCategory.category_id == Category.id)
+        .where(EventCategory.event_id == event_id)
+    )
+    cats = [CategoryOut.model_validate(c) for c in cat_result.scalars().all()]
+
     return EventDetail(
         event=EventOut.model_validate(ev),
         attendees=[EventAttendeeOut.model_validate(a) for a in attendees],
+        categories=cats,
     )
 
 
@@ -586,6 +598,11 @@ async def create_event(
             is_required=True,
             response_status="accepted",
         ))
+
+    # Categories: replace EventCategory rows from the body. None = no change.
+    if body.category_ids is not None:
+        for cid in body.category_ids:
+            db.add(EventCategory(event_id=ev.id, category_id=cid))
 
     await db.flush()
     await _send_calendar_invite(db, ev, invitee_emails, current_user, updated=False)
@@ -722,6 +739,15 @@ async def update_event(
                 is_required=True,
                 response_status="accepted",
             ))
+
+    # Replace EventCategory rows when the body explicitly provides a list.
+    # (None means "don't touch", empty list means "clear all".)
+    if body.category_ids is not None:
+        await db.execute(
+            EventCategory.__table__.delete().where(EventCategory.event_id == ev.id)
+        )
+        for cid in body.category_ids:
+            db.add(EventCategory(event_id=ev.id, category_id=cid))
 
     ev.updated_at = now
     await db.flush()
