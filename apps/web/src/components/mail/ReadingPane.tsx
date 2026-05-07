@@ -19,7 +19,7 @@ import { EmailLink } from './EmailLink'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
-import { formatOutlookDate, trimQuotedReply } from '@/lib/utils'
+import { cn, formatOutlookDate, trimQuotedReply } from '@/lib/utils'
 import {
   Reply,
   ReplyAll,
@@ -159,10 +159,28 @@ export function ReadingPane() {
       {/* Message content — scrollable area */}
       <div className="flex-1 overflow-y-auto outlook-scrollbar">
         <div className="px-6 py-4">
-          {/* Subject bar */}
-          <h1 className="text-xl font-semibold text-[#323130] mb-4 pb-2 border-b border-[#EDEBE9]">
-            {message.subject || '(no subject)'}
-          </h1>
+          {/* Subject bar — sensitivity badge mirrors Outlook's classification chip */}
+          <div className="flex items-center gap-2 mb-4 pb-2 border-b border-[#EDEBE9]">
+            <h1 className="text-xl font-semibold text-[#323130] flex-1 min-w-0">
+              {message.subject || '(no subject)'}
+            </h1>
+            {message.sensitivity && message.sensitivity !== 'normal' && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded uppercase tracking-wide flex-shrink-0',
+                  message.sensitivity === 'personal' && 'bg-[#E1F5E1] text-[#107C10]',
+                  message.sensitivity === 'private' && 'bg-[#FFF4CE] text-[#8A6116]',
+                  message.sensitivity === 'confidential' && 'bg-[#FDE7E9] text-[#A4262C]',
+                )}
+                title={`Sensitivity: ${message.sensitivity}`}
+              >
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                  <path d="M5 7V5a3 3 0 116 0v2M4 7h8v6H4z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                {message.sensitivity}
+              </span>
+            )}
+          </div>
 
           {/* Thread messages — Outlook-style cards */}
           {allThreadMsgs.map((msg, idx) => {

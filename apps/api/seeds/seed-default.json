@@ -193,6 +193,7 @@
         "is_flagged": true,
         "is_draft": false,
         "importance": "high",
+        "sensitivity": "confidential",
         "has_attachments": true,
         "received_at": "2026-05-01T03:56:19.969Z",
         "folder": "inbox"
@@ -2224,6 +2225,15 @@
         "size_bytes": 0,
         "is_inline": false,
         "sample_file": "Notes.txt"
+      },
+      {
+        "id": "c0a13c1a-1111-4111-8111-000000000005",
+        "message_id": "c132919a-6e36-4679-868b-5654252f279c",
+        "filename": "Q4-Review.pptx",
+        "content_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "size_bytes": 0,
+        "is_inline": false,
+        "sample_file": "Q4-Review.pptx"
       }
     ],
     "categories": [

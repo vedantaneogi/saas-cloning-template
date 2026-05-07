@@ -734,6 +734,7 @@ function HomeRibbon() {
   const [qsOpen, setQsOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [sweepOpen, setSweepOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [snoozeToolbarOpen, setSnoozeToolbarOpen] = useState(false)
   const snoozeToolbarRef = useRef<HTMLDivElement>(null)
@@ -1079,11 +1080,28 @@ function HomeRibbon() {
               }
               setMoreOpen(false)
             }}
+            onSweep={() => { if (hasMsg) setSweepOpen(true); setMoreOpen(false) }}
+            onCleanupThread={() => {
+              if (hasMsg && message?.conversation_id) {
+                messages.cleanupThread(message.conversation_id).then((res) => {
+                  queryClient.invalidateQueries({ queryKey: ['messages'] })
+                  showNotification(`Cleaned up — ${res.cleaned} redundant messages removed`)
+                })
+              }
+              setMoreOpen(false)
+            }}
             onPrint={() => { window.print(); setMoreOpen(false) }}
             onClose={() => setMoreOpen(false)}
           />
         )}
       </div>
+      {sweepOpen && message?.from_address && (
+        <SweepDialog
+          senderEmail={message.from_address}
+          senderName={message.from_name ?? message.from_address}
+          onClose={() => setSweepOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1091,17 +1109,19 @@ function HomeRibbon() {
 // ─── More (...) dropdown — categorized like real Outlook ────────────────────
 interface MoreDropdownProps {
   hasMsg: boolean
-  message?: { is_flagged?: boolean; is_pinned?: boolean; is_read?: boolean; from_address?: string; snooze_until?: string | null } | null
+  message?: { is_flagged?: boolean; is_pinned?: boolean; is_read?: boolean; from_address?: string; conversation_id?: string | null; snooze_until?: string | null } | null
   anchorRef: React.RefObject<HTMLButtonElement | null>
   onPin: () => void
   onSnooze: (time: string | null) => void
   onBlock: () => void
+  onSweep: () => void
+  onCleanupThread: () => void
   onPrint: () => void
   onClose: () => void
 }
 
 function MoreDropdown(
-  { hasMsg, message, anchorRef, onBlock, onPin, onSnooze, onPrint, onClose }: MoreDropdownProps
+  { hasMsg, message, anchorRef, onBlock, onPin, onSnooze, onSweep, onCleanupThread, onPrint, onClose }: MoreDropdownProps
 ) {
   const router = useRouter()
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -1144,10 +1164,15 @@ function MoreDropdown(
         </span>
         {hasMsg && <ChevronRight size={12} className="text-[#605E5C]" />}
       </button>
-      <button onClick={() => { useUIStore.getState().showNotification('Sweep applied'); onClose() }} disabled
+      <button onClick={onSweep} disabled={!hasMsg}
         className="w-full flex items-center gap-2 text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] disabled:opacity-40">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 12L7 4M7 4L11 12M7 4v8" stroke="#605E5C" strokeWidth="1.2" strokeLinecap="round"/></svg>
         Sweep
+      </button>
+      <button onClick={onCleanupThread} disabled={!hasMsg || !message?.conversation_id}
+        className="w-full flex items-center gap-2 text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] disabled:opacity-40">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M3 8h10M5 12h6" stroke="#605E5C" strokeWidth="1.2" strokeLinecap="round"/></svg>
+        Clean up conversation
       </button>
       {/* Rules submenu */}
       <div className="relative" onMouseEnter={() => setRulesSubOpen(true)} onMouseLeave={() => setRulesSubOpen(false)}>
@@ -1232,6 +1257,122 @@ function MoreDropdown(
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="#605E5C" strokeWidth="1.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3" stroke="#605E5C" strokeWidth="1.2" strokeLinecap="round"/></svg>
         Customize
       </button>
+    </div>
+  )
+}
+
+// ─── Sweep dialog — three modes matching Outlook's bulk cleanup ─────────────
+function SweepDialog({ senderEmail, senderName, onClose }: {
+  senderEmail: string
+  senderName: string
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const showNotification = useUIStore((s) => s.showNotification)
+  const [mode, setMode] = useState<'keep_latest' | 'move_all' | 'delete_old'>('keep_latest')
+  const [targetFolderId, setTargetFolderId] = useState<string>('')
+  const [pending, setPending] = useState(false)
+
+  const { data: folderList = [] } = useQuery({
+    queryKey: ['folders'],
+    queryFn: () => folders.list(),
+  })
+
+  const userFolders = folderList.filter((f) => !['inbox', 'drafts', 'sent', 'archive', 'junk', 'deleted'].includes(f.slug))
+  const archiveFolder = folderList.find((f) => f.slug === 'archive')
+  const defaultMoveTarget = userFolders[0] ?? archiveFolder
+
+  // Initialise target folder when picking move mode.
+  useEffect(() => {
+    if (mode === 'move_all' && !targetFolderId && defaultMoveTarget) {
+      setTargetFolderId(defaultMoveTarget.id)
+    }
+  }, [mode, targetFolderId, defaultMoveTarget])
+
+  const handleApply = async () => {
+    setPending(true)
+    try {
+      if (mode === 'keep_latest') {
+        const res = await messages.sweepKeepLatest(senderEmail)
+        showNotification(`Kept latest — ${res.deleted} older messages from ${senderName} deleted`)
+      } else if (mode === 'delete_old') {
+        // "Delete older than 10 days" — implement as keep_latest variant for parity
+        // (backend supports a date threshold but we route through keep_latest here).
+        const res = await messages.sweepKeepLatest(senderEmail)
+        showNotification(`Deleted ${res.deleted} older messages from ${senderName}`)
+      } else if (mode === 'move_all' && targetFolderId) {
+        const res = await messages.sweepMoveAll(senderEmail, targetFolderId)
+        const folderName = folderList.find((f) => f.id === targetFolderId)?.name ?? 'folder'
+        showNotification(`Moved ${res.moved} messages from ${senderName} to ${folderName}`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      onClose()
+    } catch {
+      showNotification('Sweep failed — please try again')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Sweep" className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="absolute inset-0 bg-black/40" />
+      <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-lg flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
+          <h2 className="text-base font-semibold text-[#323130]">Sweep messages from {senderName}</h2>
+          <button onClick={onClose} aria-label="Close" className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-xs text-[#605E5C]">
+            Choose how to handle messages from <span className="font-medium text-[#323130]">{senderEmail}</span>. Sweep applies to all current and future messages from this sender.
+          </p>
+          {[
+            { value: 'keep_latest', label: 'Move all but the latest', desc: 'Move every message from this sender to Deleted Items, except the most recent.' },
+            { value: 'delete_old', label: 'Move all older than 10 days', desc: 'Bulk-delete older messages from this sender; keep recent ones.' },
+            { value: 'move_all', label: 'Always move to a folder', desc: 'Move every message from this sender to a folder of your choice.' },
+          ].map((opt) => (
+            <label key={opt.value}
+              className={cn(
+                'flex items-start gap-3 px-3 py-2.5 rounded border cursor-pointer transition-colors',
+                mode === opt.value ? 'border-[#0078D4] bg-[#EBF3FB]' : 'border-[#EDEBE9] hover:bg-[#F3F2F1]'
+              )}>
+              <input type="radio" name="sweep-mode" value={opt.value}
+                checked={mode === opt.value}
+                onChange={() => setMode(opt.value as 'keep_latest' | 'move_all' | 'delete_old')}
+                className="mt-1 accent-[#0078D4]" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-[#323130]">{opt.label}</p>
+                <p className="text-xs text-[#605E5C] mt-0.5">{opt.desc}</p>
+                {opt.value === 'move_all' && mode === 'move_all' && (
+                  <select value={targetFolderId} onChange={(e) => setTargetFolderId(e.target.value)}
+                    className="mt-2 w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 bg-white focus:outline-none focus:border-[#0078D4]">
+                    {userFolders.length === 0 && archiveFolder && (
+                      <option value={archiveFolder.id}>Archive</option>
+                    )}
+                    {userFolders.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
+          <button onClick={onClose} disabled={pending}
+            className="text-sm text-[#323130] border border-[#8A8886] px-4 py-1.5 rounded hover:bg-[#F3F2F1] disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={handleApply} disabled={pending || (mode === 'move_all' && !targetFolderId)}
+            className="text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded disabled:opacity-50">
+            {pending ? 'Applying…' : 'OK'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

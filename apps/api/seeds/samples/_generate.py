@@ -179,8 +179,65 @@ def make_txt() -> None:
     print(f"wrote {out} ({out.stat().st_size} bytes)")
 
 
+def make_pptx() -> None:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    title_layout = prs.slide_layouts[0]
+    bullet_layout = prs.slide_layouts[1]
+
+    # Slide 1 — title
+    s1 = prs.slides.add_slide(title_layout)
+    s1.shapes.title.text = "Outlook Clone — Q4 Review"
+    s1.placeholders[1].text = "Frank Miller · Acme Corp · 2026-05"
+
+    # Slide 2 — agenda
+    s2 = prs.slides.add_slide(bullet_layout)
+    s2.shapes.title.text = "Agenda"
+    body = s2.placeholders[1].text_frame
+    body.text = "Recap of P0 milestones"
+    for line in ("Calendar recurrence + series delete",
+                 "Universal search dropdown",
+                 "Real attachment previews (xlsx, pdf, docx, pptx)",
+                 "RSVP & scheduling assistant"):
+        p = body.add_paragraph()
+        p.text = line
+
+    # Slide 3 — metrics
+    s3 = prs.slides.add_slide(bullet_layout)
+    s3.shapes.title.text = "Metrics this quarter"
+    body3 = s3.placeholders[1].text_frame
+    body3.text = "Coverage of CSV P0/P1 features"
+    for line in ("P0 coverage: 100%",
+                 "P1 coverage: 70% → 90% (this batch)",
+                 "Open: PowerPoint preview, sensitivity badge"):
+        p = body3.add_paragraph()
+        p.text = line
+
+    # Slide 4 — next steps
+    s4 = prs.slides.add_slide(bullet_layout)
+    s4.shapes.title.text = "Next steps"
+    body4 = s4.placeholders[1].text_frame
+    body4.text = "Phase 4 candidates"
+    for line in ("Sensitivity labels in reading pane",
+                 "Add-ins / Quick Steps polish",
+                 "Public release branch"):
+        p = body4.add_paragraph()
+        p.text = line
+
+    out = OUT / "Q4-Review.pptx"
+    prs.save(out)
+    print(f"wrote {out} ({out.stat().st_size} bytes)")
+
+
 if __name__ == "__main__":
     make_xlsx()
     make_pdf()
     make_png()
     make_txt()
+    make_pptx()
