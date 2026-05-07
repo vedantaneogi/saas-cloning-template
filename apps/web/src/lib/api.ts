@@ -324,8 +324,8 @@ export interface OOFSettings {
   enabled: boolean
   start: string | null
   end: string | null
-  message_internal: string | null
-  message_external: string | null
+  internal_message: string | null
+  external_message: string | null
 }
 
 export interface AppSettings {

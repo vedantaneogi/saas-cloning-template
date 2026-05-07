@@ -43,8 +43,8 @@ export function OOFSettings() {
           time_limited: !!(oof.start && oof.end),
           start: oof.start?.slice(0, 16) ?? '',
           end: oof.end?.slice(0, 16) ?? '',
-          message_internal: oof.message_internal ?? '',
-          message_external: oof.message_external ?? '',
+          message_internal: oof.internal_message ?? '',
+          message_external: oof.external_message ?? '',
           contacts_only: false,
         }
       : { enabled: false, time_limited: false, start: '', end: '', message_internal: '', message_external: '', contacts_only: false },
@@ -59,8 +59,8 @@ export function OOFSettings() {
         enabled: data.enabled,
         start: data.time_limited && data.start ? new Date(data.start).toISOString() : null,
         end: data.time_limited && data.end ? new Date(data.end).toISOString() : null,
-        message_internal: data.message_internal ?? null,
-        message_external: data.message_external ?? null,
+        internal_message: data.message_internal ?? null,
+        external_message: data.message_external ?? null,
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings-oof'] }),
   })
