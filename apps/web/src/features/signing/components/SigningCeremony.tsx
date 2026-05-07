@@ -1286,6 +1286,10 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                 Signing complete — document submitted successfully
               </span>
             </div>
+          ) : isCcOrViewer ? (
+            <span className="text-xs" style={{ color: "rgba(255,255,255,0.70)" }}>
+              You have received a copy of this document
+            </span>
           ) : (
             <span className="text-xs" style={{ color: "rgba(255,255,255,0.70)" }}>
               Click each field in the document to fill it in, then click Finish
@@ -1401,8 +1405,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
       {/* Main content: left panel + document area + right sidebar */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
-        {/* Left FIELDS panel */}
-        {(
+        {/* Left FIELDS panel — hidden for CC/viewer */}
+        {!isCcOrViewer && (
           <FieldsLeftPanel
             selectedType={selectedFieldType}
             selectedLabel={selectedFieldLabel}
