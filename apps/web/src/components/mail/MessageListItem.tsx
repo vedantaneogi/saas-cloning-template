@@ -532,24 +532,30 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
         const maxLeft = window.innerWidth - 232
         const left = Math.max(8, Math.min(contextMenu.x, maxLeft))
         // Anchor at the click; if the click is near the bottom, push the top
-        // up so the menu fits comfortably in the viewport (still scrollable).
-        const desired = Math.min(540, window.innerHeight - 16)
-        const room = window.innerHeight - contextMenu.y - 8
+        // up so the menu has room to render.
+        const margin = 8
+        const desired = Math.min(540, window.innerHeight - margin * 2)
+        const room = window.innerHeight - contextMenu.y - margin
         const top = room < desired
-          ? Math.max(8, window.innerHeight - desired - 8)
+          ? Math.max(margin, window.innerHeight - desired - margin)
           : contextMenu.y
+        // Hard cap so the menu always scrolls — the full Outlook context menu
+        // is taller than most viewports, and a hard cap guarantees the
+        // scrollbar is visible even on big screens. Also clamps to remaining
+        // viewport room so we never extend off-screen.
+        const HARD_CAP = 480
+        const maxHeight = Math.min(HARD_CAP, Math.max(160, window.innerHeight - top - margin))
         return (
         <div
           ref={menuRef}
           role="menu"
-          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1"
+          // Tailwind arbitrary variants hide the native scrollbar (WebKit + Firefox)
+          // while overflow-y:scroll keeps wheel/touch scrolling active.
+          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
           style={{
             left,
             top,
-            // Always-on scrollbar (overflow-y:scroll, not auto) so the user
-            // can see there's more content below; the native scrollbar gives
-            // the affordance the slim outlook-scrollbar lacked.
-            maxHeight: 'calc(100vh - 16px)',
+            maxHeight,
             overflowY: 'scroll',
           }}
         >
