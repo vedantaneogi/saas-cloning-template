@@ -37,17 +37,42 @@ function MenuItem({ icon, label, onClick, disabled }: { icon: React.ReactNode; l
   )
 }
 
-function SubMenu({ icon, label, open, onOpenChange, children, alignRight }: {
+function SubMenu({ icon, label, open, onOpenChange, children }: {
   icon: React.ReactNode
   label: string
   open: boolean
   onOpenChange: (v: boolean) => void
   children: React.ReactNode
+  // alignRight is now auto-detected based on viewport room.
   alignRight?: boolean
 }) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  useEffect(() => {
+    if (!open) { setPos(null); return }
+    const compute = () => {
+      const rect = btnRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const submenuW = 220
+      const submenuH = Math.min(360, window.innerHeight - 16)
+      // Open to the right by default; flip left if we'd overflow viewport.
+      let left = rect.right
+      if (left + submenuW > window.innerWidth - 8) left = Math.max(8, rect.left - submenuW)
+      // Anchor to the button's top, but keep the panel inside the viewport.
+      let top = rect.top
+      if (top + submenuH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - submenuH - 8)
+      setPos({ top, left })
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [open])
+
   return (
-    <div className="relative" onMouseEnter={() => onOpenChange(true)} onMouseLeave={() => onOpenChange(false)}>
+    <div onMouseEnter={() => onOpenChange(true)} onMouseLeave={() => onOpenChange(false)}>
       <button
+        ref={btnRef}
         role="menuitem"
         aria-haspopup="true"
         aria-expanded={open}
@@ -56,11 +81,16 @@ function SubMenu({ icon, label, open, onOpenChange, children, alignRight }: {
         <span className="flex items-center gap-2"><span className="text-[#605E5C]">{icon}</span>{label}</span>
         <ChevronRight size={12} className="text-[#605E5C]" />
       </button>
-      {open && (
-        <div className={cn(
-          "absolute top-0 min-w-[180px] max-w-[240px] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 z-50",
-          alignRight ? "right-full" : "left-full"
-        )}>
+      {open && pos && (
+        <div
+          // Fixed positioning escapes any scrollable ancestor (e.g. the main
+          // context menu when it's tall enough to scroll), so the submenu
+          // never gets clipped — and we flip horizontally near the right edge.
+          className="fixed min-w-[180px] max-w-[240px] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 z-[60] max-h-[80vh] overflow-y-auto outlook-scrollbar"
+          style={{ top: pos.top, left: pos.left }}
+          onMouseEnter={() => onOpenChange(true)}
+          onMouseLeave={() => onOpenChange(false)}
+        >
           {children}
         </div>
       )}
@@ -478,20 +508,28 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
         </span>
       )}
 
-      {/* Right-click context menu — matches real Outlook order exactly. Capped at
-          80vh with internal scroll so options below the fold ("Create task",
-          "Rules", etc.) stay reachable on short viewports. */}
-      {contextMenu && (
+      {/* Right-click context menu — matches real Outlook order exactly. We compute
+          a top position that keeps the natural-height menu inside the viewport
+          (flips upward when the click is near the bottom). overflow-y stays
+          AUTO so we still scroll if the user is on a tiny window, but submenus
+          escape via fixed positioning so they never get clipped. */}
+      {contextMenu && (() => {
+        const desired = 540 // approximate full menu height
+        const maxLeft = window.innerWidth - 232
+        const left = Math.max(8, Math.min(contextMenu.x, maxLeft))
+        const room = window.innerHeight - contextMenu.y
+        const top = room < desired
+          ? Math.max(8, window.innerHeight - Math.min(desired, window.innerHeight - 16) - 8)
+          : contextMenu.y
+        return (
         <div
           ref={menuRef}
           role="menu"
           className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1 overflow-y-auto outlook-scrollbar"
           style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 240),
-            // Anchor at the click but never overflow the viewport; cap height
-            // so nothing gets clipped at the bottom.
-            top: Math.min(contextMenu.y, Math.max(0, window.innerHeight - 80)),
-            maxHeight: 'min(80vh, 600px)',
+            left,
+            top,
+            maxHeight: 'calc(100vh - 16px)',
           }}
         >
           {/* 1. Reply / Reply all / Forward */}
@@ -838,7 +876,8 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             </button>
           </SubMenu>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
