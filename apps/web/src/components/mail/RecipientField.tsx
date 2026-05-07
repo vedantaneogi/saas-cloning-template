@@ -106,12 +106,13 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
   const wrapperRef = useRef<HTMLDivElement>(null)
   const blurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Fetch suggestions on input change
+  // Fetch suggestions on input change. With an empty query we fall back to a
+  // generic 'a' lookup so we get a few recents/top contacts as soon as the
+  // field is focused — same behaviour as Outlook's compose.
   const fetchSuggestions = useCallback(async (q: string) => {
-    if (q.length < 2) { setSuggestions([]); return }
     try {
-      const results = await contacts.autocomplete(q)
-      setSuggestions(results)
+      const results = await contacts.autocomplete(q.length >= 2 ? q : 'a')
+      setSuggestions(results.slice(0, 6))
     } catch {
       setSuggestions([])
     }
@@ -147,11 +148,14 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
     }
   }
 
-  const showDropdown = focused && input.length >= 2 && suggestions.length > 0
+  // Show suggestions any time the field is focused (Outlook does this even
+  // before you type); the empty-input case falls back to a small "recents" set.
+  const showDropdown = focused && suggestions.length > 0
 
-  // Chip click → contact card popover (Outlook behaviour). Anchor coords are
-  // captured on the click and dismissed via outside-click in ChipPopover.
+  // Chip click OR hover → contact card popover (Outlook behaviour). Anchor coords
+  // are captured on the event and dismissed via outside-click in ChipPopover.
   const [chipPopover, setChipPopover] = useState<{ recipient: string; x: number; y: number } | null>(null)
+  const chipHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   return (
     <div className="flex items-start gap-2 min-h-[32px]">
@@ -185,6 +189,19 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
                   e.stopPropagation()
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                   setChipPopover({ recipient, x: rect.left, y: rect.bottom + 4 })
+                }}
+                onMouseEnter={(e) => {
+                  // Hover (with a small delay) also opens the contact card so users
+                  // don't always have to click — same delay as the EmailLink hover.
+                  if (chipHoverTimer.current) clearTimeout(chipHoverTimer.current)
+                  const target = e.currentTarget as HTMLElement
+                  chipHoverTimer.current = setTimeout(() => {
+                    const rect = target.getBoundingClientRect()
+                    setChipPopover({ recipient, x: rect.left, y: rect.bottom + 4 })
+                  }, 400)
+                }}
+                onMouseLeave={() => {
+                  if (chipHoverTimer.current) clearTimeout(chipHoverTimer.current)
                 }}
                 className="text-left truncate max-w-[200px]"
                 title={recipient}
