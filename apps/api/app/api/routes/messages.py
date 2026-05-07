@@ -112,6 +112,27 @@ async def _deliver_to_recipients(
         )
         db.add(delivered)
         await db.flush()
+        # Auto-run the recipient's enabled inbound rules against the freshly
+        # delivered copy. Rules can move the message to a folder, mark it
+        # read, flag, set importance, etc. — same behaviour as Outlook's
+        # server-side inbox rules. Imported lazily to avoid circular imports.
+        from app.api.routes.rules import _message_matches_condition, _apply_rule_to_message
+        from app.models.rule import Rule
+        rules_q = await db.execute(
+            select(Rule)
+            .where(
+                Rule.user_id == rec_user.id,
+                Rule.is_enabled.is_(True),
+                Rule.apply_to.in_(("incoming", "both")),
+            )
+            .order_by(Rule.priority)
+        )
+        for r in rules_q.scalars().all():
+            if all(_message_matches_condition(delivered, c) for c in (r.conditions or [])):
+                await _apply_rule_to_message(db, r, delivered, rec_user.id)
+                if r.stop_processing:
+                    break
+        await db.flush()
         await _update_folder_counts(db, rec_inbox.id)
         rl_state.event_log.append("message_delivered", {
             "id": str(delivered.id), "from": sender.email, "to": rec_email,

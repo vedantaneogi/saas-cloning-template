@@ -217,9 +217,12 @@ export function RuleSettings() {
         )}
       </div>
 
-      {/* Editor */}
+      {/* Editor — keyed on the rule id (or "new") so React remounts the form
+          when the user picks a different rule, otherwise useState clings to
+          the previous rule's conditions/actions and the save clobbers them. */}
       {(creating || editing) && (
         <RuleEditor
+          key={editing?.id ?? 'new'}
           rule={editing ?? undefined}
           onSave={() => {
             queryClient.invalidateQueries({ queryKey: ['rules'] })
@@ -255,7 +258,17 @@ function RuleEditor({
     setSaving(true)
     try {
       if (rule) {
-        await rules.update(rule.id, { name, conditions, actions })
+        // Include the existing scalar settings so the PATCH doesn't accidentally
+        // clear them in clients that read the response back into form state.
+        await rules.update(rule.id, {
+          name,
+          conditions,
+          actions,
+          is_enabled: rule.is_enabled,
+          priority: rule.priority,
+          stop_processing: rule.stop_processing,
+          apply_to: rule.apply_to,
+        })
       } else {
         await rules.create({ name, conditions, actions, is_enabled: true })
       }
