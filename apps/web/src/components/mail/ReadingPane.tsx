@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
-import { messages, conversations } from '@/lib/api'
+import { messages, conversations, events } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import { Avatar } from '@/components/ui/Avatar'
 import { AttachmentBar } from './AttachmentBar'
@@ -14,6 +14,134 @@ import { ComposeModal } from './ComposeModal'
 function ComposeInline() {
   const closeComposer = useUIStore((s) => s.closeComposer)
   return <ComposeModal open={true} onClose={closeComposer} inline />
+}
+
+function InviteActions({ message }: { message: Message }) {
+  const queryClient = useQueryClient()
+  const showNotification = useUIStore((s) => s.showNotification)
+  const [proposeOpen, setProposeOpen] = useState(false)
+  const [proposeStart, setProposeStart] = useState('')
+  const [proposeEnd, setProposeEnd] = useState('')
+  const [responded, setResponded] = useState<'accepted' | 'tentative' | 'declined' | null>(null)
+
+  const respondMutation = useMutation({
+    mutationFn: (response: 'accepted' | 'tentative' | 'declined') =>
+      events.respond(message.event_id!, response),
+    onSuccess: (_d, response) => {
+      setResponded(response)
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      showNotification(
+        response === 'accepted' ? 'Accepted invitation'
+        : response === 'tentative' ? 'Marked tentative'
+        : 'Declined invitation'
+      )
+    },
+  })
+
+  const proposeMutation = useMutation({
+    mutationFn: () =>
+      events.proposeTime(
+        message.event_id!,
+        new Date(proposeStart).toISOString(),
+        new Date(proposeEnd).toISOString(),
+      ),
+    onSuccess: () => {
+      setProposeOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      showNotification('New time proposed')
+    },
+  })
+
+  return (
+    <div className="mb-3 border border-[#0078D4] bg-[#EBF3FB] rounded p-3 space-y-2">
+      <p className="text-xs font-semibold text-[#0078D4] flex items-center gap-1">
+        <CalendarDays size={12} /> Calendar invitation
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => respondMutation.mutate('accepted')}
+          disabled={respondMutation.isPending}
+          className={cn(
+            'flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-colors',
+            responded === 'accepted'
+              ? 'bg-[#107C10] text-white border-[#107C10]'
+              : 'bg-white border-[#107C10] text-[#107C10] hover:bg-[#DFF6DD]'
+          )}
+        >
+          <Check size={11} /> Accept
+        </button>
+        <button
+          type="button"
+          onClick={() => respondMutation.mutate('tentative')}
+          disabled={respondMutation.isPending}
+          className={cn(
+            'flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-colors',
+            responded === 'tentative'
+              ? 'bg-[#FFB900] text-white border-[#FFB900]'
+              : 'bg-white border-[#FFB900] text-[#8A6116] hover:bg-[#FFF4CE]'
+          )}
+        >
+          <HelpCircle size={11} /> Tentative
+        </button>
+        <button
+          type="button"
+          onClick={() => respondMutation.mutate('declined')}
+          disabled={respondMutation.isPending}
+          className={cn(
+            'flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-colors',
+            responded === 'declined'
+              ? 'bg-[#D13438] text-white border-[#D13438]'
+              : 'bg-white border-[#D13438] text-[#D13438] hover:bg-[#FDE7E9]'
+          )}
+        >
+          <X size={11} /> Decline
+        </button>
+        <button
+          type="button"
+          onClick={() => setProposeOpen((v) => !v)}
+          className="flex items-center gap-1 text-xs px-2.5 py-1 rounded border bg-white border-[#D2D0CE] text-[#323130] hover:bg-[#F3F2F1] transition-colors"
+        >
+          <Clock size={11} /> Propose new time
+        </button>
+        {responded && (
+          <span className="text-xs text-[#605E5C] ml-1">Response sent.</span>
+        )}
+      </div>
+      {proposeOpen && (
+        <div className="flex flex-wrap items-end gap-2 pt-1 border-t border-[#C7E0F4]">
+          <label className="text-xs text-[#605E5C] flex flex-col">
+            Start
+            <input
+              type="datetime-local"
+              aria-label="Proposed start time"
+              value={proposeStart}
+              onChange={(e) => setProposeStart(e.target.value)}
+              className="text-xs border border-[#8A8886] rounded px-2 py-1 mt-0.5"
+            />
+          </label>
+          <label className="text-xs text-[#605E5C] flex flex-col">
+            End
+            <input
+              type="datetime-local"
+              aria-label="Proposed end time"
+              value={proposeEnd}
+              onChange={(e) => setProposeEnd(e.target.value)}
+              className="text-xs border border-[#8A8886] rounded px-2 py-1 mt-0.5"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => proposeMutation.mutate()}
+            disabled={!proposeStart || !proposeEnd || proposeMutation.isPending}
+            className="text-xs bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white px-2.5 py-1 rounded"
+          >
+            Send proposal
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 import { EmailLink } from './EmailLink'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
@@ -31,6 +159,9 @@ import {
   X,
   CalendarDays,
   LayoutGrid,
+  Check,
+  HelpCircle,
+  Clock,
 } from 'lucide-react'
 
 export function ReadingPane() {
@@ -181,6 +312,9 @@ export function ReadingPane() {
               </span>
             )}
           </div>
+
+          {/* Calendar invitation actions — Accept / Tentative / Decline / Propose */}
+          {message.event_id && <InviteActions message={message} />}
 
           {/* Thread messages — Outlook-style cards */}
           {allThreadMsgs.map((msg, idx) => {

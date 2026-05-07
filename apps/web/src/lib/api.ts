@@ -108,6 +108,7 @@ export interface Message {
   has_attachments: boolean
   in_reply_to_id: string | null
   reply_type: 'none' | 'reply' | 'reply_all' | 'forward'
+  event_id: string | null
   snooze_until: string | null
   scheduled_send_at: string | null
   sent_at: string | null
@@ -210,6 +211,20 @@ export interface EventAttendee {
   is_required: boolean
   proposed_new_time: { start_time: string; end_time: string } | null
 }
+
+export interface EventDetail {
+  event: Event
+  attendees: EventAttendee[]
+}
+
+export interface EventAttendeeIn {
+  email: string
+  display_name?: string | null
+  is_required?: boolean
+  is_organizer?: boolean
+}
+
+export type EventInput = Partial<Omit<Event, 'attendees'>> & { attendees?: EventAttendeeIn[] }
 
 export interface TaskStep {
   id: string
@@ -638,15 +653,15 @@ export const events = {
     return request<PaginatedResponse<Event>>(`/events?${qs}`).then((r) => r.items)
   },
 
-  get: (id: string) => request<Event>(`/events/${id}`),
+  get: (id: string) => request<EventDetail>(`/events/${id}`),
 
-  create: (data: Partial<Event>) =>
+  create: (data: EventInput) =>
     request<Event>('/events', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  update: (id: string, data: Partial<Event>, scope?: 'single' | 'following' | 'series', occurrenceStart?: string) => {
+  update: (id: string, data: EventInput, scope?: 'single' | 'following' | 'series', occurrenceStart?: string) => {
     const qs = new URLSearchParams()
     if (scope) qs.set('scope', scope)
     if (occurrenceStart) qs.set('occurrence_start', occurrenceStart)

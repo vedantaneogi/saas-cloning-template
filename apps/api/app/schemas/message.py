@@ -89,6 +89,7 @@ class MessageOut(BaseModel):
     has_attachments: bool
     in_reply_to_id: Optional[uuid.UUID] = None
     reply_type: str
+    event_id: Optional[uuid.UUID] = None
     snooze_until: Optional[datetime] = None
     scheduled_send_at: Optional[datetime] = None
     sent_at: Optional[datetime] = None

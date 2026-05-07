@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { events, calendars, contacts } from '@/lib/api'
-import type { Event, Contact } from '@/lib/api'
+import type { Event, Contact, EventAttendee as EventAttendeeT } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -128,6 +128,30 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     }
   }, [event, watchedCalendarId, defaultCalendar?.id, setValue])
 
+  const currentUser = useAuthStore((s) => s.currentUser)
+  const isOrganizer = !event || (currentUser?.id === event.user_id)
+  const [invitedAttendees, setInvitedAttendees] = useState<{ email: string; name: string }[]>([])
+
+  // Pull the full attendee list when editing — the list endpoint doesn't include them.
+  const { data: eventDetail } = useQuery({
+    queryKey: ['event-detail', event?.id],
+    queryFn: () => events.get(event!.id),
+    enabled: !!event,
+  })
+
+  const loadedAttendees: EventAttendeeT[] = eventDetail?.attendees ?? []
+
+  // Seed the invitee chips from the loaded attendee rows once they arrive.
+  // Skip the organizer row and the current user (they're not invitees of themselves).
+  useEffect(() => {
+    if (!event || !eventDetail) return
+    const currentEmail = currentUser?.email?.toLowerCase()
+    const invitees = (eventDetail.attendees || [])
+      .filter((a) => !a.is_organizer && a.email.toLowerCase() !== currentEmail)
+      .map((a) => ({ email: a.email, name: a.display_name ?? a.email }))
+    setInvitedAttendees(invitees)
+  }, [event, eventDetail, currentUser?.email])
+
   const toggleDay = (day: number) => {
     const current = repeatDays
     const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day]
@@ -162,6 +186,12 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
       reminder_minutes: data.reminder_minutes,
       is_recurring: data.repeat,
       recurrence_rule: recurrenceRule,
+      attendees: invitedAttendees.map((a) => ({
+        email: a.email,
+        display_name: a.name,
+        is_organizer: false,
+        is_required: true,
+      })),
     }
   }
 
@@ -226,7 +256,6 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   })
 
   const [calendarDropdownOpen, setCalendarDropdownOpen] = useState(false)
-  const currentUser = useAuthStore((s) => s.currentUser)
   const [proposeOpen, setProposeOpen] = useState(false)
   const [proposeStart, setProposeStart] = useState('')
   const [proposeEnd, setProposeEnd] = useState('')
@@ -248,14 +277,22 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     }
   }
 
-  const attendees = event?.attendees ?? []
-  const myAttendee = attendees.find((a) => !a.is_organizer)
+  // Attendee rows include the organizer and any invitees with their RSVP status.
+  // Use the loaded list (from /events/{id}) — the list endpoint doesn't include attendees.
+  const attendees: EventAttendeeT[] = loadedAttendees.length > 0 ? loadedAttendees : (event?.attendees ?? [])
+  // The current user's own attendee row — used to render the RSVP buttons when
+  // viewing an event you've been invited to.
+  const myAttendee = !isOrganizer
+    ? attendees.find((a) => a.email.toLowerCase() === (currentUser?.email ?? '').toLowerCase())
+    : undefined
+  // Invitees the organizer can review (with their RSVP status + any proposed time).
+  const invitees = attendees.filter((a) => !a.is_organizer)
+  const proposals = invitees.filter((a) => a.proposed_new_time)
 
   // Attendees invite field
   const [inviteQuery, setInviteQuery] = useState('')
   const [inviteResults, setInviteResults] = useState<Contact[]>([])
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [invitedAttendees, setInvitedAttendees] = useState<{ email: string; name: string }[]>([])
 
   const handleInviteSearch = async (q: string) => {
     setInviteQuery(q)
@@ -328,14 +365,16 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     >
       {/* Outlook-style toolbar ribbon */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8] flex-shrink-0">
-        <button
-          type="button"
-          onClick={handleSubmit(handleSaveClick)}
-          disabled={saveMutation.isPending}
-          className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors"
-        >
-          <Check size={12} /> Save
-        </button>
+        {isOrganizer && (
+          <button
+            type="button"
+            onClick={handleSubmit(handleSaveClick)}
+            disabled={saveMutation.isPending}
+            className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors"
+          >
+            <Check size={12} /> Save
+          </button>
+        )}
         <div className="flex items-center border border-[#EDEBE9] rounded overflow-hidden">
           <button type="button" className="text-xs px-2.5 py-1 bg-white text-[#323130] border-r border-[#EDEBE9] font-medium">
             Event
@@ -366,7 +405,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           <option value={1440}>1 day</option>
         </select>
         <div className="ml-auto flex items-center gap-1">
-          {event && (
+          {event && isOrganizer && (
             <button
               type="button"
               onClick={handleDeleteClick}
@@ -430,6 +469,67 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
               Cancel
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* Organizer view: invitee status summary + any proposed times */}
+      {isOrganizer && event && invitees.length > 0 && (
+        <div className="px-4 pt-3 pb-2 border-b border-[#EDEBE9] space-y-2">
+          <p className="text-xs font-semibold text-[#605E5C]">
+            Invitees ({invitees.length})
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {invitees.map((a) => {
+              const statusColor =
+                a.response_status === 'accepted' ? 'bg-[#107C10] text-white border-[#107C10]'
+                : a.response_status === 'tentative' ? 'bg-[#FFB900] text-white border-[#FFB900]'
+                : a.response_status === 'declined' ? 'bg-[#D13438] text-white border-[#D13438]'
+                : 'bg-white text-[#605E5C] border-[#D2D0CE]'
+              return (
+                <span
+                  key={a.id}
+                  className={cn('text-xs px-2 py-0.5 rounded border', statusColor)}
+                  title={`${a.email}: ${a.response_status}`}
+                >
+                  {a.display_name || a.email}
+                  {a.response_status !== 'none' && (
+                    <span className="ml-1 opacity-80">· {a.response_status}</span>
+                  )}
+                </span>
+              )
+            })}
+          </div>
+          {proposals.length > 0 && (
+            <div className="bg-[#FFF4CE] border border-[#F4D58A] rounded p-2 space-y-1">
+              <p className="text-xs font-semibold text-[#8A6116] flex items-center gap-1">
+                <Clock size={11} /> New time proposals
+              </p>
+              {proposals.map((a) => {
+                const proposed = a.proposed_new_time!
+                const ps = new Date(proposed.start_time)
+                const pe = new Date(proposed.end_time)
+                return (
+                  <div key={a.id} className="flex items-center justify-between gap-2 text-xs">
+                    <div className="text-[#323130]">
+                      <strong>{a.display_name || a.email}</strong> proposed{' '}
+                      {format(ps, 'EEE MMM d, h:mm a')} – {format(pe, 'h:mm a')}
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Use proposed time from ${a.display_name || a.email}`}
+                      onClick={() => {
+                        setValue('start_time', formatDateTimeLocal(ps))
+                        setValue('end_time', formatDateTimeLocal(pe))
+                      }}
+                      className="text-xs bg-white border border-[#D2D0CE] hover:bg-[#F3F2F1] px-2 py-0.5 rounded transition-colors"
+                    >
+                      Use this time
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

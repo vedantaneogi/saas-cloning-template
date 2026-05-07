@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.calendar import Event, EventAttendee
+from app.models.folder import Folder
+from app.models.message import Message
 from app.models.user import User
 from app.rl.state import rl_state
 from app.schemas.calendar import (
@@ -206,6 +208,180 @@ async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID, user_id: uuid
     return ev
 
 
+async def _get_event_for_view(db: AsyncSession, event_id: uuid.UUID, user: User) -> Event:
+    """Return event if the user owns it OR is listed as an attendee. Used for RSVP/view paths."""
+    result = await db.execute(select(Event).where(Event.id == event_id))
+    ev = result.scalar_one_or_none()
+    if not ev:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_found", "message": "Event not found"}},
+        )
+    if ev.user_id == user.id:
+        return ev
+    att = await db.execute(
+        select(EventAttendee).where(
+            EventAttendee.event_id == event_id,
+            EventAttendee.email == user.email,
+        )
+    )
+    if att.scalar_one_or_none():
+        return ev
+    raise HTTPException(
+        status_code=404,
+        detail={"error": {"code": "not_found", "message": "Event not found"}},
+    )
+
+
+def _format_event_when(ev: Event) -> str:
+    if ev.all_day:
+        return ev.start_time.strftime("%a, %b %d, %Y") + " (all day)"
+    return f"{ev.start_time.strftime('%a, %b %d, %Y %I:%M %p')} – {ev.end_time.strftime('%I:%M %p')}"
+
+
+def _build_invite_html(ev: Event, organizer: User, updated: bool) -> str:
+    when = _format_event_when(ev)
+    where = ev.location or "—"
+    desc = ev.description or ""
+    label = "Updated invitation" if updated else "You're invited"
+    return (
+        f"<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#323130;\">"
+        f"<p style=\"margin:0 0 8px 0;color:#605E5C;font-size:12px;\">{label}</p>"
+        f"<h2 style=\"margin:0 0 12px 0;font-size:18px;\">{ev.title}</h2>"
+        f"<table style=\"font-size:13px;line-height:1.5;\">"
+        f"<tr><td style=\"color:#605E5C;padding-right:8px;\">When</td><td>{when}</td></tr>"
+        f"<tr><td style=\"color:#605E5C;padding-right:8px;\">Where</td><td>{where}</td></tr>"
+        f"<tr><td style=\"color:#605E5C;padding-right:8px;\">Organizer</td><td>{organizer.display_name} &lt;{organizer.email}&gt;</td></tr>"
+        f"</table>"
+        f"{('<p style=\"margin-top:12px;font-size:13px;color:#323130;\">' + desc + '</p>') if desc else ''}"
+        f"<p style=\"margin-top:16px;font-size:12px;color:#605E5C;\">Use the buttons above to respond.</p>"
+        f"</div>"
+    )
+
+
+async def _send_calendar_invite(
+    db: AsyncSession, ev: Event, attendee_emails: list[str], organizer: User, updated: bool = False
+) -> None:
+    """Deliver an in-app invite message to each attendee who has a user account."""
+    if not attendee_emails:
+        return
+    now = rl_state.clock.now()
+    when = _format_event_when(ev)
+    subject_prefix = "Updated:" if updated else "Invitation:"
+    subject = f"{subject_prefix} {ev.title} ({when})"
+    body_html = _build_invite_html(ev, organizer, updated)
+    body_text = f"{subject}\n\nWhen: {when}\nWhere: {ev.location or '-'}\nOrganizer: {organizer.email}\n\n{ev.description or ''}"
+
+    for email in attendee_emails:
+        if not email or email == organizer.email:
+            continue
+        rec_user_result = await db.execute(select(User).where(User.email == email))
+        rec_user = rec_user_result.scalar_one_or_none()
+        if not rec_user:
+            continue
+        inbox_result = await db.execute(
+            select(Folder).where(Folder.user_id == rec_user.id, Folder.slug == "inbox")
+        )
+        inbox = inbox_result.scalar_one_or_none()
+        if not inbox:
+            continue
+        msg = Message(
+            id=uuid.uuid4(),
+            user_id=rec_user.id,
+            folder_id=inbox.id,
+            from_address=organizer.email,
+            from_name=organizer.display_name,
+            to_addresses=[{"email": email, "name": rec_user.display_name}],
+            cc_addresses=[],
+            bcc_addresses=[],
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            is_read=False,
+            is_draft=False,
+            event_id=ev.id,
+            sent_at=now,
+            received_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(msg)
+    await db.flush()
+
+
+async def _notify_organizer_response(
+    db: AsyncSession, ev: Event, responder: User, response: Optional[str], proposal: Optional[dict]
+) -> None:
+    """Send an in-app status message to the organizer when an attendee responds or proposes a time."""
+    if responder.id == ev.user_id:
+        return
+    organizer_result = await db.execute(select(User).where(User.id == ev.user_id))
+    organizer = organizer_result.scalar_one_or_none()
+    if not organizer:
+        return
+    inbox_result = await db.execute(
+        select(Folder).where(Folder.user_id == organizer.id, Folder.slug == "inbox")
+    )
+    inbox = inbox_result.scalar_one_or_none()
+    if not inbox:
+        return
+
+    now = rl_state.clock.now()
+    when = _format_event_when(ev)
+    if proposal:
+        try:
+            ps = datetime.fromisoformat(str(proposal["start_time"]).replace("Z", "+00:00"))
+            pe = datetime.fromisoformat(str(proposal["end_time"]).replace("Z", "+00:00"))
+            proposed_when = f"{ps.strftime('%a, %b %d, %Y %I:%M %p')} – {pe.strftime('%I:%M %p')}"
+        except Exception:
+            proposed_when = f"{proposal.get('start_time', '')} – {proposal.get('end_time', '')}"
+        subject = f"New time proposed: {ev.title}"
+        body_text = f"{responder.display_name} proposed a new time for '{ev.title}'.\n\nProposed: {proposed_when}\nOriginal: {when}"
+        body_html = (
+            f"<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#323130;\">"
+            f"<p style=\"margin:0 0 8px 0;color:#605E5C;font-size:12px;\">New time proposed</p>"
+            f"<p style=\"margin:0 0 12px 0;font-size:14px;\"><strong>{responder.display_name}</strong> proposed a new time for <strong>{ev.title}</strong>.</p>"
+            f"<table style=\"font-size:13px;line-height:1.5;\">"
+            f"<tr><td style=\"color:#605E5C;padding-right:8px;\">Proposed</td><td>{proposed_when}</td></tr>"
+            f"<tr><td style=\"color:#605E5C;padding-right:8px;\">Original</td><td>{when}</td></tr>"
+            f"</table></div>"
+        )
+    else:
+        verb_map = {"accepted": "Accepted", "tentative": "Tentatively accepted", "declined": "Declined"}
+        verb = verb_map.get(response or "", "Responded to")
+        subject = f"{verb}: {ev.title}"
+        body_text = f"{responder.display_name} {verb.lower()} the invitation to '{ev.title}' ({when})."
+        body_html = (
+            f"<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#323130;\">"
+            f"<p style=\"margin:0 0 8px 0;color:#605E5C;font-size:12px;\">RSVP update</p>"
+            f"<p style=\"margin:0 0 12px 0;font-size:14px;\"><strong>{responder.display_name}</strong> {verb.lower()} the invitation to <strong>{ev.title}</strong>.</p>"
+            f"<p style=\"font-size:13px;color:#605E5C;\">When: {when}</p></div>"
+        )
+
+    msg = Message(
+        id=uuid.uuid4(),
+        user_id=organizer.id,
+        folder_id=inbox.id,
+        from_address=responder.email,
+        from_name=responder.display_name,
+        to_addresses=[{"email": organizer.email, "name": organizer.display_name}],
+        cc_addresses=[],
+        bcc_addresses=[],
+        subject=subject,
+        body_html=body_html,
+        body_text=body_text,
+        is_read=False,
+        is_draft=False,
+        event_id=ev.id,
+        sent_at=now,
+        received_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(msg)
+    await db.flush()
+
+
 @router.get("/availability")
 async def get_availability(
     attendee_emails: str = Query(..., description="Comma-separated emails"),
@@ -304,7 +480,7 @@ async def get_event(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ev = await _get_event_or_404(db, event_id, current_user.id)
+    ev = await _get_event_for_view(db, event_id, current_user)
     attendees_result = await db.execute(
         select(EventAttendee).where(EventAttendee.event_id == event_id)
     )
@@ -345,6 +521,7 @@ async def create_event(
     db.add(ev)
     await db.flush()
 
+    invitee_emails: list[str] = []
     for att in body.attendees:
         attendee = EventAttendee(
             id=uuid.uuid4(),
@@ -355,8 +532,11 @@ async def create_event(
             is_required=att.is_required,
         )
         db.add(attendee)
+        if not att.is_organizer:
+            invitee_emails.append(att.email)
 
     await db.flush()
+    await _send_calendar_invite(db, ev, invitee_emails, current_user, updated=False)
     rl_state.event_log.append("event_created", {"id": str(ev.id), "title": ev.title})
     return EventOut.model_validate(ev)
 
@@ -440,8 +620,18 @@ async def update_event(
     if body.sensitivity is not None:
         ev.sensitivity = body.sensitivity
 
-    # Replace attendees if provided
+    # Replace attendees if provided. Track which emails are newly added vs already invited
+    # so we send "Invitation:" to new ones and "Updated:" to previously invited.
+    new_emails: list[str] = []
+    existing_emails: list[str] = []
     if body.attendees is not None:
+        prev_result = await db.execute(
+            select(EventAttendee.email).where(
+                EventAttendee.event_id == ev.id,
+                EventAttendee.is_organizer.is_(False),
+            )
+        )
+        prev_email_set = {row for row in prev_result.scalars().all()}
         await db.execute(
             EventAttendee.__table__.delete().where(EventAttendee.event_id == ev.id)
         )
@@ -454,9 +644,18 @@ async def update_event(
                 is_organizer=att.is_organizer,
                 is_required=att.is_required,
             ))
+            if not att.is_organizer:
+                if att.email in prev_email_set:
+                    existing_emails.append(att.email)
+                else:
+                    new_emails.append(att.email)
 
     ev.updated_at = now
     await db.flush()
+    if new_emails:
+        await _send_calendar_invite(db, ev, new_emails, current_user, updated=False)
+    if existing_emails:
+        await _send_calendar_invite(db, ev, existing_emails, current_user, updated=True)
     rl_state.event_log.append("event_updated", {"id": str(ev.id)})
     return EventOut.model_validate(ev)
 
@@ -498,7 +697,7 @@ async def respond_to_event(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_event_or_404(db, event_id, current_user.id)
+    ev = await _get_event_for_view(db, event_id, current_user)
 
     result = await db.execute(
         select(EventAttendee).where(
@@ -518,6 +717,7 @@ async def respond_to_event(
             response_status=body.response,
         ))
     await db.flush()
+    await _notify_organizer_response(db, ev, current_user, body.response, None)
     rl_state.event_log.append("event_responded", {"event_id": str(event_id), "response": body.response})
     return {"status": "ok", "response": body.response}
 
@@ -529,7 +729,7 @@ async def propose_new_time(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_event_or_404(db, event_id, current_user.id)
+    ev = await _get_event_for_view(db, event_id, current_user)
 
     result = await db.execute(
         select(EventAttendee).where(
@@ -550,5 +750,6 @@ async def propose_new_time(
             proposed_new_time=proposal,
         ))
     await db.flush()
+    await _notify_organizer_response(db, ev, current_user, None, proposal)
     rl_state.event_log.append("time_proposed", {"event_id": str(event_id), "proposal": proposal})
     return {"status": "ok", "proposed": proposal}

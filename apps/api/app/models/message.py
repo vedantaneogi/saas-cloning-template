@@ -49,6 +49,9 @@ class Message(Base):
     reply_type: Mapped[str] = mapped_column(
         Enum("none", "reply", "reply_all", "forward", name="reply_type_enum"), default="none"
     )
+    event_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("events.id", ondelete="SET NULL"), nullable=True
+    )
     snooze_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_send_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
