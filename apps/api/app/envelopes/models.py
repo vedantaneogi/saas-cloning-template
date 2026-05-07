@@ -124,6 +124,9 @@ class Envelope(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    allow_comments: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
+    responsive_signing: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
+    allow_reassign: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
 
     # Relationships
     owner: Mapped["User"] = relationship("User", back_populates="envelopes")  # noqa: F821
@@ -249,6 +252,11 @@ class Field(Base):
     required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     label: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    conditional_on: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    conditional_value: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    conditional_action: Mapped[str | None] = mapped_column(String(16), nullable=True, default="show")
+    formula: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decimal_places: Mapped[int | None] = mapped_column(Integer, default=2, nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship("Document", back_populates="fields")

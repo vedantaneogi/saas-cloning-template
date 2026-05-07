@@ -19,6 +19,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import Response as FastAPIResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -99,8 +100,10 @@ async def list_envelopes(
     expiring_soon: bool = False
     action_required: bool = False
     auth_failed: bool = False
+    inbox: bool = False
 
     if envelope_filter == "inbox":
+        inbox = True
         statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered, EnvelopeStatus.completed]
         status_filter = None
     elif envelope_filter == "waiting_for_others":
@@ -153,6 +156,7 @@ async def list_envelopes(
         expiring_soon=expiring_soon,
         action_required=action_required,
         auth_failed=auth_failed,
+        inbox=inbox,
     )
     pages = max(1, -(-total // page_size))  # ceiling division
 
@@ -173,7 +177,10 @@ async def get_envelope_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from datetime import datetime, timezone as _tz, timedelta
     from sqlalchemy import func, select, or_
+    from app.envelopes.models import Recipient
+
     result = await db.execute(
         select(Envelope.status, func.count(Envelope.id))
         .where(
@@ -183,13 +190,42 @@ async def get_envelope_stats(
         .group_by(Envelope.status)
     )
     stats = {row[0]: row[1] for row in result.all()}
+    sent_count = stats.get(EnvelopeStatus.sent, 0) + stats.get(EnvelopeStatus.delivered, 0)
+
+    waiting_result = await db.execute(
+        select(func.count(func.distinct(Envelope.id)))
+        .where(
+            Envelope.user_id == current_user.id,
+            Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]),
+            or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"),
+        )
+    )
+    waiting_for_others = waiting_result.scalar() or 0
+
+    now = datetime.now(_tz.utc)
+    thirty_days = now + timedelta(days=30)
+    expiring_result = await db.execute(
+        select(func.count(func.distinct(Envelope.id)))
+        .where(
+            Envelope.user_id == current_user.id,
+            Envelope.expires_at.isnot(None),
+            Envelope.expires_at > now,
+            Envelope.expires_at <= thirty_days,
+            Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]),
+            or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"),
+        )
+    )
+    expiring_soon = expiring_result.scalar() or 0
+
     return {
         "total": sum(stats.values()),
         "draft": stats.get(EnvelopeStatus.draft, 0),
-        "sent": stats.get(EnvelopeStatus.sent, 0),
+        "sent": sent_count,
         "completed": stats.get(EnvelopeStatus.completed, 0),
         "voided": stats.get(EnvelopeStatus.voided, 0),
         "declined": stats.get(EnvelopeStatus.declined, 0),
+        "waitingForOthers": waiting_for_others,
+        "expiringSoon": expiring_soon,
     }
 
 
@@ -375,9 +411,9 @@ async def list_bulk_batches(
             "completed": row.completed,
             "failed": row.failed,
             "status": (
-                "Processed" if total > 0 and row.failed == 0
-                else "Partial" if row.failed > 0
-                else "Processing"
+                "Partial" if row.failed > 0
+                else "Processing" if (row.sent + row.completed + row.failed) < total
+                else "Processed"
             ),
             "submitted": row.submitted.isoformat() if row.submitted else None,
         })
@@ -390,7 +426,7 @@ async def get_envelope(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id, user_email=current_user.email)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
     response = EnvelopeDetailResponse.model_validate(envelope)
@@ -438,7 +474,7 @@ async def delete_envelope(
     await svc.delete_envelope(db, envelope)
 
 
-@router.post("/envelopes/{envelope_id}/send", response_model=EnvelopeResponse)
+@router.post("/envelopes/{envelope_id}/send", response_model=EnvelopeDetailResponse)
 async def send_envelope(
     envelope_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -457,7 +493,17 @@ async def send_envelope(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Envelope must have at least one document before sending",
         )
-    return await svc.send_envelope(db, envelope)
+    sent = await svc.send_envelope(db, envelope)
+    # Reload with relationships so recipients (including signing_token) are returned
+    reloaded = await svc.get_envelope(db, sent.id, current_user.id)
+    response = EnvelopeDetailResponse.model_validate(reloaded)
+    if hasattr(reloaded, "owner") and reloaded.owner is not None:
+        response.from_name = reloaded.owner.name
+        response.from_email = reloaded.owner.email
+    else:
+        response.from_name = current_user.name
+        response.from_email = current_user.email
+    return response
 
 
 @router.post("/envelopes/{envelope_id}/void", response_model=EnvelopeResponse)
@@ -609,6 +655,15 @@ async def upload_document(
     file_path = os.path.join(settings.upload_dir, stored_filename)
 
     content = await file.read()
+
+    # Enforce 10MB file size limit
+    max_file_size = 10 * 1024 * 1024  # 10MB
+    if len(content) > max_file_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File size exceeds 10MB limit",
+        )
+
     with open(file_path, "wb") as f:
         f.write(content)
 
@@ -836,6 +891,11 @@ async def create_field(
     envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot add fields to a non-draft envelope",
+        )
     return await svc.create_field(db, document_id, data)
 
 
@@ -912,6 +972,7 @@ async def save_envelope_fields(
 @router.get("/documents/{document_id}/download")
 async def download_document(
     document_id: uuid.UUID,
+    view: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -943,11 +1004,13 @@ async def download_document(
     }
     media_type = _mime_map.get(_ext, "application/octet-stream")
 
+    disposition = "inline" if view else "attachment"
+    safe_name = (doc.original_filename or "document").replace('"', "").replace("\\", "")
     return FastAPIResponse(
         content=content,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{(doc.original_filename or "document").replace(chr(34), "").replace(chr(92), "")}"'
+            "Content-Disposition": f'{disposition}; filename="{safe_name}"'
         },
     )
 
@@ -955,6 +1018,7 @@ async def download_document(
 @router.get("/envelopes/{envelope_id}/download")
 async def download_signed_envelope(
     envelope_id: uuid.UUID,
+    view: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -962,10 +1026,13 @@ async def download_signed_envelope(
 
     For completed envelopes: returns the signed PDF with all field values applied.
     For non-completed envelopes: returns the original document without field overlays.
+    For multi-document envelopes: merges all document PDFs into a single PDF.
     """
+    import fitz  # PyMuPDF
+
     from app.signing.pdf_processor import apply_fields_to_pdf
 
-    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id, user_email=current_user.email)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
 
@@ -975,58 +1042,99 @@ async def download_signed_envelope(
             detail="No documents found for this envelope",
         )
 
-    # Use the first document as the primary PDF
-    doc = envelope.documents[0]
-    if not os.path.exists(doc.file_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document file not found on server",
-        )
+    # Verify all document files exist
+    for doc in envelope.documents:
+        if not os.path.exists(doc.file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document file not found on server: {doc.original_filename or 'unknown'}",
+            )
 
     safe_subject = "".join(c for c in envelope.subject if c.isalnum() or c in " _-")[:50]
-    file_ext = os.path.splitext(doc.file_path)[-1].lower()
 
-    # Collect fields with values for the primary document only
-    all_fields = [
-        {
-            "type": f.type.value,
-            "page": f.page,
-            "x": f.x,
-            "y": f.y,
-            "width": f.width,
-            "height": f.height,
-            "value": f.value,
-            "label": f.label,
-        }
-        for f in doc.fields
-        if f.value
-    ]
+    # Build a PDF for each document (applying fields if completed)
+    pdf_parts: list[bytes] = []
+    for doc in envelope.documents:
+        file_ext = os.path.splitext(doc.file_path)[-1].lower()
 
-    if all_fields and file_ext == ".pdf":
-        try:
-            pdf_bytes = apply_fields_to_pdf(doc.file_path, all_fields)
-        except Exception:
-            with open(doc.file_path, "rb") as fh:
-                pdf_bytes = fh.read()
+        # Resolve the effective PDF path to use for this document.
+        # For DOCX/DOC files a preview PDF is generated at upload time; use it
+        # when available so we always feed valid PDF bytes to fitz. If no preview
+        # exists yet, generate one on-the-fly and fall back to an empty page only
+        # as a last resort.
+        if file_ext in (".docx", ".doc"):
+            if doc.preview_filename:
+                preview_pdf_path = os.path.join(settings.upload_dir, doc.preview_filename)
+            else:
+                preview_pdf_path = ""
+
+            if preview_pdf_path and os.path.exists(preview_pdf_path):
+                effective_pdf_path = preview_pdf_path
+            else:
+                # Generate a preview PDF on-the-fly
+                from app.signing.pdf_processor import convert_doc_to_pdf as _cvt
+                tmp_preview = os.path.join(
+                    settings.upload_dir,
+                    f"{os.path.splitext(os.path.basename(doc.file_path))[0]}_preview_dl.pdf",
+                )
+                converted = _cvt(doc.file_path, tmp_preview)
+                effective_pdf_path = tmp_preview if converted and os.path.exists(tmp_preview) else None
+        else:
+            effective_pdf_path = doc.file_path
+
+        # Collect fields with values for this document
+        doc_fields = [
+            {
+                "type": f.type.value,
+                "page": f.page,
+                "x": f.x,
+                "y": f.y,
+                "width": f.width,
+                "height": f.height,
+                "value": f.value,
+                "label": f.label,
+            }
+            for f in doc.fields
+            if f.value
+        ]
+
+        if effective_pdf_path and os.path.exists(effective_pdf_path):
+            if doc_fields:
+                try:
+                    pdf_parts.append(apply_fields_to_pdf(effective_pdf_path, doc_fields))
+                except Exception:
+                    with open(effective_pdf_path, "rb") as fh:
+                        pdf_parts.append(fh.read())
+            else:
+                with open(effective_pdf_path, "rb") as fh:
+                    pdf_parts.append(fh.read())
+        else:
+            # Absolute fallback: generate a minimal blank PDF page via fitz
+            fallback_doc = fitz.open()
+            fallback_doc.new_page()
+            pdf_parts.append(fallback_doc.tobytes())
+            fallback_doc.close()
+
+    # If single document, return it directly; otherwise merge with PyMuPDF
+    if len(pdf_parts) == 1:
+        pdf_bytes = pdf_parts[0]
     else:
-        with open(doc.file_path, "rb") as fh:
-            pdf_bytes = fh.read()
+        merged = fitz.open()
+        for part in pdf_parts:
+            src = fitz.open(stream=part, filetype="pdf")
+            merged.insert_pdf(src)
+            src.close()
+        pdf_bytes = merged.tobytes()
+        merged.close()
 
-    media_types = {
-        ".pdf": "application/pdf",
-        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ".doc": "application/msword",
-    }
-    content_type = media_types.get(file_ext, "application/octet-stream")
-
-    ext = file_ext if file_ext != ".pdf" else ".pdf"
-    filename = f"signed_{safe_subject}{ext}" if envelope.status == EnvelopeStatus.completed else f"{safe_subject}{ext}"
+    filename = f"signed_{safe_subject}.pdf" if envelope.status == EnvelopeStatus.completed else f"{safe_subject}.pdf"
     safe_fn = filename.replace('"', "").replace("\\", "")
 
+    disposition = "inline" if view else "attachment"
     return FastAPIResponse(
         content=pdf_bytes,
-        media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{safe_fn}"'},
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'{disposition}; filename="{safe_fn}"'},
     )
 
 
@@ -1040,7 +1148,7 @@ async def download_certificate(
     from app.audit import service as audit_svc
     from app.signing.pdf_processor import generate_certificate
 
-    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id, user_email=current_user.email)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
 
@@ -1169,13 +1277,12 @@ async def bulk_send_direct(
     batch_id = str(uuid.uuid4())
     created = 0
     failed = 0
-    total_rows = len(rows)
+    valid_rows = [r for r in rows if (r.get("name") or "").strip() and (r.get("email") or "").strip()]
+    total_rows = len(valid_rows)
 
-    for row in rows:
+    for row in valid_rows:
         name = (row.get("name") or "").strip()
         email = (row.get("email") or "").strip()
-        if not name or not email:
-            continue
 
         # Create envelope
         from app.envelopes.schemas import EnvelopeCreate as EnvCreate
@@ -1218,6 +1325,27 @@ async def bulk_send_direct(
         db.add(recipient)
         await db.flush()
 
+        # Add default signature field on first document for this recipient
+        from app.envelopes.models import Field, FieldType
+        first_doc_result = await db.execute(
+            select(Document).where(Document.envelope_id == envelope.id).order_by(Document.order).limit(1)
+        )
+        first_doc = first_doc_result.scalar_one_or_none()
+        if first_doc:
+            sig_field = Field(
+                document_id=first_doc.id,
+                recipient_id=recipient.id,
+                type=FieldType.signature,
+                page=1,
+                x=30.0,
+                y=85.0,
+                width=25.0,
+                height=5.0,
+                required=True,
+            )
+            db.add(sig_field)
+            await db.flush()
+
         envelope_detail = await svc.get_envelope(db, envelope.id, current_user.id)
         if envelope_detail:
             try:
@@ -1225,6 +1353,8 @@ async def bulk_send_direct(
                 created += 1
             except Exception as exc:
                 logger.error("bulk-send-direct: envelope %s failed for %s: %s", envelope.id, email, exc)
+                await db.delete(envelope)
+                await db.flush()
                 failed += 1
         else:
             logger.error("bulk-send-direct: envelope %s not found after create for %s", envelope.id, email)
@@ -1298,7 +1428,14 @@ async def bulk_send_envelopes(
         envelope = env_result.scalar_one()
         envelope.batch_id = batch_id
 
+        # Delete template-copied recipients to avoid duplicates before adding the CSV recipient
         from app.envelopes.models import Recipient as RecipientModel
+        from sqlalchemy import delete as sa_delete
+        await db.execute(
+            sa_delete(RecipientModel).where(RecipientModel.envelope_id == envelope.id)
+        )
+        await db.flush()
+
         recipient = RecipientModel(
             envelope_id=envelope.id,
             name=name,
@@ -1372,9 +1509,12 @@ async def list_comments(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    # Allow both the envelope owner and recipients to list comments.
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id, user_email=current_user.email)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    if not envelope.allow_comments:
+        return []
     comments = await svc.list_comments(db, envelope_id)
     return [
         {
@@ -1401,9 +1541,15 @@ async def create_comment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    envelope = await svc.get_envelope(db, envelope_id, current_user.id)
+    # Allow both the envelope owner and recipients to post comments.
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id, user_email=current_user.email)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    if not envelope.allow_comments:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Comments are disabled for this envelope",
+        )
     comment = await svc.create_comment(db, envelope_id, current_user.id, data)
     return {
         "id": comment.id,
@@ -1416,9 +1562,28 @@ async def create_comment(
     }
 
 
+@router.delete(
+    "/envelopes/{envelope_id}/comments/{comment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_comment(
+    envelope_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Allow both the envelope owner and recipients to delete their own comments.
+    envelope = await svc.get_envelope(db, envelope_id, current_user.id, user_email=current_user.email)
+    if not envelope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
+    deleted = await svc.delete_comment(db, comment_id, current_user.id, envelope_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+
 # ── Correct in-flight endpoints ────────────────────────────────────────────────
 
-@router.post("/envelopes/{envelope_id}/correct", response_model=EnvelopeResponse)
+@router.post("/envelopes/{envelope_id}/correct", response_model=EnvelopeDetailResponse)
 async def correct_envelope(
     envelope_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -1428,10 +1593,20 @@ async def correct_envelope(
     envelope = await svc.get_envelope(db, envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
-    return await svc.correct_envelope(db, envelope)
+    await svc.correct_envelope(db, envelope)
+    # Reload with full relationships so the response includes recipients/documents
+    reloaded = await svc.get_envelope(db, envelope_id, current_user.id)
+    response = EnvelopeDetailResponse.model_validate(reloaded)
+    if hasattr(reloaded, "owner") and reloaded.owner is not None:
+        response.from_name = reloaded.owner.name
+        response.from_email = reloaded.owner.email
+    else:
+        response.from_name = current_user.name
+        response.from_email = current_user.email
+    return response
 
 
-@router.post("/envelopes/{envelope_id}/resend-corrected", response_model=EnvelopeResponse)
+@router.post("/envelopes/{envelope_id}/resend-corrected", response_model=EnvelopeDetailResponse)
 async def resend_corrected_envelope(
     envelope_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -1441,4 +1616,14 @@ async def resend_corrected_envelope(
     envelope = await svc.get_envelope(db, envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Envelope not found")
-    return await svc.resend_corrected_envelope(db, envelope)
+    await svc.resend_corrected_envelope(db, envelope)
+    # Reload with full relationships so the response includes signing tokens
+    reloaded = await svc.get_envelope(db, envelope_id, current_user.id)
+    response = EnvelopeDetailResponse.model_validate(reloaded)
+    if hasattr(reloaded, "owner") and reloaded.owner is not None:
+        response.from_name = reloaded.owner.name
+        response.from_email = reloaded.owner.email
+    else:
+        response.from_name = current_user.name
+        response.from_email = current_user.email
+    return response

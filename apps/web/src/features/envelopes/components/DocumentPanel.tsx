@@ -119,9 +119,9 @@ export function DocumentPanel({ documents, envelopeId, envelopeStatus }: Documen
                     style={{ background: "rgba(19,0,50,0.14)" }}
                     onClick={() => {
                       if (!envelopeId) {
-                        window.open(`/api/documents/${doc.id}/download`, '_blank');
+                        window.open(`/api/documents/${doc.id}/download?view=true`, '_blank');
                       } else if (envelopeStatus === "completed") {
-                        window.open(`/api/envelopes/${envelopeId}/download`, '_blank');
+                        window.open(`/api/envelopes/${envelopeId}/download?view=true`, '_blank');
                       } else {
                         window.location.assign(`/envelope/${envelopeId}/edit?preview=true`);
                       }

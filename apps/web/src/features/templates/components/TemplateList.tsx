@@ -331,11 +331,12 @@ function TemplateRow({
                   </button>
                   <button
                     className="w-full text-left px-4 py-2 text-sm transition-colors"
-                    style={{ color: PRIMARY_TEXT }}
-                    onClick={() => setShowMenu(false)}
+                    style={{ color: SECONDARY_TEXT, cursor: "not-allowed", opacity: 0.5 }}
+                    disabled
+                    title="Template editing is not yet available"
                     onMouseOver={(e) =>
                       ((e.currentTarget as HTMLButtonElement).style.background =
-                        "rgba(19,0,50,0.04)")
+                        "transparent")
                     }
                     onMouseOut={(e) =>
                       ((e.currentTarget as HTMLButtonElement).style.background =

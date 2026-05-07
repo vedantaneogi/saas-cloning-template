@@ -223,37 +223,55 @@ async def upload_signing_attachment(
     data: AttachmentUpload,
     db: AsyncSession = Depends(get_db),
 ):
-    """Stub endpoint: accept a base64-encoded file upload linked to a field.
+    """Accept a base64-encoded file upload linked to a field.
 
     The file is stored under UPLOADS_DIR/attachments/{token}/{field_id}/{filename}.
-    No real validation is done — this is a P1 stub.
+    After storing, the field value is updated to the relative stored path so that
+    complete_signing can verify the required field has been filled.
     """
-    # Verify the token is valid (will raise 404 if not)
-    await svc.get_signing_session(db, token)
+    # Validate token is a valid UUID to prevent path traversal attacks
+    try:
+        uuid.UUID(token)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
 
-    # Decode and persist
+    # Validate field_id format early
+    try:
+        safe_field_id = str(uuid.UUID(data.field_id))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid field_id")
+
+    # Decode bytes before touching the filesystem
     try:
         file_bytes = base64.b64decode(data.data)
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid base64 data")
 
-    safe_filename = os.path.basename(data.filename) or "attachment"
-    try:
-        safe_field_id = str(uuid.UUID(data.field_id))
-    except (ValueError, AttributeError):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid field_id")
     if len(file_bytes) > 10 * 1024 * 1024:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large (max 10MB)")
+
+    safe_filename = os.path.basename(data.filename) or "attachment"
+
     dest_dir = os.path.join(UPLOADS_DIR, "attachments", token, safe_field_id)
     os.makedirs(dest_dir, exist_ok=True)
     dest_path = os.path.join(dest_dir, safe_filename)
     with open(dest_path, "wb") as f:
         f.write(file_bytes)
 
+    # Persist the stored path as the field value so complete_signing sees it filled.
+    # Use a relative path so it remains valid if the upload root moves.
+    rel_path = os.path.relpath(dest_path, UPLOADS_DIR)
+    try:
+        await svc.submit_field(db, token, uuid.UUID(safe_field_id), rel_path)
+    except HTTPException:
+        # submit_field raises 404 if the field doesn't belong to this recipient —
+        # the file is still stored, so just surface the error to the caller.
+        raise
+
     return AttachmentResponse(
         field_id=data.field_id,
         filename=safe_filename,
-        stored_path=dest_path,
+        stored_path=rel_path,
     )
 
 
@@ -317,11 +335,11 @@ async def complete_signing(
 
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
-    await svc.complete_signing(db, token, ip_address, user_agent)
-    # The frontend expects { success, downloadUrl }. We return success=True and
-    # no downloadUrl (the envelope download requires auth and is accessed through
-    # the dashboard, not the signing page directly).
-    return CompleteSigningResponse(success=True, downloadUrl=None)
+    recipient = await svc.complete_signing(db, token, ip_address, user_agent)
+    from app.core.config import get_settings as _get_settings
+    _settings = _get_settings()
+    download_url = f"{_settings.frontend_url}/api/envelopes/{recipient.envelope_id}/download"
+    return CompleteSigningResponse(success=True, downloadUrl=download_url)
 
 
 @router.post("/{token}/decline", response_model=RecipientResponse)

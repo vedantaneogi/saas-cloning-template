@@ -15,10 +15,14 @@ import {
   resendEnvelope,
   downloadCertificate,
   saveEnvelopeAsTemplate,
+  moveEnvelopes,
+  getComments,
+  postComment,
+  deleteComment,
+  correctEnvelope,
 } from "../api";
 import { formatDateLong } from "@/lib/utils";
 import type { Envelope } from "../types";
-import { getComments, postComment, correctEnvelope } from "../api";
 import {
   CaretLeft,
   CopySimple,
@@ -32,6 +36,7 @@ import {
   ChatTeardrop,
   PencilSimple,
 } from "@phosphor-icons/react";
+import { useAuthStore } from "@/features/auth/store";
 
 // ─── DocuSign design tokens ───────────────────────────────────────────────────
 const DS_FONT         = "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif";
@@ -73,6 +78,7 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { toasts, addToast, dismissToast } = useToast();
+  const currentUser = useAuthStore((s) => s.user);
 
   const [activeTab, setActiveTab]             = useState("recipients");
   const [copied, setCopied]                   = useState(false);
@@ -106,8 +112,10 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
       const a   = document.createElement("a");
       a.href     = url;
       a.download = `${envelope.subject}.pdf`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     },
     onError: () => addToast("Failed to download envelope.", "error"),
   });
@@ -120,8 +128,10 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
       const a   = document.createElement("a");
       a.href     = url;
       a.download = `${envelope.subject}-certificate.pdf`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     },
     onError: () => addToast("Failed to download certificate.", "error"),
   });
@@ -152,8 +162,17 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
   });
 
   // ── Delete ────────────────────────────────────────────────────────────────
+  // Draft envelopes are hard-deleted; non-draft envelopes are soft-deleted
+  // (moved to the "deleted" view) since they cannot be permanently removed
+  // while in-flight or completed.
   const deleteMutation = useMutation({
-    mutationFn: () => deleteEnvelope(envelope.id),
+    mutationFn: async () => {
+      if (envelope.status === "draft") {
+        await deleteEnvelope(envelope.id);
+      } else {
+        await moveEnvelopes([envelope.id], null, "deleted");
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["envelopes"] });
       router.push("/agreements");
@@ -174,7 +193,7 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
   });
 
   // ── Comments ──────────────────────────────────────────────────────────────
-  const { data: comments = [], refetch: refetchComments } = useQuery({
+  const { data: comments = [] } = useQuery({
     queryKey: ["comments", envelope.id],
     queryFn: () => getComments(envelope.id),
   });
@@ -183,9 +202,17 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
     mutationFn: () => postComment(envelope.id, commentText.trim()),
     onSuccess: () => {
       setCommentText("");
-      refetchComments();
+      queryClient.invalidateQueries({ queryKey: ["comments", envelope.id] });
     },
     onError: () => addToast("Failed to post comment.", "error"),
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: string) => deleteComment(envelope.id, commentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["comments", envelope.id] });
+    },
+    onError: () => addToast("Failed to delete comment.", "error"),
   });
 
   // ── Correct in-flight ──────────────────────────────────────────────────────
@@ -541,9 +568,23 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
                             {c.author_name ?? c.author_email ?? "Unknown"}
                           </span>
                         </div>
-                        <span className="text-xs" style={{ color: COLOR_MUTED }}>
-                          {new Date(c.created_at).toLocaleString()}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs" style={{ color: COLOR_MUTED }}>
+                            {new Date(c.created_at).toLocaleString()}
+                          </span>
+                          {/* Delete button — only visible for the comment's author (matched by user_id) */}
+                          {currentUser?.id === c.user_id && (
+                            <button
+                              onClick={() => deleteCommentMutation.mutate(c.id)}
+                              disabled={deleteCommentMutation.isPending}
+                              title="Delete comment"
+                              className="flex items-center justify-center w-5 h-5 rounded transition-colors opacity-40 hover:opacity-100"
+                              style={{ color: "#D93025" }}
+                            >
+                              <Trash size={13} weight="bold" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className="text-sm pl-8 whitespace-pre-wrap" style={{ color: COLOR_SECONDARY }}>
                         {c.text}
@@ -553,49 +594,59 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
                 </div>
               )}
 
-              {/* New comment input */}
-              <div
-                className="border rounded-lg overflow-hidden"
-                style={{ borderColor: COLOR_BORDER }}
-              >
-                <textarea
-                  ref={commentInputRef}
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  placeholder="Add a comment…"
-                  rows={3}
-                  className="w-full px-3 py-2.5 text-sm outline-none resize-none"
-                  style={{ color: COLOR_PRIMARY, fontFamily: DS_FONT, border: "none" }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && commentText.trim()) {
-                      postCommentMutation.mutate();
-                    }
-                  }}
-                />
+              {/* New comment input — hidden when allow_comments is explicitly false */}
+              {envelope.allow_comments === false ? (
                 <div
-                  className="flex items-center justify-between px-3 py-2 border-t"
-                  style={{ borderColor: COLOR_BORDER, background: "rgba(19,0,50,0.02)" }}
+                  className="flex items-center gap-2 px-3 py-3 rounded-lg border text-sm"
+                  style={{ borderColor: COLOR_BORDER, color: COLOR_MUTED, background: "rgba(19,0,50,0.02)" }}
                 >
-                  <span className="text-xs" style={{ color: COLOR_MUTED }}>
-                    Ctrl+Enter to submit
-                  </span>
-                  <button
-                    onClick={() => commentText.trim() && postCommentMutation.mutate()}
-                    disabled={!commentText.trim() || postCommentMutation.isPending}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white transition-all disabled:opacity-40"
-                    style={{ background: COLOR_ACCENT }}
-                    onMouseEnter={(e) => { if (commentText.trim()) e.currentTarget.style.background = "#3700cc"; }}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = COLOR_ACCENT)}
-                  >
-                    {postCommentMutation.isPending ? (
-                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <ChatTeardrop size={12} weight="bold" />
-                    )}
-                    Comment
-                  </button>
+                  <ChatTeardrop size={16} weight="light" />
+                  Comments are disabled for this envelope.
                 </div>
-              </div>
+              ) : (
+                <div
+                  className="border rounded-lg overflow-hidden"
+                  style={{ borderColor: COLOR_BORDER }}
+                >
+                  <textarea
+                    ref={commentInputRef}
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    placeholder="Add a comment…"
+                    rows={3}
+                    className="w-full px-3 py-2.5 text-sm outline-none resize-none"
+                    style={{ color: COLOR_PRIMARY, fontFamily: DS_FONT, border: "none" }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && commentText.trim()) {
+                        postCommentMutation.mutate();
+                      }
+                    }}
+                  />
+                  <div
+                    className="flex items-center justify-between px-3 py-2 border-t"
+                    style={{ borderColor: COLOR_BORDER, background: "rgba(19,0,50,0.02)" }}
+                  >
+                    <span className="text-xs" style={{ color: COLOR_MUTED }}>
+                      Ctrl+Enter to submit
+                    </span>
+                    <button
+                      onClick={() => commentText.trim() && postCommentMutation.mutate()}
+                      disabled={!commentText.trim() || postCommentMutation.isPending}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white transition-all disabled:opacity-40"
+                      style={{ background: COLOR_ACCENT }}
+                      onMouseEnter={(e) => { if (commentText.trim()) e.currentTarget.style.background = "#3700cc"; }}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = COLOR_ACCENT)}
+                    >
+                      {postCommentMutation.isPending ? (
+                        <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <ChatTeardrop size={12} weight="bold" />
+                      )}
+                      Comment
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -737,7 +788,9 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
               Delete Envelope
             </h2>
             <p className="text-sm mb-6" style={{ color: COLOR_SECONDARY }}>
-              This envelope will be permanently deleted. This action cannot be undone.
+              {envelope.status === "draft"
+                ? "This envelope will be permanently deleted. This action cannot be undone."
+                : "This envelope will be moved to the Deleted folder. You can restore it later from the Deleted view."}
             </p>
             <div className="flex gap-3 justify-end">
               <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>

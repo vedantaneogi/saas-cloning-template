@@ -547,6 +547,17 @@ export function WelcomeHero() {
     },
   });
 
+  const createTemplateMutation = useMutation({
+    mutationFn: () =>
+      createEnvelope({ subject: "Untitled Template", message: "", recipients: [] }),
+    onSuccess: (envelope) => {
+      router.push(`/envelope/${envelope.id}/prepare?mode=template`);
+    },
+    onError: () => {
+      alert("Failed to start template creation. Please try again.");
+    },
+  });
+
   return (
     <>
     <div
@@ -734,8 +745,9 @@ export function WelcomeHero() {
                         onClick={() => {
                           setStartOpen(false);
                           setTemplatesHovered(false);
-                          router.push("/templates?action=create");
+                          createTemplateMutation.mutate();
                         }}
+                        disabled={createTemplateMutation.isPending}
                       >
                         <FileText size={14} weight="bold" />
                         Create an Envelope Template
@@ -746,7 +758,7 @@ export function WelcomeHero() {
                         onClick={() => {
                           setStartOpen(false);
                           setTemplatesHovered(false);
-                          router.push("/templates?action=upload");
+                          alert("Coming soon");
                         }}
                       >
                         <UploadSimple size={14} weight="bold" />
@@ -777,7 +789,8 @@ export function WelcomeHero() {
 
         {/* Create an Envelope Template */}
         <button
-          onClick={() => router.push("/templates?action=create")}
+          onClick={() => createTemplateMutation.mutate()}
+          disabled={createTemplateMutation.isPending}
           style={heroButtonStyle}
           onMouseOver={(e) =>
             (e.currentTarget.style.background = "rgba(255,255,255,0.15)")

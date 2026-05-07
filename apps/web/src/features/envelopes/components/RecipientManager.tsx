@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { getRecipientColor } from "@/lib/utils";
-import { Trash, Plus } from "@phosphor-icons/react";
+import { Trash, Plus, ArrowUp, ArrowDown } from "@phosphor-icons/react";
 
 const recipientSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -34,10 +34,10 @@ const ROLES = [
   { value: "signer", label: "Needs to Sign" },
   { value: "approver", label: "Needs to Approve" },
   { value: "cc", label: "Receives a Copy" },
-  { value: "certifiedDelivery", label: "Needs to View" },
+  { value: "viewer", label: "Needs to View" },
 ];
 
-export function RecipientManager({ recipients, onAdd, onRemove }: RecipientManagerProps) {
+export function RecipientManager({ recipients, onAdd, onRemove, onReorder }: RecipientManagerProps) {
   const [showForm, setShowForm] = useState(false);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<RecipientFormData>({
@@ -80,6 +80,42 @@ export function RecipientManager({ recipients, onAdd, onRemove }: RecipientManag
               {recipient.email} · {ROLES.find((r) => r.value === recipient.role)?.label ?? recipient.role}
             </p>
           </div>
+
+          {/* Reorder buttons */}
+          {recipients.length > 1 && (
+            <div className="flex flex-col gap-0.5">
+              <button
+                disabled={idx === 0}
+                onClick={() => {
+                  if (idx === 0) return;
+                  const arr = [...recipients];
+                  [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+                  const reordered = arr.map((r, i) => ({ ...r, order: i + 1 }));
+                  onReorder(reordered);
+                }}
+                className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                style={{ opacity: idx === 0 ? 0.3 : 1, cursor: idx === 0 ? "default" : "pointer" }}
+                title="Move up"
+              >
+                <ArrowUp size={14} weight="bold" color="#6B6B6B" />
+              </button>
+              <button
+                disabled={idx === recipients.length - 1}
+                onClick={() => {
+                  if (idx === recipients.length - 1) return;
+                  const arr = [...recipients];
+                  [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+                  const reordered = arr.map((r, i) => ({ ...r, order: i + 1 }));
+                  onReorder(reordered);
+                }}
+                className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                style={{ opacity: idx === recipients.length - 1 ? 0.3 : 1, cursor: idx === recipients.length - 1 ? "default" : "pointer" }}
+                title="Move down"
+              >
+                <ArrowDown size={14} weight="bold" color="#6B6B6B" />
+              </button>
+            </div>
+          )}
 
           <button
             onClick={() => onRemove(recipient.id)}

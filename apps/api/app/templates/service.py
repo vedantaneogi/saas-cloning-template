@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from sqlalchemy import select
@@ -5,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.templates.models import Template
 from app.templates.schemas import TemplateCreate, TemplateUpdate
+
+logger = logging.getLogger(__name__)
 
 
 async def create_template(
@@ -122,17 +125,34 @@ async def create_envelope_from_template(
         if not orig:
             continue
         ext = os.path.splitext(orig.filename)[1]
-        new_filename = f"{uuid.uuid4()}{ext}"
+        new_file_id = str(uuid.uuid4())
+        new_filename = f"{new_file_id}{ext}"
         new_path = os.path.join(settings.upload_dir, new_filename)
+        if not os.path.exists(orig.file_path):
+            raise ValueError(f"Template document file not found: {orig.original_filename}")
         try:
             shutil.copy2(orig.file_path, new_path)
         except Exception:
             continue
+
+        # Copy preview PDF if one exists (generated for .docx/.doc uploads)
+        new_preview_filename: str | None = None
+        if orig.preview_filename:
+            orig_preview_path = os.path.join(settings.upload_dir, orig.preview_filename)
+            if os.path.exists(orig_preview_path):
+                new_preview_filename = f"{new_file_id}_preview.pdf"
+                new_preview_path = os.path.join(settings.upload_dir, new_preview_filename)
+                try:
+                    shutil.copy2(orig_preview_path, new_preview_path)
+                except Exception:
+                    new_preview_filename = None
+
         new_doc = Document(
             envelope_id=envelope.id,
             filename=new_filename,
             original_filename=orig.original_filename,
             file_path=new_path,
+            preview_filename=new_preview_filename,
             page_count=orig.page_count,
             file_size=orig.file_size,
             order=orig.order,
@@ -166,6 +186,13 @@ async def create_envelope_from_template(
         new_doc = doc_id_map.get(fc.get("document_id", ""))
         new_rec = recipient_id_map.get(fc.get("recipient_id", ""))
         if not new_doc or not new_rec:
+            logger.warning(
+                "Template field dropped during envelope creation: "
+                "document_id=%r (mapped=%s) recipient_id=%r (mapped=%s) type=%r",
+                fc.get("document_id"), new_doc is not None,
+                fc.get("recipient_id"), new_rec is not None,
+                fc.get("type"),
+            )
             continue
         try:
             ftype = FieldType(fc.get("type"))

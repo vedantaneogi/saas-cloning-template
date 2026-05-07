@@ -34,12 +34,22 @@ export interface PlacedField {
   label?: string;
   value?: string;
   options?: string[];
-  /** Feature: Conditional Fields — ID of a checkbox field that controls this field's visibility */
+  /** Feature: Conditional Fields — ID of the field that controls this field's visibility */
   conditionalOn?: string;
-  /** Feature: Calculated Fields — formula string referencing other field IDs, e.g. "fieldA + fieldB" */
+  /** Feature: Conditional Fields — the value the parent field must have for the action to trigger */
+  conditionalValue?: string;
+  /** Feature: Conditional Fields — "show" (default) or "hide" this field when the condition matches */
+  conditionalAction?: "show" | "hide";
+  /** Feature: Calculated Fields — formula string referencing other field labels, e.g. "[Price] * [Qty]" */
   formula?: string;
+  /** Feature: Calculated Fields — number of decimal places to display (0-5, default 2) */
+  decimalPlaces?: number;
   /** Feature: Payment Fields — the amount in cents set by the sender (e.g. 2999 = $29.99) */
   paymentAmount?: number;
+  /** Feature: Payment Fields — ISO 4217 currency code, default "USD" */
+  paymentCurrency?: string;
+  /** Feature: Payment Fields — description shown on the payment card */
+  paymentDescription?: string;
 }
 
 export interface EditorRecipient {

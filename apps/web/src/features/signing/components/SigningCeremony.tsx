@@ -7,6 +7,7 @@ import { completeSigning, declineSigning, submitFieldValue } from "@/features/si
 import { SignatureCapture } from "./SignatureCapture";
 import { FieldNavigator } from "./FieldNavigator";
 import { DeclineDialog } from "./DeclineDialog";
+import { ConsentGate } from "./ConsentGate";
 import { SigningField } from "./SigningField";
 import type { Envelope } from "@/features/envelopes/types";
 import type { PlacedField, FieldType } from "@/features/editor/model/types";
@@ -823,6 +824,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [signatureMode, setSignatureMode] = useState<"signature" | "initial">("signature");
   const [declineOpen, setDeclineOpen] = useState(false);
+  const [consentGiven, setConsentGiven] = useState(false);
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [currentNavIndex, setCurrentNavIndex] = useState(0);
   const [hasStarted, setHasStarted] = useState(false);
@@ -849,7 +851,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const [localFields, setLocalFields] = useState<PlacedField[]>([]);
   const [selectedFieldType, setSelectedFieldType] = useState<string | null>(null);
   const [selectedFieldLabel, setSelectedFieldLabel] = useState<string | null>(null);
-  const [showFieldPrompt, setShowFieldPrompt] = useState(!!isSelfSign && fields.length === 0);
+  const [showFieldPrompt, setShowFieldPrompt] = useState(fields.length === 0);
 
   const documentRef = useRef<HTMLDivElement>(null);
   const fieldRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -858,15 +860,33 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   // Combine server fields + locally placed fields
   const allFields = [...fields, ...localFields];
   const myFields = allFields.filter((f) => f.recipientId === recipientId);
-  const requiredMyFields = myFields.filter((f) => f.required);
 
-  const completedCount = requiredMyFields.filter((f) => !!fieldValues[f.id]).length;
-  const allLocalFieldsFilled = localFields.length === 0 || localFields.every((f) => !f.required || !!fieldValues[f.id]);
-  const isComplete = isSelfSign
-    ? (requiredMyFields.length > 0 ? completedCount >= requiredMyFields.length : allLocalFieldsFilled)
-    : requiredMyFields.length === 0
-      ? hasStarted
-      : completedCount >= requiredMyFields.length;
+  /**
+   * Determine whether a field is currently visible given the conditional logic rules.
+   * A field is visible when:
+   *  - it has no conditionalOn set, OR
+   *  - action is "show" and the parent's value matches conditionalValue, OR
+   *  - action is "hide" and the parent's value does NOT match conditionalValue
+   */
+  const isFieldVisible = (f: PlacedField): boolean => {
+    if (!f.conditionalOn) return true;
+    const parentValue = fieldValues[f.conditionalOn] ?? "";
+    const expectedValue = f.conditionalValue ?? "checked";
+    const action = f.conditionalAction ?? "show";
+    const conditionMet = parentValue === expectedValue;
+    if (action === "show") return conditionMet;
+    if (action === "hide") return !conditionMet;
+    return true;
+  };
+
+  const completedCount = myFields.filter((f) => !!fieldValues[f.id]).length;
+  // Only required fields that are currently visible must be filled to enable Finish.
+  const myRequiredFields = myFields.filter((f) => f.required && isFieldVisible(f));
+  const requiredCompletedCount = myRequiredFields.filter((f) => !!fieldValues[f.id]).length;
+  const allLocalFieldsFilled = localFields.length === 0 || localFields.every((f) => !f.required || !isFieldVisible(f) || !!fieldValues[f.id]);
+  const isComplete = myRequiredFields.length > 0
+    ? requiredCompletedCount >= myRequiredFields.length
+    : allLocalFieldsFilled;
 
   useEffect(() => {
     if (status !== "completed" || !completionUser) return;
@@ -887,58 +907,78 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   }, []);
 
   const handleNext = useCallback(() => {
-    const currentField = requiredMyFields[currentNavIndex];
+    const currentField = myFields[currentNavIndex];
     if (currentField && !fieldValues[currentField.id]) {
       if (currentField.type === "signature" || currentField.type === "initial") {
+        // Open signature capture for unfilled signature/initial fields
         setActiveFieldId(currentField.id);
         setSignatureMode(currentField.type === "initial" ? "initial" : "signature");
         setSignatureOpen(true);
+        scrollToField(currentField.id);
         return;
       } else if (currentField.type === "date_signed") {
+        // Auto-fill date_signed and fall through to advance
         const date = new Date().toLocaleDateString("en-US", {
           month: "long",
           day: "numeric",
           year: "numeric",
         });
         setFieldValues((prev) => ({ ...prev, [currentField.id]: date }));
+      } else if (currentField.required) {
+        // For required text/checkbox/etc. fields that are empty, scroll into view
+        // so the user can fill it before advancing.
+        scrollToField(currentField.id);
+        return;
       }
     }
-    if (currentNavIndex < requiredMyFields.length - 1) {
+    if (currentNavIndex < myFields.length - 1) {
       const nextIdx = currentNavIndex + 1;
       setCurrentNavIndex(nextIdx);
-      scrollToField(requiredMyFields[nextIdx].id);
+      scrollToField(myFields[nextIdx].id);
     }
-  }, [currentNavIndex, requiredMyFields, fieldValues, scrollToField]);
+  }, [currentNavIndex, myFields, fieldValues, scrollToField]);
 
   const completeMutation = useMutation({
     mutationFn: async () => {
       const fieldSnapshot = [...allFields];
+      const MAX_RETRIES = 3;
       const failures: string[] = [];
+
+      // Only submit fields that belong to this recipient — pre-filled values
+      // from other recipients are stored in fieldValues but must not be sent
+      // (the backend enforces recipient ownership and returns 404 otherwise).
+      const myFieldIds = new Set(myFields.map((f) => f.id));
+
       for (const [fieldId, value] of Object.entries(fieldValues)) {
-        try {
-          await submitFieldValue(token, fieldId, value);
-        } catch (err) {
-          const field = fieldSnapshot.find((f) => f.id === fieldId);
-          const ft = field?.type ?? "unknown";
-          if (ft === "signature" || ft === "initial") {
-            throw new Error(`Failed to save ${ft}. Please try again.`);
+        if (!myFieldIds.has(fieldId)) continue;
+        let saved = false;
+        for (let attempt = 0; attempt < MAX_RETRIES && !saved; attempt++) {
+          try {
+            await submitFieldValue(token, fieldId, value);
+            saved = true;
+          } catch (err) {
+            if (attempt === MAX_RETRIES - 1) {
+              const field = fieldSnapshot.find((f) => f.id === fieldId);
+              const ft = field?.type ?? "unknown";
+              if (ft === "signature" || ft === "initial") {
+                throw new Error(`Failed to save ${ft} after ${MAX_RETRIES} attempts.`);
+              }
+              failures.push(fieldId);
+            }
+            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
           }
-          failures.push(fieldId);
         }
       }
       if (failures.length > 0) {
-        throw new Error(`Failed to save ${failures.length} field(s). Please try again.`);
+        throw new Error(`Failed to save ${failures.length} field(s) after retries.`);
       }
       return completeSigning(token, accessCode);
     },
     onSuccess: (data) => {
       if (data.downloadUrl) setDownloadUrl(data.downloadUrl);
-      if (isActuallySelfSign) {
-        setShowShareModal(true);
-      } else {
-        // Recipient flow: show completion screen. Backend already notified envelope owner.
-        setStatus("completed");
-      }
+      setStatus("completed");
+      setCompletedDismissed(true);
+      setShowCompletionModal(true);
     },
     onError: (err: unknown) => {
       const message =
@@ -952,7 +992,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
     mutationFn: (reason: string) => declineSigning(token, reason),
     onSuccess: () => {
       setDeclineOpen(false);
-      setStatus("declined");
+      window.location.href = "/agreements";
     },
     onError: (err: unknown) => {
       const message =
@@ -972,24 +1012,24 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
     if (activeFieldId) {
       setFieldValues((prev) => ({ ...prev, [activeFieldId]: dataUrl }));
       if (hasStarted) {
-        const fieldIdx = requiredMyFields.findIndex((f) => f.id === activeFieldId);
-        if (fieldIdx >= 0 && fieldIdx < requiredMyFields.length - 1) {
+        const fieldIdx = myFields.findIndex((f) => f.id === activeFieldId);
+        if (fieldIdx >= 0 && fieldIdx < myFields.length - 1) {
           const nextIdx = fieldIdx + 1;
           setCurrentNavIndex(nextIdx);
-          setTimeout(() => scrollToField(requiredMyFields[nextIdx].id), 300);
+          setTimeout(() => scrollToField(myFields[nextIdx].id), 300);
         }
       }
     }
     setSignatureOpen(false);
-  }, [activeFieldId, hasStarted, requiredMyFields, scrollToField]);
+  }, [activeFieldId, hasStarted, myFields, scrollToField]);
 
   const handleStart = useCallback(() => {
     setHasStarted(true);
-    if (requiredMyFields.length > 0) {
-      scrollToField(requiredMyFields[0].id);
+    if (myFields.length > 0) {
+      scrollToField(myFields[0].id);
       setCurrentNavIndex(0);
     }
-  }, [requiredMyFields, scrollToField]);
+  }, [myFields, scrollToField]);
 
   const handleFinishLater = useCallback(() => {
     window.close();
@@ -999,8 +1039,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
   const handleCompletionModalClose = useCallback(() => {
     setShowCompletionModal(false);
-    setCompletedDismissed(true);
-    // Don't navigate away — stay on signing page with green header (post-completion state)
+    window.location.href = "/agreements";
   }, []);
 
   const handleSignAnother = useCallback(() => {
@@ -1043,6 +1082,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const senderName = envelope.from || envelope.fromEmail || "the sender";
   const recipientInfo = envelope.recipients.find((r) => r.id === recipientId);
   const recipientName = recipientInfo?.name ?? "Recipient";
+  const recipientRole = (recipientInfo?.role as string)?.toLowerCase() ?? "signer";
+  const isCcOrViewer = recipientRole === "cc" || recipientRole === "viewer";
 
   // Build per-document page info (moved up so handlePlaceField can use documents)
   const documents = envelope.documents ?? [];
@@ -1053,7 +1094,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const handlePlaceField = useCallback(async (pageNum: number, xPercent: number, yPercent: number, overrideType?: string, overrideLabel?: string) => {
     const fieldType = overrideType ?? selectedFieldType;
     const fieldLabel = overrideLabel ?? selectedFieldLabel;
-    if (!fieldType || !isSelfSign) return;
+    if (!fieldType) return;
     const docId = documents[0]?.id;
     if (!docId) return;
 
@@ -1117,12 +1158,12 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
     setSelectedFieldType(null);
     setSelectedFieldLabel(null);
-  }, [selectedFieldType, selectedFieldLabel, isSelfSign, documents, recipientId, recipientName, recipientInfo]);
+  }, [selectedFieldType, selectedFieldLabel, documents, recipientId, recipientName, recipientInfo]);
 
   // Completed pages (pages that have all their required fields filled)
   const completedPages = new Set<number>();
   for (let p = 1; p <= pageCount; p++) {
-    const pageRequiredFields = requiredMyFields.filter((f) => f.page === p);
+    const pageRequiredFields = myFields.filter((f) => f.page === p);
     if (pageRequiredFields.length > 0 && pageRequiredFields.every((f) => !!fieldValues[f.id])) {
       completedPages.add(p);
     }
@@ -1244,9 +1285,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
             </div>
           ) : (
             <span className="text-xs" style={{ color: "rgba(255,255,255,0.70)" }}>
-              {isSelfSign
-                ? "Drag and drop fields from the left panel onto the document"
-                : "Click each field in the document to fill it in, then click Finish"}
+              Click each field in the document to fill it in, then click Finish
             </span>
           )}
         </div>
@@ -1261,6 +1300,13 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
             >
               <CheckCircle size={16} weight="fill" />
               Completed
+            </div>
+          ) : isCcOrViewer ? (
+            <div
+              className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-semibold"
+              style={{ background: "#6B7280", color: "white" }}
+            >
+              View Only
             </div>
           ) : (
             <FinishSplitButton
@@ -1279,8 +1325,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
         </div>
       </div>
 
-      {/* ── Sub-bar: brand + doc info + progress (hidden in self-sign) ──── */}
-      {!isSelfSign && <div
+      {/* ── Sub-bar: brand + doc info + progress ──── */}
+      {<div
         className="bg-white border-b flex-shrink-0 shadow-sm"
         style={{ borderColor: "#E0E0E0" }}
       >
@@ -1324,16 +1370,16 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
           )}
         </div>
 
-        {/* Progress bar (hidden after completion and in self-sign mode) */}
-        {!isPostCompletion && !isSelfSign && (
+        {/* Progress bar (hidden after completion and CC/viewer) */}
+        {!isPostCompletion && !isCcOrViewer && (
           <div className="px-6 pb-2.5">
             <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
               <span className="font-medium">
-                {completedCount} of {requiredMyFields.length} required fields completed
+                {requiredCompletedCount} of {myRequiredFields.length} required field{myRequiredFields.length !== 1 ? "s" : ""} completed
               </span>
               <span className="font-bold" style={{ color: isComplete ? "#00B851" : "#1B0A3C" }}>
-                {requiredMyFields.length > 0
-                  ? Math.round((completedCount / requiredMyFields.length) * 100)
+                {myRequiredFields.length > 0
+                  ? Math.round((requiredCompletedCount / myRequiredFields.length) * 100)
                   : isComplete ? 100 : 0}%
               </span>
             </div>
@@ -1341,7 +1387,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${requiredMyFields.length > 0 ? (completedCount / requiredMyFields.length) * 100 : isComplete ? 100 : 0}%`,
+                  width: `${myRequiredFields.length > 0 ? (requiredCompletedCount / myRequiredFields.length) * 100 : isComplete ? 100 : 0}%`,
                   background: isComplete ? "#00B851" : "linear-gradient(90deg, #1B0A3C, #3D2A6B)",
                 }}
               />
@@ -1352,8 +1398,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
       {/* Main content: left panel + document area + right sidebar */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
-        {/* Left FIELDS panel (self-signing mode) */}
-        {isSelfSign && (
+        {/* Left FIELDS panel */}
+        {(
           <FieldsLeftPanel
             selectedType={selectedFieldType}
             selectedLabel={selectedFieldLabel}
@@ -1378,12 +1424,10 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
             cursor: selectedFieldType ? "crosshair" : commentMode ? "crosshair" : "default",
           }}
           onDragOver={(e) => {
-            if (!isSelfSign) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
           }}
           onDrop={(e) => {
-            if (!isSelfSign) return;
             e.preventDefault();
 
             const target = e.target as HTMLElement;
@@ -1409,8 +1453,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
             const pageInner = pageEl.querySelector("[data-page-inner]") as HTMLElement | null;
             const rect = (pageInner ?? pageEl).getBoundingClientRect();
 
-            // Field placement mode (self-signing)
-            if (selectedFieldType && isSelfSign) {
+            // Field placement mode
+            if (selectedFieldType) {
               const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
               const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
               handlePlaceField(page, xPercent, yPercent);
@@ -1426,6 +1470,34 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
           }}
         >
           <div style={{ maxWidth: 780, margin: "0 auto 0 32px", paddingRight: 16 }}>
+            {/* Self-sign field prompt — shown when there are no fields placed yet */}
+            {showFieldPrompt && !isCcOrViewer && !isPostCompletion && allFields.length === 0 && (
+              <div
+                className="mb-4 px-5 py-4 rounded-xl flex items-start gap-3"
+                style={{ background: "#FFF8E7", border: "1.5px solid #F59E0B" }}
+              >
+                <svg viewBox="0 0 24 24" fill="#F59E0B" width="20" height="20" className="flex-shrink-0 mt-0.5">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                </svg>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold mb-1" style={{ color: "#92400E" }}>
+                    No signature fields yet
+                  </p>
+                  <p className="text-xs leading-relaxed" style={{ color: "#92400E" }}>
+                    Select a field type from the left panel, then click anywhere on the document to place it. Start with a <strong>Signature</strong> field.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowFieldPrompt(false)}
+                  className="flex-shrink-0 text-amber-600 hover:text-amber-800 transition-colors"
+                  aria-label="Dismiss"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                  </svg>
+                </button>
+              </div>
+            )}
             {/* Zoomed document wrapper */}
             <div
               style={{
@@ -1489,9 +1561,9 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                                 if (el) fieldRefs.current.set(field.id, el);
                                 else fieldRefs.current.delete(field.id);
                               }}
-                              className={isSelfSign && isLocal ? "group select-none" : undefined}
+                              className={isLocal ? "group select-none" : undefined}
                               style={
-                                isSelfSign && isLocal
+                                isLocal
                                   ? {
                                       position: "absolute",
                                       left: `${field.x}%`,
@@ -1511,13 +1583,13 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                                     }
                                   : undefined
                               }
-                              onClick={isSelfSign && isLocal ? (e) => {
+                              onClick={isLocal ? (e) => {
                                 e.stopPropagation();
                                 setActiveFieldId(field.id);
                                 setSelectedFieldType(null);
                                 setSelectedFieldLabel(null);
                               } : undefined}
-                              onMouseDown={isSelfSign && isLocal ? (e) => {
+                              onMouseDown={isLocal ? (e) => {
                                 if ((e.target as HTMLElement).closest("[data-resize-handle]") || (e.target as HTMLElement).closest("[data-field-toolbar]")) return;
                                 e.stopPropagation();
                                 e.preventDefault();
@@ -1560,22 +1632,23 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                               data-field-id={field.id}
                             >
                               {/* Field content — pointer-events none so clicks go to wrapper */}
-                              <div style={isSelfSign && isLocal ? { pointerEvents: "none", width: "100%", height: "100%" } : undefined}>
+                              <div style={isLocal ? { pointerEvents: "none", width: "100%", height: "100%" } : undefined}>
                                 <SigningField
                                   field={field}
                                   value={fieldValues[field.id]}
-                                  isCurrentField={hasStarted && requiredMyFields[currentNavIndex]?.id === field.id}
+                                  isCurrentField={hasStarted && myFields[currentNavIndex]?.id === field.id}
                                   isForRecipient={field.recipientId === recipientId}
                                   onSignatureRequest={handleSignatureRequest}
                                   onValueChange={(fieldId, value) => setFieldValues((prev) => ({ ...prev, [fieldId]: value }))}
                                   allFieldValues={fieldValues}
+                                  allFields={allFields}
                                   signingToken={token}
-                                  inlinePositioned={isSelfSign && isLocal}
+                                  inlinePositioned={isLocal}
                                 />
                               </div>
 
                               {/* Label tag */}
-                              {isSelfSign && isLocal && (
+                              {isLocal && (
                                 <div
                                   className="opacity-0 group-hover:opacity-100 transition-opacity"
                                   style={{ position: "absolute", top: -18, left: 0, background: "#4C00FF", color: "white", fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: "3px 3px 0 0", whiteSpace: "nowrap", pointerEvents: "none" }}
@@ -1585,7 +1658,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                               )}
 
                               {/* Resize handles + toolbar — only when selected */}
-                              {isSelfSign && isLocal && isFieldSelected && (
+                              {isLocal && isFieldSelected && (
                                 <>
                                   {(["nw", "ne", "sw", "se"] as const).map((corner) => (
                                     <div
@@ -2157,12 +2230,12 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
         </div>
       </div>
 
-      {/* Field Navigator (floating) — hidden after completion and in self-sign mode */}
-      {!isPostCompletion && !isSelfSign && (
+      {/* Field Navigator (floating) */}
+      {!isPostCompletion && !isCcOrViewer && (
         <FieldNavigator
           currentFieldIndex={currentNavIndex}
-          totalFields={requiredMyFields.length}
-          completedCount={completedCount}
+          totalFields={myRequiredFields.length}
+          completedCount={requiredCompletedCount}
           hasStarted={hasStarted}
           isComplete={isComplete}
           isFinishing={completeMutation.isPending}
@@ -2206,6 +2279,21 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
           docName={documents[0]?.name ?? envelope.subject}
           onClose={() => setShowShareModal(false)}
           onSent={() => setCompletedDismissed(true)}
+        />
+      )}
+
+      {/* E-Record Consent Gate — shown once before signing starts */}
+      {!consentGiven && !isPostCompletion && !isCcOrViewer && (
+        <ConsentGate
+          onConsent={() => setConsentGiven(true)}
+          onFinishLater={() => {
+            window.close();
+            window.location.href = "/";
+          }}
+          onDecline={() => {
+            setConsentGiven(true);
+            setTimeout(() => setDeclineOpen(true), 50);
+          }}
         />
       )}
     </div>

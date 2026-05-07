@@ -12,11 +12,15 @@ _TRANSITIONS: dict[EnvelopeStatus, set[EnvelopeStatus]] = {
         EnvelopeStatus.completed,
         EnvelopeStatus.declined,
         EnvelopeStatus.voided,
+        # "Correct in-flight" — revert to draft for editing
+        EnvelopeStatus.draft,
     },
     EnvelopeStatus.delivered: {
         EnvelopeStatus.completed,
         EnvelopeStatus.declined,
         EnvelopeStatus.voided,
+        # "Correct in-flight" — revert to draft for editing
+        EnvelopeStatus.draft,
     },
     EnvelopeStatus.completed: set(),
     EnvelopeStatus.declined: set(),

@@ -572,11 +572,14 @@ def apply_fields_to_pdf(file_path: str, fields: list[dict[str, Any]]) -> bytes:
                     except Exception:
                         page.insert_textbox(rect, "[ Signature ]", fontsize=14, color=(0.5, 0.5, 0.5), align=1)
                 else:
-                    # Fallback: draw as styled text
+                    # Fallback: draw as styled text, auto-size to fit
+                    text_w = fitz.get_text_length(value, fontsize=18)
+                    fs = min(18, int(18 * w / max(text_w, 1)))
+                    fs = max(fs, 6)
                     page.insert_textbox(
                         rect,
                         value,
-                        fontsize=18,
+                        fontsize=fs,
                         color=(0.1, 0.2, 0.6),
                         align=1,
                     )

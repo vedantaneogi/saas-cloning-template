@@ -247,7 +247,7 @@ function StatusCell({ envelope, currentUserEmail }: { envelope: Envelope; curren
   const signers = recipients.filter((r) => r.role === "signer" || !r.role);
   const total = signers.length || 1;
   const completed = signers.filter(
-    (r) => r.status === "completed" || (r.status as string) === "signed"
+    (r) => r.status === "signed"
   ).length;
 
   const isCompleted = status === "completed";
@@ -2257,7 +2257,7 @@ function EnvelopeRow({
       (envelope.recipients ?? []).find(
         (r) =>
           r.email.toLowerCase() === currentUserEmail.toLowerCase() &&
-          r.status !== "completed" &&
+          r.status !== "signed" &&
           r.status !== "declined" &&
           r.signing_token,
       ) ?? null
@@ -2324,8 +2324,10 @@ function EnvelopeRow({
     mutationFn: () => correctEnvelope(envelope.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["envelopes"] });
-      toast(`"${envelope.subject}" reverted to draft for correction.`, "success");
+      queryClient.invalidateQueries({ queryKey: ["envelope", envelope.id] });
       setMenuOpen(false);
+      // Redirect to the prepare page so the user can edit recipients/fields
+      router.push(`/envelope/${envelope.id}/prepare`);
     },
     onError: () => {
       toast("Correct failed. Only sent/delivered envelopes can be corrected.", "error");
@@ -2437,13 +2439,22 @@ function EnvelopeRow({
           {/* Sign button — visible when current user is a pending recipient */}
           {signingRecipient ? (
             <button
-              style={{ ...pillStyle, borderColor: "#4C00FF", color: "#4C00FF" }}
+              style={{
+                borderRadius: "4px",
+                padding: "4px 14px",
+                background: "#4C00FF",
+                fontFamily: DS_FONT,
+                fontSize: "12px",
+                fontWeight: 600,
+                border: "none",
+                cursor: "pointer",
+                color: "white",
+              }}
               title="Sign this envelope"
               onClick={() => router.push(`/sign/${signingRecipient.signing_token}`)}
-              onMouseOver={(e) => (e.currentTarget.style.background = "rgba(76,0,255,0.06)")}
-              onMouseOut={(e) => (e.currentTarget.style.background = "white")}
+              onMouseOver={(e) => (e.currentTarget.style.background = "#3D00CC")}
+              onMouseOut={(e) => (e.currentTarget.style.background = "#4C00FF")}
             >
-              <PenNib size={12} weight="bold" />
               Sign
             </button>
           ) : (

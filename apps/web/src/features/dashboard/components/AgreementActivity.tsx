@@ -48,7 +48,7 @@ function getProgress(envelope: Envelope): ProgressInfo {
   );
   const total = signers.length || 1;
   const completed = signers.filter(
-    (r) => r.status === "completed" || (r.status as string) === "signed"
+    (r) => r.status === "signed"
   ).length;
   const fraction = completed / total;
 

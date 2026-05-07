@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { PlacedField } from "@/features/editor/model/types";
 import { cn } from "@/lib/utils";
 import { Check } from "@phosphor-icons/react";
@@ -11,8 +12,10 @@ interface SigningFieldProps {
   isForRecipient: boolean;
   onSignatureRequest: (fieldId: string, mode: "signature" | "initial") => void;
   onValueChange: (fieldId: string, value: string) => void;
-  /** All field values — needed for conditional visibility and formula calculation */
+  /** All field values keyed by field id — needed for conditional visibility */
   allFieldValues?: Record<string, string>;
+  /** All field metadata — used to build label→value maps for formula evaluation */
+  allFields?: PlacedField[];
   /** Signing token — used for attachment uploads */
   signingToken?: string;
   /** When true, parent handles positioning — field renders at relative position */
@@ -27,20 +30,42 @@ export function SigningField({
   onSignatureRequest,
   onValueChange,
   allFieldValues = {},
+  allFields = [],
   signingToken,
   inlinePositioned,
 }: SigningFieldProps) {
   const isCompleted = !!value;
+
+  // Payment field — auto-fill with "Payment pending - $XX.XX" on first render
+  // so the field counts as completed without requiring the signer to click anything.
+  useEffect(() => {
+    if (field.type === "payment" && isForRecipient && !value) {
+      const amountDollars = field.paymentAmount != null
+        ? (field.paymentAmount / 100).toFixed(2)
+        : "0.00";
+      onValueChange(field.id, `Payment pending - $${amountDollars}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field.id, field.type]);
 
   const posStyle: React.CSSProperties = inlinePositioned
     ? { width: "100%", height: "100%" }
     : { left: `${field.x}%`, top: `${field.y}%`, width: `${field.width}%`, height: `${field.height}%` };
   const posClass = inlinePositioned ? "relative" : "absolute";
 
-  // Feature: Conditional Fields — hide if the controlling checkbox is not checked
+  // Feature: Conditional Fields — evaluate show/hide based on parent field value
   if (field.conditionalOn) {
-    const controllingValue = allFieldValues[field.conditionalOn];
-    if (controllingValue !== "checked") {
+    const parentValue = allFieldValues[field.conditionalOn] ?? "";
+    const expectedValue = field.conditionalValue ?? "checked";
+    const action = field.conditionalAction ?? "show";
+    const conditionMet = parentValue === expectedValue;
+
+    if (action === "show" && !conditionMet) {
+      // "show" action: only render when condition is met
+      return null;
+    }
+    if (action === "hide" && conditionMet) {
+      // "hide" action: do not render when condition is met
       return null;
     }
   }
@@ -323,39 +348,41 @@ export function SigningField({
     );
   }
 
-  // FORMULA field — calculate result from other field values
+  // FORMULA field — read-only, auto-calculated from labeled fields
   if (field.type === "formula") {
     const formulaStr = field.formula ?? "";
+    const dp = field.decimalPlaces ?? 2;
     let displayValue = "—";
     if (formulaStr) {
       try {
-        // Replace field ID tokens (must contain a letter/underscore) with their numeric values
-        const evaluated = formulaStr.replace(/[a-zA-Z_][a-zA-Z0-9_-]*/g, (token) => {
-          const v = allFieldValues[token];
-          return v !== undefined ? String(parseFloat(v) || 0) : "0";
-        });
-        if (/^[\d\s+\-*/().]+$/.test(evaluated)) {
-          const tokens = evaluated.match(/(\d+\.?\d*|[+\-*/()])/g) ?? [];
-          let acc = 0;
-          let op = "+";
-          for (const t of tokens) {
-            if ("+-*/".includes(t)) { op = t; }
-            else if (t !== "(" && t !== ")") {
-              const n = parseFloat(t);
-              if (op === "+") acc += n;
-              else if (op === "-") acc -= n;
-              else if (op === "*") acc *= n;
-              else if (op === "/") acc = n !== 0 ? acc / n : NaN;
-            }
+        // Build a label→value map from allFields + allFieldValues (id→value)
+        const labelValueMap: Record<string, string> = {};
+        for (const f of allFields) {
+          if (f.label && allFieldValues[f.id] !== undefined) {
+            labelValueMap[f.label] = allFieldValues[f.id];
           }
-          displayValue = isNaN(acc) ? "Error" : String(acc);
-        } else {
-          displayValue = "Invalid formula";
+        }
+        // Replace [FieldLabel] references with numeric values
+        const substituted = formulaStr.replace(/\[([^\]]+)\]/g, (_match, label: string) => {
+          const val = labelValueMap[label];
+          if (val !== undefined) {
+            const n = parseFloat(val);
+            return isNaN(n) ? "0" : String(n);
+          }
+          return "0";
+        });
+        // Only evaluate if the result is safe arithmetic
+        if (/^[\d\s+\-*/().]+$/.test(substituted.trim())) {
+          // eslint-disable-next-line no-new-func
+          const result = Function('"use strict"; return (' + substituted + ')')() as number;
+          displayValue = isNaN(result) || !isFinite(result) ? "Error" : result.toFixed(dp);
         }
       } catch {
         displayValue = "Error";
       }
     }
+    // Show backend-computed value if available (after signing completion)
+    const shownValue = value || displayValue;
     return (
       <div
         className={`${posClass} flex items-center justify-center rounded`}
@@ -367,7 +394,7 @@ export function SigningField({
         }}
       >
         <span className="text-xs font-medium px-1 truncate" style={{ color: "#1B0A3C" }}>
-          ƒ {displayValue}
+          ƒ {shownValue}
         </span>
       </div>
     );
@@ -376,6 +403,8 @@ export function SigningField({
   // ATTACHMENT field — click to upload a file
   if (field.type === "attachment") {
     const hasFile = !!value && value !== "";
+    // Show only the filename portion so long stored paths don't overflow the field widget
+    const displayName = value ? (value.split("/").pop() ?? value) : "";
     return (
       <div
         className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all`}
@@ -409,9 +438,13 @@ export function SigningField({
                     body: JSON.stringify({ field_id: field.id, filename: file.name, data: base64 }),
                   });
                   if (res.ok) {
-                    onValueChange(field.id, file.name);
+                    // Use the stored_path returned by the server so the field value
+                    // written on complete matches the actual file location on disk.
+                    const json = await res.json() as { stored_path?: string; filename?: string };
+                    onValueChange(field.id, json.stored_path ?? json.filename ?? file.name);
                   } else {
-                    alert("Attachment upload failed. Please try again.");
+                    const errJson = await res.json().catch(() => ({})) as { detail?: string };
+                    alert(`Attachment upload failed: ${errJson.detail ?? "Please try again."}`);
                   }
                 };
                 reader.readAsDataURL(file);
@@ -419,6 +452,7 @@ export function SigningField({
                 alert("Attachment upload failed. Please try again.");
               }
             } else {
+              // No signing token (preview/offline mode) — mark locally with filename
               onValueChange(field.id, file.name);
             }
           };
@@ -429,7 +463,7 @@ export function SigningField({
           <div className="flex items-center gap-1 px-1">
             <Check size={10} weight="bold" color="#00B851" />
             <span className="text-xs truncate" style={{ color: "#00B851", maxWidth: "90%" }}>
-              {value}
+              {displayName}
             </span>
           </div>
         ) : (
@@ -454,39 +488,104 @@ export function SigningField({
     );
   }
 
-  // PAYMENT field — placeholder (no real payment processing)
+  // PAYMENT field — stub (no real payment processing)
   if (field.type === "payment") {
-    const isPaid = value === "payment_completed";
+    const currency = field.paymentCurrency ?? "USD";
     const amountDollars = field.paymentAmount != null
       ? (field.paymentAmount / 100).toFixed(2)
       : "0.00";
+    const description = field.paymentDescription ?? "";
+    const isPending = !!value;
 
     return (
       <div
-        className={`${posClass} flex items-center justify-center rounded`}
+        className={`${posClass} flex flex-col rounded overflow-hidden`}
         style={{
           ...posStyle,
-          background: isPaid ? "rgba(0,184,81,0.08)" : bgColor,
-          border: `2px solid ${isPaid ? "#00B851" : borderColor}`,
+          background: isPending ? "rgba(0,184,81,0.06)" : "white",
+          border: `2px solid ${isPending ? "#00B851" : borderColor}`,
           zIndex: isCurrentField ? 15 : 10,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
         }}
       >
-        {isPaid ? (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#00B851" }}>
-            <Check size={12} weight="bold" color="white" />
-            <span className="text-xs font-bold text-white">Paid ${amountDollars}</span>
-          </div>
-        ) : (
-          <div
-            className="flex items-center gap-1.5 px-2 py-1 cursor-pointer"
-            onClick={() => onValueChange(field.id, "payment_completed")}
-          >
-            <svg viewBox="0 0 24 24" fill={borderColor} width="12" height="12">
-              <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" />
-            </svg>
-            <span className="text-xs font-bold" style={{ color: borderColor }}>
-              Pay ${amountDollars}
+        {/* Card header bar */}
+        <div
+          className="flex items-center gap-1.5 px-2 py-1 flex-shrink-0"
+          style={{ background: isPending ? "#00B851" : borderColor }}
+        >
+          <svg viewBox="0 0 24 24" fill="white" width="10" height="10">
+            <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" />
+          </svg>
+          <span style={{ fontSize: "9px", fontWeight: 700, color: "white", letterSpacing: "0.04em" }}>
+            {isPending ? "PAYMENT ACKNOWLEDGED" : "PAYMENT REQUIRED"}
+          </span>
+        </div>
+
+        {/* Card body */}
+        <div className="flex flex-col items-center justify-center flex-1 px-2 py-1 gap-0.5">
+          {/* Amount */}
+          <span style={{ fontSize: "clamp(11px, 1.4vw, 16px)", fontWeight: 700, color: "#1B0A3C", lineHeight: 1.1 }}>
+            {currency} ${amountDollars}
+          </span>
+
+          {/* Description */}
+          {description && (
+            <span
+              className="text-center truncate w-full"
+              style={{ fontSize: "8px", color: "rgba(19,0,50,0.55)", lineHeight: 1.2 }}
+            >
+              {description}
             </span>
+          )}
+
+          {/* Notice — shown only when not yet pending */}
+          {!isPending && (
+            <span
+              className="text-center"
+              style={{ fontSize: "7.5px", color: "rgba(19,0,50,0.45)", lineHeight: 1.3, marginTop: "1px" }}
+            >
+              Payment will be collected after signing
+            </span>
+          )}
+
+          {/* Disabled "Pay" button — stub */}
+          <button
+            disabled
+            className="flex items-center justify-center gap-1 w-full rounded mt-1"
+            style={{
+              background: isPending ? "#00B851" : "rgba(19,0,50,0.12)",
+              color: isPending ? "white" : "rgba(19,0,50,0.35)",
+              border: "none",
+              padding: "3px 6px",
+              fontSize: "9px",
+              fontWeight: 700,
+              cursor: "not-allowed",
+              opacity: isPending ? 1 : 0.7,
+            }}
+          >
+            {isPending ? (
+              <>
+                <Check size={8} weight="bold" />
+                Acknowledged
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" fill="currentColor" width="8" height="8">
+                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
+                </svg>
+                Pay ${amountDollars}
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Completed checkmark badge */}
+        {isPending && (
+          <div
+            className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
+            style={{ background: "#00B851" }}
+          >
+            <Check size={12} weight="bold" color="white" />
           </div>
         )}
       </div>

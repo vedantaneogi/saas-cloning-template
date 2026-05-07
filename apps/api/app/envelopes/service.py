@@ -44,6 +44,12 @@ async def create_envelope(
         reminder_days=data.reminder_days,
         status=EnvelopeStatus.draft,
     )
+    if data.allow_comments is not None:
+        envelope.allow_comments = data.allow_comments
+    if data.responsive_signing is not None:
+        envelope.responsive_signing = data.responsive_signing
+    if data.allow_reassign is not None:
+        envelope.allow_reassign = data.allow_reassign
     db.add(envelope)
     await db.commit()
     await db.refresh(envelope)
@@ -69,11 +75,26 @@ async def list_envelopes(
     expiring_soon: bool = False,
     action_required: bool = False,
     auth_failed: bool = False,
+    inbox: bool = False,
 ) -> tuple[list[Envelope], int]:
     from datetime import timezone as _tz, timedelta
     from sqlalchemy import exists, and_, or_
 
-    if action_required and current_user_email:
+    if inbox and current_user_email:
+        # "Inbox" — envelopes where the current user is either the sender OR
+        # a recipient, filtered to sent/delivered/completed status.
+        base = (
+            select(Envelope)
+            .outerjoin(Recipient, Recipient.envelope_id == Envelope.id)
+            .where(
+                or_(
+                    Envelope.user_id == user_id,
+                    func.lower(Recipient.email) == current_user_email.lower(),
+                ),
+            )
+            .distinct()
+        )
+    elif action_required and current_user_email:
         # "Action Required" — envelopes where the current user is a recipient
         # who still needs to sign (recipient status is "sent" or "delivered",
         # i.e. not yet signed/declined).  The envelope itself is sent or delivered.
@@ -119,12 +140,20 @@ async def list_envelopes(
         elif status:
             status_val = status.value if hasattr(status, 'value') else str(status)
             view_name = _status_to_view.get(status_val)
-            base = base.where(
-                or_(
-                    and_(Envelope.status == status, Envelope.moved_to.is_(None)),
-                    Envelope.moved_to == view_name if view_name else Envelope.status == status,
+            if status_val == "sent":
+                base = base.where(
+                    or_(
+                        and_(Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]), Envelope.moved_to.is_(None)),
+                        Envelope.moved_to == "sent",
+                    )
                 )
-            )
+            else:
+                base = base.where(
+                    or_(
+                        and_(Envelope.status == status, Envelope.moved_to.is_(None)),
+                        Envelope.moved_to == view_name if view_name else Envelope.status == status,
+                    )
+                )
             # Exclude soft-deleted envelopes from normal views
             base = base.where(or_(Envelope.moved_to.is_(None), Envelope.moved_to != "deleted"))
         else:
@@ -183,7 +212,10 @@ async def list_envelopes(
 
     if folder_id:
         base = base.where(Envelope.folder_id == folder_id)
-    elif status or statuses:
+    elif status and not statuses:
+        # Only restrict to no-folder when a single explicit status filter is given
+        # (i.e. the user navigated to a status-filtered view, not a virtual view like
+        # "inbox", "waiting_for_others", or "expiring_soon" which use a statuses list).
         base = base.where(Envelope.folder_id.is_(None))
 
     # Search: subject ILIKE OR recipient name/email ILIKE
@@ -226,8 +258,20 @@ async def list_envelopes(
 
 
 async def get_envelope(
-    db: AsyncSession, envelope_id: uuid.UUID, user_id: int
+    db: AsyncSession, envelope_id: uuid.UUID, user_id: int, user_email: str | None = None
 ) -> Envelope | None:
+    from sqlalchemy import or_, exists, and_
+
+    ownership = [Envelope.user_id == user_id]
+    if user_email:
+        recipient_match = exists(
+            select(Recipient.id).where(
+                Recipient.envelope_id == Envelope.id,
+                func.lower(Recipient.email) == user_email.lower(),
+            )
+        )
+        ownership = [or_(Envelope.user_id == user_id, recipient_match)]
+
     result = await db.execute(
         select(Envelope)
         .options(
@@ -235,7 +279,7 @@ async def get_envelope(
             selectinload(Envelope.recipients).selectinload(Recipient.fields),
             selectinload(Envelope.owner),
         )
-        .where(Envelope.id == envelope_id, Envelope.user_id == user_id)
+        .where(Envelope.id == envelope_id, *ownership)
     )
     return result.scalar_one_or_none()
 
@@ -247,10 +291,20 @@ async def update_envelope(
         envelope.subject = data.subject
     if data.message is not None:
         envelope.message = data.message
-    if data.expires_at is not None:
+    # Allow clearing expires_at by checking whether the field was explicitly sent
+    # (model_fields_set tracks which fields were present in the request body).
+    if "expires_at" in data.model_fields_set:
+        envelope.expires_at = data.expires_at  # may be None → clears the value
+    elif data.expires_at is not None:
         envelope.expires_at = data.expires_at
     if data.reminder_days is not None:
         envelope.reminder_days = data.reminder_days
+    if data.allow_comments is not None:
+        envelope.allow_comments = data.allow_comments
+    if data.responsive_signing is not None:
+        envelope.responsive_signing = data.responsive_signing
+    if data.allow_reassign is not None:
+        envelope.allow_reassign = data.allow_reassign
     await db.commit()
     await db.refresh(envelope)
     return envelope
@@ -404,25 +458,47 @@ async def resend_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
         details={"resent_to": resent_recipients},
     )
     db.add(audit)
+    # Snapshot all data needed for emails BEFORE commit — after commit SQLAlchemy
+    # expires every attribute on tracked objects, causing greenlet errors on access.
+    sender_name = envelope.owner.name if envelope.owner else "DocuSign Clone"
+    sender_email = envelope.owner.email if envelope.owner else ""
+    envelope_subject = envelope.subject
+    envelope_message = envelope.message
+    envelope_id = envelope.id
+    resent_recipient_data = [
+        {
+            "email": r.email,
+            "name": r.name or "",
+            "signing_token": r.signing_token,
+            "private_message": r.private_message,
+        }
+        for r in resent_recipient_objs
+    ]
     await db.commit()
     await db.refresh(envelope)
 
     # Send reminder emails to resent recipients
     from app.core.email import send_signing_invitation
-    sender_name = envelope.owner.name if envelope.owner else "DocuSign Clone"
-    sender_email = envelope.owner.email if envelope.owner else ""
-    for recipient in resent_recipient_objs:
-        await send_signing_invitation(
-            recipient_email=recipient.email,
-            recipient_name=recipient.name or "",
-            sender_name=sender_name,
-            sender_email=sender_email,
-            envelope_subject=envelope.subject,
-            envelope_message=envelope.message,
-            signing_token=recipient.signing_token,
-            is_reminder=True,
-            private_message=recipient.private_message or None,
-        )
+    import logging
+    _logger = logging.getLogger(__name__)
+    for r in resent_recipient_data:
+        try:
+            await send_signing_invitation(
+                recipient_email=r["email"],
+                recipient_name=r["name"],
+                sender_name=sender_name,
+                sender_email=sender_email,
+                envelope_subject=envelope_subject,
+                envelope_message=envelope_message,
+                signing_token=r["signing_token"],
+                is_reminder=True,
+                private_message=r["private_message"] or None,
+            )
+        except Exception as exc:
+            _logger.error(
+                "resend_envelope: email failed for %s (envelope %s): %s",
+                r["email"], envelope_id, exc,
+            )
 
     return envelope
 
@@ -511,6 +587,12 @@ async def create_field(
         height=data.height,
         required=data.required,
         label=data.label,
+        value=data.value,
+        formula=getattr(data, "formula", None),
+        decimal_places=getattr(data, "decimal_places", None),
+        conditional_on=data.conditional_on,
+        conditional_value=data.conditional_value,
+        conditional_action=data.conditional_action,
     )
     db.add(field)
     await db.commit()
@@ -576,6 +658,11 @@ async def save_fields_for_envelope(
             field.required = item.required
             field.label = item.label
             field.value = item.value
+            field.formula = getattr(item, "formula", None)
+            field.decimal_places = getattr(item, "decimal_places", None)
+            field.conditional_on = getattr(item, "conditional_on", None)
+            field.conditional_value = getattr(item, "conditional_value", None)
+            field.conditional_action = getattr(item, "conditional_action", None)
             incoming_ids.add(item.id)
             result_fields.append(field)
         else:
@@ -592,6 +679,11 @@ async def save_fields_for_envelope(
                 required=item.required,
                 label=item.label,
                 value=item.value,
+                formula=getattr(item, "formula", None),
+                decimal_places=getattr(item, "decimal_places", None),
+                conditional_on=getattr(item, "conditional_on", None),
+                conditional_value=getattr(item, "conditional_value", None),
+                conditional_action=getattr(item, "conditional_action", None),
             )
             db.add(new_field)
             result_fields.append(new_field)
@@ -642,26 +734,45 @@ async def create_comment(
     return result.scalar_one()
 
 
+async def delete_comment(
+    db: AsyncSession, comment_id: uuid.UUID, user_id: int, envelope_id: uuid.UUID
+) -> bool:
+    """Delete a comment by its author. Returns False if not found or not owned by user_id."""
+    result = await db.execute(
+        select(Comment).where(
+            Comment.id == comment_id,
+            Comment.envelope_id == envelope_id,
+            Comment.user_id == user_id,
+        )
+    )
+    comment = result.scalar_one_or_none()
+    if not comment:
+        return False
+    await db.delete(comment)
+    await db.commit()
+    return True
+
+
 # ── Correct in-flight ─────────────────────────────────────────────────────────
 
 async def correct_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
     """Transition a sent/delivered envelope back to draft so recipients/fields can be edited."""
-    from fastapi import HTTPException, status as http_status
-    if envelope.status not in (EnvelopeStatus.sent, EnvelopeStatus.delivered):
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail="Only sent or delivered envelopes can be corrected",
-        )
+    validate_transition(envelope.status, EnvelopeStatus.draft)
     envelope.status = EnvelopeStatus.draft
+    envelope.sent_at = None
     envelope.completed_at = None
     reset_recipients = []
     for recipient in envelope.recipients:
-        if recipient.status != RecipientStatus.declined:
-            if recipient.status == RecipientStatus.signed:
-                reset_recipients.append(recipient.email)
-            recipient.status = RecipientStatus.pending
-            recipient.signed_at = None
-            recipient.signing_token = None
+        if recipient.status == RecipientStatus.signed:
+            reset_recipients.append(recipient.email)
+        # Reset ALL recipients so the corrected envelope can be fully edited and
+        # re-sent. Declined recipients are also reset because the sender may want
+        # to change the recipient list or give them another opportunity to sign.
+        recipient.status = RecipientStatus.pending
+        recipient.signed_at = None
+        recipient.declined_at = None
+        recipient.decline_reason = None
+        recipient.signing_token = None
     audit = AuditEvent(
         envelope_id=envelope.id,
         recipient_id=None,

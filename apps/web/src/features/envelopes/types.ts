@@ -12,10 +12,12 @@ export interface Recipient {
   email: string;
   role: string;
   order: number;
-  status: "completed" | "sent" | "delivered" | "pending" | "declined";
+  status: "signed" | "sent" | "delivered" | "pending" | "declined";
   signedAt?: string;
   color?: string;
   signing_token?: string;
+  private_message?: string;
+  access_code?: string;
 }
 
 export interface EnvelopeDocument {
@@ -38,9 +40,14 @@ export interface Envelope {
   lastModified: string;
   completedAt?: string;
   expiresAt?: string;
+  reminder_days?: number;
   recipients: Recipient[];
   documents: EnvelopeDocument[];
   message?: string;
+  allow_comments?: boolean;
+  responsive_signing?: boolean;
+  allow_reassign?: boolean;
+  user_id?: number;
 }
 
 export interface EnvelopeListParams {

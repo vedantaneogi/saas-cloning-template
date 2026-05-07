@@ -173,7 +173,7 @@ export function LoginForm() {
                 <input
                   {...passwordForm.register("password")}
                   type="password"
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                   autoFocus
                   placeholder="Enter your password"
                   className="w-full px-3 py-2.5 border rounded text-sm outline-none transition-colors"

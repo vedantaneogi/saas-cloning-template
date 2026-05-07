@@ -1,7 +1,7 @@
 "use client";
 
 import { useReducer, useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   DndContext,
@@ -14,7 +14,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 
-import { getEnvelope, saveFields, sendEnvelope, updateEnvelope } from "@/features/envelopes/api";
+import { getEnvelope, saveFields, sendEnvelope, updateEnvelope, saveEnvelopeAsTemplate } from "@/features/envelopes/api";
 import { getEnvelopeFields } from "@/features/editor/api";
 import { editorReducer } from "@/features/editor/state/editorReducer";
 import { PrepareToolbar, CommentPopover } from "@/features/editor/components/PrepareToolbar";
@@ -387,11 +387,266 @@ function SuccessToast({ message }: { message: string }) {
   );
 }
 
+// ── Formula Modal ─────────────────────────────────────────────────────────────
+
+const FORMULA_FUNCTIONS = [
+  "AddDays(",
+  "AddMonths(",
+  "AddYears(",
+  "DateDiff(",
+  "Day(",
+  "Days(",
+];
+
+interface FormulaModalProps {
+  field: PlacedField;
+  allFields: PlacedField[];
+  onClose: () => void;
+  onSave: (formula: string, decimalPlaces: number) => void;
+}
+
+function FormulaModal({ field, allFields, onClose, onSave }: FormulaModalProps) {
+  const [formula, setFormula] = useState(field.formula ?? "");
+  const [decimalPlaces, setDecimalPlaces] = useState(field.decimalPlaces ?? 2);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [autocompleteQuery, setAutocompleteQuery] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fields that can be referenced (number/date types with labels, excluding self)
+  const referenceable = allFields.filter(
+    (f) =>
+      f.id !== field.id &&
+      f.label &&
+      ["number", "text", "date_signed", "name", "email", "company", "title"].includes(f.type),
+  );
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setFormula(val);
+
+    // Show autocomplete after typing [
+    const cursor = e.target.selectionStart ?? val.length;
+    const before = val.slice(0, cursor);
+    const bracketIdx = before.lastIndexOf("[");
+    if (bracketIdx !== -1 && !before.slice(bracketIdx).includes("]")) {
+      const query = before.slice(bracketIdx + 1);
+      setAutocompleteQuery(query);
+      setShowAutocomplete(true);
+    } else {
+      setShowAutocomplete(false);
+    }
+  };
+
+  const insertLabel = (label: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const cursor = textarea.selectionStart ?? formula.length;
+    const before = formula.slice(0, cursor);
+    const bracketIdx = before.lastIndexOf("[");
+    const after = formula.slice(cursor);
+    // Replace from [ to cursor with [label]
+    const newFormula = formula.slice(0, bracketIdx) + `[${label}]` + after;
+    setFormula(newFormula);
+    setShowAutocomplete(false);
+    // Move cursor after inserted label
+    requestAnimationFrame(() => {
+      const pos = bracketIdx + label.length + 2;
+      textarea.focus();
+      textarea.setSelectionRange(pos, pos);
+    });
+  };
+
+  const insertFunction = (fn: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const cursor = textarea.selectionStart ?? formula.length;
+    const newFormula = formula.slice(0, cursor) + fn + formula.slice(cursor);
+    setFormula(newFormula);
+    requestAnimationFrame(() => {
+      const pos = cursor + fn.length;
+      textarea.focus();
+      textarea.setSelectionRange(pos, pos);
+    });
+  };
+
+  const filteredLabels = referenceable.filter((f) =>
+    (f.label ?? "").toLowerCase().includes(autocompleteQuery.toLowerCase()),
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="h-1.5 w-full" style={{ background: "linear-gradient(90deg, #1B0A3C, #4C00FF)" }} />
+        <div className="px-7 py-6">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-2">
+            <div
+              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: "#F0EEFF" }}
+            >
+              <span style={{ fontSize: "18px", color: "#4C00FF", fontWeight: 700 }}>ƒ</span>
+            </div>
+            <div>
+              <h2 className="text-base font-bold" style={{ color: "#1B0A3C" }}>
+                Set up formula
+              </h2>
+              <p className="text-xs text-gray-400 leading-snug">
+                Build a formula from number and date fields. Field names must be in square brackets ([]).
+              </p>
+            </div>
+          </div>
+
+          {/* Formula textarea */}
+          <div className="mt-4 mb-3 relative">
+            <label
+              style={{
+                display: "block",
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "rgba(19,0,50,0.45)",
+                marginBottom: "4px",
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+              }}
+            >
+              Formula
+            </label>
+            <textarea
+              ref={textareaRef}
+              value={formula}
+              onChange={handleTextareaChange}
+              rows={3}
+              placeholder="e.g. [Price] * [Quantity] + [Tax]"
+              style={{
+                width: "100%",
+                border: "1px solid rgba(19,0,50,0.18)",
+                borderRadius: "4px",
+                padding: "8px 10px",
+                fontSize: "13px",
+                fontFamily: "monospace",
+                color: "rgba(19,0,50,0.9)",
+                outline: "none",
+                background: "white",
+                resize: "vertical",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = "#4C00FF")}
+              onBlur={(e) => (e.target.style.borderColor = "rgba(19,0,50,0.18)")}
+            />
+            {/* Autocomplete dropdown */}
+            {showAutocomplete && filteredLabels.length > 0 && (
+              <div
+                className="absolute left-0 right-0 bg-white rounded shadow-lg border z-10 overflow-hidden"
+                style={{ top: "100%", border: "1px solid rgba(19,0,50,0.15)", maxHeight: "140px", overflowY: "auto" }}
+              >
+                {filteredLabels.map((f) => (
+                  <button
+                    key={f.id}
+                    className="w-full text-left px-3 py-2 hover:bg-purple-50 transition-colors"
+                    style={{ fontSize: "12.5px", color: "#1B0A3C" }}
+                    onMouseDown={(e) => {
+                      e.preventDefault(); // prevent textarea blur
+                      insertLabel(f.label!);
+                    }}
+                  >
+                    <span style={{ color: "#4C00FF", fontWeight: 600 }}>[{f.label}]</span>
+                    <span className="text-gray-400 ml-2 text-xs">{f.type}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Suggested functions */}
+          <div className="mb-4">
+            <p style={{ fontSize: "11px", fontWeight: 600, color: "rgba(19,0,50,0.45)", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+              Suggested functions
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {FORMULA_FUNCTIONS.map((fn) => (
+                <button
+                  key={fn}
+                  onClick={() => insertFunction(fn)}
+                  className="px-2.5 py-1 rounded text-xs font-mono hover:bg-purple-100 transition-colors"
+                  style={{
+                    background: "#F0EEFF",
+                    color: "#4C00FF",
+                    border: "1px solid #D4C6FF",
+                    fontSize: "11.5px",
+                  }}
+                >
+                  {fn}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Decimal Places */}
+          <div className="mb-6">
+            <label
+              style={{
+                display: "block",
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "rgba(19,0,50,0.45)",
+                marginBottom: "4px",
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+              }}
+            >
+              Decimal Places
+            </label>
+            <select
+              value={decimalPlaces}
+              onChange={(e) => setDecimalPlaces(Number(e.target.value))}
+              style={{
+                width: "100%",
+                border: "1px solid rgba(19,0,50,0.18)",
+                borderRadius: "4px",
+                padding: "6px 9px",
+                fontSize: "12.5px",
+                color: "rgba(19,0,50,0.9)",
+                outline: "none",
+                background: "white",
+              }}
+            >
+              {[0, 2].map((n) => (
+                <option key={n} value={n}>
+                  {n === 0 ? "0 — No decimal places" : "2 — 2 decimal places"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 rounded-lg border text-sm font-semibold transition-colors hover:bg-gray-50"
+              style={{ borderColor: "#1B0A3C", color: "#1B0A3C" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onSave(formula, decimalPlaces)}
+              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90"
+              style={{ background: "#4C00FF" }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Field Properties Panel ───────────────────────────────────────────────────
 
 interface FieldPropertiesPanelProps {
   field: PlacedField;
   recipients: EditorRecipient[];
+  allFields: PlacedField[];
   onBack: () => void;
   onUpdate: (updates: Partial<PlacedField>) => void;
   onDelete: () => void;
@@ -433,27 +688,76 @@ function CollapsibleSection({
   );
 }
 
-function FieldPropertiesPanel({ field, recipients, onBack, onUpdate, onDelete }: FieldPropertiesPanelProps) {
+function FieldPropertiesPanel({ field, recipients, allFields, onBack, onUpdate, onDelete }: FieldPropertiesPanelProps) {
   const [localValue, setLocalValue] = useState(field.value ?? "");
-  const [localLabel, setLocalLabel] = useState(field.label ?? field.id);
+  const [localLabel, setLocalLabel] = useState(field.label ?? "");
   const [localX, setLocalX] = useState(field.x.toFixed(1));
   const [localY, setLocalY] = useState(field.y.toFixed(1));
   const [localW, setLocalW] = useState(field.width.toFixed(1));
   const [localH, setLocalH] = useState(field.height.toFixed(1));
   const [localFontSize, setLocalFontSize] = useState(12);
   const [localAlignment, setLocalAlignment] = useState<"left" | "center" | "right">("left");
+  // Payment-specific local state
+  const [localPaymentAmount, setLocalPaymentAmount] = useState(
+    field.paymentAmount != null ? (field.paymentAmount / 100).toFixed(2) : "",
+  );
+  const [localPaymentCurrency, setLocalPaymentCurrency] = useState(field.paymentCurrency ?? "USD");
+  const [localPaymentDescription, setLocalPaymentDescription] = useState(field.paymentDescription ?? "");
+  const [showFormulaModal, setShowFormulaModal] = useState(false);
+  const [showConditionalRuleEditor, setShowConditionalRuleEditor] = useState(false);
+  // Conditional rule editor local state
+  const [ruleOn, setRuleOn] = useState<string>(field.conditionalOn ?? "");
+  const [ruleCondition, setRuleCondition] = useState<string>(
+    field.conditionalOn
+      ? (field.conditionalValue === "checked"
+        ? "Checked"
+        : field.conditionalValue === "not_checked"
+        ? "Not Checked"
+        : field.conditionalValue === "any"
+        ? "Any Value"
+        : "Specified Text")
+      : "Specified Text",
+  );
+  const [ruleText, setRuleText] = useState<string>(
+    field.conditionalOn && !["checked", "not_checked", "any"].includes(field.conditionalValue ?? "")
+      ? (field.conditionalValue ?? "")
+      : "",
+  );
+  const [ruleAction, setRuleAction] = useState<"show" | "hide">(field.conditionalAction ?? "show");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync when field changes (another field selected)
   useEffect(() => {
     setLocalValue(field.value ?? "");
-    setLocalLabel(field.label ?? field.id);
+    setLocalLabel(field.label ?? "");
     setLocalX(field.x.toFixed(1));
     setLocalY(field.y.toFixed(1));
     setLocalW(field.width.toFixed(1));
     setLocalH(field.height.toFixed(1));
     setLocalFontSize(12);
     setLocalAlignment("left");
+    setLocalPaymentAmount(field.paymentAmount != null ? (field.paymentAmount / 100).toFixed(2) : "");
+    setLocalPaymentCurrency(field.paymentCurrency ?? "USD");
+    setLocalPaymentDescription(field.paymentDescription ?? "");
+    setShowConditionalRuleEditor(false);
+    setRuleOn(field.conditionalOn ?? "");
+    setRuleCondition(
+      field.conditionalOn
+        ? (field.conditionalValue === "checked"
+          ? "Checked"
+          : field.conditionalValue === "not_checked"
+          ? "Not Checked"
+          : field.conditionalValue === "any"
+          ? "Any Value"
+          : "Specified Text")
+        : "Specified Text",
+    );
+    setRuleText(
+      field.conditionalOn && !["checked", "not_checked", "any"].includes(field.conditionalValue ?? "")
+        ? (field.conditionalValue ?? "")
+        : "",
+    );
+    setRuleAction(field.conditionalAction ?? "show");
   }, [field.id]);
 
   const debouncedUpdate = useCallback((updates: Partial<PlacedField>) => {
@@ -526,6 +830,114 @@ function FieldPropertiesPanel({ field, recipients, onBack, onUpdate, onDelete }:
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
+        {/* Payment field properties */}
+        {field.type === "payment" && (
+          <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+            <div>
+              <label style={labelStyle}>Amount</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={localPaymentAmount}
+                placeholder="0.00"
+                onChange={(e) => {
+                  setLocalPaymentAmount(e.target.value);
+                  const dollars = parseFloat(e.target.value);
+                  if (!isNaN(dollars) && dollars >= 0) {
+                    debouncedUpdate({ paymentAmount: Math.round(dollars * 100) });
+                  }
+                }}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Currency</label>
+              <select
+                value={localPaymentCurrency}
+                onChange={(e) => {
+                  setLocalPaymentCurrency(e.target.value);
+                  onUpdate({ paymentCurrency: e.target.value });
+                }}
+                style={inputStyle}
+              >
+                <option value="USD">USD — US Dollar</option>
+                <option value="EUR">EUR — Euro</option>
+                <option value="GBP">GBP — British Pound</option>
+                <option value="CAD">CAD — Canadian Dollar</option>
+                <option value="AUD">AUD — Australian Dollar</option>
+                <option value="JPY">JPY — Japanese Yen</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Description</label>
+              <input
+                type="text"
+                value={localPaymentDescription}
+                placeholder="e.g. Service fee, Deposit…"
+                onChange={(e) => {
+                  setLocalPaymentDescription(e.target.value);
+                  debouncedUpdate({ paymentDescription: e.target.value || undefined });
+                }}
+                style={inputStyle}
+              />
+            </div>
+            <div
+              className="flex items-start gap-2 px-3 py-2 rounded"
+              style={{ background: "#FFF7ED", border: "1px solid #FDE68A" }}
+            >
+              <svg viewBox="0 0 24 24" fill="#F59E0B" width="14" height="14" style={{ flexShrink: 0, marginTop: "1px" }}>
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+              </svg>
+              <span style={{ fontSize: "11.5px", color: "#92400E", lineHeight: 1.4 }}>
+                Stub only — no real payment processing. Signer will see the payment info but no charge occurs.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Formula field properties */}
+        {field.type === "formula" && (
+          <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+            <div>
+              <label style={labelStyle}>Formula</label>
+              <input
+                type="text"
+                readOnly
+                value={field.formula ?? ""}
+                placeholder="No formula set"
+                style={{ ...inputStyle, background: "#FAFAFA", cursor: "default", color: field.formula ? "rgba(19,0,50,0.9)" : "rgba(19,0,50,0.35)" }}
+              />
+            </div>
+            <button
+              onClick={() => setShowFormulaModal(true)}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded transition-colors hover:opacity-90"
+              style={{
+                background: "#4C00FF",
+                color: "white",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ fontSize: "14px", fontWeight: 700 }}>ƒ</span>
+              Set Up Formula
+            </button>
+            {showFormulaModal && (
+              <FormulaModal
+                field={field}
+                allFields={allFields}
+                onClose={() => setShowFormulaModal(false)}
+                onSave={(newFormula, newDecimalPlaces) => {
+                  onUpdate({ formula: newFormula, decimalPlaces: newDecimalPlaces });
+                  setShowFormulaModal(false);
+                }}
+              />
+            )}
+          </div>
+        )}
+
         {/* Text/note fields */}
         {isTextLike && (
           <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
@@ -554,48 +966,47 @@ function FieldPropertiesPanel({ field, recipients, onBack, onUpdate, onDelete }:
                 setLocalLabel(e.target.value);
                 debouncedUpdate({ label: e.target.value || undefined });
               }}
-              placeholder={field.id}
+              placeholder={`e.g. ${FIELD_LABELS[field.type]} field`}
               style={inputStyle}
             />
           </div>
         )}
 
-        {/* Drawing/Signature: required toggle + allow image upload */}
-        {isDrawingOrSig && (
-          <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
-            {/* Required toggle */}
-            <div className="flex items-center justify-between">
-              <span style={{ fontSize: "12.5px", color: "rgba(19,0,50,0.85)", fontWeight: 500 }}>Required</span>
-              <button
-                onClick={() => onUpdate({ required: !field.required })}
+        {/* Required toggle — shown for ALL field types */}
+        <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+          <div className="flex items-center justify-between">
+            <span style={{ fontSize: "12.5px", color: "rgba(19,0,50,0.85)", fontWeight: 500 }}>Required</span>
+            <button
+              onClick={() => onUpdate({ required: !field.required })}
+              style={{
+                width: "36px",
+                height: "20px",
+                borderRadius: "10px",
+                background: field.required ? "#4C00FF" : "#D1D5DB",
+                border: "none",
+                cursor: "pointer",
+                position: "relative",
+                transition: "background 0.2s",
+                flexShrink: 0,
+              }}
+            >
+              <div
                 style={{
-                  width: "36px",
-                  height: "20px",
-                  borderRadius: "10px",
-                  background: field.required ? "#4C00FF" : "#D1D5DB",
-                  border: "none",
-                  cursor: "pointer",
-                  position: "relative",
-                  transition: "background 0.2s",
-                  flexShrink: 0,
+                  position: "absolute",
+                  top: "2px",
+                  left: field.required ? "18px" : "2px",
+                  width: "16px",
+                  height: "16px",
+                  borderRadius: "50%",
+                  background: "white",
+                  transition: "left 0.2s",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
                 }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "2px",
-                    left: field.required ? "18px" : "2px",
-                    width: "16px",
-                    height: "16px",
-                    borderRadius: "50%",
-                    background: "white",
-                    transition: "left 0.2s",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                  }}
-                />
-              </button>
-            </div>
-            {/* Allow image upload */}
+              />
+            </button>
+          </div>
+          {/* Allow image upload (signature/drawing only) */}
+          {isDrawingOrSig && (
             <div className="flex items-center justify-between">
               <span style={{ fontSize: "12.5px", color: "rgba(19,0,50,0.85)", fontWeight: 500 }}>Allow image upload</span>
               <div
@@ -625,8 +1036,8 @@ function FieldPropertiesPanel({ field, recipients, onBack, onUpdate, onDelete }:
                 />
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Formatting (collapsed by default) */}
         <CollapsibleSection title="Formatting">
@@ -672,8 +1083,8 @@ function FieldPropertiesPanel({ field, recipients, onBack, onUpdate, onDelete }:
           <div className="space-y-3 pt-1">
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: "Pixels from left", value: localX, setter: setLocalX, field: "x" },
-                { label: "Pixels from top", value: localY, setter: setLocalY, field: "y" },
+                { label: "Position X (%)", value: localX, setter: setLocalX, field: "x" },
+                { label: "Position Y (%)", value: localY, setter: setLocalY, field: "y" },
                 { label: "Width (%)", value: localW, setter: setLocalW, field: "width" },
                 { label: "Height (%)", value: localH, setter: setLocalH, field: "height" },
               ].map(({ label, value, setter, field: fieldKey }) => (
@@ -724,6 +1135,88 @@ function FieldPropertiesPanel({ field, recipients, onBack, onUpdate, onDelete }:
           </div>
         </CollapsibleSection>
 
+        {/* Conditional Logic */}
+        <CollapsibleSection title="Conditional Logic">
+          <div className="space-y-3 pt-1">
+            {/* Controlling field selector */}
+            <div>
+              <label style={labelStyle}>Show/Hide this field when</label>
+              <select
+                value={field.conditionalOn ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value || undefined;
+                  onUpdate({ conditionalOn: val, conditionalValue: val ? (field.conditionalValue ?? "checked") : undefined, conditionalAction: val ? (field.conditionalAction ?? "show") : undefined });
+                }}
+                style={{ ...inputStyle }}
+              >
+                <option value="">— No condition —</option>
+                {allFields
+                  .filter((f) => f.id !== field.id)
+                  .map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label ? `${f.label} (${f.type})` : `${f.type} field`}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {field.conditionalOn && (
+              <>
+                {/* Trigger value */}
+                <div>
+                  <label style={labelStyle}>Has value</label>
+                  <input
+                    type="text"
+                    value={field.conditionalValue ?? "checked"}
+                    onChange={(e) => onUpdate({ conditionalValue: e.target.value || "checked" })}
+                    placeholder='e.g. "checked" for checkbox, "yes" for text'
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Show / Hide toggle */}
+                <div>
+                  <label style={labelStyle}>Action</label>
+                  <div className="flex gap-1">
+                    {(["show", "hide"] as const).map((action) => (
+                      <button
+                        key={action}
+                        onClick={() => onUpdate({ conditionalAction: action })}
+                        className="flex-1 py-1.5 rounded text-xs transition-colors"
+                        style={{
+                          border: `1px solid ${(field.conditionalAction ?? "show") === action ? "#4C00FF" : "rgba(19,0,50,0.15)"}`,
+                          background: (field.conditionalAction ?? "show") === action ? "#F0EEFF" : "transparent",
+                          color: (field.conditionalAction ?? "show") === action ? "#4C00FF" : "rgba(19,0,50,0.7)",
+                          fontWeight: (field.conditionalAction ?? "show") === action ? 700 : 500,
+                          textTransform: "capitalize",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {action === "show" ? "Show" : "Hide"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Clear button */}
+                <button
+                  onClick={() => onUpdate({ conditionalOn: undefined, conditionalValue: undefined, conditionalAction: undefined })}
+                  className="w-full py-1.5 rounded text-xs transition-colors hover:bg-red-50"
+                  style={{
+                    border: "1px solid rgba(239,68,68,0.35)",
+                    color: "#EF4444",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    background: "transparent",
+                  }}
+                >
+                  Remove Condition
+                </button>
+              </>
+            )}
+          </div>
+        </CollapsibleSection>
+
         {/* Save as custom field */}
         <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
           <button
@@ -768,16 +1261,94 @@ function FieldPropertiesPanel({ field, recipients, onBack, onUpdate, onDelete }:
   );
 }
 
+// ── Template Name Modal ──────────────────────────────────────────────────────
+
+function TemplateNameModal({
+  defaultName,
+  onCancel,
+  onConfirm,
+  isSaving,
+}: {
+  defaultName: string;
+  onCancel: () => void;
+  onConfirm: (name: string) => void;
+  isSaving: boolean;
+}) {
+  const [name, setName] = useState(defaultName);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        <div className="h-1.5 w-full" style={{ background: "linear-gradient(90deg, #1B0A3C, #4C00FF)" }} />
+        <div className="px-8 py-7">
+          <div
+            className="w-11 h-11 rounded-xl flex items-center justify-center mb-5"
+            style={{ background: "#F0EEFF" }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="#4C00FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points="14 2 14 8 20 8" stroke="#4C00FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold mb-1.5" style={{ color: "#1B0A3C" }}>
+            Give your template a name
+          </h2>
+          <p className="text-sm text-gray-500 mb-5 leading-relaxed">
+            Before you save, would you like to give your template a name?
+          </p>
+          <input
+            autoFocus
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && name.trim()) onConfirm(name.trim());
+              if (e.key === "Escape") onCancel();
+            }}
+            className="w-full px-3 py-2.5 border rounded text-sm outline-none mb-6"
+            style={{ borderColor: "rgba(19,0,50,0.18)" }}
+            onFocus={(e) => (e.target.style.borderColor = "#4C00FF")}
+            onBlur={(e) => (e.target.style.borderColor = "rgba(19,0,50,0.18)")}
+          />
+          <div className="flex gap-3">
+            <button
+              onClick={onCancel}
+              className="flex-1 px-4 py-2.5 rounded-lg border text-sm font-semibold transition-colors hover:bg-gray-50"
+              style={{ borderColor: "#1B0A3C", color: "#1B0A3C" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { if (name.trim()) onConfirm(name.trim()); }}
+              disabled={isSaving || !name.trim()}
+              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              style={{ background: "#4C00FF" }}
+            >
+              {isSaving ? "Saving..." : "Save and Close"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Editor Page ──────────────────────────────────────────────────────────────
 
 export default function EditorPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isTemplateMode = searchParams.get("mode") === "template";
   const currentUser = useAuthStore((s) => s.user);
   const [draggedFieldType, setDraggedFieldType] = useState<FieldType | null>(null);
   const [showNoFieldsModal, setShowNoFieldsModal] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  // Template mode state
+  const [showTemplateNameModal, setShowTemplateNameModal] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   // Field properties panel state
   const [fieldPropertiesOpen, setFieldPropertiesOpen] = useState(false);
   const [selectedFieldForProperties, setSelectedFieldForProperties] = useState<string | null>(null);
@@ -788,9 +1359,9 @@ export default function EditorPage() {
   const [advDaysUntilExpiry, setAdvDaysUntilExpiry] = useState(120);
   const [advExpirationAlert, setAdvExpirationAlert] = useState(0);
   const [advSignOnPaper, setAdvSignOnPaper] = useState(false);
-  const [advChangeSigningResponsibility, setAdvChangeSigningResponsibility] = useState(false);
-  const [advResponsiveSigning, setAdvResponsiveSigning] = useState(false);
-  const [advAllowComments, setAdvAllowComments] = useState(false);
+  const [advResponsiveSigning, setAdvResponsiveSigning] = useState(true);
+  const [advAllowComments, setAdvAllowComments] = useState(true);
+  const [advAllowReassign, setAdvAllowReassign] = useState(true);
   // Comment mode state
   const [commentMode, setCommentMode] = useState(false);
   const [commentPos, setCommentPos] = useState<{ x: number; y: number } | null>(null);
@@ -818,6 +1389,28 @@ export default function EditorPage() {
     queryFn: () => getEnvelopeFields(id),
     enabled: !!envelope,
   });
+
+  // Sync advanced options from envelope data when loaded
+  useEffect(() => {
+    if (!envelope) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = envelope as any;
+    if (raw.allow_comments !== undefined) setAdvAllowComments(raw.allow_comments as boolean);
+    if (raw.responsive_signing !== undefined) setAdvResponsiveSigning(raw.responsive_signing as boolean);
+    if (raw.allow_reassign !== undefined) setAdvAllowReassign(raw.allow_reassign as boolean);
+    // Restore reminder_days → pre-fill reminder toggle + days input
+    if (typeof raw.reminder_days === "number" && raw.reminder_days > 0) {
+      setAdvAutoReminders(true);
+      setAdvReminderDays(raw.reminder_days);
+    }
+    // Restore expires_at → convert back to days-from-now for the Expiration input
+    if (raw.expires_at || raw.expiresAt) {
+      const expiresAt: string = raw.expires_at ?? raw.expiresAt;
+      const msLeft = new Date(expiresAt).getTime() - Date.now();
+      const daysLeft = Math.max(1, Math.round(msLeft / (1000 * 60 * 60 * 24)));
+      setAdvDaysUntilExpiry(daysLeft);
+    }
+  }, [envelope]);
 
   const editorRecipients = (envelope?.recipients ?? [])
     .filter((r) => !["cc", "viewer"].includes((r.role as string)?.toLowerCase()))
@@ -928,12 +1521,13 @@ export default function EditorPage() {
 
   // Debounced auto-save
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveInFlight = useRef<Promise<void> | null>(null);
   useEffect(() => {
-    if (!state.fields.length) return;
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      saveFields(id, state.fields as any).catch(() => {});
+      const p = saveFields(id, state.fields as any).then(() => {}).catch(() => {}).finally(() => { saveInFlight.current = null; });
+      saveInFlight.current = p;
     }, 2000);
     return () => {
       if (saveTimeout.current) clearTimeout(saveTimeout.current);
@@ -943,11 +1537,28 @@ export default function EditorPage() {
   const sendMutation = useMutation({
     mutationFn: async () => {
       if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      if (saveInFlight.current) await saveInFlight.current;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await saveFields(id, state.fields as any);
       return sendEnvelope(id);
     },
-    onSuccess: () => {
+    onSuccess: (sentEnvelope) => {
+      // If the current user is also a recipient (self-sign flow), redirect them
+      // directly to the signing ceremony instead of the agreements list.
+      const userEmail = currentUser?.email?.toLowerCase();
+      if (userEmail && sentEnvelope?.recipients) {
+        const selfRecipient = sentEnvelope.recipients.find(
+          (r) =>
+            r.email?.toLowerCase() === userEmail &&
+            r.signing_token &&
+            r.status !== "signed" &&
+            r.status !== "declined",
+        );
+        if (selfRecipient?.signing_token) {
+          router.push(`/sign/${selfRecipient.signing_token}`);
+          return;
+        }
+      }
       router.push(`/agreements?filter=sent`);
     },
     onError: (err: Error) => {
@@ -963,6 +1574,30 @@ export default function EditorPage() {
       sendMutation.mutate();
     }
   }, [state.fields.length, sendMutation]);
+
+  // Template mode: "Save and Close" opens the name modal
+  const handleSaveAsTemplateClick = useCallback(() => {
+    setShowTemplateNameModal(true);
+  }, []);
+
+  // Confirm save template with a given name
+  const handleConfirmSaveTemplate = useCallback(async (name: string) => {
+    setIsSavingTemplate(true);
+    try {
+      // Flush pending field saves
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      if (saveInFlight.current) await saveInFlight.current;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await saveFields(id, state.fields as any);
+      await saveEnvelopeAsTemplate(id, name);
+      router.push("/templates");
+    } catch (err) {
+      console.error("Failed to save template:", err);
+      alert("Failed to save template. Please try again.");
+      setIsSavingTemplate(false);
+      setShowTemplateNameModal(false);
+    }
+  }, [id, state.fields, router]);
 
   // Duplicate selected field with a small offset so it's visually distinct
   const handleDuplicate = useCallback(() => {
@@ -1158,6 +1793,9 @@ export default function EditorPage() {
             isSending={sendMutation.isPending}
             onPreview={() => setShowPreviewModal(true)}
             onOpenSettings={() => setAdvancedOptionsOpen(true)}
+            isTemplateMode={isTemplateMode}
+            onSaveAsTemplate={handleSaveAsTemplateClick}
+            isSavingTemplate={isSavingTemplate}
           />
 
           {/* Main editor layout — DocuSign order: Left palette | Center canvas | Right navigator */}
@@ -1173,6 +1811,7 @@ export default function EditorPage() {
                   <FieldPropertiesPanel
                     field={propField}
                     recipients={editorRecipients}
+                    allFields={state.fields}
                     onBack={() => setFieldPropertiesOpen(false)}
                     onUpdate={(updates) =>
                       dispatch({ type: "UPDATE_FIELD", id: propField.id, updates })
@@ -1300,6 +1939,20 @@ export default function EditorPage() {
       {/* Welcome modal — shown once */}
       {showWelcomeModal && <WelcomeModal onClose={handleCloseWelcome} />}
 
+      {/* Template name modal */}
+      {showTemplateNameModal && (
+        <TemplateNameModal
+          defaultName={
+            envelope?.subject && envelope.subject !== "Untitled Template"
+              ? envelope.subject
+              : `Untitled ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+          }
+          onCancel={() => setShowTemplateNameModal(false)}
+          onConfirm={handleConfirmSaveTemplate}
+          isSaving={isSavingTemplate}
+        />
+      )}
+
       {/* No-fields modal */}
       {showNoFieldsModal && (
         <NoFieldsModal
@@ -1410,8 +2063,8 @@ export default function EditorPage() {
             <label className="flex items-start gap-3 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={advChangeSigningResponsibility}
-                onChange={(e) => setAdvChangeSigningResponsibility(e.target.checked)}
+                checked={advAllowReassign}
+                onChange={(e) => setAdvAllowReassign(e.target.checked)}
                 className="mt-0.5 w-4 h-4 flex-shrink-0"
                 style={{ accentColor: "#4C00FF" }}
               />
@@ -1595,6 +2248,9 @@ export default function EditorPage() {
                 await updateEnvelope(id, {
                   ...(expiresAt ? { expires_at: expiresAt } : {}),
                   reminder_days: advAutoReminders ? advReminderDays : 0,
+                  allow_comments: advAllowComments,
+                  responsive_signing: advResponsiveSigning,
+                  allow_reassign: advAllowReassign,
                 });
               } catch (err) {
                 console.error("Failed to save advanced options:", err);

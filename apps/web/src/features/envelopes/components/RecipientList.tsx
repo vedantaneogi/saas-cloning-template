@@ -26,7 +26,6 @@ const ROLE_LABELS: Record<string, string> = {
   signer:            "Needs to Sign",
   approver:          "Needs to Approve",
   cc:                "Receives a Copy",
-  certifiedDelivery: "Needs to View",
   viewer:            "Needs to View",
 };
 
@@ -36,7 +35,7 @@ function getRoleLabel(role: string): string {
 
 // ─── Status icon ──────────────────────────────────────────────────────────────
 function RecipientStatusIcon({ status }: { status: Recipient["status"] }) {
-  if (status === "completed") {
+  if (status === "signed") {
     return (
       <div
         className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
@@ -204,6 +203,15 @@ export function RecipientList({
     (envelopeStatus === "sent" || envelopeStatus === "delivered") &&
     typeof onCopySigningLink === "function";
 
+  // Detect whether recipients actually use sequential routing (any order > 1)
+  const hasSequentialRouting = recipients.some((r) => (r.order ?? 1) > 1);
+
+  // When signing order is enabled, sort recipients by their routing order so
+  // the list reflects the actual signing sequence.
+  const displayedRecipients = signingOrderEnabled
+    ? [...recipients].sort((a, b) => (a.order ?? 1) - (b.order ?? 1))
+    : recipients;
+
   return (
     <div style={{ fontFamily: DS_FONT }}>
       {/* Controls row */}
@@ -219,6 +227,28 @@ export function RecipientList({
           label="Show recipient details"
         />
       </div>
+
+      {/* Routing mode badge — shown when signing order toggle is on */}
+      {signingOrderEnabled && recipients.length > 0 && (
+        <div
+          className="mb-3 px-3 py-1.5 rounded text-xs font-medium"
+          style={{
+            background: hasSequentialRouting ? "rgba(76,0,255,0.06)" : "rgba(19,0,50,0.04)",
+            color: hasSequentialRouting ? "#4C00FF" : "rgba(19,0,50,0.5)",
+            border: `1px solid ${hasSequentialRouting ? "rgba(76,0,255,0.18)" : "rgba(19,0,50,0.1)"}`,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
+            {hasSequentialRouting
+              ? <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
+              : <path d="M4 15l4 4 4-4H9V3H7v12H4zm8-6h3v12h2V9h3l-4-4-4 4z" />}
+          </svg>
+          {hasSequentialRouting ? "Sequential signing" : "Parallel signing (same order)"}
+        </div>
+      )}
 
       {/* Recipients list */}
       {recipients.length === 0 ? (
@@ -239,7 +269,7 @@ export function RecipientList({
         </div>
       ) : (
         <div className="space-y-2">
-          {recipients.map((recipient, idx) => (
+          {displayedRecipients.map((recipient, idx) => (
             <div
               key={recipient.id}
               className="px-4 py-3.5 rounded-lg border transition-shadow hover:shadow-sm"
@@ -288,7 +318,7 @@ export function RecipientList({
 
                 {/* Status badge / date */}
                 <div className="flex-shrink-0 text-right">
-                  {recipient.status === "completed" ? (
+                  {recipient.status === "signed" ? (
                     <div>
                       <p className="text-xs font-semibold" style={{ color: "#00B851" }}>
                         Signed
@@ -318,7 +348,7 @@ export function RecipientList({
               {/* Signing link — shown when envelope is sent and recipient has a token */}
               {showSigningLinks &&
                 recipient.signing_token &&
-                recipient.status !== "completed" &&
+                recipient.status !== "signed" &&
                 recipient.status !== "declined" && (
                   <SigningLinkRow
                     token={recipient.signing_token}

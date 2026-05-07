@@ -19,6 +19,9 @@ interface PrepareToolbarProps {
   isSending: boolean;
   onPreview?: () => void;
   onOpenSettings?: () => void;
+  isTemplateMode?: boolean;
+  onSaveAsTemplate?: () => void;
+  isSavingTemplate?: boolean;
 }
 
 // ── Comment Popover ───────────────────────────────────────────────────────────
@@ -223,6 +226,9 @@ export function PrepareToolbar({
   isSending,
   onPreview,
   onOpenSettings,
+  isTemplateMode = false,
+  onSaveAsTemplate,
+  isSavingTemplate = false,
 }: PrepareToolbarProps) {
   return (
     <div
@@ -236,7 +242,7 @@ export function PrepareToolbar({
       <div className="flex items-center gap-0">
         {/* Close button */}
         <Link
-          href="/agreements"
+          href={isTemplateMode ? "/templates" : "/agreements"}
           className="flex items-center justify-center w-9 h-9 rounded hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-800 no-underline"
           title="Close editor"
         >
@@ -248,7 +254,7 @@ export function PrepareToolbar({
 
         {/* Back to prepare */}
         <Link
-          href={`/envelope/${envelopeId}/prepare`}
+          href={`/envelope/${envelopeId}/prepare${isTemplateMode ? "?mode=template" : ""}`}
           className="flex items-center justify-center w-9 h-9 rounded hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-800 no-underline"
           title="Back to prepare"
         >
@@ -261,11 +267,11 @@ export function PrepareToolbar({
         {/* Breadcrumb */}
         <nav className="flex items-center gap-1.5 text-sm">
           <Link
-            href={`/envelope/${envelopeId}/prepare`}
+            href={`/envelope/${envelopeId}/prepare${isTemplateMode ? "?mode=template" : ""}`}
             className="no-underline transition-colors hover:underline"
             style={{ color: "rgba(19,0,50,0.55)", fontSize: "13px" }}
           >
-            Set Up Envelope
+            {isTemplateMode ? "Create a Template" : "Set Up Envelope"}
           </Link>
           <CaretRight size={12} weight="bold" style={{ color: "rgba(19,0,50,0.35)" }} />
           <span
@@ -323,29 +329,51 @@ export function PrepareToolbar({
           Preview
         </button>
 
-        {/* Send button — always clickable; validation happens inside the handler */}
-        <button
-          onClick={onSend}
-          disabled={isSending}
-          className="flex items-center gap-1.5 px-4 py-1.5 text-white font-semibold transition-opacity disabled:opacity-60"
-          style={{
-            background: isSending ? "#3A00CC" : "#4C00FF",
-            fontSize: "13px",
-            borderRadius: "4px",
-          }}
-        >
-          {isSending ? (
-            <>
-              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Sending...
-            </>
-          ) : (
-            <>
-              <PaperPlaneTilt size={14} weight="bold" />
-              Send
-            </>
-          )}
-        </button>
+        {/* Send / Save and Close button */}
+        {isTemplateMode ? (
+          <button
+            onClick={onSaveAsTemplate}
+            disabled={isSavingTemplate}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-white font-semibold transition-opacity disabled:opacity-60"
+            style={{
+              background: isSavingTemplate ? "#3A00CC" : "#4C00FF",
+              fontSize: "13px",
+              borderRadius: "4px",
+            }}
+          >
+            {isSavingTemplate ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Save and Close"
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={onSend}
+            disabled={isSending}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-white font-semibold transition-opacity disabled:opacity-60"
+            style={{
+              background: isSending ? "#3A00CC" : "#4C00FF",
+              fontSize: "13px",
+              borderRadius: "4px",
+            }}
+          >
+            {isSending ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Sending...
+              </>
+            ) : (
+              <>
+                <PaperPlaneTilt size={14} weight="bold" />
+                Send
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

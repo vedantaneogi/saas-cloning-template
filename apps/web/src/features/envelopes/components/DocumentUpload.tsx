@@ -22,7 +22,7 @@ export function DocumentUpload({ documents, onAdd, onRemove }: DocumentUploadPro
 
   const handleFiles = (files: File[]) => {
     const allowedExts = [".pdf", ".doc", ".docx"];
-    const maxSize = 25 * 1024 * 1024;
+    const maxSize = 10 * 1024 * 1024;
     const valid = files.filter((f) => {
       const ext = "." + f.name.split(".").pop()?.toLowerCase();
       if (!allowedExts.includes(ext)) return false;
@@ -30,11 +30,11 @@ export function DocumentUpload({ documents, onAdd, onRemove }: DocumentUploadPro
       return true;
     });
     if (valid.length === 0 && files.length > 0) {
-      alert("Only PDF and Word documents (max 25MB) are accepted.");
+      alert("Only PDF and Word documents (max 10MB) are accepted.");
       return;
     }
     if (valid.length < files.length) {
-      alert(`${files.length - valid.length} file(s) were skipped — only PDF and Word documents (max 25MB) are accepted.`);
+      alert(`${files.length - valid.length} file(s) were skipped — only PDF and Word documents (max 10MB) are accepted.`);
     }
     const newDocs: UploadedDocument[] = valid.map((file) => ({
       id: crypto.randomUUID(),

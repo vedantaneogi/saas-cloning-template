@@ -25,6 +25,11 @@ class FieldCreate(BaseModel):
     required: bool = True
     label: Optional[str] = None
     value: Optional[str] = None
+    conditional_on: Optional[str] = None
+    conditional_value: Optional[str] = None
+    conditional_action: Optional[str] = None
+    formula: Optional[str] = None
+    decimal_places: Optional[int] = None
 
 
 class FieldBulkItem(BaseModel):
@@ -42,6 +47,11 @@ class FieldBulkItem(BaseModel):
     required: bool = True
     label: Optional[str] = None
     value: Optional[str] = None
+    conditional_on: Optional[str] = None
+    conditional_value: Optional[str] = None
+    conditional_action: Optional[str] = None
+    formula: Optional[str] = None
+    decimal_places: Optional[int] = None
 
 
 class FieldBulkSaveRequest(BaseModel):
@@ -60,6 +70,11 @@ class FieldUpdate(BaseModel):
     required: Optional[bool] = None
     value: Optional[str] = None
     label: Optional[str] = None
+    conditional_on: Optional[str] = None
+    conditional_value: Optional[str] = None
+    conditional_action: Optional[str] = None
+    formula: Optional[str] = None
+    decimal_places: Optional[int] = None
 
 
 class FieldResponse(BaseModel):
@@ -77,6 +92,11 @@ class FieldResponse(BaseModel):
     required: bool
     value: Optional[str] = None
     label: Optional[str] = None
+    conditional_on: Optional[str] = None
+    conditional_value: Optional[str] = None
+    conditional_action: Optional[str] = None
+    formula: Optional[str] = None
+    decimal_places: Optional[int] = None
 
 
 # ── Recipient Schemas ─────────────────────────────────────────────────────────
@@ -141,6 +161,9 @@ class EnvelopeCreate(BaseModel):
     message: Optional[str] = None
     expires_at: Optional[datetime] = None
     reminder_days: int = 0
+    allow_comments: Optional[bool] = None
+    responsive_signing: Optional[bool] = None
+    allow_reassign: Optional[bool] = None
 
 
 class EnvelopeUpdate(BaseModel):
@@ -148,6 +171,9 @@ class EnvelopeUpdate(BaseModel):
     message: Optional[str] = None
     expires_at: Optional[datetime] = None
     reminder_days: Optional[int] = None
+    allow_comments: Optional[bool] = None
+    responsive_signing: Optional[bool] = None
+    allow_reassign: Optional[bool] = None
 
 
 class EnvelopeResponse(BaseModel):
@@ -164,6 +190,9 @@ class EnvelopeResponse(BaseModel):
     reminder_days: int = 0
     sent_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    allow_comments: bool = True
+    responsive_signing: bool = True
+    allow_reassign: bool = True
 
 
 class EnvelopeDetailResponse(EnvelopeResponse):
@@ -184,6 +213,7 @@ class RecipientSummary(BaseModel):
     routing_order: int
     status: RecipientStatus
     signing_token: Optional[str] = None
+    signed_at: Optional[datetime] = None
 
 
 class EnvelopeListItem(EnvelopeResponse):

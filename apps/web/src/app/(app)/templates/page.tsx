@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog } from "@/components/ui/Dialog";
 import { SearchInput } from "@/components/ui/SearchInput";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { TemplateSidebar } from "@/features/templates/components/TemplateSidebar";
 import { TemplateList } from "@/features/templates/components/TemplateList";
 import { getTemplates, createTemplate } from "@/features/templates/api";
+import { createEnvelope } from "@/features/envelopes/api";
 import { SlidersHorizontal, X, MagnifyingGlass, DotsSixVertical } from "@phosphor-icons/react";
 
 const PRIMARY_COLOR = "#260559";
@@ -27,6 +29,7 @@ const SECTION_LABELS: Record<SectionId, string> = {
 
 export default function TemplatesPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [activeSection, setActiveSection] = useState<SectionId>("my-templates");
   const [search, setSearch] = useState("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -89,6 +92,18 @@ export default function TemplatesPage() {
     },
   });
 
+  // Create a draft envelope and navigate to prepare page in template mode
+  const createTemplateMut = useMutation({
+    mutationFn: () =>
+      createEnvelope({ subject: "Untitled Template", message: "", recipients: [] }),
+    onSuccess: (envelope) => {
+      router.push(`/envelope/${envelope.id}/prepare?mode=template`);
+    },
+    onError: () => {
+      alert("Failed to start template creation. Please try again.");
+    },
+  });
+
   const handleSectionChange = (section: string) => {
     setActiveSection(section as SectionId);
     setPage(1);
@@ -107,7 +122,7 @@ export default function TemplatesPage() {
       <TemplateSidebar
         activeSection={activeSection}
         onSection={handleSectionChange}
-        onCreateTemplate={() => setShowCreateDialog(true)}
+        onCreateTemplate={() => createTemplateMut.mutate()}
       />
 
       <div
@@ -469,7 +484,7 @@ export default function TemplatesPage() {
         <TemplateList
           templates={templates}
           isLoading={isLoading}
-          onCreateTemplate={() => setShowCreateDialog(true)}
+          onCreateTemplate={() => createTemplateMut.mutate()}
           section={activeSection}
         />
 

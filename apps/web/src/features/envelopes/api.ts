@@ -25,11 +25,12 @@ export async function getEnvelopes(params: EnvelopeListParams = {}): Promise<Pag
     sentAt: item.sentAt ?? item.sent_at ?? undefined,
     completedAt: item.completedAt ?? item.completed_at ?? undefined,
     expiresAt: item.expiresAt ?? item.expires_at ?? undefined,
+    reminder_days: item.reminder_days ?? 0,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recipients: (item.recipients ?? []).map((r: any) => ({
       ...r,
       order: r.routing_order ?? r.order ?? 1,
-      status: r.status === "signed" ? "completed" : r.status,
+      status: r.status,
       signedAt: r.signed_at ?? r.signedAt ?? undefined,
     })),
     documents: item.documents ?? [],
@@ -55,6 +56,7 @@ export async function getEnvelope(id: string): Promise<Envelope> {
     sentAt: raw.sentAt ?? raw.sent_at ?? undefined,
     completedAt: raw.completedAt ?? raw.completed_at ?? undefined,
     expiresAt: raw.expiresAt ?? raw.expires_at ?? undefined,
+    reminder_days: raw.reminder_days ?? 0,
     documents: (raw.documents ?? []).map((d: Record<string, unknown>) => ({
       ...d,
       name: (d.original_filename ?? d.filename ?? "") as string,
@@ -63,8 +65,7 @@ export async function getEnvelope(id: string): Promise<Envelope> {
     recipients: (raw.recipients ?? []).map((r: Record<string, unknown>) => ({
       ...r,
       order: (r.routing_order ?? r.order ?? 1) as number,
-      // Backend returns "signed"; frontend Recipient type uses "completed"
-      status: (r.status === "signed" ? "completed" : r.status) as Recipient["status"],
+      status: r.status as Recipient["status"],
       // Backend returns snake_case; frontend expects camelCase
       signedAt: (r.signed_at ?? r.signedAt) as string | undefined,
     })),
@@ -76,13 +77,29 @@ export async function createEnvelope(data: {
   message?: string;
   recipients: { name: string; email: string; role: string; order: number }[];
 }): Promise<Envelope> {
-  const res = await apiClient.post("/envelopes", data);
-  return res.data;
+  const { recipients, ...envelopeData } = data;
+  const res = await apiClient.post("/envelopes", envelopeData);
+  const envelope: Envelope = res.data;
+
+  // Backend EnvelopeCreate schema only accepts subject/message/expires_at/reminder_days.
+  // Recipients must be added individually via the dedicated endpoint.
+  if (recipients && recipients.length > 0) {
+    for (const r of recipients) {
+      await addRecipient(envelope.id, {
+        name: r.name,
+        email: r.email,
+        role: r.role,
+        routing_order: r.order,
+      });
+    }
+  }
+
+  return envelope;
 }
 
 export async function updateEnvelope(
   id: string,
-  data: Partial<Envelope> & { reminder_days?: number; expires_at?: string },
+  data: Partial<Envelope> & { reminder_days?: number; expires_at?: string; allow_comments?: boolean; responsive_signing?: boolean; allow_reassign?: boolean },
 ): Promise<Envelope> {
   const res = await apiClient.put(`/envelopes/${id}`, data);
   return res.data;
@@ -216,6 +233,11 @@ export async function saveFields(envelopeId: string, fields: Field[]): Promise<F
       required: f.required ?? true,
       value: f.value ?? null,
       label: f.label ?? null,
+      conditional_on: f.conditionalOn ?? f.conditional_on ?? null,
+      conditional_value: f.conditionalValue ?? f.conditional_value ?? null,
+      conditional_action: f.conditionalAction ?? f.conditional_action ?? null,
+      formula: f.formula ?? null,
+      decimal_places: f.decimalPlaces ?? f.decimal_places ?? null,
     };
   }).filter(Boolean); // drop null entries (fields missing document_id / recipient_id)
 
@@ -413,6 +435,9 @@ export async function getSigningSession(token: string): Promise<{
       ...f,
       recipientId: f.recipientId ?? f.recipient_id,
       documentId: f.documentId ?? f.document_id,
+      conditionalOn: f.conditionalOn ?? f.conditional_on ?? undefined,
+      conditionalValue: f.conditionalValue ?? f.conditional_value ?? undefined,
+      conditionalAction: f.conditionalAction ?? f.conditional_action ?? undefined,
     }));
   }
   return data;

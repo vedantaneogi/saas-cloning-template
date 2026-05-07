@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MagnifyingGlass, DotsThree, X, CaretDown, SlidersHorizontal, PaperPlaneTilt } from "@phosphor-icons/react";
-import { getBulkBatches, createEnvelope } from "@/features/envelopes/api";
+import { getBulkBatches, getBulkSendStatus, createEnvelope } from "@/features/envelopes/api";
 import { EnvelopeSidebar } from "@/features/envelopes/components/EnvelopeSidebar";
 
 // ── Design tokens (matching agreements list page) ─────────────────────────────
@@ -117,6 +117,9 @@ function ProgressCell({ batch }: { batch: BatchRow }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function BulkSendBatchPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const highlightBatchId = searchParams.get("batch_id");
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
@@ -142,10 +145,40 @@ export default function BulkSendBatchPage() {
   const hasActiveFilters = dateFilterActive || statusFilter !== "all";
   const clearAllFilters = () => { setDateFilterActive(false); setStatusFilter("all"); setPendingStatus("all"); };
 
-  const { data: batches = [], isLoading } = useQuery({
+  // Poll the highlighted batch's status for live progress tracking
+  const { data: highlightStatus } = useQuery({
+    queryKey: ["bulk-status", highlightBatchId],
+    queryFn: () => getBulkSendStatus(highlightBatchId!),
+    enabled: !!highlightBatchId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 3000;
+      // Stop polling once all envelopes have left the "pending" state
+      const pending = data.total - data.sent - data.completed - data.failed;
+      return pending > 0 ? 3000 : false;
+    },
+  });
+
+  const { data: batches = [], isLoading, refetch: refetchBatches } = useQuery({
     queryKey: ["bulk-batches"],
     queryFn: getBulkBatches,
+    refetchInterval: highlightBatchId ? 5000 : false,
   });
+
+  // Once the highlighted batch is no longer active (all sent), stop highlighting
+  useEffect(() => {
+    if (highlightBatchId && highlightStatus) {
+      const pending = highlightStatus.total - highlightStatus.sent - highlightStatus.completed - highlightStatus.failed;
+      if (pending <= 0) {
+        // Clear the batch_id from URL without re-navigating
+        const url = new URL(window.location.href);
+        url.searchParams.delete("batch_id");
+        window.history.replaceState({}, "", url.toString());
+        refetchBatches();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightStatus]);
 
   // ── Filter client-side ────────────────────────────────────────────────────
   const filtered = batches.filter((b) => {
@@ -448,6 +481,42 @@ export default function BulkSendBatchPage() {
         <div className="flex-1" />
       </div>
 
+      {/* ── Active batch progress banner ────────────────────────────────────── */}
+      {highlightBatchId && highlightStatus && (() => {
+        const pending = highlightStatus.total - highlightStatus.sent - highlightStatus.completed - highlightStatus.failed;
+        const pct = highlightStatus.total > 0
+          ? Math.round(((highlightStatus.sent + highlightStatus.completed) / highlightStatus.total) * 100)
+          : 0;
+        return (
+          <div
+            style={{
+              margin: "12px 24px",
+              padding: "14px 20px",
+              background: "rgba(76,0,255,0.06)",
+              border: "1px solid rgba(76,0,255,0.2)",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+              fontFamily: DS_FONT,
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: "14px", fontWeight: 600, color: PRIMARY_TEXT }}>
+                Bulk send in progress — {highlightStatus.sent + highlightStatus.completed} of {highlightStatus.total} sent
+                {pending > 0 && <span style={{ marginLeft: "8px", fontSize: "12px", fontWeight: 400, color: SECONDARY_TEXT }}>{pending} processing…</span>}
+              </p>
+              <div style={{ marginTop: "6px", height: "4px", background: BORDER_COLOR, borderRadius: "2px", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: "#4C00FF", borderRadius: "2px", transition: "width 0.5s ease" }} />
+              </div>
+            </div>
+            {pending === 0 && (
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "#00874A" }}>Complete</span>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── Table ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-auto" style={{ background: "white" }}>
         <table className="w-full text-sm">
@@ -551,18 +620,21 @@ export default function BulkSendBatchPage() {
           </tr>
         ) : (
           <>
-              {filtered.map((batch) => (
+              {filtered.map((batch) => {
+                const isHighlighted = batch.batch_id === highlightBatchId;
+                return (
                 <tr
                   key={batch.batch_id}
                   style={{
                     borderBottom: `1px solid ${BORDER_COLOR}`,
                     transition: "background 0.12s",
+                    background: isHighlighted ? "rgba(76,0,255,0.04)" : "transparent",
                   }}
                   onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLTableRowElement).style.background = "rgba(19,0,50,0.02)";
+                    (e.currentTarget as HTMLTableRowElement).style.background = isHighlighted ? "rgba(76,0,255,0.07)" : "rgba(19,0,50,0.02)";
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLTableRowElement).style.background = "transparent";
+                    (e.currentTarget as HTMLTableRowElement).style.background = isHighlighted ? "rgba(76,0,255,0.04)" : "transparent";
                   }}
                 >
                   {/* Checkbox */}
@@ -723,7 +795,8 @@ export default function BulkSendBatchPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
           </>
         )}
           </tbody>

@@ -13,8 +13,11 @@ import {
   updateEnvelope,
   addRecipient as addRecipientAPI,
   updateRecipient as updateRecipientAPI,
+  deleteRecipient as deleteRecipientAPI,
   setRecipientAccessCode,
   setRecipientPrivateMessage,
+  saveEnvelopeAsTemplate,
+  bulkSendDirect,
 } from "@/features/envelopes/api";
 import { getRecipientColor } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store";
@@ -37,6 +40,7 @@ const formatSize = (bytes: number) => {
 
 const roleLabel: Record<string, string> = {
   signer: "Needs to Sign",
+  approver: "Needs to Approve",
   in_person: "In Person Signer",
   cc: "Receives a Copy",
   viewer: "Needs to View",
@@ -84,6 +88,8 @@ export default function PrepareEnvelopePage() {
 
   // ── File state ─────────────────────────────────────────────────────────────
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ id: string; name: string; size: number }>>([]);
+  // Keep a reference to the actual File objects so bulk-send can re-upload them
+  const uploadedFileObjectsRef = useRef<File[]>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadingDocs, setUploadingDocs] = useState<Record<string, boolean>>({});
@@ -92,6 +98,7 @@ export default function PrepareEnvelopePage() {
 
   // ── Validation state ───────────────────────────────────────────────────────
   const [triedToProceed, setTriedToProceed] = useState(false);
+  const [duplicateEmailErrors, setDuplicateEmailErrors] = useState<Record<string, boolean>>({});
 
   // ── Recipients ─────────────────────────────────────────────────────────────
   const [recipients, setRecipients] = useState<RecipientForm[]>([
@@ -101,9 +108,16 @@ export default function PrepareEnvelopePage() {
   const [setSigningOrder, setSetSigningOrder] = useState(false);
   const [signingDiagramOpen, setSigningDiagramOpen] = useState(false);
 
-  // ── Bulk send modal ────────────────────────────────────────────────────────
-  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  // ── Template mode ──────────────────────────────────────────────────────────
   const searchParams = useSearchParams();
+  const isTemplateMode = searchParams.get("mode") === "template";
+  const [templateName, setTemplateName] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
+
+  // ── Bulk send modal ────────────────────────────────────────────────────────
+  const isBulkMode = searchParams.get("bulk") === "true";
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkSending, setBulkSending] = useState(false);
 
   useEffect(() => {
     if (searchParams.get("bulk") === "true") {
@@ -148,6 +162,24 @@ export default function PrepareEnvelopePage() {
 
     if (envelope.subject) setSubject(envelope.subject);
     if (envelope.message) setMessage(envelope.message);
+    // Restore reminder_days from saved envelope
+    if (typeof envelope.reminder_days === "number" && envelope.reminder_days > 0) {
+      setReminderDays(envelope.reminder_days);
+    }
+    // Restore expires_at → convert back to days-from-now for the Advanced Options panel
+    if (envelope.expiresAt) {
+      const msLeft = new Date(envelope.expiresAt).getTime() - Date.now();
+      const daysLeft = Math.max(1, Math.round(msLeft / (1000 * 60 * 60 * 24)));
+      setAdvDaysUntilExpiry(daysLeft);
+      setAppliedDaysUntilExpiry(daysLeft);
+    }
+    // Restore advanced boolean options from saved envelope
+    if (typeof (envelope as any).allow_comments === "boolean") {
+      setAdvAllowComments((envelope as any).allow_comments as boolean);
+    }
+    if (typeof (envelope as any).responsive_signing === "boolean") {
+      setAdvResponsiveSigning((envelope as any).responsive_signing as boolean);
+    }
     if (envelope.recipients && envelope.recipients.length > 0) {
       setRecipients(envelope.recipients.map((r, i) => ({
         id: r.id,
@@ -156,6 +188,7 @@ export default function PrepareEnvelopePage() {
         role: r.role || "signer",
         order: r.order || i + 1,
         color: getRecipientColor(i),
+        privateMessage: r.private_message ?? undefined,
       })));
       // Restore imOnlySigner if envelope was saved with only the sender as recipient
       const userEmail = currentUser?.email?.toLowerCase();
@@ -197,6 +230,8 @@ export default function PrepareEnvelopePage() {
         delete next[file.name];
         return next;
       });
+      // Track File object for bulk-send re-upload
+      uploadedFileObjectsRef.current = [...uploadedFileObjectsRef.current, file];
       setUploadedFiles((prev) => [
         ...prev,
         {
@@ -254,12 +289,33 @@ export default function PrepareEnvelopePage() {
         (envelope?.recipients ?? []).map((r) => r.id),
       );
 
+      // Determine which persisted recipients are still present in the local state.
+      // Any that are no longer in the local list must be deleted from the backend.
+      // This handles: (a) explicit removes, (b) "I'm the only signer" replacing all
+      // previous recipients, and (c) switching back from imOnlySigner.
+      const keptPersistedIds = new Set(
+        recipients
+          .filter((r) => UUID_REGEX.test(r.id) && existingIds.has(r.id))
+          .map((r) => r.id),
+      );
+      for (const persistedId of existingIds) {
+        if (!keptPersistedIds.has(persistedId)) {
+          await deleteRecipientAPI(persistedId).catch((err) => {
+            console.error("Failed to delete stale recipient:", persistedId, err);
+          });
+        }
+      }
+
       const seen = new Set<string>();
       for (const r of recipients) {
         const email = r.email.trim().toLowerCase();
         if (!r.name.trim() || !email) continue;
         if (seen.has(email)) continue;
         seen.add(email);
+
+        // When signing order is unchecked, all recipients get routing_order 1 (parallel).
+        // When checked, use the individual order values set by the user.
+        const routingOrder = setSigningOrder ? r.order : 1;
 
         const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
         if (isPersistedRecipient) {
@@ -268,7 +324,7 @@ export default function PrepareEnvelopePage() {
             name: r.name.trim(),
             email: r.email.trim(),
             role: r.role,
-            routing_order: r.order,
+            routing_order: routingOrder,
             private_message: r.privateMessage || undefined,
           });
         } else {
@@ -277,7 +333,7 @@ export default function PrepareEnvelopePage() {
             name: r.name.trim(),
             email: r.email.trim(),
             role: r.role,
-            routing_order: r.order,
+            routing_order: routingOrder,
             private_message: r.privateMessage || undefined,
           });
         }
@@ -285,7 +341,19 @@ export default function PrepareEnvelopePage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["envelope", id] });
-      router.push(`/envelope/${id}/edit`);
+      const destination = isTemplateMode
+        ? `/envelope/${id}/edit?mode=template`
+        : `/envelope/${id}/edit`;
+      router.push(destination);
+    },
+    onError: (err: unknown) => {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? String((err as { message: unknown }).message)
+            : "An unexpected error occurred. Please try again.";
+      alert(`Failed to save envelope: ${message}`);
     },
   });
 
@@ -322,6 +390,14 @@ export default function PrepareEnvelopePage() {
   };
 
   const removeRecipient = (idToRemove: string) => {
+    // If this is a persisted recipient (UUID), delete it from the backend too
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const existingIds = new Set((envelope?.recipients ?? []).map((r) => r.id));
+    if (UUID_REGEX.test(idToRemove) && existingIds.has(idToRemove)) {
+      deleteRecipientAPI(idToRemove).catch((err) => {
+        console.error("Failed to delete recipient:", err);
+      });
+    }
     setRecipients((prev) =>
       prev
         .filter((r) => r.id !== idToRemove)
@@ -375,12 +451,20 @@ export default function PrepareEnvelopePage() {
   };
 
   // ── Proceed guard ──────────────────────────────────────────────────────────
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const hasDocuments = (uploadedFiles.length > 0) || (envelope?.documents?.length ?? 0) > 0;
   const hasValidRecipient = imOnlySigner
     ? true
-    : recipients.some((r) => r.name?.trim() && r.email?.trim());
+    : recipients.some(
+        (r) => r.name?.trim() && r.email?.trim() && EMAIL_REGEX.test(r.email.trim()),
+      );
+  const hasInvalidEmail = !imOnlySigner &&
+    recipients.some(
+      (r) => r.email?.trim() && !EMAIL_REGEX.test(r.email.trim()),
+    );
   const isUploading = Object.keys(uploadingDocs).length > 0;
-  const canProceed = hasDocuments && hasValidRecipient && !isUploading;
+  const hasDuplicateEmails = Object.values(duplicateEmailErrors).some(Boolean);
+  const canProceed = hasDocuments && hasValidRecipient && !isUploading && !hasDuplicateEmails && !hasInvalidEmail;
 
   // ──────────────────────────────────────────────────────────────────────────
   return (
@@ -421,7 +505,7 @@ export default function PrepareEnvelopePage() {
               cursor: "default",
             }}
           >
-            Set Up Envelope
+            {isTemplateMode ? "Create a Template" : "Set Up Envelope"}
           </span>
         </div>
 
@@ -442,6 +526,92 @@ export default function PrepareEnvelopePage() {
           >
             <GearSix size={20} weight="bold" color="#555" />
           </button>
+          {/* Save and Close (template mode only) */}
+          {isTemplateMode && (
+            <button
+              onClick={async () => {
+                if (!hasDocuments) {
+                  alert("Please upload at least one document before saving as a template.");
+                  return;
+                }
+                try {
+                  // 1. Persist envelope subject + description (stored as message).
+                  await updateEnvelope(id, {
+                    subject: templateName.trim() || "Untitled Template",
+                    message: templateDescription,
+                  });
+
+                  // 2. Persist recipients so the template captures them correctly.
+                  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                  const existingIds = new Set(
+                    (envelope?.recipients ?? []).map((r) => r.id),
+                  );
+
+                  // Delete stale persisted recipients no longer in local state
+                  const keptPersistedIds = new Set(
+                    recipients
+                      .filter((r) => UUID_REGEX.test(r.id) && existingIds.has(r.id))
+                      .map((r) => r.id),
+                  );
+                  for (const persistedId of existingIds) {
+                    if (!keptPersistedIds.has(persistedId)) {
+                      await deleteRecipientAPI(persistedId).catch((err) => {
+                        console.error("Failed to delete stale recipient:", persistedId, err);
+                      });
+                    }
+                  }
+
+                  const seen = new Set<string>();
+                  for (const r of recipients) {
+                    const email = r.email.trim().toLowerCase();
+                    if (!r.name.trim() || !email) continue;
+                    if (seen.has(email)) continue;
+                    seen.add(email);
+                    const routingOrder = setSigningOrder ? r.order : 1;
+                    const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
+                    if (isPersistedRecipient) {
+                      await updateRecipientAPI(r.id, {
+                        name: r.name.trim(),
+                        email: r.email.trim(),
+                        role: r.role,
+                        routing_order: routingOrder,
+                      });
+                    } else {
+                      await addRecipientAPI(id, {
+                        name: r.name.trim(),
+                        email: r.email.trim(),
+                        role: r.role,
+                        routing_order: routingOrder,
+                      });
+                    }
+                  }
+
+                  // 3. Snapshot envelope → template record.
+                  await saveEnvelopeAsTemplate(id, templateName.trim() || undefined);
+                  router.push("/templates");
+                } catch {
+                  alert("Failed to save template. Please try again.");
+                }
+              }}
+              disabled={isUploading}
+              className="flex items-center gap-2 transition-opacity"
+              style={{
+                background: "white",
+                border: "1px solid rgba(19,0,50,0.25)",
+                borderRadius: "4px",
+                padding: "8px 16px",
+                fontSize: "14px",
+                fontWeight: 500,
+                color: "rgba(19,0,50,0.9)",
+                cursor: isUploading ? "not-allowed" : "pointer",
+                opacity: isUploading ? 0.5 : 1,
+              }}
+              onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+              onMouseOut={(e) => (e.currentTarget.style.background = "white")}
+            >
+              Save and Close
+            </button>
+          )}
           <div className="relative group">
             <button
               onClick={() => {
@@ -453,7 +623,9 @@ export default function PrepareEnvelopePage() {
                   }
                   const missing: string[] = [];
                   if (!hasDocuments) missing.push("upload at least one document");
-                  if (!hasValidRecipient) missing.push("fill in recipient name and email");
+                  if (!hasValidRecipient) missing.push("fill in a valid recipient name and email");
+                  if (hasInvalidEmail) missing.push("enter a valid email address for all recipients");
+                  if (hasDuplicateEmails) missing.push("remove duplicate recipient emails");
                   alert(`Please ${missing.join(" and ")} before proceeding.`);
                   return;
                 }
@@ -511,6 +683,92 @@ export default function PrepareEnvelopePage() {
       ══════════════════════════════════════════ */}
       <div style={{ paddingTop: "24px", paddingBottom: "40px" }}>
         <div style={{ maxWidth: "1040px", margin: "0 auto", paddingLeft: "24px", paddingRight: "24px" }}>
+
+          {/* ────────────────────────────────────────
+              Template name & description (template mode only)
+          ──────────────────────────────────────── */}
+          {isTemplateMode && (
+            <div
+              style={{
+                background: "white",
+                border: "1px solid rgba(19,0,50,0.12)",
+                borderRadius: "8px",
+                padding: "24px",
+                marginBottom: "24px",
+              }}
+            >
+              <h2 style={{ fontSize: "20px", fontWeight: 500, color: "rgba(19,0,50,0.9)", marginBottom: "20px" }}>
+                Template details
+              </h2>
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  htmlFor="template-name"
+                  style={{
+                    display: "block",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    color: "rgba(19,0,50,0.7)",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Template name
+                </label>
+                <input
+                  id="template-name"
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="e.g., Non-Disclosure Agreement"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid rgba(19,0,50,0.18)",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    color: "rgba(19,0,50,0.9)",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = "#4C00FF")}
+                  onBlur={(e) => (e.target.style.borderColor = "rgba(19,0,50,0.18)")}
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="template-description"
+                  style={{
+                    display: "block",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    color: "rgba(19,0,50,0.7)",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Template description <span style={{ fontWeight: 400, color: "rgba(19,0,50,0.45)" }}>(optional)</span>
+                </label>
+                <textarea
+                  id="template-description"
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                  placeholder="Describe what this template is used for..."
+                  rows={3}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid rgba(19,0,50,0.18)",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    color: "rgba(19,0,50,0.9)",
+                    outline: "none",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = "#4C00FF")}
+                  onBlur={(e) => (e.target.style.borderColor = "rgba(19,0,50,0.18)")}
+                />
+              </div>
+            </div>
+          )}
 
           {/* ────────────────────────────────────────
               Section 1 — Add documents
@@ -801,6 +1059,7 @@ export default function PrepareEnvelopePage() {
                                   console.error("Failed to delete document:", e);
                                 }
                               }
+                              uploadedFileObjectsRef.current = uploadedFileObjectsRef.current.filter((_, idx) => idx !== i);
                               setUploadedFiles((prev) => prev.filter((_, idx) => idx !== i));
                             }}
                             className="rounded hover:bg-red-50 transition-colors"
@@ -1122,6 +1381,7 @@ export default function PrepareEnvelopePage() {
                               {(
                                 [
                                   { value: "signer", label: "Needs to Sign", icon: <PencilSimple size={16} weight="bold" color="#555" /> },
+                                  { value: "approver", label: "Needs to Approve", icon: <svg viewBox="0 0 24 24" fill="#555" width="16" height="16"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg> },
                                   { value: "in_person", label: "In Person Signer", icon: <UserCircle size={16} weight="bold" color="#555" /> },
                                   { value: "cc", label: "Receives a Copy", icon: <span style={{ fontSize: "11px", fontWeight: 700, color: "#555", lineHeight: 1 }}>CC</span> },
                                   { value: "viewer", label: "Needs to View", icon: <Eye size={16} weight="bold" color="#555" /> },
@@ -1281,13 +1541,24 @@ export default function PrepareEnvelopePage() {
                         <input
                           type="email"
                           value={recipient.email}
-                          onChange={(e) =>
-                            updateRecipient(recipient.id, { email: e.target.value })
-                          }
+                          onChange={(e) => {
+                            const newEmail = e.target.value;
+                            updateRecipient(recipient.id, { email: newEmail });
+                            // Check for duplicate emails
+                            const emailLower = newEmail.trim().toLowerCase();
+                            if (emailLower) {
+                              const isDuplicate = recipients.some(
+                                (r) => r.id !== recipient.id && r.email.trim().toLowerCase() === emailLower
+                              );
+                              setDuplicateEmailErrors((prev) => ({ ...prev, [recipient.id]: isDuplicate }));
+                            } else {
+                              setDuplicateEmailErrors((prev) => ({ ...prev, [recipient.id]: false }));
+                            }
+                          }}
                           disabled={imOnlySigner}
                           className="focus:outline-none transition-all"
                           style={{
-                            border: `1px solid ${triedToProceed && !recipient.email?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
+                            border: `1px solid ${(triedToProceed && !recipient.email?.trim()) || duplicateEmailErrors[recipient.id] ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
                             borderRadius: "4px",
                             padding: "8px 16px",
                             fontSize: "16px",
@@ -1304,10 +1575,15 @@ export default function PrepareEnvelopePage() {
                             }
                           }}
                           onBlur={(e) => {
-                            e.target.style.borderColor = triedToProceed && !recipient.email?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)";
+                            e.target.style.borderColor = (triedToProceed && !recipient.email?.trim()) || duplicateEmailErrors[recipient.id] ? "#C0392B" : "rgba(19,0,50,0.25)";
                             e.target.style.boxShadow = "none";
                           }}
                         />
+                        {duplicateEmailErrors[recipient.id] && (
+                          <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
+                            This email address is already used by another recipient
+                          </p>
+                        )}
                         {triedToProceed && !recipient.email?.trim() && (
                           <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
                             Required
@@ -2024,8 +2300,22 @@ export default function PrepareEnvelopePage() {
             Cancel
           </button>
           <button
-            onClick={() => {
+            onClick={async () => {
               setAppliedDaysUntilExpiry(advDaysUntilExpiry);
+              // Persist advanced options to backend immediately on Apply
+              const expiresAt = advDaysUntilExpiry > 0
+                ? new Date(Date.now() + advDaysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
+                : undefined;
+              try {
+                await updateEnvelope(id, {
+                  ...(expiresAt ? { expires_at: expiresAt } : {}),
+                  allow_comments: advAllowComments,
+                  responsive_signing: advResponsiveSigning,
+                  reminder_days: reminderDays,
+                });
+              } catch (err) {
+                console.error("Failed to save advanced options:", err);
+              }
               setAdvancedOptionsOpen(false);
             }}
             style={{
@@ -2280,6 +2570,16 @@ export default function PrepareEnvelopePage() {
                   </button>
                   <button
                     disabled={!bulkCsvFile}
+                    onClick={() => {
+                      if (bulkCsvFile) {
+                        // parseBulkCsv advances to step 3; if already parsed, advance manually
+                        if (bulkCsvRows.length > 0) {
+                          setBulkStep(3);
+                        } else {
+                          parseBulkCsv(bulkCsvFile);
+                        }
+                      }
+                    }}
                     style={{
                       background: "#4C00FF",
                       color: "white",
@@ -2412,24 +2712,60 @@ export default function PrepareEnvelopePage() {
                     Back to Upload
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const validRows = bulkCsvRows.filter(r => r.valid);
                       if (validRows.length === 0) return;
-                      const newRecipients: RecipientForm[] = validRows.map((r, i) => ({
-                        id: `bulk-${Date.now()}-${i}`,
-                        name: r.name,
-                        email: r.email,
-                        role: "signer",
-                        order: i + 1,
-                        color: getRecipientColor(i),
-                      }));
-                      setRecipients(newRecipients);
-                      setBulkModalOpen(false);
-                      setBulkCsvFile(null);
-                      setBulkCsvRows([]);
-                      setBulkActiveTab("all");
+
+                      if (isBulkMode && bulkCsvFile) {
+                        // ── CSV-driven bulk send: one envelope per CSV row ──
+                        const docs = uploadedFileObjectsRef.current;
+                        if (docs.length === 0) {
+                          alert("Please upload at least one document before sending.");
+                          return;
+                        }
+                        setBulkSending(true);
+                        try {
+                          const result = await bulkSendDirect(
+                            docs,
+                            bulkCsvFile,
+                            subject || "Bulk Send",
+                            message || "",
+                            reminderDays,
+                          );
+                          setBulkModalOpen(false);
+                          setBulkCsvFile(null);
+                          setBulkCsvRows([]);
+                          setBulkActiveTab("all");
+                          // Redirect to batch progress tracker
+                          if (result?.batch_id) {
+                            router.push(`/agreements/bulk-send?batch_id=${result.batch_id}`);
+                          } else {
+                            router.push(`/agreements/bulk-send`);
+                          }
+                        } catch (err) {
+                          const msg = err instanceof Error ? err.message : "Bulk send failed. Please try again.";
+                          alert(`Bulk send error: ${msg}`);
+                        } finally {
+                          setBulkSending(false);
+                        }
+                      } else {
+                        // ── Non-bulk mode: populate recipients form only ────
+                        const newRecipients: RecipientForm[] = validRows.map((r, i) => ({
+                          id: `bulk-${Date.now()}-${i}`,
+                          name: r.name,
+                          email: r.email,
+                          role: "signer",
+                          order: i + 1,
+                          color: getRecipientColor(i),
+                        }));
+                        setRecipients(newRecipients);
+                        setBulkModalOpen(false);
+                        setBulkCsvFile(null);
+                        setBulkCsvRows([]);
+                        setBulkActiveTab("all");
+                      }
                     }}
-                    disabled={bulkCsvRows.filter(r => r.valid).length === 0}
+                    disabled={bulkCsvRows.filter(r => r.valid).length === 0 || bulkSending}
                     style={{
                       background: "#4C00FF",
                       color: "white",
@@ -2438,11 +2774,17 @@ export default function PrepareEnvelopePage() {
                       padding: "8px 24px",
                       fontSize: "14px",
                       fontWeight: 500,
-                      cursor: bulkCsvRows.filter(r => r.valid).length === 0 ? "not-allowed" : "pointer",
-                      opacity: bulkCsvRows.filter(r => r.valid).length === 0 ? 0.4 : 1,
+                      cursor: (bulkCsvRows.filter(r => r.valid).length === 0 || bulkSending) ? "not-allowed" : "pointer",
+                      opacity: (bulkCsvRows.filter(r => r.valid).length === 0 || bulkSending) ? 0.4 : 1,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
                     }}
                   >
-                    Save
+                    {bulkSending && (
+                      <span style={{ width: "14px", height: "14px", border: "2px solid white", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.6s linear infinite" }} />
+                    )}
+                    {bulkSending ? "Sending…" : isBulkMode ? "Send to All" : "Save"}
                   </button>
                 </div>
               </>

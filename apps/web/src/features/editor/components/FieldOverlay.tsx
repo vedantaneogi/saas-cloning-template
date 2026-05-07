@@ -352,7 +352,6 @@ export function FieldOverlay({
       onSelect();
 
       if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
 
       dragStart.current = {
         clientX: e.clientX,
@@ -363,7 +362,9 @@ export function FieldOverlay({
       setIsDragging(true);
 
       const handleMouseMove = (ev: MouseEvent) => {
-        if (!dragStart.current) return;
+        if (!dragStart.current || !containerRef.current) return;
+        // Re-read rect each move so scroll during drag doesn't skew placement
+        const rect = containerRef.current.getBoundingClientRect();
         const dx = ev.clientX - dragStart.current.clientX;
         const dy = ev.clientY - dragStart.current.clientY;
         const pct_dx = (dx / rect.width) * 100;
@@ -393,7 +394,6 @@ export function FieldOverlay({
       e.stopPropagation();
       e.preventDefault();
       if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
 
       resizeStart.current = {
         clientX: e.clientX,
@@ -407,7 +407,9 @@ export function FieldOverlay({
       };
 
       const handleMouseMove = (ev: MouseEvent) => {
-        if (!resizeStart.current) return;
+        if (!resizeStart.current || !containerRef.current) return;
+        // Re-read rect each move so scroll during resize doesn't skew dimensions
+        const rect = containerRef.current.getBoundingClientRect();
         const dx = ((ev.clientX - resizeStart.current.clientX) / rect.width) * 100;
         const dy = ((ev.clientY - resizeStart.current.clientY) / rect.height) * 100;
         const { fieldX, fieldY, fieldW, fieldH, xDir, yDir } = resizeStart.current;

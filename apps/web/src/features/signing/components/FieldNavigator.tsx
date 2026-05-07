@@ -61,7 +61,9 @@ export function FieldNavigator({
         >
           <div className="flex items-center gap-2 text-green-400">
             <CheckCircle size={16} weight="fill" />
-            <span className="text-sm font-semibold">All {totalFields} fields complete!</span>
+            <span className="text-sm font-semibold">
+              {totalFields === 0 ? "Ready to finish" : `All ${totalFields} fields complete!`}
+            </span>
           </div>
           <button
             onClick={onFinish}

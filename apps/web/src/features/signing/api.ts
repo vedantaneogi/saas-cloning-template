@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api-client";
-import type { Envelope } from "@/features/envelopes/types";
+import type { Envelope, Recipient } from "@/features/envelopes/types";
 import type { PlacedField } from "@/features/editor/model/types";
 
 export interface SigningSession {
@@ -54,6 +54,8 @@ interface RawSigningSession {
     required: boolean;
     value?: string;
     label?: string;
+    formula?: string;
+    decimal_places?: number;
   }>;
   documents: Array<{
     id: string;
@@ -80,7 +82,7 @@ function mapSigningSession(raw: RawSigningSession): SigningSession {
       email: r.email,
       role: r.role,
       order: r.routing_order,
-      status: (r.status === "signed" ? "completed" : r.status) as "completed" | "sent" | "delivered" | "pending" | "declined",
+      status: r.status as Recipient["status"],
     })),
     documents: raw.envelope.documents.map((d) => ({
       id: d.id,
@@ -106,6 +108,8 @@ function mapSigningSession(raw: RawSigningSession): SigningSession {
     required: f.required,
     value: f.value,
     label: f.label,
+    formula: f.formula,
+    decimalPlaces: f.decimal_places,
   }));
 
   const documents = raw.documents.map((d) => ({

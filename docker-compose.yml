@@ -28,9 +28,13 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-dev-admin-key}
-      TEST_AUTH_ENABLED: ${TEST_AUTH_ENABLED:-true}
+      TEST_AUTH_ENABLED: ${TEST_AUTH_ENABLED:-false}
       UPLOAD_DIR: ${UPLOAD_DIR:-/app/uploads}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:80}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-DocuSign Clone <noreply@techbrig.co>}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     volumes:
       - api_uploads:/app/uploads
     healthcheck:
@@ -47,11 +51,12 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:8000}
     depends_on:
       api:
         condition: service_healthy
     environment:
-      API_INTERNAL_URL: http://api:8000
+      API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:8000}
     ports:
       - "3000:3000"
 

@@ -44,6 +44,14 @@ export async function createField(
     required: field.required ?? true,
     label: field.label ?? null,
     value: field.value ?? null,
+    formula: field.formula ?? null,
+    decimal_places: field.decimalPlaces ?? null,
+    conditional_on: field.conditionalOn ?? null,
+    conditional_value: field.conditionalValue ?? null,
+    conditional_action: field.conditionalAction ?? null,
+    payment_amount: field.paymentAmount ?? null,
+    payment_currency: field.paymentCurrency ?? null,
+    payment_description: field.paymentDescription ?? null,
   };
   const res = await apiClient.post(`/documents/${documentId}/fields`, payload);
   const f = res.data as Record<string, unknown>;
@@ -94,6 +102,14 @@ export async function getEnvelopeFields(envelopeId: string): Promise<PlacedField
     label: f.label,
     value: f.value,
     options: f.options,
+    conditionalOn: f.conditional_on ?? f.conditionalOn ?? undefined,
+    conditionalValue: f.conditional_value ?? f.conditionalValue ?? undefined,
+    conditionalAction: f.conditional_action ?? f.conditionalAction ?? undefined,
+    paymentAmount: f.payment_amount ?? f.paymentAmount,
+    paymentCurrency: f.payment_currency ?? f.paymentCurrency,
+    paymentDescription: f.payment_description ?? f.paymentDescription,
+    formula: f.formula,
+    decimalPlaces: f.decimal_places ?? f.decimalPlaces,
   }));
 }
 

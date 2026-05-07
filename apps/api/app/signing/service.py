@@ -203,14 +203,50 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
             detail="This recipient has already signed",
         )
 
-    # Check all required fields are filled
+    # Check all required fields are filled (formula fields are auto-computed, skip them)
+    all_fields_flat = [f for doc in docs for f in doc.fields]
+    label_to_field_value: dict[str, str | None] = {
+        f.label: f.value for f in all_fields_flat if f.label
+    }
+    id_to_field_value: dict[str, str | None] = {
+        str(f.id): f.value for f in all_fields_flat
+    }
     for doc in docs:
         for field in doc.fields:
             if field.recipient_id == recipient.id and field.required and not field.value:
+                if field.type.value == "formula":
+                    continue  # formula fields will be computed below
+                # Skip conditionally hidden fields
+                if field.conditional_on:
+                    parent_val = id_to_field_value.get(field.conditional_on)
+                    matches = parent_val == field.conditional_value
+                    action = field.conditional_action or "show"
+                    if (action == "show" and not matches) or (action == "hide" and matches):
+                        continue  # field is hidden, skip validation
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"Required field '{field.label or field.type.value}' is not filled",
                 )
+
+    # Evaluate formula fields — build a label→value map and compute each formula
+    all_fields = [f for doc in docs for f in doc.fields]
+    label_to_value: dict[str, str] = {}
+    for f in all_fields:
+        if f.label and f.value is not None:
+            label_to_value[f.label] = f.value
+    for f in all_fields:
+        if f.type.value == "formula" and f.formula:
+            try:
+                from app.signing.formula import evaluate_formula
+                result = evaluate_formula(f.formula, label_to_value)
+                dp = f.decimal_places if f.decimal_places is not None else 2
+                try:
+                    numeric = float(result)
+                    f.value = f"{numeric:.{dp}f}"
+                except (ValueError, TypeError):
+                    f.value = str(result)
+            except Exception:
+                pass  # leave value as-is on error
 
     recipient.status = RecipientStatus.signed
     recipient.signed_at = datetime.now(timezone.utc)
