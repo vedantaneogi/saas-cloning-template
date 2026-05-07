@@ -478,15 +478,20 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
         </span>
       )}
 
-      {/* Right-click context menu — matches real Outlook order exactly */}
+      {/* Right-click context menu — matches real Outlook order exactly. Capped at
+          80vh with internal scroll so options below the fold ("Create task",
+          "Rules", etc.) stay reachable on short viewports. */}
       {contextMenu && (
         <div
           ref={menuRef}
           role="menu"
-          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1 overflow-visible"
+          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1 overflow-y-auto outlook-scrollbar"
           style={{
             left: Math.min(contextMenu.x, window.innerWidth - 240),
-            top: Math.min(contextMenu.y, window.innerHeight - 580),
+            // Anchor at the click but never overflow the viewport; cap height
+            // so nothing gets clipped at the bottom.
+            top: Math.min(contextMenu.y, Math.max(0, window.innerHeight - 80)),
+            maxHeight: 'min(80vh, 600px)',
           }}
         >
           {/* 1. Reply / Reply all / Forward */}
