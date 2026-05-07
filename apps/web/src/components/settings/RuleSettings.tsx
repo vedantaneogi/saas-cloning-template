@@ -210,8 +210,11 @@ export function RuleSettings() {
         <RuleEditor
           key={editing?.id ?? 'new'}
           rule={editing ?? undefined}
-          onSave={() => {
-            queryClient.invalidateQueries({ queryKey: ['rules'] })
+          onSave={async () => {
+            // Wait for the refetch to complete before closing the editor so the
+            // new/updated rule is visible immediately — invalidate alone fires
+            // a background refetch which can briefly show stale data.
+            await queryClient.refetchQueries({ queryKey: ['rules'] })
             setEditing(null)
             setCreating(false)
           }}
@@ -295,7 +298,7 @@ function RuleEditor({
   onCancel,
 }: {
   rule?: Rule
-  onSave: () => void
+  onSave: () => void | Promise<void>
   onCancel: () => void
 }) {
   const [name, setName] = useState(rule?.name ?? '')
@@ -325,7 +328,7 @@ function RuleEditor({
       } else {
         await rules.create({ name, conditions, actions, is_enabled: true })
       }
-      onSave()
+      await onSave()
     } finally {
       setSaving(false)
     }
