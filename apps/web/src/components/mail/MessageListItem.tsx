@@ -393,7 +393,7 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
               </span>
             )}
             {message.is_pinned && (
-              <Star size={12} className="text-[#FFB900] fill-[#FFB900]" aria-label="Pinned" />
+              <Pin size={12} className="text-[#0078D4] fill-[#0078D4]" aria-label="Pinned" />
             )}
           </div>
         </div>
@@ -458,9 +458,9 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
           <button
             onClick={(e) => { e.stopPropagation(); pinMutation.mutate() }}
             aria-label={message.is_pinned ? 'Unpin' : 'Pin'}
-            className={cn('p-1 rounded transition-colors', message.is_pinned ? 'text-[#FFB900]' : 'text-[#605E5C] hover:text-[#FFB900]')}
+            className={cn('p-1 rounded transition-colors', message.is_pinned ? 'text-[#0078D4]' : 'text-[#605E5C] hover:text-[#0078D4]')}
           >
-            <Star size={14} className={message.is_pinned ? 'fill-[#FFB900]' : ''} />
+            <Pin size={14} className={message.is_pinned ? 'fill-[#0078D4]' : ''} />
           </button>
         </div>
         <button
