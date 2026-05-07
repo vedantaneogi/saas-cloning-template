@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X } from 'lucide-react'
+import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X, Plus, Edit2 } from 'lucide-react'
 import type { Message } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
 import { Avatar } from '@/components/ui/Avatar'
@@ -81,6 +81,7 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   const [copySearch, setCopySearch] = useState('')
   const [snoozeOpen, setSnoozeOpen] = useState(false)
   const [catOpen, setCatOpen] = useState(false)
+  const [catSearch, setCatSearch] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
   const [downloadOpen, setDownloadOpen] = useState(false)
@@ -578,20 +579,59 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
           />
           <MenuItem icon={<Pin size={14} />} label={message.is_pinned ? 'Unpin' : 'Pin'} onClick={() => { pinMutation.mutate() }} />
 
-          <SubMenu icon={<Tag size={14} />} label="Categorize" open={catOpen} onOpenChange={setCatOpen}>
-            {categoryList.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-[#605E5C]">No categories</div>
-            ) : categoryList.map((cat) => {
-              const isActive = (message.categories ?? []).some((c) => c.id === cat.id)
-              return (
-                <button key={cat.id} role="menuitem" onClick={(e) => { e.stopPropagation(); toggleCategory(cat.id) }}
-                  className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
-                  <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
-                  <span className="flex-1 text-left truncate">{cat.name}</span>
-                  {isActive && <span className="text-[#0078D4] text-xs font-bold">✓</span>}
-                </button>
+          <SubMenu icon={<Tag size={14} />} label="Categorize" open={catOpen} onOpenChange={(v) => { setCatOpen(v); if (!v) setCatSearch('') }}>
+            {/* Search box — Outlook-style filter for the category list */}
+            <div className="px-2 py-1.5 border-b border-[#EDEBE9]" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-[#F3F2F1] rounded">
+                <Search size={11} className="text-[#605E5C] flex-shrink-0" />
+                <input
+                  type="text"
+                  value={catSearch}
+                  onChange={(e) => setCatSearch(e.target.value)}
+                  placeholder="Search for a category"
+                  aria-label="Search categories"
+                  className="flex-1 text-xs bg-transparent focus:outline-none text-[#323130] placeholder:text-[#A19F9D]"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            </div>
+            {(() => {
+              const filtered = categoryList.filter((c) =>
+                c.name.toLowerCase().includes(catSearch.trim().toLowerCase())
               )
-            })}
+              if (filtered.length === 0) {
+                return <div className="px-3 py-2 text-xs text-[#605E5C]">No categories match.</div>
+              }
+              return filtered.map((cat) => {
+                const isActive = (message.categories ?? []).some((c) => c.id === cat.id)
+                return (
+                  <button key={cat.id} role="menuitem" onClick={(e) => { e.stopPropagation(); toggleCategory(cat.id) }}
+                    className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
+                    <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
+                    <span className="flex-1 text-left truncate">{cat.name}</span>
+                    {isActive && <span className="text-[#0078D4] text-xs font-bold">✓</span>}
+                  </button>
+                )
+              })
+            })()}
+            <div className="border-t border-[#EDEBE9] mt-1">
+              <button
+                role="menuitem"
+                onClick={(e) => { e.stopPropagation(); router.push('/settings/categories'); setContextMenu(null) }}
+                className="flex items-center gap-2 w-full text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1]"
+              >
+                <Plus size={14} className="flex-shrink-0" />
+                New category
+              </button>
+              <button
+                role="menuitem"
+                onClick={(e) => { e.stopPropagation(); router.push('/settings/categories'); setContextMenu(null) }}
+                className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+              >
+                <Edit2 size={14} className="flex-shrink-0 text-[#605E5C]" />
+                Manage categories
+              </button>
+            </div>
           </SubMenu>
 
           <MenuItem
