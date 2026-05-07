@@ -175,6 +175,47 @@ async def _update_folder_counts(db: AsyncSession, folder_id: uuid.UUID):
         folder.unread_count = unread_result.scalar() or 0
 
 
+async def _flush_due_scheduled(db: AsyncSession, user: User) -> None:
+    """Dispatch any of the user's scheduled messages whose send time has passed.
+
+    Schedule-send stores the message as is_draft=True with scheduled_send_at
+    populated. This helper finds those that are due, flips them to "sent",
+    moves them into the Sent folder, runs OOF + delivery, and clears the
+    scheduled flag. Called opportunistically from list_messages so we don't
+    need a background worker.
+    """
+    now = rl_state.clock.now()
+    due_q = await db.execute(
+        select(Message).where(
+            Message.user_id == user.id,
+            Message.is_draft.is_(True),
+            Message.scheduled_send_at.is_not(None),
+            Message.scheduled_send_at <= now,
+        )
+    )
+    due = list(due_q.scalars().all())
+    if not due:
+        return
+    sent_folder = await _get_folder_by_slug(db, "sent", user.id)
+    for msg in due:
+        prev_folder_id = msg.folder_id
+        if sent_folder:
+            msg.folder_id = sent_folder.id
+        msg.is_draft = False
+        msg.sent_at = now
+        msg.received_at = now
+        msg.updated_at = now
+        msg.scheduled_send_at = None
+        await db.flush()
+        if sent_folder and sent_folder.id != prev_folder_id:
+            await _update_folder_counts(db, prev_folder_id)
+            await _update_folder_counts(db, sent_folder.id)
+        await _deliver_to_recipients(
+            db, msg, msg.to_addresses, msg.cc_addresses, msg.bcc_addresses, user
+        )
+        rl_state.event_log.append("scheduled_send_dispatched", {"id": str(msg.id)})
+
+
 @router.get("", response_model=MessageList)
 async def list_messages(
     folder_id: Optional[uuid.UUID] = None,
@@ -193,6 +234,9 @@ async def list_messages(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Flush any scheduled messages whose send time has passed before listing.
+    await _flush_due_scheduled(db, current_user)
+
     filters = [Message.user_id == current_user.id]
     if folder_id:
         filters.append(Message.folder_id == folder_id)
@@ -550,6 +594,12 @@ async def create_message(
         await db.flush()
         conv_id = conv.id
 
+    # Schedule-send: if scheduled_send_at is in the future, treat as a draft
+    # that lives in the sender's Sent folder marked is_draft=True. A periodic
+    # flush in list_messages dispatches it once the time arrives.
+    is_scheduled = bool(body.scheduled_send_at and body.scheduled_send_at > now and not body.is_draft)
+    effective_is_draft = body.is_draft or is_scheduled
+
     msg = Message(
         id=uuid.uuid4(),
         user_id=current_user.id,
@@ -567,11 +617,11 @@ async def create_message(
         body_text=body.body_text,
         importance=body.importance,
         sensitivity=body.sensitivity,
-        is_draft=body.is_draft,
+        is_draft=effective_is_draft,
         is_flagged=body.is_flagged,
         scheduled_send_at=body.scheduled_send_at,
-        sent_at=None if body.is_draft else now,
-        received_at=None if body.is_draft else now,
+        sent_at=None if effective_is_draft else now,
+        received_at=None if effective_is_draft else now,
         created_at=now,
         updated_at=now,
     )
@@ -579,7 +629,16 @@ async def create_message(
     await db.flush()
     await _update_folder_counts(db, folder_id)
 
-    rl_state.event_log.append("message_created", {"id": str(msg.id), "is_draft": msg.is_draft})
+    rl_state.event_log.append("message_created", {
+        "id": str(msg.id),
+        "is_draft": msg.is_draft,
+        "scheduled": is_scheduled,
+    })
+
+    # If the message is scheduled (future), bail out before OOF + delivery —
+    # the flush helper dispatches it later.
+    if is_scheduled:
+        return MessageOut.model_validate(msg)
 
     # OOF auto-reply: when sending (not draft), check if any recipient has OOF enabled.
     # Uses augmented_cc so anyone added via an @ mention also triggers OOF when relevant.
