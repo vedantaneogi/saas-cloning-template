@@ -183,49 +183,6 @@ export function RuleSettings() {
                     ? <CheckCircle2 size={14} className="text-[#107C10]" />
                     : <Play size={14} />}
                 </button>
-                {runPickerRuleId === rule.id && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setRunPickerRuleId(null)} aria-hidden="true" />
-                    <div
-                      role="dialog"
-                      aria-label="Run rule on folder"
-                      className="absolute right-0 top-full mt-1 z-40 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-64"
-                    >
-                      <p className="text-sm font-semibold text-[#323130] mb-2">
-                        Run &ldquo;{rule.name}&rdquo;
-                      </p>
-                      <p className="text-xs text-[#605E5C] mb-2">Choose a folder to apply this rule to:</p>
-                      <select
-                        value={runFolderId}
-                        onChange={(e) => setRunFolderId(e.target.value)}
-                        aria-label="Select folder"
-                        className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 mb-3 focus:outline-none focus:border-[#0078D4]"
-                      >
-                        {folderList.map((f) => (
-                          <option key={f.id} value={f.id}>{f.name}</option>
-                        ))}
-                      </select>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => runMutation.mutate({ id: rule.id, folderId: runFolderId })}
-                          disabled={!runFolderId || runMutation.isPending}
-                          className={cn(
-                            'flex-1 text-sm font-medium bg-[#0078D4] hover:bg-[#106EBE] text-white px-3 py-1.5 rounded transition-colors',
-                            (!runFolderId || runMutation.isPending) && 'opacity-50 cursor-not-allowed'
-                          )}
-                        >
-                          {runMutation.isPending ? 'Running…' : 'Run'}
-                        </button>
-                        <button
-                          onClick={() => setRunPickerRuleId(null)}
-                          className="text-sm text-[#605E5C] hover:bg-[#EDEBE9] px-3 py-1.5 rounded"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
                 <button
                   onClick={() => { setEditing(rule); setCreating(false) }}
                   aria-label={`Edit ${rule.name}`}
@@ -261,6 +218,73 @@ export function RuleSettings() {
           onCancel={() => { setEditing(null); setCreating(false) }}
         />
       )}
+
+      {/* Run-on-folder modal — centred overlay so it never gets clipped by
+          the rules table column. */}
+      {runPickerRuleId && (() => {
+        const rule = ruleList.find((r) => r.id === runPickerRuleId)
+        if (!rule) return null
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Run rule on folder`}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setRunPickerRuleId(null) }}
+          >
+            <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+            <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-sm flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
+                <h2 className="text-base font-semibold text-[#323130]">
+                  Run &ldquo;{rule.name}&rdquo;
+                </h2>
+                <button
+                  onClick={() => setRunPickerRuleId(null)}
+                  aria-label="Close"
+                  className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <div className="px-4 py-4 space-y-2">
+                <p className="text-sm text-[#605E5C]">
+                  Choose a folder. The rule will run against every message in it.
+                </p>
+                <select
+                  value={runFolderId}
+                  onChange={(e) => setRunFolderId(e.target.value)}
+                  aria-label="Select folder"
+                  className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                >
+                  {folderList.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
+                <button
+                  onClick={() => setRunPickerRuleId(null)}
+                  className="text-sm text-[#323130] border border-[#8A8886] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => runMutation.mutate({ id: rule.id, folderId: runFolderId })}
+                  disabled={!runFolderId || runMutation.isPending}
+                  className={cn(
+                    'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
+                    (!runFolderId || runMutation.isPending) && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  {runMutation.isPending ? 'Running…' : 'Run now'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
