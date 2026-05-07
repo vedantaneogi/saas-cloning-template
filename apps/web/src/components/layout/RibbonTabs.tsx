@@ -1291,6 +1291,8 @@ function SweepDialog({ senderEmail, senderName, onClose }: {
   const showNotification = useUIStore((s) => s.showNotification)
   const [mode, setMode] = useState<'keep_latest' | 'move_all' | 'delete_old'>('keep_latest')
   const [targetFolderId, setTargetFolderId] = useState<string>('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
   const [pending, setPending] = useState(false)
 
   const { data: folderList = [] } = useQuery({
@@ -1298,9 +1300,25 @@ function SweepDialog({ senderEmail, senderName, onClose }: {
     queryFn: () => folders.list(),
   })
 
-  const userFolders = folderList.filter((f) => !['inbox', 'drafts', 'sent', 'archive', 'junk', 'deleted'].includes(f.slug))
+  // Outlook's sweep dialog lists every folder (system + user) plus a Create-new affordance.
+  const SYSTEM_ORDER = ['inbox', 'archive', 'deleted', 'junk', 'drafts', 'sent']
+  const systemFolders = SYSTEM_ORDER
+    .map((slug) => folderList.find((f) => f.slug === slug))
+    .filter(Boolean) as typeof folderList
+  const userFolders = folderList.filter((f) => !SYSTEM_ORDER.includes(f.slug))
   const archiveFolder = folderList.find((f) => f.slug === 'archive')
-  const defaultMoveTarget = userFolders[0] ?? archiveFolder
+  const deletedFolder = folderList.find((f) => f.slug === 'deleted')
+  const defaultMoveTarget = deletedFolder ?? archiveFolder ?? userFolders[0]
+
+  const createFolderMutation = useMutation({
+    mutationFn: (name: string) => folders.create({ name }),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      setTargetFolderId(created.id)
+      setCreatingFolder(false)
+      setNewFolderName('')
+    },
+  })
 
   // Initialise target folder when picking move mode.
   useEffect(() => {
@@ -1368,15 +1386,65 @@ function SweepDialog({ senderEmail, senderName, onClose }: {
                 <p className="text-sm font-medium text-[#323130]">{opt.label}</p>
                 <p className="text-xs text-[#605E5C] mt-0.5">{opt.desc}</p>
                 {opt.value === 'move_all' && mode === 'move_all' && (
-                  <select value={targetFolderId} onChange={(e) => setTargetFolderId(e.target.value)}
-                    className="mt-2 w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 bg-white focus:outline-none focus:border-[#0078D4]">
-                    {userFolders.length === 0 && archiveFolder && (
-                      <option value={archiveFolder.id}>Archive</option>
+                  <div className="mt-2 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={targetFolderId || (defaultMoveTarget?.id ?? '')}
+                      onChange={(e) => {
+                        if (e.target.value === '__new__') {
+                          setCreatingFolder(true)
+                        } else {
+                          setTargetFolderId(e.target.value)
+                          setCreatingFolder(false)
+                        }
+                      }}
+                      className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 bg-white focus:outline-none focus:border-[#0078D4]"
+                    >
+                      {systemFolders.length > 0 && (
+                        <optgroup label="System">
+                          {systemFolders.map((f) => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {userFolders.length > 0 && (
+                        <optgroup label="Your folders">
+                          {userFolders.map((f) => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <option value="__new__">+ Create new folder…</option>
+                    </select>
+                    {creatingFolder && (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={newFolderName}
+                          onChange={(e) => setNewFolderName(e.target.value)}
+                          placeholder="New folder name"
+                          aria-label="New folder name"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newFolderName.trim()) {
+                              createFolderMutation.mutate(newFolderName.trim())
+                            } else if (e.key === 'Escape') {
+                              setCreatingFolder(false)
+                              setNewFolderName('')
+                            }
+                          }}
+                          className="flex-1 text-sm border border-[#0078D4] rounded px-2 py-1 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          disabled={!newFolderName.trim() || createFolderMutation.isPending}
+                          onClick={() => createFolderMutation.mutate(newFolderName.trim())}
+                          className="text-xs bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white px-2 py-1 rounded"
+                        >
+                          Create
+                        </button>
+                      </div>
                     )}
-                    {userFolders.map((f) => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </select>
+                  </div>
                 )}
               </div>
             </label>
