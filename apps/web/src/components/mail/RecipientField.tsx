@@ -167,7 +167,8 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
       )}
       <div
         className={cn(
-          'flex-1 flex flex-wrap items-center gap-1 min-h-[32px] py-1'
+          'flex-1 flex flex-wrap items-center gap-1 min-h-[32px] py-1 border-b transition-colors',
+          focused ? 'border-[#0078D4]' : 'border-[#E1DFDD]'
         )}
         onClick={() => inputRef.current?.focus()}
       >

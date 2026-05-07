@@ -423,9 +423,10 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
 
         {/* Recipients — each field on its own row with a button-style label prefix
             ("To"/"Cc"/"Bcc"), Bcc toggle on the right of the To row. Mirrors the
-            Outlook compose markup. */}
+            Outlook compose markup. The bottom underline lives inside RecipientField
+            so it sits flush against the chips, like Outlook's compose. */}
         <div className="flex flex-col flex-shrink-0">
-          <div className="flex items-start gap-2 px-4 py-1.5 border-b border-[#EDEBE9]">
+          <div className="flex items-start gap-2 px-4 pt-1.5">
             <div className="flex-1 min-w-0">
               <RecipientField label="To" id="inline-to" value={to} onChange={setTo} placeholder="" />
             </div>
@@ -441,18 +442,18 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
           </div>
 
           {/* Cc — always visible to match Outlook's default compose */}
-          <div className="px-4 py-1.5 border-b border-[#EDEBE9]">
+          <div className="px-4 pt-1.5">
             <RecipientField label="Cc" id="inline-cc" value={cc} onChange={setCc} placeholder="" />
           </div>
 
           {showBcc && (
-            <div className="px-4 py-1.5 border-b border-[#EDEBE9]">
+            <div className="px-4 pt-1.5">
               <RecipientField label="Bcc" id="inline-bcc" value={bcc} onChange={setBcc} placeholder="" />
             </div>
           )}
 
-          {/* Subject — own row, no label prefix (matches Outlook). */}
-          <div className="flex items-center gap-2 px-4 py-1.5 border-b border-[#EDEBE9]">
+          {/* Subject — own row with its own underline so the field reads as distinct. */}
+          <div className="flex items-center gap-2 px-4 pt-1.5 pb-1.5 border-b border-[#E1DFDD] mx-0">
             <input
               type="text"
               placeholder="Add a subject"
