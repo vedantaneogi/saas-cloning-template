@@ -159,23 +159,30 @@ export function OOFSettings() {
             </button>
           </div>
           <textarea
-            rows={5}
-            aria-label="Out of office message"
+            rows={4}
+            aria-label="Internal message — sent to people in your organisation"
             className="w-full border border-[#EDEBE9] rounded-b px-3 py-2 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] resize-none placeholder:text-[#A19F9D]"
-            placeholder="I'm out of office..."
+            placeholder="Internal reply — sent to people in your organisation"
             {...register('message_internal')}
           />
         </div>
 
-        {/* Send replies only to contacts */}
-        <label className="flex items-center gap-2 text-sm text-[#323130] cursor-pointer">
-          <input
-            type="checkbox"
-            {...register('contacts_only')}
-            className="rounded border-[#D2D0CE]"
+        {/* External (out-of-org) reply — Outlook splits these in two boxes */}
+        <div>
+          <label className="block text-sm font-medium text-[#323130] mb-1">
+            Reply to people outside your organisation
+          </label>
+          <textarea
+            rows={4}
+            aria-label="External message — sent to people outside your organisation"
+            className="w-full border border-[#EDEBE9] rounded px-3 py-2 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] resize-none placeholder:text-[#A19F9D]"
+            placeholder="I'm currently out of office and will respond when I return."
+            {...register('message_external')}
           />
-          Send replies only to contacts
-        </label>
+          <p className="text-xs text-[#605E5C] mt-1">
+            Leave blank to use the same message for everyone.
+          </p>
+        </div>
 
         <div className="flex items-center gap-3">
           <Button type="submit" loading={isSubmitting || saveMutation.isPending}>
