@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -42,6 +42,13 @@ export function LoginForm() {
   const handlePasswordSubmit = passwordForm.handleSubmit((data) => {
     loginMutation.mutate({ email: data.email, password: data.password });
   });
+
+  useEffect(() => {
+    if (step === "password") {
+      const timer = setTimeout(() => passwordForm.setValue("password", ""), 80);
+      return () => clearTimeout(timer);
+    }
+  }, [step, passwordForm]);
 
   return (
     <div className="w-full" style={{ maxWidth: "500px" }}>
@@ -162,7 +169,16 @@ export function LoginForm() {
               Log In
             </h1>
 
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <form onSubmit={handlePasswordSubmit} className="space-y-4" autoComplete="off">
+              {/* Honeypot: hidden field absorbs browser autofill */}
+              <input
+                type="password"
+                name="password-fake"
+                autoComplete="current-password"
+                tabIndex={-1}
+                aria-hidden="true"
+                style={{ position: "absolute", opacity: 0, height: 0, width: 0, padding: 0, border: 0, overflow: "hidden", pointerEvents: "none" }}
+              />
               <div>
                 <label
                   className="block text-sm font-medium mb-1"
@@ -173,7 +189,9 @@ export function LoginForm() {
                 <input
                   {...passwordForm.register("password")}
                   type="password"
-                  autoComplete="new-password"
+                  autoComplete="off"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
                   autoFocus
                   placeholder="Enter your password"
                   className="w-full px-3 py-2.5 border rounded text-sm outline-none transition-colors"
