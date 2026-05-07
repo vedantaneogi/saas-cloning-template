@@ -408,6 +408,10 @@ export function ReadingPane() {
               if (a.email === currentUserEmail) return 'You'
               return a.name || a.email
             }).join(', ')
+            const ccDisplay = msg.cc_addresses?.map((a: { email: string; name?: string }) => {
+              if (a.email === currentUserEmail) return 'You'
+              return a.name || a.email
+            }).join(', ')
 
             // Look at the NEXT-OLDER message (idx + 1 in DESC order). If it's from the
             // current user and collapsed, render the "You replied on..." bar above it.
@@ -440,15 +444,21 @@ export function ReadingPane() {
                           <button title="More actions" className="text-[#605E5C] hover:text-[#323130] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><MoreHorizontal size={15} /></button>
                         </div>
                       </div>
-                      {/* Row 2: To: ... + date */}
+                      {/* Row 2: To: ... + date. Cc rendered on its own line below
+                          when present, mirroring Outlook's reading-pane header. */}
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-[#605E5C]">
-                          To: {toDisplay}
+                          <span className="font-medium text-[#323130]">To:</span> {toDisplay}
                         </p>
                         <span className="text-xs text-[#605E5C] flex-shrink-0">
                           {formatOutlookDate(msg.received_at ?? msg.created_at)}
                         </span>
                       </div>
+                      {ccDisplay && (
+                        <p className="text-xs text-[#605E5C] mt-0.5">
+                          <span className="font-medium text-[#323130]">Cc:</span> {ccDisplay}
+                        </p>
+                      )}
                     </div>
                   </div>
 

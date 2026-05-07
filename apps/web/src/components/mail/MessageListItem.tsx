@@ -169,10 +169,20 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   })
 
   const snoozeMutation = useMutation({
-    mutationFn: (snoozeUntil: string) => messages.update(message.id, { snooze_until: snoozeUntil } as never),
-    onSuccess: () => {
+    mutationFn: (snoozeUntil: string | null) =>
+      messages.update(message.id, { snooze_until: snoozeUntil } as never),
+    onSuccess: (_data, snoozeUntil) => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       setContextMenu(null)
+      if (snoozeUntil === null) {
+        showNotification('Returned to inbox')
+      } else {
+        const when = new Date(snoozeUntil).toLocaleString(undefined, {
+          weekday: 'short', month: 'short', day: 'numeric',
+          hour: 'numeric', minute: '2-digit',
+        })
+        showNotification(`Snoozed until ${when}`)
+      }
     },
   })
 
@@ -384,6 +394,20 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
           </div>
         </div>
 
+        {/* Snooze indicator — shows on every list rendering whenever the message
+            is currently snoozed (Snoozed view + any other surface that lists it). */}
+        {message.snooze_until && new Date(message.snooze_until) > new Date() && (
+          <div className="flex items-center gap-1 mt-0.5 text-[11px] text-[#0078D4]">
+            <Clock size={10} />
+            <span>
+              Resurfaces {new Date(message.snooze_until).toLocaleString(undefined, {
+                weekday: 'short', month: 'short', day: 'numeric',
+                hour: 'numeric', minute: '2-digit',
+              })}
+            </span>
+          </div>
+        )}
+
         {/* Attachment chips — shown like Outlook: "file.xlsx  +N" */}
         {message.attachments && message.attachments.length > 0 && (
           <div className="flex items-center gap-1 mt-0.5">
@@ -573,13 +597,29 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
                 {opt.label}
               </button>
             ))}
+            <div className="border-t border-[#EDEBE9] px-3 py-2" onClick={(e) => e.stopPropagation()}>
+              <label className="block text-[11px] text-[#605E5C] mb-1">Pick a date / time</label>
+              <input
+                type="datetime-local"
+                aria-label="Custom snooze time"
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const iso = new Date(e.target.value).toISOString()
+                    if (new Date(iso) > new Date()) {
+                      snoozeMutation.mutate(iso)
+                    }
+                  }
+                }}
+                className="w-full text-xs border border-[#8A8886] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
+              />
+            </div>
             {message.snooze_until && new Date(message.snooze_until) > new Date() && (
               <button
                 role="menuitem"
                 onClick={(e) => {
                   e.stopPropagation()
                   // Cleared by sending null — backend treats null as "not snoozed".
-                  snoozeMutation.mutate(null as unknown as string)
+                  snoozeMutation.mutate(null)
                 }}
                 className="w-full text-left text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1] border-t border-[#EDEBE9]"
               >
