@@ -156,17 +156,18 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
   return (
     <div className="flex items-start gap-2 min-h-[32px]">
       {label && (
-        <label
-          htmlFor={id}
-          className="text-sm text-[#605E5C] pt-1.5 w-8 flex-shrink-0 text-right"
+        <button
+          type="button"
+          onClick={() => inputRef.current?.focus()}
+          className="text-sm text-[#605E5C] hover:bg-[#F3F2F1] rounded px-2 py-1 flex-shrink-0 transition-colors"
+          aria-label={`Add ${label.toLowerCase()} recipients`}
         >
           {label}
-        </label>
+        </button>
       )}
       <div
         className={cn(
-          'flex-1 flex flex-wrap items-center gap-1 min-h-[32px] border-b transition-colors py-1',
-          focused ? 'border-[#0078D4]' : 'border-[#EDEBE9]'
+          'flex-1 flex flex-wrap items-center gap-1 min-h-[32px] py-1'
         )}
         onClick={() => inputRef.current?.focus()}
       >

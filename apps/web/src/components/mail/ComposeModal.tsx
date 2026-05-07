@@ -421,34 +421,43 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
           </div>
         </div>
 
-        {/* Recipients */}
-        <div className="px-4 pt-2 space-y-1 border-b border-[#EDEBE9] pb-2 flex-shrink-0">
-          <div className="flex items-center gap-2">
+        {/* Recipients — each field on its own row with a button-style label prefix
+            ("To"/"Cc"/"Bcc"), Bcc toggle on the right of the To row. Mirrors the
+            Outlook compose markup. */}
+        <div className="flex flex-col flex-shrink-0">
+          <div className="flex items-start gap-2 px-4 py-1.5 border-b border-[#EDEBE9]">
             <div className="flex-1 min-w-0">
-              <RecipientField label="To" id="inline-to" value={to} onChange={setTo} placeholder="Recipients" />
+              <RecipientField label="To" id="inline-to" value={to} onChange={setTo} placeholder="" />
             </div>
-            {(!showCc || !showBcc) && (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {!showCc && <button type="button" onClick={() => setShowCc(true)} className="text-xs text-[#0078D4] hover:underline">Cc</button>}
-                {!showBcc && <button type="button" onClick={() => setShowBcc(true)} className="text-xs text-[#0078D4] hover:underline">Bcc</button>}
-              </div>
+            {!showBcc && (
+              <button
+                type="button"
+                onClick={() => setShowBcc(true)}
+                className="text-xs text-[#605E5C] hover:bg-[#F3F2F1] rounded px-2 py-1 flex-shrink-0 mt-1"
+              >
+                Bcc
+              </button>
             )}
           </div>
 
-          {showCc && (
-            <RecipientField label="Cc" id="inline-cc" value={cc} onChange={setCc} />
-          )}
+          {/* Cc — always visible to match Outlook's default compose */}
+          <div className="px-4 py-1.5 border-b border-[#EDEBE9]">
+            <RecipientField label="Cc" id="inline-cc" value={cc} onChange={setCc} placeholder="" />
+          </div>
+
           {showBcc && (
-            <RecipientField label="Bcc" id="inline-bcc" value={bcc} onChange={setBcc} />
+            <div className="px-4 py-1.5 border-b border-[#EDEBE9]">
+              <RecipientField label="Bcc" id="inline-bcc" value={bcc} onChange={setBcc} placeholder="" />
+            </div>
           )}
 
-          {/* Subject */}
-          <div className="flex items-center gap-2 border-b border-[#EDEBE9] pb-1">
-            <label className="text-sm text-[#605E5C] w-8 text-right flex-shrink-0">Subj</label>
+          {/* Subject — own row, no label prefix (matches Outlook). */}
+          <div className="flex items-center gap-2 px-4 py-1.5 border-b border-[#EDEBE9]">
             <input
               type="text"
               placeholder="Add a subject"
-              className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none py-0.5"
+              aria-label="Subject"
+              className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none py-1"
               {...register('subject')}
             />
             {importance === 'high' && (
