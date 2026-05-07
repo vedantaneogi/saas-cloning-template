@@ -1471,7 +1471,7 @@ function ViewRibbon() {
                     setCatFilterOpen(false)
                   }}
                   className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors">
-                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                  <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
                   {cat.name}
                 </button>
               ))}

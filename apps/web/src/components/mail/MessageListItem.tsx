@@ -586,7 +586,7 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
               return (
                 <button key={cat.id} role="menuitem" onClick={(e) => { e.stopPropagation(); toggleCategory(cat.id) }}
                   className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
-                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                  <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
                   <span className="flex-1 text-left truncate">{cat.name}</span>
                   {isActive && <span className="text-[#0078D4] text-xs font-bold">✓</span>}
                 </button>

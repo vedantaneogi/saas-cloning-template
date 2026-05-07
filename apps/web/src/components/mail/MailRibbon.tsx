@@ -290,7 +290,7 @@ export function MailRibbon() {
                     onClick={() => toggleCategory(c.id)}
                     className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
                   >
-                    <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: c.color }} />
+                    <Tag size={14} className="flex-shrink-0" style={{ color: c.color }} />
                     <span className="flex-1 truncate">{c.name}</span>
                     {checked && <span className="text-[#0078D4] text-xs">✓</span>}
                   </button>

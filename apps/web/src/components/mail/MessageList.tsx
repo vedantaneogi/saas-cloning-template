@@ -378,7 +378,7 @@ export function MessageList() {
                           active ? 'text-[#0078D4] font-medium' : 'text-[#323130]'
                         )}
                       >
-                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                        <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
                         <span className="flex-1 truncate">{cat.name}</span>
                         {active && <span aria-hidden className="text-[#0078D4]">✓</span>}
                       </button>
