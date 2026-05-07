@@ -1,13 +1,15 @@
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import String, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.contact import Contact
+from app.models.message import Message
 from app.models.user import User
 from app.rl.state import rl_state
 from app.schemas.contact import ContactCreate, ContactOut, ContactUpdate
@@ -47,9 +49,19 @@ async def autocomplete_contacts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Autocomplete recipients for compose / scheduling.
+
+    Returns saved contacts first, then "recent contacts" mined from the user's
+    own message history (from / to / cc / bcc) so a brand-new account picks up
+    real people they've corresponded with — Outlook does the same with its
+    autofill cache. Synthetic results have a deterministic uuid5 id keyed by
+    email so the frontend can dedupe across renders.
+    """
     if not q:
         return []
     term = f"%{q}%"
+
+    # 1) Saved contacts — full record (job, phone, etc.)
     result = await db.execute(
         select(Contact)
         .where(
@@ -63,7 +75,75 @@ async def autocomplete_contacts(
         )
         .limit(10)
     )
-    return [ContactOut.model_validate(c) for c in result.scalars().all()]
+    saved = [ContactOut.model_validate(c) for c in result.scalars().all()]
+    seen_emails: set[str] = {c.email.lower() for c in saved}
+
+    if len(saved) >= 10:
+        return saved
+
+    # 2) Recent message senders / recipients matching the query
+    msg_result = await db.execute(
+        select(Message)
+        .where(
+            Message.user_id == current_user.id,
+            or_(
+                Message.from_address.ilike(term),
+                Message.from_name.ilike(term),
+                cast(Message.to_addresses, String).ilike(term),
+                cast(Message.cc_addresses, String).ilike(term),
+                cast(Message.bcc_addresses, String).ilike(term),
+            ),
+        )
+        .order_by(desc(Message.received_at))
+        .limit(50)
+    )
+    q_lower = q.lower()
+    recent: list[ContactOut] = []
+    now = rl_state.clock.now()
+
+    def _add_recent(email: str, name: Optional[str]):
+        em = (email or "").strip()
+        if not em:
+            return
+        em_l = em.lower()
+        if em_l in seen_emails or em_l == current_user.email.lower():
+            return
+        # Only emit if either email or name matches the query.
+        if q_lower not in em_l and not (name and q_lower in name.lower()):
+            return
+        seen_emails.add(em_l)
+        recent.append(ContactOut(
+            id=uuid.uuid5(uuid.NAMESPACE_URL, f"recent-contact:{em_l}"),
+            user_id=current_user.id,
+            world_id=None,
+            first_name=(name or em).split()[0] if name else em.split("@")[0],
+            last_name=None,
+            display_name=name or em,
+            email=em,
+            phone=None,
+            company=None,
+            job_title=None,
+            address=None,
+            notes=None,
+            avatar_url=None,
+            is_favorite=False,
+            created_at=now,
+            updated_at=now,
+        ))
+
+    for m in msg_result.scalars().all():
+        if m.from_address:
+            _add_recent(m.from_address, m.from_name)
+        for addrs in (m.to_addresses, m.cc_addresses, m.bcc_addresses):
+            if not addrs:
+                continue
+            for addr in addrs:
+                if isinstance(addr, dict):
+                    _add_recent(addr.get("email", ""), addr.get("name"))
+        if len(saved) + len(recent) >= 10:
+            break
+
+    return saved + recent
 
 
 @router.get("", response_model=ContactListOut)
