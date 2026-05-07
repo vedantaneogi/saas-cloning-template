@@ -678,8 +678,10 @@ export function TopToolbar() {
                     </>
                   ) : null}
 
-                  {/* Recent searches — only when nothing typed */}
-                  {liveQuery.length < 2 && recentSearches.length > 0 && (
+                  {/* Recent searches — only on All tab when nothing typed.
+                      Other tabs render their own category content above and must NOT
+                      leak unrelated suggestions below the tab header. */}
+                  {searchTab === 'All' && liveQuery.length < 2 && recentSearches.length > 0 && (
                     <div className="py-1">
                       {recentSearches.map((q) => (
                         <button
@@ -700,8 +702,9 @@ export function TopToolbar() {
                     </div>
                   )}
 
-                  {/* Contact suggestions — only when nothing typed */}
-                  {liveQuery.length < 2 && contactList.length > 0 && (
+                  {/* Contact suggestions — only on All tab when nothing typed
+                      (People tab renders its own scrollable list of livePeople above). */}
+                  {searchTab === 'All' && liveQuery.length < 2 && contactList.length > 0 && (
                     <div className="py-1 border-t border-[#EDEBE9]">
                       {contactList
                         .filter((c) => !search || c.display_name?.toLowerCase().includes(search.toLowerCase()) || c.email?.toLowerCase().includes(search.toLowerCase()))
@@ -730,7 +733,7 @@ export function TopToolbar() {
                     </div>
                   )}
 
-                  {liveQuery.length < 2 && recentSearches.length === 0 && contactList.length === 0 && (
+                  {searchTab === 'All' && liveQuery.length < 2 && recentSearches.length === 0 && contactList.length === 0 && (
                     <div className="px-3 py-4 text-sm text-[#A19F9D] text-center">
                       Start typing to search
                     </div>

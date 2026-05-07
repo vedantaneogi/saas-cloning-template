@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns'
@@ -10,6 +10,8 @@ import { CalendarGrid } from '@/components/calendar/CalendarGrid'
 import { CalendarSidebar } from '@/components/calendar/CalendarSidebar'
 import { DateNavigator } from '@/components/calendar/DateNavigator'
 import { EventModal } from '@/components/calendar/EventModal'
+import { useUIStore } from '@/store/ui'
+import { useAuthStore } from '@/store/auth'
 
 type CalendarView = 'day' | 'week' | 'work-week' | 'month'
 
@@ -72,6 +74,22 @@ export default function CalendarPage() {
     queryFn: () => events.list({ start, end }),
   })
 
+  // Apply ribbon Filter: all / mine / invites / no-allday
+  const calendarFilter = useUIStore((s) => s.calendarFilter)
+  const currentUserEmail = useAuthStore((s) => s.currentUser?.email)?.toLowerCase()
+  const filteredEvents = useMemo(() => {
+    if (calendarFilter === 'all') return eventList
+    if (calendarFilter === 'no-allday') return eventList.filter((e) => !e.all_day)
+    const isInvite = (e: Event) => {
+      const organizer = e.attendees?.find((a) => a.is_organizer)
+      if (!organizer) return false
+      return !!currentUserEmail && organizer.email.toLowerCase() !== currentUserEmail
+    }
+    if (calendarFilter === 'invites') return eventList.filter(isInvite)
+    if (calendarFilter === 'mine') return eventList.filter((e) => !isInvite(e))
+    return eventList
+  }, [eventList, calendarFilter, currentUserEmail])
+
   const handleSlotClick = (date: Date) => {
     setInitialDate(date)
     setEditingEvent(undefined)
@@ -126,7 +144,7 @@ export default function CalendarPage() {
           <CalendarGrid
             view={view}
             currentDate={currentDate}
-            events={eventList}
+            events={filteredEvents}
             calendars={calendarList}
             onEventClick={handleEventClick}
             onSlotClick={handleSlotClick}

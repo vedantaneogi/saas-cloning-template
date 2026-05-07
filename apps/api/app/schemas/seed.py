@@ -194,6 +194,9 @@ class SeedAttachment(BaseModel):
     size_bytes: int
     storage_path: Optional[str] = None
     is_inline: bool = False
+    # If set, load real file bytes from apps/api/seeds/samples/<sample_file>
+    # into the in-memory attachment store so previews render real content.
+    sample_file: Optional[str] = None
 
 
 class AppData(BaseModel):
