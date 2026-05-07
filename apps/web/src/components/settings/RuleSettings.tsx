@@ -89,9 +89,9 @@ export function RuleSettings() {
 
       {/* Rule list */}
       <div className="border border-[#EDEBE9] rounded overflow-hidden mb-6">
-        <div className="grid grid-cols-[auto,auto,1fr,auto] px-4 py-2 bg-[#F3F2F1] border-b border-[#EDEBE9] text-xs font-medium text-[#605E5C]">
-          <span className="w-8">On</span>
-          <span className="w-10">Order</span>
+        <div className="grid grid-cols-[auto,auto,1fr,auto] gap-3 px-4 py-2 bg-[#F3F2F1] border-b border-[#EDEBE9] text-xs font-medium text-[#605E5C]">
+          <span className="w-9">On</span>
+          <span className="w-16">Priority</span>
           <span>Rule name</span>
           <span>Actions</span>
         </div>
@@ -106,56 +106,82 @@ export function RuleSettings() {
           ruleList.map((rule, idx) => (
             <div
               key={rule.id}
-              className="grid grid-cols-[auto,auto,1fr,auto] items-center px-4 py-3 border-b border-[#EDEBE9] hover:bg-[#F3F2F1] group transition-colors"
+              className="grid grid-cols-[auto,auto,1fr,auto] items-center gap-3 px-4 py-3 border-b border-[#EDEBE9] hover:bg-[#F3F2F1] transition-colors"
             >
+              {/* On/Off — proper switch instead of just an icon, with label so the
+                  state is unambiguous. */}
               <button
                 onClick={() => toggleMutation.mutate(rule)}
                 aria-label={rule.is_enabled ? `Disable ${rule.name}` : `Enable ${rule.name}`}
                 aria-pressed={rule.is_enabled}
-                className="w-8 text-[#605E5C] hover:text-[#0078D4]"
-              >
-                {rule.is_enabled ? (
-                  <ToggleRight size={20} className="text-[#0078D4]" />
-                ) : (
-                  <ToggleLeft size={20} />
+                role="switch"
+                title={rule.is_enabled ? 'On' : 'Off'}
+                className={cn(
+                  'relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:ring-offset-1',
+                  rule.is_enabled ? 'bg-[#0078D4]' : 'bg-[#D2D0CE]'
                 )}
+              >
+                <span
+                  className={cn(
+                    'inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform',
+                    rule.is_enabled ? 'translate-x-4' : 'translate-x-0'
+                  )}
+                />
               </button>
-              <div className="flex flex-col w-10">
-                <button
-                  onClick={() => moveRule(idx, 'up')}
-                  disabled={idx === 0 || reorderMutation.isPending}
-                  aria-label={`Move ${rule.name} up`}
-                  className="text-[#605E5C] hover:text-[#0078D4] disabled:opacity-30 p-0.5"
+
+              {/* Order — numbered badge + small inline up/down arrows */}
+              <div className="flex items-center gap-1.5 w-16">
+                <span
+                  aria-label={`Priority ${idx + 1}`}
+                  className="inline-flex items-center justify-center min-w-[20px] h-5 rounded bg-[#F3F2F1] text-[11px] font-semibold text-[#605E5C] px-1"
                 >
-                  <ChevronUp size={13} />
-                </button>
-                <button
-                  onClick={() => moveRule(idx, 'down')}
-                  disabled={idx === ruleList.length - 1 || reorderMutation.isPending}
-                  aria-label={`Move ${rule.name} down`}
-                  className="text-[#605E5C] hover:text-[#0078D4] disabled:opacity-30 p-0.5"
-                >
-                  <ChevronDown size={13} />
-                </button>
+                  {idx + 1}
+                </span>
+                <div className="flex flex-col">
+                  <button
+                    onClick={() => moveRule(idx, 'up')}
+                    disabled={idx === 0 || reorderMutation.isPending}
+                    aria-label={`Move ${rule.name} up`}
+                    className="text-[#605E5C] hover:text-[#0078D4] disabled:opacity-30 leading-none"
+                  >
+                    <ChevronUp size={12} />
+                  </button>
+                  <button
+                    onClick={() => moveRule(idx, 'down')}
+                    disabled={idx === ruleList.length - 1 || reorderMutation.isPending}
+                    aria-label={`Move ${rule.name} down`}
+                    className="text-[#605E5C] hover:text-[#0078D4] disabled:opacity-30 leading-none"
+                  >
+                    <ChevronDown size={12} />
+                  </button>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-[#323130]">{rule.name}</p>
+
+              {/* Name + summary */}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[#323130] truncate">{rule.name}</p>
                 <p className="text-xs text-[#605E5C]">
                   {rule.conditions.length} condition{rule.conditions.length !== 1 ? 's' : ''},{' '}
                   {rule.actions.length} action{rule.actions.length !== 1 ? 's' : ''}
+                  {' · '}
+                  <span className={rule.is_enabled ? 'text-[#107C10]' : 'text-[#605E5C]'}>
+                    {rule.is_enabled ? 'On' : 'Off'}
+                  </span>
                 </p>
               </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity relative">
+
+              {/* Actions — always visible, larger hit targets */}
+              <div className="flex items-center gap-1 relative">
                 <button
                   onClick={() => openRunPicker(rule.id)}
                   disabled={runMutation.isPending}
                   aria-label={`Run ${rule.name} on a folder`}
                   title="Run now on folder"
-                  className="text-[#605E5C] hover:text-[#0078D4] p-1 flex items-center gap-0.5"
+                  className="text-[#605E5C] hover:text-[#0078D4] hover:bg-[#EDEBE9] rounded p-1.5 flex items-center gap-0.5"
                 >
                   {runResult?.ruleId === rule.id
-                    ? <CheckCircle2 size={13} className="text-[#107C10]" />
-                    : <><Play size={13} /><ChevronRight size={10} /></>}
+                    ? <CheckCircle2 size={14} className="text-[#107C10]" />
+                    : <Play size={14} />}
                 </button>
                 {runPickerRuleId === rule.id && (
                   <>
@@ -163,14 +189,17 @@ export function RuleSettings() {
                     <div
                       role="dialog"
                       aria-label="Run rule on folder"
-                      className="absolute right-0 top-full mt-1 z-40 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-52"
+                      className="absolute right-0 top-full mt-1 z-40 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-64"
                     >
-                      <p className="text-xs font-semibold text-[#323130] mb-2">Apply to folder</p>
+                      <p className="text-sm font-semibold text-[#323130] mb-2">
+                        Run &ldquo;{rule.name}&rdquo;
+                      </p>
+                      <p className="text-xs text-[#605E5C] mb-2">Choose a folder to apply this rule to:</p>
                       <select
                         value={runFolderId}
                         onChange={(e) => setRunFolderId(e.target.value)}
                         aria-label="Select folder"
-                        className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-[#0078D4]"
+                        className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 mb-3 focus:outline-none focus:border-[#0078D4]"
                       >
                         {folderList.map((f) => (
                           <option key={f.id} value={f.id}>{f.name}</option>
@@ -181,15 +210,15 @@ export function RuleSettings() {
                           onClick={() => runMutation.mutate({ id: rule.id, folderId: runFolderId })}
                           disabled={!runFolderId || runMutation.isPending}
                           className={cn(
-                            'flex-1 text-xs font-medium bg-[#0078D4] hover:bg-[#106EBE] text-white px-2 py-1.5 rounded transition-colors',
+                            'flex-1 text-sm font-medium bg-[#0078D4] hover:bg-[#106EBE] text-white px-3 py-1.5 rounded transition-colors',
                             (!runFolderId || runMutation.isPending) && 'opacity-50 cursor-not-allowed'
                           )}
                         >
-                          {runMutation.isPending ? 'Running…' : 'Run now'}
+                          {runMutation.isPending ? 'Running…' : 'Run'}
                         </button>
                         <button
                           onClick={() => setRunPickerRuleId(null)}
-                          className="text-xs text-[#605E5C] hover:bg-[#EDEBE9] px-2 py-1.5 rounded"
+                          className="text-sm text-[#605E5C] hover:bg-[#EDEBE9] px-3 py-1.5 rounded"
                         >
                           Cancel
                         </button>
@@ -200,16 +229,16 @@ export function RuleSettings() {
                 <button
                   onClick={() => { setEditing(rule); setCreating(false) }}
                   aria-label={`Edit ${rule.name}`}
-                  className="text-[#605E5C] hover:text-[#323130] p-1"
+                  className="text-[#605E5C] hover:text-[#323130] hover:bg-[#EDEBE9] rounded p-1.5"
                 >
-                  <Edit2 size={13} />
+                  <Edit2 size={14} />
                 </button>
                 <button
                   onClick={() => deleteMutation.mutate(rule.id)}
                   aria-label={`Delete ${rule.name}`}
-                  className="text-[#605E5C] hover:text-[#D13438] p-1"
+                  className="text-[#605E5C] hover:text-[#D13438] hover:bg-[#FDE7E9] rounded p-1.5"
                 >
-                  <Trash2 size={13} />
+                  <Trash2 size={14} />
                 </button>
               </div>
             </div>
