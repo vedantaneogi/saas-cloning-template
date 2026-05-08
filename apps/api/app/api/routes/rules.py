@@ -190,8 +190,8 @@ async def _apply_rule_to_message(db: AsyncSession, rule: Rule, msg: Message, use
                     )
                 )
                 if not exists.scalar_one_or_none():
+                    # MessageCategory is a composite-PK join table — no `id`.
                     db.add(MessageCategory(
-                        id=uuid.uuid4(),
                         message_id=msg.id,
                         category_id=cuid,
                     ))
