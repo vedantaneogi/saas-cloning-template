@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, isSameMonth } from 'date-fns'
-import { ChevronLeft, ChevronRight, EyeOff, Share2, X, Check, Globe, Copy, UserPlus, Trash2, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, EyeOff, Share2, X, Check, Globe, Copy, UserPlus, Trash2, Plus, Pencil } from 'lucide-react'
 import { calendars } from '@/lib/api'
 import type { Calendar } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -93,6 +93,9 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
   const [newCalendarOpen, setNewCalendarOpen] = useState(false)
   const [newCalName, setNewCalName] = useState('')
   const [newCalColor, setNewCalColor] = useState('#0078D4')
+  const [editCal, setEditCal] = useState<Calendar | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState('#0078D4')
 
   const { data: calendarList = [] } = useQuery({
     queryKey: ['calendars'],
@@ -152,6 +155,33 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
       setNewCalColor('#0078D4')
     },
   })
+
+  // Edit calendar — rename / recolor in place. Visibility has its own toggle
+  // so we don't surface it here.
+  const editCalendarMutation = useMutation({
+    mutationFn: ({ id, name, color }: { id: string; name: string; color: string }) =>
+      calendars.update(id, { name, color }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      setEditCal(null)
+    },
+  })
+
+  const deleteCalendarMutation = useMutation({
+    mutationFn: (id: string) => calendars.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      setEditCal(null)
+    },
+  })
+
+  const openEdit = (cal: Calendar) => {
+    setEditCal(cal)
+    setEditName(cal.name)
+    setEditColor(cal.color)
+  }
 
   const subscribeMutation = useMutation({
     mutationFn: (email: string) => calendars.subscribe(email),
@@ -221,6 +251,15 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
                     />
                     <span className="flex-1 text-left truncate">{cal.name}</span>
                     {!cal.is_visible && <EyeOff size={12} className="text-[#A19F9D] flex-shrink-0" />}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Edit ${cal.name}`}
+                    title="Edit calendar"
+                    onClick={() => openEdit(cal)}
+                    className="p-0.5 rounded transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 text-[#605E5C] hover:text-[#0078D4]"
+                  >
+                    <Pencil size={12} />
                   </button>
                   <button
                     type="button"
@@ -546,6 +585,113 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
               >
                 {createCalendarMutation.isPending ? 'Creating…' : 'Create'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit calendar dialog — rename / recolor / delete (non-default only) */}
+      {editCal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Edit ${editCal.name}`}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditCal(null) }}
+        >
+          <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+          <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-sm flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
+              <h2 className="text-base font-semibold text-[#323130]">Edit calendar</h2>
+              <button
+                type="button"
+                onClick={() => setEditCal(null)}
+                aria-label="Close"
+                className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="px-4 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="editcal-name">
+                  Name
+                </label>
+                <input
+                  id="editcal-name"
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  autoFocus
+                  className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                />
+              </div>
+              <div>
+                <p className="block text-xs font-medium text-[#605E5C] mb-1.5">Color</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    '#0078D4', '#107C10', '#FF8C00', '#D13438',
+                    '#8764B8', '#FFB900', '#5C2E91', '#00B7C3',
+                    '#E81123', '#A1A1A1',
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditColor(c)}
+                      aria-label={`Color ${c}`}
+                      aria-pressed={editColor === c}
+                      className={cn(
+                        'w-7 h-7 rounded-full border-2 transition-transform',
+                        editColor === c ? 'border-[#323130] scale-110' : 'border-transparent hover:scale-105'
+                      )}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+              {editCal.is_default && (
+                <p className="text-[11px] text-[#605E5C] italic">
+                  This is your default calendar — it can be renamed and recolored, but not deleted.
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 px-4 py-3 border-t border-[#EDEBE9]">
+              <button
+                type="button"
+                onClick={() =>
+                  editName.trim() && editCal &&
+                  editCalendarMutation.mutate({ id: editCal.id, name: editName.trim(), color: editColor })
+                }
+                disabled={!editName.trim() || editCalendarMutation.isPending}
+                className={cn(
+                  'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
+                  (!editName.trim() || editCalendarMutation.isPending) && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {editCalendarMutation.isPending ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditCal(null)}
+                className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
+              >
+                Cancel
+              </button>
+              {!editCal.is_default && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editCal && confirm(`Delete the calendar "${editCal.name}"? Events on it will be removed.`)) {
+                      deleteCalendarMutation.mutate(editCal.id)
+                    }
+                  }}
+                  disabled={deleteCalendarMutation.isPending}
+                  className="ml-auto text-sm flex items-center gap-1.5 text-[#D13438] hover:bg-[#FDE7E9] px-3 py-1.5 rounded"
+                >
+                  <Trash2 size={13} />
+                  {deleteCalendarMutation.isPending ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
             </div>
           </div>
         </div>
