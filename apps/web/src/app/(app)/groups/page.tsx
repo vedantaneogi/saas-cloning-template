@@ -10,11 +10,12 @@ import {
 import { groups, messages, events as eventsApi, contacts } from '@/lib/api'
 import type { Group, Contact } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
-import { useUIStore } from '@/store/ui'
+import { useUIStore, draftFromReply } from '@/store/ui'
 import { cn } from '@/lib/utils'
 import { format, isSameDay } from 'date-fns'
 import { ComposeModal } from '@/components/mail/ComposeModal'
 import { EventModal } from '@/components/calendar/EventModal'
+import type { Message } from '@/lib/api'
 
 type GroupTab = 'email' | 'events' | 'members'
 type ViewMode = 'home' | 'group'
@@ -199,13 +200,28 @@ function AddMemberDialog({
 
 // ─── Email tab ────────────────────────────────────────────────────────────────
 function EmailTab({
-  group, composing, onCloseCompose,
+  group, composing, onCloseCompose, selectedId, onSelect,
 }: {
   group: Group
   composing: boolean
   onCloseCompose: () => void
+  selectedId: string | null
+  onSelect: (id: string | null) => void
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const showNotification = useUIStore((s) => s.showNotification)
+  const openComposer = useUIStore((s) => s.openComposer)
+  const [contextMenu, setContextMenu] = useState<{ msg: Message; x: number; y: number } | null>(null)
+  const ctxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setContextMenu(null)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [contextMenu])
 
   // Treat group inbox as messages where the group's email is anywhere on
   // the address lines. We hit the search route twice — once filtering by
@@ -261,7 +277,12 @@ function EmailTab({
             list.map((msg) => (
               <button
                 key={msg.id}
-                onClick={() => setSelectedId(msg.id)}
+                onClick={() => onSelect(msg.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  onSelect(msg.id)
+                  setContextMenu({ msg, x: e.clientX, y: e.clientY })
+                }}
                 className={cn(
                   'w-full text-left flex items-start gap-2.5 px-3 py-2.5 border-b border-[#EDEBE9] hover:bg-[#F3F2F1] transition-colors',
                   selected?.id === msg.id && 'bg-[#EBF3FB] border-l-2 border-l-[#0078D4]'
@@ -274,7 +295,10 @@ function EmailTab({
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-sm font-semibold text-[#323130] truncate">
+                    <p className={cn(
+                      'text-sm truncate',
+                      msg.is_read ? 'text-[#323130]' : 'font-semibold text-[#323130]'
+                    )}>
                       {msg.from_name || msg.from_address.split('@')[0]}
                     </p>
                     <span className="text-[11px] text-[#605E5C] flex-shrink-0">
@@ -341,7 +365,101 @@ function EmailTab({
           </div>
         )}
       </div>
+
+      {/* Right-click menu — same operations as the ribbon for keyboard parity. */}
+      {contextMenu && (
+        <div
+          ref={ctxRef}
+          role="menu"
+          className="fixed z-[100] w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 220),
+            top: Math.min(contextMenu.y, window.innerHeight - 280),
+          }}
+        >
+          <ContextItem
+            icon={<Reply size={13} />}
+            label="Reply"
+            onClick={() => {
+              openComposer(draftFromReply(contextMenu.msg, 'reply'))
+              setContextMenu(null)
+            }}
+          />
+          <ContextItem
+            icon={<ReplyAll size={13} />}
+            label="Reply all"
+            onClick={() => {
+              openComposer(draftFromReply(contextMenu.msg, 'reply_all'))
+              setContextMenu(null)
+            }}
+          />
+          <ContextItem
+            icon={<Forward size={13} />}
+            label="Forward"
+            onClick={() => {
+              openComposer(draftFromReply(contextMenu.msg, 'forward'))
+              setContextMenu(null)
+            }}
+          />
+          <div className="h-px bg-[#EDEBE9] my-1" />
+          <ContextItem
+            icon={<MailOpen size={13} />}
+            label={contextMenu.msg.is_read ? 'Mark as unread' : 'Mark as read'}
+            onClick={async () => {
+              try {
+                await messages.update(contextMenu.msg.id, { is_read: !contextMenu.msg.is_read })
+                queryClient.invalidateQueries({ queryKey: ['group-messages-to', group.id, group.email] })
+                queryClient.invalidateQueries({ queryKey: ['group-messages-cc', group.id, group.email] })
+              } catch {
+                showNotification('Could not update message')
+              }
+              setContextMenu(null)
+            }}
+          />
+          <ContextItem
+            icon={<Trash2 size={13} />}
+            label="Delete"
+            destructive
+            onClick={async () => {
+              try {
+                await messages.delete(contextMenu.msg.id)
+                queryClient.invalidateQueries({ queryKey: ['group-messages-to', group.id, group.email] })
+                queryClient.invalidateQueries({ queryKey: ['group-messages-cc', group.id, group.email] })
+                onSelect(null)
+                showNotification('Message deleted')
+              } catch {
+                showNotification('Could not delete message')
+              }
+              setContextMenu(null)
+            }}
+          />
+        </div>
+      )}
     </div>
+  )
+}
+
+function ContextItem({
+  icon, label, onClick, destructive,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  destructive?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={cn(
+        'w-full flex items-center gap-2 text-sm px-3 py-1.5 hover:bg-[#F3F2F1]',
+        destructive ? 'text-[#D13438] hover:bg-[#FDE7E9]' : 'text-[#323130]'
+      )}
+    >
+      <span className="text-[#605E5C]">{icon}</span>
+      {label}
+    </button>
   )
 }
 
@@ -588,7 +706,10 @@ export default function GroupsPage() {
   const [editGroupId, setEditGroupId] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const [eventModalOpen, setEventModalOpen] = useState(false)
+  const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null)
   const closeComposer = useUIStore((s) => s.closeComposer)
+  const openComposer = useUIStore((s) => s.openComposer)
+  const showNotification = useUIStore((s) => s.showNotification)
 
   const { data: groupList = [] } = useQuery({
     queryKey: ['groups'],
@@ -613,8 +734,6 @@ export default function GroupsPage() {
     mutationFn: (id: string) => groups.toggleFavorite(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
   })
-
-  const openComposer = useUIStore((s) => s.openComposer)
 
   // Action handlers
   const handleNewMail = () => {
@@ -645,6 +764,56 @@ export default function GroupsPage() {
     }
   }
 
+  // Group inbox message-action helpers — used by the ribbon toolbar so the
+  // visible buttons (Reply / Reply All / Forward / Read / Unread / Delete)
+  // act on the currently selected group message.
+  const groupMsgKey = selectedGroup ? ['group-messages-to', selectedGroup.id, selectedGroup.email] : null
+  const groupMsgKeyCc = selectedGroup ? ['group-messages-cc', selectedGroup.id, selectedGroup.email] : null
+  const cachedMsg = (() => {
+    if (!groupMsgKey || !selectedMsgId) return null
+    const a = queryClient.getQueryData(groupMsgKey) as { items?: Message[] } | undefined
+    const b = groupMsgKeyCc ? queryClient.getQueryData(groupMsgKeyCc) as { items?: Message[] } | undefined : undefined
+    return [...(a?.items ?? []), ...(b?.items ?? [])].find((m) => m.id === selectedMsgId) ?? null
+  })()
+  const handleReply = (type: 'reply' | 'reply_all' | 'forward') => {
+    if (!cachedMsg) {
+      showNotification('Select a message first')
+      return
+    }
+    openComposer(draftFromReply(cachedMsg, type))
+    setComposing(true)
+  }
+  const refetchGroupMsgs = () => {
+    if (groupMsgKey) queryClient.invalidateQueries({ queryKey: groupMsgKey })
+    if (groupMsgKeyCc) queryClient.invalidateQueries({ queryKey: groupMsgKeyCc })
+  }
+  const handleToggleRead = async () => {
+    if (!cachedMsg) {
+      showNotification('Select a message first')
+      return
+    }
+    try {
+      await messages.update(cachedMsg.id, { is_read: !cachedMsg.is_read })
+      refetchGroupMsgs()
+    } catch {
+      showNotification('Could not update message')
+    }
+  }
+  const handleDelete = async () => {
+    if (!cachedMsg) {
+      showNotification('Select a message first')
+      return
+    }
+    try {
+      await messages.delete(cachedMsg.id)
+      setSelectedMsgId(null)
+      refetchGroupMsgs()
+      showNotification('Message deleted')
+    } catch {
+      showNotification('Could not delete message')
+    }
+  }
+
   return (
     <div className="h-full flex overflow-hidden bg-white" aria-label="Groups">
       {/* Toolbar — context-sensitive per active tab */}
@@ -658,6 +827,13 @@ export default function GroupsPage() {
           onEditGroup={() => selectedGroup && setEditGroupId(selectedGroup.id)}
           onLeave={handleLeave}
           onNewGroup={() => setShowCreate(true)}
+          onReply={() => handleReply('reply')}
+          onReplyAll={() => handleReply('reply_all')}
+          onForward={() => handleReply('forward')}
+          onToggleRead={handleToggleRead}
+          onDelete={handleDelete}
+          hasMsgSelected={!!cachedMsg}
+          isMsgRead={!!cachedMsg?.is_read}
         />
 
         <div className="flex-1 flex overflow-hidden">
@@ -865,6 +1041,8 @@ export default function GroupsPage() {
                     group={selectedGroup}
                     composing={composing}
                     onCloseCompose={() => { setComposing(false); closeComposer() }}
+                    selectedId={selectedMsgId}
+                    onSelect={setSelectedMsgId}
                   />
                 )}
                 {activeTab === 'events' && <EventsTab group={selectedGroup} />}
@@ -951,6 +1129,13 @@ function Toolbar({
   onEditGroup,
   onLeave,
   onNewGroup,
+  onReply,
+  onReplyAll,
+  onForward,
+  onToggleRead,
+  onDelete,
+  hasMsgSelected,
+  isMsgRead,
 }: {
   activeTab: GroupTab
   group: Group | null
@@ -960,6 +1145,13 @@ function Toolbar({
   onEditGroup: () => void
   onLeave: () => void
   onNewGroup: () => void
+  onReply: () => void
+  onReplyAll: () => void
+  onForward: () => void
+  onToggleRead: () => void
+  onDelete: () => void
+  hasMsgSelected: boolean
+  isMsgRead: boolean
 }) {
   const showNotification = useUIStore((s) => s.showNotification)
   const isOwner = group?.is_owner ?? false
@@ -983,11 +1175,16 @@ function Toolbar({
         <>
           <ToolbarPrimary onClick={onNewMail} icon={<Mail size={13} />} label="New mail" />
           <ToolbarSep />
-          <ToolbarBtn icon={<Trash2 size={13} />} label="Delete" onClick={() => showNotification('Delete')} />
-          <ToolbarBtn icon={<Reply size={13} />} label="Reply" onClick={() => showNotification('Reply')} />
-          <ToolbarBtn icon={<ReplyAll size={13} />} label="Reply all" onClick={() => showNotification('Reply all')} />
-          <ToolbarBtn icon={<Forward size={13} />} label="Forward" onClick={() => showNotification('Forward')} />
-          <ToolbarBtn icon={<MailOpen size={13} />} label="Read / Unread" onClick={() => showNotification('Mark read')} />
+          <ToolbarBtn icon={<Trash2 size={13} />} label="Delete" onClick={onDelete} disabled={!hasMsgSelected} />
+          <ToolbarBtn icon={<Reply size={13} />} label="Reply" onClick={onReply} disabled={!hasMsgSelected} />
+          <ToolbarBtn icon={<ReplyAll size={13} />} label="Reply all" onClick={onReplyAll} disabled={!hasMsgSelected} />
+          <ToolbarBtn icon={<Forward size={13} />} label="Forward" onClick={onForward} disabled={!hasMsgSelected} />
+          <ToolbarBtn
+            icon={<MailOpen size={13} />}
+            label={isMsgRead ? 'Mark unread' : 'Mark read'}
+            onClick={onToggleRead}
+            disabled={!hasMsgSelected}
+          />
         </>
       )}
       {activeTab === 'events' && (
