@@ -427,6 +427,110 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     )
   }
 
+  // Pre-send guard dialogs — sensitivity / DLP and attachment-intent. Shared
+  // between the inline and popup compose so the inline path also gets them.
+  const sensitivityDialog = sensitivityWarningPending !== false ? (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="sensitivity-warning-title"
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 rounded-t"
+    >
+      <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
+        <div className="flex items-start gap-3 mb-3">
+          <ShieldAlert size={20} style={{ color: SENSITIVITY_COLORS[sensitivity] }} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 id="sensitivity-warning-title" className="text-sm font-semibold text-[#323130]">
+              Send {sensitivity} message?
+            </h3>
+            <p className="text-xs text-[#605E5C] mt-1">
+              {sensitivity === 'confidential'
+                ? 'This message is marked Confidential. Recipients should handle it with strict discretion.'
+                : 'This message is marked Private. Please ensure recipients are authorised before sending.'}
+            </p>
+          </div>
+        </div>
+        {dlpViolations.length > 0 && (
+          <div className="mb-3 bg-[#FFF4CE] border border-[#F7C948] rounded px-3 py-2">
+            <p className="text-xs font-semibold text-[#7A5900] mb-1">DLP policy warnings</p>
+            <ul className="space-y-0.5">
+              {dlpViolations.map((v, i) => (
+                <li key={i} className="text-xs text-[#7A5900] flex items-start gap-1">
+                  <span className="flex-shrink-0 mt-0.5">⚠</span> {v}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setSensitivityWarningPending(false)}
+            className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const pending = sensitivityWarningPending
+              setSensitivityWarningPending(false)
+              if (pending === 'send') {
+                sendMutation.mutate({ draft: false })
+              } else if (typeof pending === 'object') {
+                sendMutation.mutate({ draft: false, scheduled: pending.scheduled })
+              }
+            }}
+            className="text-sm font-medium text-white px-3 py-1.5 rounded transition-colors"
+            style={{ backgroundColor: SENSITIVITY_COLORS[sensitivity] }}
+          >
+            Send anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  const attachmentIntentDialog = attachmentIntentPending !== false ? (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="attachment-intent-title"
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 rounded-t"
+    >
+      <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
+        <h3 id="attachment-intent-title" className="text-sm font-semibold text-[#323130] mb-1">
+          Did you forget to attach a file?
+        </h3>
+        <p className="text-xs text-[#605E5C] mb-4">
+          Your message mentions an attachment but no files are attached.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setAttachmentIntentPending(false)}
+            className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
+          >
+            Add attachment
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const pending = attachmentIntentPending
+              setAttachmentIntentPending(false)
+              setAttachmentIntentDismissed(true)
+              if (pending === 'send') handleSend()
+              else if (typeof pending === 'object') handleSend(pending.scheduled)
+            }}
+            className="text-sm font-medium text-white bg-[#0078D4] hover:bg-[#106EBE] px-3 py-1.5 rounded transition-colors"
+          >
+            Send anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
   // Inline mode — renders inside the reading pane with no modal wrapper
   if (inline) {
     return (
@@ -543,6 +647,10 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
         {/* Hidden file input for ribbon attach button */}
         <input ref={fileInputRef} type="file" multiple className="hidden"
           onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) setAttachedFiles((prev) => [...prev, ...files]); e.target.value = '' }} />
+
+        {/* Pre-send guard dialogs — also shown in popup mode below. */}
+        {sensitivityDialog}
+        {attachmentIntentDialog}
       </div>
     )
   }
@@ -1110,112 +1218,9 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
         </div>
       </form>
 
-      {/* Pre-send sensitivity warning dialog */}
-      {sensitivityWarningPending !== false && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="sensitivity-warning-title"
-          className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 rounded-t"
-        >
-          <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
-            <div className="flex items-start gap-3 mb-3">
-              <ShieldAlert size={20} style={{ color: SENSITIVITY_COLORS[sensitivity] }} className="flex-shrink-0 mt-0.5" />
-              <div>
-                <h3 id="sensitivity-warning-title" className="text-sm font-semibold text-[#323130]">
-                  Send {sensitivity} message?
-                </h3>
-                <p className="text-xs text-[#605E5C] mt-1">
-                  {sensitivity === 'confidential'
-                    ? 'This message is marked Confidential. Recipients should handle it with strict discretion.'
-                    : 'This message is marked Private. Please ensure recipients are authorised before sending.'}
-                </p>
-              </div>
-            </div>
-            {dlpViolations.length > 0 && (
-              <div className="mb-3 bg-[#FFF4CE] border border-[#F7C948] rounded px-3 py-2">
-                <p className="text-xs font-semibold text-[#7A5900] mb-1">DLP policy warnings</p>
-                <ul className="space-y-0.5">
-                  {dlpViolations.map((v, i) => (
-                    <li key={i} className="text-xs text-[#7A5900] flex items-start gap-1">
-                      <span className="flex-shrink-0 mt-0.5">⚠</span> {v}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setSensitivityWarningPending(false)}
-                className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const pending = sensitivityWarningPending
-                  setSensitivityWarningPending(false)
-                  if (pending === 'send') {
-                    sendMutation.mutate({ draft: false })
-                  } else if (typeof pending === 'object') {
-                    sendMutation.mutate({ draft: false, scheduled: pending.scheduled })
-                  }
-                }}
-                className="text-sm font-medium text-white px-3 py-1.5 rounded transition-colors"
-                style={{ backgroundColor: SENSITIVITY_COLORS[sensitivity] }}
-              >
-                Send anyway
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Attachment-intent warning — body mentions an attachment but none
-          is staged. Failure-mode #3. Single confirm and we don't ask again
-          this compose session. */}
-      {attachmentIntentPending !== false && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="attachment-intent-title"
-          className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 rounded-t"
-        >
-          <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
-            <h3 id="attachment-intent-title" className="text-sm font-semibold text-[#323130] mb-1">
-              Did you forget to attach a file?
-            </h3>
-            <p className="text-xs text-[#605E5C] mb-4">
-              Your message mentions an attachment but no files are attached.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setAttachmentIntentPending(false)}
-                className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
-              >
-                Add attachment
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const pending = attachmentIntentPending
-                  setAttachmentIntentPending(false)
-                  setAttachmentIntentDismissed(true)
-                  // Re-fire handleSend so DLP and the rest of the pipeline run.
-                  if (pending === 'send') handleSend()
-                  else if (typeof pending === 'object') handleSend(pending.scheduled)
-                }}
-                className="text-sm font-medium text-white bg-[#0078D4] hover:bg-[#106EBE] px-3 py-1.5 rounded transition-colors"
-              >
-                Send anyway
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Pre-send guard dialogs — same JSX as the inline path. */}
+      {sensitivityDialog}
+      {attachmentIntentDialog}
     </div>
   )
 }
