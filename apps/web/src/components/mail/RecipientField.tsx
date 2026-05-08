@@ -163,7 +163,9 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
         <button
           type="button"
           onClick={() => inputRef.current?.focus()}
-          className="text-sm text-[#605E5C] hover:bg-[#F3F2F1] rounded px-2 py-1 flex-shrink-0 transition-colors"
+          // Always-visible outlined chip — matches Outlook's compose where
+          // the To/Cc/Bcc labels are persistent buttons, not hover-only.
+          className="text-sm text-[#323130] bg-white border border-[#D2D0CE] hover:bg-[#F3F2F1] hover:border-[#A19F9D] rounded px-3 py-1 flex-shrink-0 transition-colors min-w-[44px] text-center"
           aria-label={`Add ${label.toLowerCase()} recipients`}
         >
           {label}

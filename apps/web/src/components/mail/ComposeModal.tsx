@@ -439,7 +439,8 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
               <button
                 type="button"
                 onClick={() => setShowBcc(true)}
-                className="text-xs text-[#605E5C] hover:bg-[#F3F2F1] rounded px-2 py-1 flex-shrink-0 mt-1"
+                // Same persistent outlined chip as the To/Cc labels.
+                className="text-sm text-[#323130] bg-white border border-[#D2D0CE] hover:bg-[#F3F2F1] hover:border-[#A19F9D] rounded px-3 py-1 flex-shrink-0 mt-1"
               >
                 Bcc
               </button>
