@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 import { format, isSameDay } from 'date-fns'
 import { ComposeModal } from '@/components/mail/ComposeModal'
 import { EventModal } from '@/components/calendar/EventModal'
-import type { Message } from '@/lib/api'
+import type { Message, Event } from '@/lib/api'
 
 type GroupTab = 'email' | 'events' | 'members'
 type ViewMode = 'home' | 'group'
@@ -200,13 +200,13 @@ function AddMemberDialog({
 
 // ─── Email tab ────────────────────────────────────────────────────────────────
 function EmailTab({
-  group, composing, onCloseCompose, selectedId, onSelect,
+  group, composing, onCloseCompose, selectedMsg, onSelect,
 }: {
   group: Group
   composing: boolean
   onCloseCompose: () => void
-  selectedId: string | null
-  onSelect: (id: string | null) => void
+  selectedMsg: Message | null
+  onSelect: (msg: Message | null) => void
 }) {
   const queryClient = useQueryClient()
   const showNotification = useUIStore((s) => s.showNotification)
@@ -250,7 +250,12 @@ function EmailTab({
         return bt - at
       })
   })()
-  const selected = list.find((m) => m.id === selectedId) ?? list[0] ?? null
+  // Pick the locally-selected msg if it's still in the list, otherwise default
+  // to the first message so the reading pane has something to show on entry.
+  const selected = (selectedMsg && list.find((m) => m.id === selectedMsg.id))
+    ?? selectedMsg
+    ?? list[0]
+    ?? null
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -277,10 +282,10 @@ function EmailTab({
             list.map((msg) => (
               <button
                 key={msg.id}
-                onClick={() => onSelect(msg.id)}
+                onClick={() => onSelect(msg)}
                 onContextMenu={(e) => {
                   e.preventDefault()
-                  onSelect(msg.id)
+                  onSelect(msg)
                   setContextMenu({ msg, x: e.clientX, y: e.clientY })
                 }}
                 className={cn(
@@ -483,6 +488,9 @@ function EventsTab({ group }: { group: Group }) {
     },
   })
 
+  // Click-to-edit state — opens EventModal pre-filled with the clicked event.
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null)
+
   // Mini-cal selection — controls what slice of upcoming events shows. When
   // a specific day is picked we filter to that day; otherwise show the next
   // 60-day window (matches the "from May 26 to July 26" copy in group2.png).
@@ -567,9 +575,11 @@ function EventsTab({ group }: { group: Group }) {
               </h3>
               <div className="space-y-2">
                 {upcoming.map((ev) => (
-                  <div
+                  <button
                     key={ev.id}
-                    className="flex items-center gap-3 p-3 border border-[#EDEBE9] rounded bg-white hover:bg-[#F3F2F1] transition-colors cursor-pointer"
+                    type="button"
+                    onClick={() => setEditingEvent(ev)}
+                    className="w-full text-left flex items-center gap-3 p-3 border border-[#EDEBE9] rounded bg-white hover:bg-[#F3F2F1] transition-colors"
                   >
                     <div
                       className="w-1 self-stretch rounded-full flex-shrink-0"
@@ -582,13 +592,23 @@ function EventsTab({ group }: { group: Group }) {
                         {ev.location ? ` · ${ev.location}` : ''}
                       </p>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </>
           )}
         </div>
       </div>
+
+      {/* Click-to-edit — same EventModal flow as the calendar page. */}
+      {editingEvent && (
+        <EventModal
+          key={`edit-${editingEvent.id}`}
+          open={true}
+          onClose={() => setEditingEvent(null)}
+          event={editingEvent}
+        />
+      )}
     </div>
   )
 }
@@ -706,7 +726,7 @@ export default function GroupsPage() {
   const [editGroupId, setEditGroupId] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const [eventModalOpen, setEventModalOpen] = useState(false)
-  const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null)
+  const [selectedMsg, setSelectedMsg] = useState<Message | null>(null)
   const closeComposer = useUIStore((s) => s.closeComposer)
   const openComposer = useUIStore((s) => s.openComposer)
   const showNotification = useUIStore((s) => s.showNotification)
@@ -764,49 +784,43 @@ export default function GroupsPage() {
     }
   }
 
-  // Group inbox message-action helpers — used by the ribbon toolbar so the
-  // visible buttons (Reply / Reply All / Forward / Read / Unread / Delete)
-  // act on the currently selected group message.
-  const groupMsgKey = selectedGroup ? ['group-messages-to', selectedGroup.id, selectedGroup.email] : null
-  const groupMsgKeyCc = selectedGroup ? ['group-messages-cc', selectedGroup.id, selectedGroup.email] : null
-  const cachedMsg = (() => {
-    if (!groupMsgKey || !selectedMsgId) return null
-    const a = queryClient.getQueryData(groupMsgKey) as { items?: Message[] } | undefined
-    const b = groupMsgKeyCc ? queryClient.getQueryData(groupMsgKeyCc) as { items?: Message[] } | undefined : undefined
-    return [...(a?.items ?? []), ...(b?.items ?? [])].find((m) => m.id === selectedMsgId) ?? null
-  })()
+  // Group inbox message-action helpers — selectedMsg is hydrated by EmailTab
+  // when the user clicks a row, so the ribbon always has the live object.
+  const refetchGroupMsgs = () => {
+    if (!selectedGroup) return
+    queryClient.invalidateQueries({ queryKey: ['group-messages-to', selectedGroup.id, selectedGroup.email] })
+    queryClient.invalidateQueries({ queryKey: ['group-messages-cc', selectedGroup.id, selectedGroup.email] })
+  }
   const handleReply = (type: 'reply' | 'reply_all' | 'forward') => {
-    if (!cachedMsg) {
+    if (!selectedMsg) {
       showNotification('Select a message first')
       return
     }
-    openComposer(draftFromReply(cachedMsg, type))
+    openComposer(draftFromReply(selectedMsg, type))
     setComposing(true)
   }
-  const refetchGroupMsgs = () => {
-    if (groupMsgKey) queryClient.invalidateQueries({ queryKey: groupMsgKey })
-    if (groupMsgKeyCc) queryClient.invalidateQueries({ queryKey: groupMsgKeyCc })
-  }
   const handleToggleRead = async () => {
-    if (!cachedMsg) {
+    if (!selectedMsg) {
       showNotification('Select a message first')
       return
     }
     try {
-      await messages.update(cachedMsg.id, { is_read: !cachedMsg.is_read })
+      await messages.update(selectedMsg.id, { is_read: !selectedMsg.is_read })
+      // Reflect locally so the ribbon label flips without waiting for refetch.
+      setSelectedMsg({ ...selectedMsg, is_read: !selectedMsg.is_read })
       refetchGroupMsgs()
     } catch {
       showNotification('Could not update message')
     }
   }
   const handleDelete = async () => {
-    if (!cachedMsg) {
+    if (!selectedMsg) {
       showNotification('Select a message first')
       return
     }
     try {
-      await messages.delete(cachedMsg.id)
-      setSelectedMsgId(null)
+      await messages.delete(selectedMsg.id)
+      setSelectedMsg(null)
       refetchGroupMsgs()
       showNotification('Message deleted')
     } catch {
@@ -832,8 +846,8 @@ export default function GroupsPage() {
           onForward={() => handleReply('forward')}
           onToggleRead={handleToggleRead}
           onDelete={handleDelete}
-          hasMsgSelected={!!cachedMsg}
-          isMsgRead={!!cachedMsg?.is_read}
+          hasMsgSelected={!!selectedMsg}
+          isMsgRead={!!selectedMsg?.is_read}
         />
 
         <div className="flex-1 flex overflow-hidden">
@@ -1041,8 +1055,8 @@ export default function GroupsPage() {
                     group={selectedGroup}
                     composing={composing}
                     onCloseCompose={() => { setComposing(false); closeComposer() }}
-                    selectedId={selectedMsgId}
-                    onSelect={setSelectedMsgId}
+                    selectedMsg={selectedMsg}
+                    onSelect={setSelectedMsg}
                   />
                 )}
                 {activeTab === 'events' && <EventsTab group={selectedGroup} />}
@@ -1099,10 +1113,9 @@ export default function GroupsPage() {
       />
 
       {/* New event — opens in-place over the groups page. The group's email
-          is pre-attached as an attendee so the event surfaces in the group's
-          Events tab (which filters by attendee.email == group.email), and
-          the title is seeded "<Group> event" so it's identifiable at a
-          glance. */}
+          is pre-attached as an attendee so the backend can fan it out to
+          every member (each gets a personal RSVP row + sees the event on
+          their calendar). The title field is left blank for the user. */}
       {selectedGroup && (
         <EventModal
           key={`group-event-${selectedGroup.id}-${eventModalOpen}`}
@@ -1110,7 +1123,6 @@ export default function GroupsPage() {
           onClose={() => setEventModalOpen(false)}
           initialDate={new Date()}
           initialAttendees={[{ email: selectedGroup.email, name: selectedGroup.name }]}
-          initialTitle={`${selectedGroup.name} event`}
         />
       )}
     </div>

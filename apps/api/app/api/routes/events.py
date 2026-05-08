@@ -650,6 +650,7 @@ async def create_event(
         att.is_organizer or att.email.lower() == current_user.email.lower()
         for att in body.attendees
     )
+    seen_emails: set[str] = set()
     for att in body.attendees:
         attendee = EventAttendee(
             id=uuid.uuid4(),
@@ -660,6 +661,7 @@ async def create_event(
             is_required=att.is_required,
         )
         db.add(attendee)
+        seen_emails.add(att.email.lower())
         if not att.is_organizer:
             invitee_emails.append(att.email)
 
@@ -674,6 +676,38 @@ async def create_event(
             is_required=True,
             response_status="accepted",
         ))
+        seen_emails.add(current_user.email.lower())
+
+    # Group fan-out: any attendee whose email matches a Group.email is expanded
+    # to that group's members, so each member gets a personal RSVP row and the
+    # event surfaces on their calendar. The original group attendee row stays
+    # for identification (Events tab filter still matches).
+    from app.models.group import Group, GroupMember
+    group_emails = [att.email.lower() for att in body.attendees]
+    if group_emails:
+        groups_q = await db.execute(
+            select(Group).where(Group.email.in_(group_emails))
+        )
+        for g in groups_q.scalars().all():
+            members_q = await db.execute(
+                select(User)
+                .join(GroupMember, GroupMember.user_id == User.id)
+                .where(GroupMember.group_id == g.id)
+            )
+            for m in members_q.scalars().all():
+                if m.email.lower() in seen_emails:
+                    continue
+                seen_emails.add(m.email.lower())
+                db.add(EventAttendee(
+                    id=uuid.uuid4(),
+                    event_id=ev.id,
+                    email=m.email,
+                    display_name=m.display_name,
+                    is_organizer=False,
+                    is_required=True,
+                ))
+                if m.email.lower() != current_user.email.lower():
+                    invitee_emails.append(m.email)
 
     # Categories: replace EventCategory rows from the body. None = no change.
     if body.category_ids is not None:
