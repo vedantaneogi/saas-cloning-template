@@ -33,10 +33,13 @@ class DlpRule(BaseModel):
     severity: str  # info | warning | high | critical
     action: str    # allow | warn | block | encrypt
     message: str
-    pattern: Optional[str] = None  # regex evaluated against subject + body
+    pattern: Optional[str] = None  # regex evaluated against the chosen scope
     keywords: Optional[list[str]] = None  # case-insensitive substring match
     label_when: Optional[list[str]] = None  # only fires if sensitivity matches
     requires_external: bool = False  # only fires when sending to external domain
+    # Where pattern/keywords are matched. `body` = subject + body_html.
+    # `attachments` = attachment filenames + previews. `all` = everything.
+    scope: str = "all"
 
 
 DLP_RULES: list[DlpRule] = [
@@ -89,14 +92,16 @@ DLP_RULES: list[DlpRule] = [
         ],
         message="DLP BLOCK: Secret or credential detected. Strip it before sending.",
     ),
-    # Confidentiality keywords
+    # Confidentiality keywords (body + subject only — filenames have their
+    # own dedicated RESTRICTED_ATTACHMENT_NAME rule below).
     DlpRule(
         id="CONFIDENTIAL_KEYWORDS",
         name="Confidential content detected",
         severity="warning",
         action="warn",
         keywords=["confidential", "restricted", "nda", "salary", "payroll", "do not forward"],
-        message="DLP WARNING: Restricted content detected.",
+        message="DLP WARNING: Restricted content detected in body.",
+        scope="body",
     ),
     # Sensitivity-label-driven rules
     DlpRule(
@@ -107,6 +112,17 @@ DLP_RULES: list[DlpRule] = [
         label_when=["confidential", "encrypt"],
         requires_external=True,
         message="DLP WARNING: Confidential data is being sent to an external recipient.",
+    ),
+    # Attachment-name based — flagged independently of body content because a
+    # filename alone can leak intent (e.g. "salary-2026.xlsx").
+    DlpRule(
+        id="RESTRICTED_ATTACHMENT_NAME",
+        name="Restricted attachment name",
+        severity="warning",
+        action="warn",
+        keywords=["confidential", "salary", "contract", "nda", "payroll", "restricted"],
+        message="DLP WARNING: Restricted attachment name detected.",
+        scope="attachments",
     ),
     DlpRule(
         id="ENCRYPT_LABEL_SET",
@@ -162,14 +178,19 @@ def _sender_domain(email: str) -> str:
 
 def evaluate_dlp(req: DlpEvaluateRequest, sender_email: str) -> DlpEvaluateResponse:
     """Run every rule. Aggregate matches. Final status = highest action."""
-    haystack = (req.subject or "") + "\n" + (req.body or "")
-    # Strip simple HTML tags so regex/keyword search doesn't get confused
-    # by <span> markup from TipTap.
-    haystack_text = re.sub(r"<[^>]+>", " ", haystack)
-    # Include attachment text previews + filenames in the search corpus.
-    for att in req.attachments:
-        haystack_text += "\n" + (att.name or "") + "\n" + (att.text_preview or "")
-    haystack_lower = haystack_text.lower()
+    # Body+subject corpus (HTML-stripped so TipTap markup doesn't confuse
+    # regex/keyword search).
+    body_text = re.sub(r"<[^>]+>", " ", (req.subject or "") + "\n" + (req.body or ""))
+    # Attachment filenames + text previews — matched separately by rules
+    # scoped to `attachments`.
+    attachment_text = "\n".join(
+        (att.name or "") + "\n" + (att.text_preview or "") for att in req.attachments
+    )
+    all_text = body_text + "\n" + attachment_text
+
+    body_lower = body_text.lower()
+    attachment_lower = attachment_text.lower()
+    all_lower = all_text.lower()
 
     sender_dom = _sender_domain(sender_email)
     all_recipients = list(req.to) + list(req.cc) + list(req.bcc)
@@ -177,6 +198,14 @@ def evaluate_dlp(req: DlpEvaluateRequest, sender_email: str) -> DlpEvaluateRespo
         sender_dom and _sender_domain(r.email) and _sender_domain(r.email) != sender_dom
         for r in all_recipients
     )
+
+    def haystacks_for(scope: str) -> tuple[str, str]:
+        """(text, text_lower) tuple for the given scope."""
+        if scope == "body":
+            return body_text, body_lower
+        if scope == "attachments":
+            return attachment_text, attachment_lower
+        return all_text, all_lower
 
     matched: list[PolicyTip] = []
     for rule in DLP_RULES:
@@ -186,14 +215,16 @@ def evaluate_dlp(req: DlpEvaluateRequest, sender_email: str) -> DlpEvaluateRespo
         # External-recipient gating
         if rule.requires_external and not has_external:
             continue
+        # Scope-aware corpus
+        text, text_lower = haystacks_for(rule.scope)
         # Pattern match
         triggered = False
         if rule.pattern:
-            if re.search(rule.pattern, haystack_text):
+            if re.search(rule.pattern, text):
                 triggered = True
         if rule.keywords and not triggered:
             for kw in rule.keywords:
-                if kw.lower() in haystack_lower:
+                if kw.lower() in text_lower:
                     triggered = True
                     break
         # Rules with neither pattern nor keywords (label-only rules) trigger

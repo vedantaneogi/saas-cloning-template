@@ -82,6 +82,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   const [dlpViolations, setDlpViolations] = useState<string[]>([])
   // Live DLP — re-evaluated by debounced effect below.
   const [dlpLive, setDlpLive] = useState<DlpResult | null>(null)
+  const [dlpExpanded, setDlpExpanded] = useState(false)
   // Attachment-intent: pending = the user mentioned "attached" but staged
   // no files; once dismissed (clicked "Send anyway") we don't re-prompt
   // for the same compose session.
@@ -652,10 +653,13 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
             blue, warn uses yellow. */}
         {dlpLive && dlpLive.status !== 'allow' && dlpLive.policy_tips.length > 0 && (() => {
           const top = dlpLive.policy_tips[0]
-          const tone =
-            dlpLive.status === 'block' ? { bg: '#FDE7E9', fg: '#A4262C', icon: '#D13438' }
-            : dlpLive.status === 'encrypt' ? { bg: '#EFF6FC', fg: '#0E5C9C', icon: '#0078D4' }
-            : { bg: '#FFF4CE', fg: '#7A5900', icon: '#C19C00' }
+          const toneFor = (action: string) =>
+            action === 'block' ? { bg: '#FDE7E9', fg: '#A4262C', icon: '#D13438', label: 'Block' }
+            : action === 'encrypt' ? { bg: '#EFF6FC', fg: '#0E5C9C', icon: '#0078D4', label: 'Encrypt' }
+            : action === 'warn' ? { bg: '#FFF4CE', fg: '#7A5900', icon: '#C19C00', label: 'Warn' }
+            : { bg: '#F3F2F1', fg: '#323130', icon: '#605E5C', label: 'Info' }
+          const tone = toneFor(dlpLive.status)
+          const extra = dlpLive.policy_tips.length - 1
           return (
             <div
               role="status"
@@ -667,10 +671,53 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
                 <p className="font-semibold">
                   Policy tip: {top.message}
                 </p>
-                {dlpLive.policy_tips.length > 1 && (
-                  <p className="opacity-80 mt-0.5">
-                    +{dlpLive.policy_tips.length - 1} more rule{dlpLive.policy_tips.length > 2 ? 's' : ''} triggered
-                  </p>
+                {extra > 0 && !dlpExpanded && (
+                  <button
+                    type="button"
+                    onClick={() => setDlpExpanded(true)}
+                    className="mt-0.5 underline opacity-80 hover:opacity-100"
+                  >
+                    +{extra} more rule{extra > 1 ? 's' : ''} triggered — view all
+                  </button>
+                )}
+                {dlpExpanded && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
+                        All matched rules ({dlpLive.policy_tips.length})
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setDlpExpanded(false)}
+                        className="text-[11px] underline opacity-80 hover:opacity-100"
+                      >
+                        Hide
+                      </button>
+                    </div>
+                    <ul className="space-y-1">
+                      {dlpLive.policy_tips.map((tip) => {
+                        const t = toneFor(tip.action)
+                        return (
+                          <li
+                            key={tip.rule_id}
+                            className="flex items-start gap-2 px-2 py-1.5 rounded border bg-white"
+                            style={{ borderColor: t.fg, color: t.fg }}
+                          >
+                            <span
+                              className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0"
+                              style={{ backgroundColor: t.fg, color: '#fff' }}
+                            >
+                              {t.label}
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className="font-mono text-[10px] opacity-70 mr-1">{tip.rule_id}</span>
+                              {tip.message}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
                 )}
               </div>
               <a
