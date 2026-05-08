@@ -652,14 +652,18 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
             the To field while composing. Block status uses red, encrypt uses
             blue, warn uses yellow. */}
         {dlpLive && dlpLive.status !== 'allow' && dlpLive.policy_tips.length > 0 && (() => {
-          const top = dlpLive.policy_tips[0]
           // Border color reflects severity — yellow for warn (less dangerous),
-          // red for block (more dangerous), blue for encrypt. Surface stays
-          // white so the banner reads as a status outline, not a full alert.
+          // red for block (more dangerous), blue for encrypt. Generic body
+          // copy matches the senior's mock so every triggered rule reads the
+          // same regardless of which rule_id fired.
           const borderColor =
             dlpLive.status === 'block' ? '#D13438'
             : dlpLive.status === 'encrypt' ? '#0078D4'
             : '#C19C00'
+          const bannerText =
+            dlpLive.status === 'block' ? 'DLP BLOCK: Restricted data detected'
+            : dlpLive.status === 'encrypt' ? 'DLP NOTICE: Message will be encrypted'
+            : 'DLP WARNING: Restricted data detected'
           return (
             <div
               role="status"
@@ -668,7 +672,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
             >
               <Lock size={14} className="flex-shrink-0 text-[#605E5C]" />
               <span className="flex-1 min-w-0 truncate">
-                <span className="font-semibold">Policy tip:</span> {top.message}
+                <span className="font-semibold">Policy tip:</span> {bannerText}
               </span>
               <a
                 href="https://learn.microsoft.com/en-us/microsoft-365/compliance/dlp-policy-tips-reference"
