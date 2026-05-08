@@ -7,7 +7,7 @@ import {
   Settings, ChevronDown, UserPlus, LogOut, Edit2, Home, ChevronDown as ChevronDownIcon,
   Send, Trash2, Reply, ReplyAll, Forward, MailOpen, Lock, Globe, Check,
 } from 'lucide-react'
-import { groups, messages, events as eventsApi, contacts } from '@/lib/api'
+import { groups, messages, events as eventsApi, contacts, folders } from '@/lib/api'
 import type { Group, Contact } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { useUIStore, draftFromReply } from '@/store/ui'
@@ -213,6 +213,14 @@ function EmailTab({
   const openComposer = useUIStore((s) => s.openComposer)
   const [contextMenu, setContextMenu] = useState<{ msg: Message; x: number; y: number } | null>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
+  // Folder switcher — Inbox (default search excludes trash) vs Deleted Items
+  // (search constrained to the user's deleted folder).
+  const [folderView, setFolderView] = useState<'inbox' | 'deleted'>('inbox')
+  const { data: folderList = [] } = useQuery({
+    queryKey: ['folders'],
+    queryFn: () => folders.list(),
+  })
+  const deletedFolder = folderList.find((f) => f.slug === 'deleted')
 
   useEffect(() => {
     if (!contextMenu) return
@@ -226,17 +234,20 @@ function EmailTab({
   // Treat group inbox as messages where the group's email is anywhere on
   // the address lines. We hit the search route twice — once filtering by
   // To and once by Cc — and merge by id, because `q` only searches
-  // subject/body/from, not the recipient lists. Refetch every 15s so a
-  // freshly-sent message lands in the group's tab without a manual reload.
+  // subject/body/from, not the recipient lists. The folder switcher swaps
+  // between the default (excludes trash) and the user's Deleted Items folder.
+  const folderId = folderView === 'deleted' ? deletedFolder?.id : undefined
   const { data: toData, isLoading: toLoading } = useQuery({
-    queryKey: ['group-messages-to', group.id, group.email],
-    queryFn: () => messages.search({ to: group.email }),
+    queryKey: ['group-messages-to', group.id, group.email, folderView],
+    queryFn: () => messages.search({ to: group.email, folder_id: folderId }),
     refetchInterval: 15_000,
+    enabled: folderView !== 'deleted' || !!deletedFolder,
   })
   const { data: ccData, isLoading: ccLoading } = useQuery({
-    queryKey: ['group-messages-cc', group.id, group.email],
-    queryFn: () => messages.search({ cc: group.email }),
+    queryKey: ['group-messages-cc', group.id, group.email, folderView],
+    queryFn: () => messages.search({ cc: group.email, folder_id: folderId }),
     refetchInterval: 15_000,
+    enabled: folderView !== 'deleted' || !!deletedFolder,
   })
   const isLoading = toLoading || ccLoading
   const list = (() => {
@@ -261,21 +272,44 @@ function EmailTab({
     <div className="flex flex-1 overflow-hidden">
       {/* Inbox column */}
       <div className="w-[340px] flex-shrink-0 border-r border-[#EDEBE9] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-[#EDEBE9] bg-white">
-          <span className="text-sm font-semibold text-[#323130]">Inbox</span>
-          <button aria-label="Filter" className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]">
-            <Mail size={14} />
-          </button>
+        {/* Folder switcher — Inbox / Deleted Items */}
+        <div className="flex border-b border-[#EDEBE9] bg-white">
+          {([
+            ['inbox', 'Inbox', <Mail key="i" size={12} />],
+            ['deleted', 'Deleted Items', <Trash2 key="d" size={12} />],
+          ] as const).map(([view, label, icon]) => (
+            <button
+              key={view}
+              type="button"
+              onClick={() => { setFolderView(view); onSelect(null) }}
+              aria-pressed={folderView === view}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 text-xs px-3 py-2 border-b-2 transition-colors',
+                folderView === view
+                  ? 'border-[#0078D4] text-[#0078D4] font-medium'
+                  : 'border-transparent text-[#605E5C] hover:text-[#323130]'
+              )}
+            >
+              {icon}
+              {label}
+            </button>
+          ))}
         </div>
         <div className="flex-1 overflow-y-auto outlook-scrollbar">
           {isLoading ? (
             <p className="text-xs text-[#605E5C] py-4 text-center">Loading…</p>
           ) : list.length === 0 ? (
             <div className="text-center py-8 px-4">
-              <Mail size={32} className="mx-auto text-[#A19F9D] mb-2" />
-              <p className="text-sm text-[#323130]">No messages yet</p>
+              {folderView === 'deleted'
+                ? <Trash2 size={32} className="mx-auto text-[#A19F9D] mb-2" />
+                : <Mail size={32} className="mx-auto text-[#A19F9D] mb-2" />}
+              <p className="text-sm text-[#323130]">
+                {folderView === 'deleted' ? 'No deleted items' : 'No messages yet'}
+              </p>
               <p className="text-xs text-[#605E5C] mt-1">
-                Send an email to {group.email} to start.
+                {folderView === 'deleted'
+                  ? 'Messages you delete from this group land here.'
+                  : `Send an email to ${group.email} to start.`}
               </p>
             </div>
           ) : (
