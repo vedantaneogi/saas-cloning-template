@@ -236,7 +236,10 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   const categorizeMutation = useMutation({
     mutationFn: (categoryIds: string[]) => messages.update(message.id, { category_ids: categoryIds } as never),
     onSuccess: () => {
+      // Invalidate both the list view and the per-message detail so the
+      // reading pane re-renders with the new chip set.
       queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['message', message.id] })
     },
   })
 

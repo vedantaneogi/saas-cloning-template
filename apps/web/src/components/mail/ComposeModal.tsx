@@ -29,6 +29,7 @@ import {
   Link,
   Smile,
   PencilLine,
+  Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -563,6 +564,33 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
                 </div>
               )}
             </div>
+          </div>
+          {/* Right-side header utilities — sensitivity tag + Discard (trash)
+              icon on the far right, matching Outlook's compose toolbar. */}
+          <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+            {sensitivity !== 'normal' && (
+              <span
+                className="text-[11px] px-2 py-0.5 rounded border"
+                style={{
+                  color: SENSITIVITY_COLORS[sensitivity],
+                  borderColor: SENSITIVITY_COLORS[sensitivity],
+                  backgroundColor: 'white',
+                }}
+              >
+                {sensitivity === 'confidential' ? 'Confidential' : sensitivity === 'private' ? 'Private' : 'Personal'}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm('Discard this message?')) onClose()
+              }}
+              aria-label="Discard message"
+              title="Discard"
+              className="p-1.5 rounded text-[#605E5C] hover:bg-[#FDE7E9] hover:text-[#D13438] transition-colors"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         </div>
 

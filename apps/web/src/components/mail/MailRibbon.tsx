@@ -18,9 +18,11 @@ import {
   FolderInput,
   Tag,
   CheckCheck,
+  Plus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 function RibbonBtn({
   onClick,
@@ -61,6 +63,7 @@ function RibbonSep() {
 }
 
 export function MailRibbon() {
+  const router = useRouter()
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
   const selectedFolderSlug = useMailStore((s) => s.selectedFolderSlug)
@@ -367,26 +370,40 @@ export function MailRibbon() {
 
       <RibbonSep />
 
-      {/* Quick steps */}
-      {quickStepList.length > 0 && (
-        <div className="relative" ref={qsRef}>
-          <RibbonBtn disabled={!hasMsg} label="Quick steps" onClick={() => setQsOpen((v) => !v)}>
-            <Zap size={16} />
-            <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={10} /></span>
-          </RibbonBtn>
-          {qsOpen && (
-            <div className="absolute left-0 top-full mt-0.5 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-              {quickStepList.map((qs) => (
+      {/* Quick steps — always visible (so the user knows the feature exists);
+          dropdown shows existing macros + a manage link that jumps to settings. */}
+      <div className="relative" ref={qsRef}>
+        <RibbonBtn disabled={!hasMsg} label="Quick steps" onClick={() => setQsOpen((v) => !v)}>
+          <Zap size={16} />
+          <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={10} /></span>
+        </RibbonBtn>
+        {qsOpen && (
+          <div className="absolute left-0 top-full mt-0.5 z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
+            {quickStepList.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-[#A19F9D] italic">
+                No quick steps yet. Create one in settings.
+              </p>
+            ) : (
+              quickStepList.map((qs) => (
                 <button key={qs.id} onClick={() => runQsMutation.mutate(qs.id)}
                   className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate flex items-center gap-2">
                   <Zap size={12} className="text-[#0078D4] flex-shrink-0" />
                   {qs.name}
                 </button>
-              ))}
+              ))
+            )}
+            <div className="border-t border-[#EDEBE9] mt-1 pt-1">
+              <button
+                onClick={() => { setQsOpen(false); router.push('/settings/quick-steps') }}
+                className="w-full text-left text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2"
+              >
+                <Plus size={12} />
+                Manage quick steps
+              </button>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

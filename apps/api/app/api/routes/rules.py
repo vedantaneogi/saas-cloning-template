@@ -333,8 +333,9 @@ async def run_rule(
             continue
         await _apply_rule_to_message(db, rule, msg, current_user.id)
         matched += 1
-        if rule.stop_processing:
-            break
+        # Note: stop_processing applies to auto-run (which other rules to run
+        # after this on a single delivered message), NOT to manual run-on-
+        # folder. The user explicitly clicked Run; iterate every match.
 
     await db.flush()
     rl_state.event_log.append("rule_run", {"rule_id": str(rule_id), "matched": matched})
