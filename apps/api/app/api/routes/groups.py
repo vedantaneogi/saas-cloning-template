@@ -30,6 +30,7 @@ class GroupOut(BaseModel):
     member_count: int
     is_member: bool = False
     is_owner: bool = False
+    is_favorite: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -130,6 +131,7 @@ async def list_groups(
         d = GroupOut.model_validate(g)
         d.is_member = membership is not None
         d.is_owner = membership is not None and membership.role == "owner"
+        d.is_favorite = bool(membership and membership.is_favorite)
         out.append(d)
     return out
 
@@ -206,6 +208,41 @@ async def update_group(
     out = GroupOut.model_validate(g)
     out.is_member = membership is not None
     out.is_owner = membership is not None and membership.role == "owner"
+    out.is_favorite = bool(membership and membership.is_favorite)
+    return out
+
+
+@router.post("/{group_id}/favorite", response_model=GroupOut)
+async def toggle_favorite(
+    group_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Toggle the current user's favorite flag on this group. Membership
+    required — only members can favorite a group."""
+    g = await _get_group_or_404(db, group_id)
+    member_q = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == current_user.id,
+        )
+    )
+    membership = member_q.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": {"code": "not_member", "message": "Join the group before favoriting"}},
+        )
+    membership.is_favorite = not membership.is_favorite
+    await db.flush()
+    rl_state.event_log.append(
+        "group_favorite_toggled",
+        {"group_id": str(group_id), "is_favorite": membership.is_favorite},
+    )
+    out = GroupOut.model_validate(g)
+    out.is_member = True
+    out.is_owner = membership.role == "owner"
+    out.is_favorite = membership.is_favorite
     return out
 
 

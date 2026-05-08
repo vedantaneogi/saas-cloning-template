@@ -13,6 +13,8 @@ import { useAuthStore } from '@/store/auth'
 import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
+import { ComposeModal } from '@/components/mail/ComposeModal'
+import { EventModal } from '@/components/calendar/EventModal'
 
 type GroupTab = 'email' | 'events' | 'members'
 type ViewMode = 'home' | 'group'
@@ -196,7 +198,13 @@ function AddMemberDialog({
 }
 
 // ─── Email tab ────────────────────────────────────────────────────────────────
-function EmailTab({ group }: { group: Group }) {
+function EmailTab({
+  group, composing, onCloseCompose,
+}: {
+  group: Group
+  composing: boolean
+  onCloseCompose: () => void
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // Treat group inbox as messages where the group's email appears anywhere on
@@ -265,10 +273,18 @@ function EmailTab({ group }: { group: Group }) {
         </div>
       </div>
 
-      {/* Reading pane */}
-      <div className="flex-1 overflow-y-auto outlook-scrollbar bg-white">
-        {selected ? (
-          <div className="px-6 py-4">
+      {/* Reading pane / inline compose. Compose takes over the right side
+          when "New mail" is clicked, mirroring the regular mail-page flow
+          (no popup) and pre-filling To with the group's email. */}
+      <div className="flex-1 overflow-hidden bg-white">
+        {composing ? (
+          <ComposeModal
+            inline
+            open={true}
+            onClose={onCloseCompose}
+          />
+        ) : selected ? (
+          <div className="h-full overflow-y-auto outlook-scrollbar px-6 py-4">
             <h2 className="text-xl font-semibold text-[#323130] mb-3">{selected.subject}</h2>
             <div className="flex items-center gap-2 mb-4">
               <Avatar name={selected.from_name || selected.from_address} color={group.color} size={32} />
@@ -378,6 +394,9 @@ export default function GroupsPage() {
   const [favoritesExpanded, setFavoritesExpanded] = useState(true)
   const [previewGroupId, setPreviewGroupId] = useState<string | null>(null)
   const [editGroupId, setEditGroupId] = useState<string | null>(null)
+  const [composing, setComposing] = useState(false)
+  const [eventModalOpen, setEventModalOpen] = useState(false)
+  const closeComposer = useUIStore((s) => s.closeComposer)
 
   const { data: groupList = [] } = useQuery({
     queryKey: ['groups'],
@@ -398,24 +417,33 @@ export default function GroupsPage() {
     },
   })
 
+  const favoriteMutation = useMutation({
+    mutationFn: (id: string) => groups.toggleFavorite(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
+  })
+
   const openComposer = useUIStore((s) => s.openComposer)
 
   // Action handlers
   const handleNewMail = () => {
     if (!selectedGroup) return
+    // Inline compose in the Email tab — mirrors the mail-page flow rather
+    // than the popup ComposeModal. Seed the To field with the group email
+    // via the shared composer-draft store; ComposeModal reads it on mount.
     openComposer({
       to: [selectedGroup.email],
       subject: `[${selectedGroup.name}] `,
     })
+    setActiveTab('email')
+    setComposing(true)
   }
 
   const handleNewEvent = () => {
     if (!selectedGroup) return
-    // Navigate to calendar then signal a new-event open on next tick so the
-    // page is mounted when the event fires.
-    if (typeof window !== 'undefined') {
-      window.location.href = '/calendar/month?new=1'
-    }
+    // Open the EventModal in-place (no redirect). The modal reads the
+    // selected group via initialAttendees so the group email is pre-attached.
+    setActiveTab('events')
+    setEventModalOpen(true)
   }
 
   const handleLeave = () => {
@@ -473,12 +501,13 @@ export default function GroupsPage() {
               </button>
               {favoritesExpanded && (
                 <div className="pl-2">
-                  {groupList.filter((g) => g.is_member).length === 0 ? (
-                    <p className="text-xs text-[#A19F9D] italic px-3 py-1.5">No favorites yet.</p>
+                  {groupList.filter((g) => g.is_favorite).length === 0 ? (
+                    <p className="text-xs text-[#A19F9D] italic px-3 py-1.5">
+                      No favorites yet.
+                    </p>
                   ) : (
                     groupList
-                      .filter((g) => g.is_member)
-                      .slice(0, 5)
+                      .filter((g) => g.is_favorite)
                       .map((g) => (
                         <button
                           key={`fav-${g.id}`}
@@ -554,8 +583,18 @@ export default function GroupsPage() {
                   <div className="flex flex-col">
                     <div className="flex items-center gap-1.5">
                       <h1 className="text-base font-semibold text-[#323130]">{selectedGroup.name}</h1>
-                      <button aria-label="Favorite" className="text-[#A19F9D] hover:text-[#FFB900]">
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <button
+                        type="button"
+                        aria-label={selectedGroup.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                        aria-pressed={selectedGroup.is_favorite}
+                        onClick={() => favoriteMutation.mutate(selectedGroup.id)}
+                        disabled={favoriteMutation.isPending}
+                        className={cn(
+                          'transition-colors',
+                          selectedGroup.is_favorite ? 'text-[#FFB900]' : 'text-[#A19F9D] hover:text-[#FFB900]'
+                        )}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill={selectedGroup.is_favorite ? 'currentColor' : 'none'}>
                           <path d="M8 1l2 5h5l-4 3 1.5 5L8 11l-4.5 3L5 9 1 6h5z" stroke="currentColor" strokeWidth="1" />
                         </svg>
                       </button>
@@ -629,7 +668,13 @@ export default function GroupsPage() {
 
               {/* Tab content */}
               <div className="flex-1 flex overflow-hidden">
-                {activeTab === 'email' && <EmailTab group={selectedGroup} />}
+                {activeTab === 'email' && (
+                  <EmailTab
+                    group={selectedGroup}
+                    composing={composing}
+                    onCloseCompose={() => { setComposing(false); closeComposer() }}
+                  />
+                )}
                 {activeTab === 'events' && <EventsTab group={selectedGroup} />}
                 {activeTab === 'members' && <MembersTab group={selectedGroup} />}
               </div>
@@ -682,6 +727,17 @@ export default function GroupsPage() {
           setSelectedId(null)
         }}
       />
+
+      {/* New event — opens in-place over the groups page rather than
+          redirecting to the calendar. */}
+      {selectedGroup && (
+        <EventModal
+          key={`group-event-${selectedGroup.id}-${eventModalOpen}`}
+          open={eventModalOpen}
+          onClose={() => setEventModalOpen(false)}
+          initialDate={new Date()}
+        />
+      )}
     </div>
   )
 }
@@ -999,6 +1055,11 @@ function FrequentCard({
   onCalendar: () => void
   onPeople: () => void
 }) {
+  const queryClient = useQueryClient()
+  const favMutation = useMutation({
+    mutationFn: () => groups.toggleFavorite(group.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
+  })
   const isPrivate = group.privacy === 'private'
   // Outer wrapper is a div (not a button) so the Favorite + QuickAction
   // buttons can live inside without producing nested-<button> hydration errors.
@@ -1025,11 +1086,16 @@ function FrequentCard({
               <p className="text-sm font-semibold text-[#323130] truncate">{group.name}</p>
               <button
                 type="button"
-                aria-label="Favorite"
-                onClick={(e) => e.stopPropagation()}
-                className="text-[#A19F9D] hover:text-[#FFB900]"
+                aria-label={group.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                aria-pressed={group.is_favorite}
+                onClick={(e) => { e.stopPropagation(); favMutation.mutate() }}
+                disabled={favMutation.isPending}
+                className={cn(
+                  'transition-colors',
+                  group.is_favorite ? 'text-[#FFB900]' : 'text-[#A19F9D] hover:text-[#FFB900]'
+                )}
               >
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill={group.is_favorite ? 'currentColor' : 'none'}>
                   <path d="M8 1l2 5h5l-4 3 1.5 5L8 11l-4.5 3L5 9 1 6h5z" stroke="currentColor" strokeWidth="1" />
                 </svg>
               </button>

@@ -947,6 +947,7 @@ export interface Group {
   member_count: number
   is_member: boolean
   is_owner: boolean
+  is_favorite: boolean
   created_at: string
   updated_at: string
 }
@@ -972,6 +973,9 @@ export const groups = {
 
   delete: (id: string) =>
     request<void>(`/groups/${id}`, { method: 'DELETE' }),
+
+  toggleFavorite: (id: string) =>
+    request<Group>(`/groups/${id}/favorite`, { method: 'POST' }),
 
   join: (id: string) =>
     request<GroupMember>(`/groups/${id}/join`, { method: 'POST' }),

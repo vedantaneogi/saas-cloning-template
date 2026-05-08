@@ -35,4 +35,5 @@ class GroupMember(Base):
     role: Mapped[str] = mapped_column(
         Enum("member", "owner", name="group_role_enum"), default="member"
     )
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
