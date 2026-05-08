@@ -717,9 +717,17 @@ async def create_message(
                 continue
             if oof_user.out_of_office_end and now > oof_user.out_of_office_end:
                 continue
+            # Pick internal vs external message based on whether the sender
+            # shares a domain with the OOF user — Outlook's split between
+            # "Inside my organization" and "Outside my organization" replies.
+            sender_domain = (current_user.email.split("@")[-1] or "").lower()
+            recv_domain = (oof_user.email.split("@")[-1] or "").lower()
+            same_org = sender_domain and sender_domain == recv_domain
             oof_body = (
-                oof_user.out_of_office_message_external
+                (oof_user.out_of_office_message_internal if same_org
+                 else oof_user.out_of_office_message_external)
                 or oof_user.out_of_office_message_internal
+                or oof_user.out_of_office_message_external
                 or "I am currently out of office."
             )
             inbox_folder = await _get_folder_by_slug(db, "inbox", current_user.id)
@@ -1293,7 +1301,9 @@ async def sweep_keep_latest(
 
     kept = msgs[0]  # most recent — keep as-is
     deleted_count = 0
+    affected_folder_ids: set[uuid.UUID] = set()
     for msg in msgs[1:]:
+        affected_folder_ids.add(msg.folder_id)
         if deleted_folder:
             msg.folder_id = deleted_folder.id
         else:
@@ -1301,6 +1311,12 @@ async def sweep_keep_latest(
         deleted_count += 1
 
     await db.flush()
+    # Refresh folder counts on every source folder + the deleted folder so
+    # the sidebar totals don't go stale.
+    if deleted_folder:
+        affected_folder_ids.add(deleted_folder.id)
+    for fid in affected_folder_ids:
+        await _update_folder_counts(db, fid)
     rl_state.event_log.append("sweep_keep_latest", {
         "sender": body.sender_email,
         "kept": str(kept.id),
@@ -1336,10 +1352,16 @@ async def sweep_move_all(
     result = await db.execute(q)
     msgs = result.scalars().all()
 
+    affected_source_ids: set[uuid.UUID] = set()
     for msg in msgs:
+        if msg.folder_id != body.target_folder_id:
+            affected_source_ids.add(msg.folder_id)
         msg.folder_id = body.target_folder_id
 
     await db.flush()
+    for fid in affected_source_ids:
+        await _update_folder_counts(db, fid)
+    await _update_folder_counts(db, body.target_folder_id)
     rl_state.event_log.append("sweep_move_all", {
         "sender": body.sender_email,
         "target_folder_id": str(body.target_folder_id),

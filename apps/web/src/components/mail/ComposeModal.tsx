@@ -202,6 +202,12 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
       queryClient.invalidateQueries({ queryKey: ['folders'] })
       if (scheduled) {
         showNotification('Message scheduled')
+        // Park the user in the Scheduled folder so they can find / edit /
+        // cancel the queued message — landing on Sent (the immediate-send
+        // behaviour) was misleading because the message hasn't shipped yet.
+        if (pathname?.startsWith('/mail')) {
+          router.push('/mail/scheduled')
+        }
       } else if (draft) {
         showNotification('Draft saved')
       } else {

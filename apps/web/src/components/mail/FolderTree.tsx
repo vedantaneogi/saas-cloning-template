@@ -373,8 +373,9 @@ export function FolderTree() {
     else { setNewFolderInput(false); setNewFolderName('') }
   }
 
-  // Build tree: system folders first, then user folders
-  const systemSlugs = ['inbox', 'drafts', 'sent', 'archive', 'junk', 'deleted']
+  // Build tree: system folders first, then user folders. Scheduled sits
+  // between Sent and Archive so it's grouped with the outbound surfaces.
+  const systemSlugs = ['inbox', 'drafts', 'sent', 'scheduled', 'archive', 'junk', 'deleted']
   const systemFolders = systemSlugs
     .map((slug) => folderList.find((f) => f.slug === slug))
     .filter(Boolean) as FolderType[]
