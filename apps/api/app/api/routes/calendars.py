@@ -269,7 +269,13 @@ async def subscribe_calendar(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Subscribe to another user's default calendar (overlay it on your grid)."""
+    """Subscribe to another user's default calendar (overlay it on your grid).
+
+    Requires the target user to have explicitly delegated calendar access to
+    the current user. The delegate's level (free_busy / reviewer / editor)
+    is mirrored onto the subscription's permission_level so list_events can
+    redact event detail accordingly.
+    """
     # Find the target user by email
     owner_result = await db.execute(select(User).where(User.email == body.email))
     owner = owner_result.scalar_one_or_none()
@@ -283,6 +289,31 @@ async def subscribe_calendar(
             status_code=400,
             detail={"error": {"code": "invalid", "message": "Cannot subscribe to your own calendar"}},
         )
+
+    # Gate on an explicit delegate grant.
+    deleg_q = await db.execute(
+        select(CalendarDelegate).where(
+            CalendarDelegate.owner_user_id == owner.id,
+            CalendarDelegate.delegate_user_id == current_user.id,
+        )
+    )
+    delegate_row = deleg_q.scalar_one_or_none()
+    if not delegate_row:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": {"code": "not_delegated", "message":
+                f"{owner.display_name} hasn't delegated calendar access to you. Ask them to add you as a delegate first."}},
+        )
+
+    # Map delegate level → calendar permission_level. The legacy enum on
+    # Calendar is none|free_busy|read|write|delegate, so we cherry-pick the
+    # closest equivalent.
+    permission_for_level = {
+        "free_busy": "free_busy",
+        "reviewer": "read",
+        "editor": "write",
+    }
+    permission = permission_for_level.get(delegate_row.level, "read")
 
     # Check not already subscribed
     existing = await db.execute(
@@ -306,7 +337,7 @@ async def subscribe_calendar(
         is_default=False,
         is_shared=False,
         shared_by_user_id=owner.id,
-        permission_level="read",
+        permission_level=permission,
         is_visible=True,
         created_at=now,
         updated_at=now,
@@ -459,6 +490,20 @@ async def add_delegate(
         )
         db.add(delegate)
     await db.flush()
+    # Sync any active subscription so its permission_level reflects the new
+    # delegate level. Without this an editor → free_busy demotion would still
+    # show full event detail to the delegate's grid.
+    permission_for_level = {"free_busy": "free_busy", "reviewer": "read", "editor": "write"}
+    sub_q = await db.execute(
+        select(Calendar).where(
+            Calendar.user_id == target.id,
+            Calendar.shared_by_user_id == current_user.id,
+        )
+    )
+    for sub in sub_q.scalars().all():
+        sub.permission_level = permission_for_level.get(delegate.level, "read")
+        sub.updated_at = now
+
     rl_state.event_log.append("calendar_delegate_set", {
         "owner": str(current_user.id),
         "delegate": str(target.id),
@@ -490,6 +535,18 @@ async def remove_delegate(
             status_code=404,
             detail={"error": {"code": "not_found", "message": "Delegate not found"}},
         )
+    # Auto-cleanup: revoke any subscriptions the delegate had on this owner's
+    # calendar. Without this the overlay sticks around even though the
+    # delegate row is gone — the user effectively keeps stolen access.
+    sub_q = await db.execute(
+        select(Calendar).where(
+            Calendar.user_id == delegate.delegate_user_id,
+            Calendar.shared_by_user_id == delegate.owner_user_id,
+        )
+    )
+    for sub in sub_q.scalars().all():
+        await db.delete(sub)
+
     await db.delete(delegate)
     await db.flush()
     rl_state.event_log.append("calendar_delegate_removed", {"id": str(delegate_id)})

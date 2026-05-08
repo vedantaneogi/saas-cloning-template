@@ -489,16 +489,18 @@ async def list_events(
     # events back through a Calendar row so the frontend's per-calendar color
     # logic stays unchanged.
     sub_q = await db.execute(
-        select(Calendar.shared_by_user_id, Calendar.id)
+        select(Calendar.shared_by_user_id, Calendar.id, Calendar.permission_level)
         .where(
             Calendar.user_id == current_user.id,
             Calendar.shared_by_user_id.is_not(None),
         )
     )
     subscribed_owners: dict[uuid.UUID, uuid.UUID] = {}  # owner_user_id -> sub_cal_id
-    for owner_id, sub_cal_id in sub_q.all():
+    overlay_levels: dict[uuid.UUID, str] = {}  # owner_user_id -> permission level
+    for owner_id, sub_cal_id, perm in sub_q.all():
         if owner_id is not None:
             subscribed_owners[owner_id] = sub_cal_id
+            overlay_levels[owner_id] = perm or "read"
 
     # Delegated grants — owners who explicitly gave the current user access.
     # Even without a subscription row, the events should show up under a
@@ -548,6 +550,12 @@ async def list_events(
         # overlay by toggling the subscription's visibility.
         if e.user_id != current_user.id and e.user_id in subscribed_owners:
             out.calendar_id = subscribed_owners[e.user_id]
+            # Free-busy delegate: redact title + location/description so the
+            # subscriber only sees occupied time blocks.
+            if overlay_levels.get(e.user_id) == "free_busy":
+                out.title = "Busy"
+                out.location = None
+                out.description = None
         non_recurring.append(out)
 
     # 2. Fetch recurring parent events (may start before the requested window)
@@ -572,10 +580,15 @@ async def list_events(
             instances = _expand_recurring_event(parent, start_after, start_before)
         else:
             instances = [EventOut.model_validate(parent)]
-        # Apply the same overlay calendar_id remap as non-recurring events.
+        # Apply the same overlay calendar_id remap + free_busy redaction.
         if parent.user_id != current_user.id and parent.user_id in subscribed_owners:
+            redact = overlay_levels.get(parent.user_id) == "free_busy"
             for inst in instances:
                 inst.calendar_id = subscribed_owners[parent.user_id]
+                if redact:
+                    inst.title = "Busy"
+                    inst.location = None
+                    inst.description = None
         expanded.extend(instances)
 
     # 4. Merge, sort, paginate
