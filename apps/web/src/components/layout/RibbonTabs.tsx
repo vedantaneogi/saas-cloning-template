@@ -8,7 +8,7 @@ import { useUIStore, draftFromReply } from '@/store/ui'
 import { useEditorStore } from '@/store/editor'
 import { messages, folders, quickSteps, settings, categories, tasks } from '@/lib/api'
 import {
-  Menu, ReplyAll, Trash2, Archive, MailOpen, Zap,
+  Menu, Reply, ReplyAll, Forward, Trash2, Archive, MailOpen, Zap,
   ChevronDown, ChevronRight, Flag, FolderInput, Printer, MoreHorizontal,
   PanelRight, PanelBottom, PanelLeftClose, MessageSquare,
   RotateCcw, HelpCircle, BookOpen, ExternalLink,
@@ -17,15 +17,16 @@ import {
   Pin, Clock, Tag,
   Paperclip, Link2, Image as ImageIcon, ClipboardPaste, Paintbrush2,
   Heading, Mic, Video, AlignJustify,
+  Search, Filter, RefreshCw, ShieldAlert,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Shared ribbon button ────────────────────────────────────────────────────
-// `large` widens the button + bumps font size so the compose ribbon icons
-// read clearly (senior wanted bigger / broader icons on the new-email
-// toolbar). Default sizing stays compact for the rest of the app.
+// `large` was an experiment to bump the compose ribbon density; senior
+// reverted that — kept here as a no-op prop so existing callsites still
+// compile.
 function RibbonBtn({
-  onClick, disabled, label, children, active, large = false,
+  onClick, disabled, label, children, active,
 }: {
   onClick?: () => void; disabled?: boolean; label: string; children: React.ReactNode; active?: boolean
   large?: boolean
@@ -35,8 +36,7 @@ function RibbonBtn({
       type="button" onClick={onClick} disabled={disabled}
       aria-label={label} title={label}
       className={cn(
-        'flex flex-col items-center justify-center gap-0.5 rounded transition-colors h-full',
-        large ? 'px-3 py-1 min-w-[56px] text-[11px]' : 'px-2 py-0.5 min-w-[42px] text-[11px]',
+        'flex flex-col items-center justify-center gap-0.5 px-2 py-0.5 rounded text-[11px] transition-colors min-w-[42px] h-full',
         disabled ? 'text-[#A19F9D] cursor-not-allowed opacity-60'
           : active ? 'bg-[#EBF3FB] text-[#0078D4]'
           : 'text-[#323130] hover:bg-[#F3F2F1]',
@@ -47,8 +47,9 @@ function RibbonBtn({
   )
 }
 
-function RibbonSep({ tall = false }: { tall?: boolean } = {}) {
-  return <div className={cn('w-px bg-[#EDEBE9] mx-1 flex-shrink-0', tall ? 'h-10' : 'h-8')} />
+// `tall` is also a no-op now — kept to avoid touching every callsite.
+function RibbonSep(_props: { tall?: boolean } = {}) {
+  return <div className="w-px h-8 bg-[#EDEBE9] mx-0.5 flex-shrink-0" />
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
@@ -321,10 +322,10 @@ function ComposeMessageRibbon() {
   // (Importance + Discard). Buttons use the `large` size so icons read at
   // the same density as desktop Outlook.
   return (
-    <div className="flex items-center h-14 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Compose toolbar">
+    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Compose toolbar">
       {/* ─── Group: Clipboard ─── */}
       <RibbonBtn large label="Undo (Ctrl+Z)" disabled={!editor?.can().undo()} onClick={() => run(() => editor!.chain().focus().undo().run())}>
-        <RotateCcw size={20} />
+        <RotateCcw size={15} />
       </RibbonBtn>
       <RibbonBtn large label="Paste (Ctrl+V)" onClick={async () => {
         try {
@@ -334,10 +335,10 @@ function ComposeMessageRibbon() {
           showNotification('Clipboard access denied — use Ctrl+V')
         }
       }}>
-        <ClipboardPaste size={20} />
+        <ClipboardPaste size={15} />
       </RibbonBtn>
       <RibbonBtn large label="Format painter" onClick={() => showNotification('Format painter not available in this version')}>
-        <Paintbrush2 size={20} />
+        <Paintbrush2 size={15} />
       </RibbonBtn>
 
       <RibbonSep tall />
@@ -377,7 +378,7 @@ function ComposeMessageRibbon() {
       {/* Styles flyout — Heading 1/2/3 + Body */}
       <div ref={stylesBtnRef}>
         <RibbonBtn large label="Styles" onClick={() => { setPopupPos(getPos(stylesBtnRef)); setStylesMenuOpen((v) => !v) }}>
-          <div className="flex items-center gap-0.5"><Heading size={20} /><ChevronDown size={10} /></div>
+          <div className="flex items-center gap-0.5"><Heading size={15} /><ChevronDown size={10} /></div>
         </RibbonBtn>
       </div>
       {stylesMenuOpen && (
@@ -402,7 +403,7 @@ function ComposeMessageRibbon() {
       {/* Spacing flyout */}
       <div ref={spacingBtnRef}>
         <RibbonBtn large label="Line spacing" onClick={() => { setPopupPos(getPos(spacingBtnRef)); setSpacingMenuOpen((v) => !v) }}>
-          <div className="flex items-center gap-0.5"><AlignJustify size={20} /><ChevronDown size={10} /></div>
+          <div className="flex items-center gap-0.5"><AlignJustify size={15} /><ChevronDown size={10} /></div>
         </RibbonBtn>
       </div>
       {spacingMenuOpen && (
@@ -424,7 +425,7 @@ function ComposeMessageRibbon() {
       {/* ─── Group: Color + Highlight ─── */}
       <div ref={colorBtnRef}>
         <RibbonBtn large label="Font color" onClick={() => { setPopupPos(getPos(colorBtnRef)); setColorPickerOpen((v) => !v); setHighlightPickerOpen(false) }}>
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 15h10M7.5 3l-4.5 10h2.2l1.3-3h6.5l1.3 3h2.2L11.5 3h-4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><rect x="3" y="16.5" width="14" height="2.5" fill={currentColor} rx="0.5"/></svg>
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M5 15h10M7.5 3l-4.5 10h2.2l1.3-3h6.5l1.3 3h2.2L11.5 3h-4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><rect x="3" y="16.5" width="14" height="2.5" fill={currentColor} rx="0.5"/></svg>
         </RibbonBtn>
       </div>
       {colorPickerOpen && (
@@ -442,7 +443,7 @@ function ComposeMessageRibbon() {
 
       <div ref={highlightBtnRef}>
         <RibbonBtn large label="Text highlight" active={editor?.isActive('highlight')} onClick={() => { setPopupPos(getPos(highlightBtnRef)); setHighlightPickerOpen((v) => !v); setColorPickerOpen(false) }}>
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 16h12M6 4l8 9H6V4z" fill="#FFD700" stroke="currentColor" strokeWidth="1.1"/></svg>
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M4 16h12M6 4l8 9H6V4z" fill="#FFD700" stroke="currentColor" strokeWidth="1.1"/></svg>
         </RibbonBtn>
       </div>
       {highlightPickerOpen && (
@@ -466,30 +467,30 @@ function ComposeMessageRibbon() {
 
       {/* ─── Group: Lists + Alignment ─── */}
       <RibbonBtn large label="Bullets" active={editor?.isActive('bulletList')} onClick={() => run(() => editor!.chain().focus().toggleBulletList().run())}>
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="3" cy="5" r="1.5" fill="currentColor"/><circle cx="3" cy="10" r="1.5" fill="currentColor"/><circle cx="3" cy="15" r="1.5" fill="currentColor"/><path d="M7 5h10M7 10h10M7 15h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><circle cx="3" cy="5" r="1.5" fill="currentColor"/><circle cx="3" cy="10" r="1.5" fill="currentColor"/><circle cx="3" cy="15" r="1.5" fill="currentColor"/><path d="M7 5h10M7 10h10M7 15h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
       <RibbonBtn large label="Numbering" active={editor?.isActive('orderedList')} onClick={() => run(() => editor!.chain().focus().toggleOrderedList().run())}>
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><text x="0" y="6.5" fontSize="6" fill="currentColor" fontFamily="Arial">1.</text><text x="0" y="11.5" fontSize="6" fill="currentColor" fontFamily="Arial">2.</text><text x="0" y="16.5" fontSize="6" fill="currentColor" fontFamily="Arial">3.</text><path d="M7 5h10M7 10h10M7 15h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><text x="0" y="6.5" fontSize="6" fill="currentColor" fontFamily="Arial">1.</text><text x="0" y="11.5" fontSize="6" fill="currentColor" fontFamily="Arial">2.</text><text x="0" y="16.5" fontSize="6" fill="currentColor" fontFamily="Arial">3.</text><path d="M7 5h10M7 10h10M7 15h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
       <RibbonBtn large label="Align left" active={editor?.isActive({ textAlign: 'left' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('left').run())}>
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M2 9h12M2 13h16M2 17h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M2 9h12M2 13h16M2 17h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
       <RibbonBtn large label="Align center" active={editor?.isActive({ textAlign: 'center' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('center').run())}>
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M5 9h10M2 13h16M5 17h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M5 9h10M2 13h16M5 17h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
       <RibbonBtn large label="Align right" active={editor?.isActive({ textAlign: 'right' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('right').run())}>
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M6 9h12M2 13h16M6 17h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M6 9h12M2 13h16M6 17h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
 
       <RibbonSep tall />
 
       {/* ─── Group: Include ─── */}
       <RibbonBtn large label="Attach file" onClick={() => useEditorStore.getState().triggerAttach()}>
-        <Paperclip size={20} />
+        <Paperclip size={15} />
       </RibbonBtn>
       <div ref={linkBtnRef}>
         <RibbonBtn large label="Link (Ctrl+K)" onClick={() => { setPopupPos(getPos(linkBtnRef)); openLinkDialog() }}>
-          <Link2 size={20} />
+          <Link2 size={15} />
         </RibbonBtn>
       </div>
       {linkDialogOpen && (
@@ -513,18 +514,18 @@ function ComposeMessageRibbon() {
       )}
       <SignatureRibbonBtn />
       <RibbonBtn large label="Insert image" onClick={() => imageInputRef.current?.click()}>
-        <ImageIcon size={20} />
+        <ImageIcon size={15} />
       </RibbonBtn>
       <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
       <RibbonBtn large label="Record video" onClick={() => showNotification('Video recording not available in this version')}>
-        <Video size={20} />
+        <Video size={15} />
       </RibbonBtn>
 
       <RibbonSep tall />
 
       {/* ─── Group: Collaborate (Loop) ─── */}
       <RibbonBtn large label="Loop components" onClick={() => showNotification('Loop components not available in this version')}>
-        <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <path fill="#0078D4" d="M2 18V10C2 5.58 5.58 2 10 2C14.42 2 18 5.58 18 10C18 14.42 14.42 18 10 18H2ZM5.45 17H10C13.87 17 17 13.87 17 10C17 6.13 13.87 3 10 3C6.13 3 3 6.13 3 10V16.96C3.93 16.83 4.85 16.32 5.58 15.58C6.45 14.72 7 13.59 7 12.5V10C7 8.34 8.34 7 10 7C11.66 7 13 8.34 13 10C13 11.66 11.66 13 10 13H7.97C7.83 14.23 7.18 15.4 6.29 16.29C6.03 16.55 5.75 16.79 5.45 17ZM8 12H10C11.1 12 12 11.1 12 10C12 8.9 11.1 8 10 8C8.9 8 8 8.9 8 10V12Z"/>
         </svg>
       </RibbonBtn>
@@ -533,16 +534,14 @@ function ComposeMessageRibbon() {
 
       {/* ─── Group: Voice (Dictate) ─── */}
       <RibbonBtn large label="Dictate" onClick={() => showNotification('Dictation not available in this version')}>
-        <Mic size={20} />
+        <Mic size={15} />
       </RibbonBtn>
 
       <RibbonSep tall />
 
-      {/* ─── Compose-only: Importance + Discard ─── */}
+      {/* ─── Compose-only: Importance — discard lives on the compose pane
+          itself (right-side trash icon) so it's not duplicated here. */}
       <ImportanceRibbonBtns />
-      <RibbonBtn large label="Discard" onClick={() => useEditorStore.getState().onDiscard?.()}>
-        <Trash2 size={20} />
-      </RibbonBtn>
     </div>
   )
 }
@@ -578,7 +577,7 @@ function SignatureRibbonBtn() {
           setOpen((v) => !v)
         }}>
           <div className="flex items-center gap-0.5">
-            <Pencil size={20} />
+            <Pencil size={15} />
             <ChevronDown size={10} />
           </div>
         </RibbonBtn>
@@ -618,7 +617,7 @@ function ImportanceRibbonBtns() {
       </RibbonBtn>
       <RibbonBtn large label="Low importance" active={importance === 'low'}
         onClick={() => setImportance(importance === 'low' ? 'normal' : 'low')}>
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 4v8M6 9l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M10 4v8M6 9l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
       </RibbonBtn>
     </>
   )
@@ -652,7 +651,7 @@ function MoreFormattingBtn({ editor }: { editor: ReturnType<typeof useEditorStor
           }
           setOpen((v) => !v)
         }}>
-          <MoreHorizontal size={20} />
+          <MoreHorizontal size={15} />
         </RibbonBtn>
       </div>
       {open && (
@@ -825,6 +824,7 @@ function MoveToDropdown({ folders: foldersList, onMove, onClose, anchorRef }: {
 }
 
 function HomeRibbon() {
+  const router = useRouter()
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
   const openComposer = useUIStore((s) => s.openComposer)
@@ -836,11 +836,19 @@ function HomeRibbon() {
   const [sweepOpen, setSweepOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [snoozeToolbarOpen, setSnoozeToolbarOpen] = useState(false)
+  const [catRibbonOpen, setCatRibbonOpen] = useState(false)
+  const [rulesRibbonOpen, setRulesRibbonOpen] = useState(false)
+  const [filterRibbonOpen, setFilterRibbonOpen] = useState(false)
+  const [flagRibbonOpen, setFlagRibbonOpen] = useState(false)
   const snoozeToolbarRef = useRef<HTMLDivElement>(null)
   const qsRef = useRef<HTMLDivElement>(null)
   const moveRef = useRef<HTMLDivElement>(null)
   const moreRef = useRef<HTMLButtonElement>(null)
   const reportRef = useRef<HTMLDivElement>(null)
+  const catRef = useRef<HTMLDivElement>(null)
+  const rulesRef = useRef<HTMLDivElement>(null)
+  const filterRef = useRef<HTMLDivElement>(null)
+  const flagRef = useRef<HTMLDivElement>(null)
 
   const { data: message } = useQuery({
     queryKey: ['message', selectedMessageId],
@@ -857,6 +865,27 @@ function HomeRibbon() {
     queryKey: ['folders'],
     queryFn: () => folders.list(),
   })
+
+  const { data: categoryList = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categories.list(),
+  })
+
+  // Single click-outside handler for the smaller ribbon dropdowns we added
+  // (categorize, rules, filter, flag). Reuses the same pattern the existing
+  // qs/snooze/report dropdowns use, just consolidated.
+  useEffect(() => {
+    if (!catRibbonOpen && !rulesRibbonOpen && !filterRibbonOpen && !flagRibbonOpen) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (catRibbonOpen && catRef.current && !catRef.current.contains(t)) setCatRibbonOpen(false)
+      if (rulesRibbonOpen && rulesRef.current && !rulesRef.current.contains(t)) setRulesRibbonOpen(false)
+      if (filterRibbonOpen && filterRef.current && !filterRef.current.contains(t)) setFilterRibbonOpen(false)
+      if (flagRibbonOpen && flagRef.current && !flagRef.current.contains(t)) setFlagRibbonOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [catRibbonOpen, rulesRibbonOpen, filterRibbonOpen, flagRibbonOpen])
 
   useEffect(() => {
     if (!qsOpen) return
@@ -944,6 +973,22 @@ function HomeRibbon() {
     },
   })
 
+  const categorizeMutation = useMutation({
+    mutationFn: (categoryIds: string[]) =>
+      messages.update(selectedMessageId!, { category_ids: categoryIds } as never),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+    },
+  })
+
+  const toggleCategory = (catId: string) => {
+    const current = ((message as { categories?: { id: string }[] } | undefined)?.categories ?? []).map((c) => c.id)
+    const next = current.includes(catId) ? current.filter((id) => id !== catId) : [...current, catId]
+    categorizeMutation.mutate(next)
+  }
+  const messageCategoryIds = new Set((((message as { categories?: { id: string }[] } | undefined))?.categories ?? []).map((c) => c.id))
+
   const reportMutation = useMutation({
     mutationFn: (type: 'junk' | 'phishing') => messages.report(selectedMessageId!, type),
     onSuccess: () => {
@@ -1023,42 +1068,33 @@ function HomeRibbon() {
 
   return (
     <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Home toolbar">
-      {/* New mail */}
+      {/* ─── Group: New ─── */}
       <div className="flex items-center mr-1 flex-shrink-0">
         <button onClick={() => openComposer()} aria-label="New mail"
-          className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] active:bg-[#005A9E] text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors">
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="0.5" y="2.5" width="13" height="9" rx="1" stroke="white" strokeWidth="1.2"/><path d="M1 4L7 8L13 4" stroke="white" strokeWidth="1.1"/></svg>
+          className="flex items-center gap-2 bg-[#0078D4] hover:bg-[#106EBE] active:bg-[#005A9E] text-white text-sm font-medium pl-4 pr-3 h-9 rounded-l transition-colors">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><rect x="0.5" y="2.5" width="13" height="9" rx="1" stroke="white" strokeWidth="1.2"/><path d="M1 4L7 8L13 4" stroke="white" strokeWidth="1.1"/></svg>
           New mail
         </button>
         <button onClick={() => openComposer()} aria-label="New mail options"
-          className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-7 px-1 rounded-r border-l border-white/30 transition-colors">
-          <ChevronDown size={10} />
+          className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-9 px-1.5 rounded-r border-l border-white/30 transition-colors">
+          <ChevronDown size={12} />
         </button>
       </div>
 
-      <RibbonSep />
+      <RibbonSep tall />
 
-      {/* Delete — with dropdown chevron when selected */}
-      {hasMsg ? (
-        <RibbonBtn disabled={deleteMutation.isPending} label="Delete" onClick={() => deleteMutation.mutate()}>
-          <Trash2 size={15} /><span className="flex items-center gap-0.5">Delete <ChevronDown size={8} /></span>
-        </RibbonBtn>
-      ) : (
-        <RibbonBtn disabled label="Delete">
-          <Trash2 size={15} /><span>Delete</span>
-        </RibbonBtn>
-      )}
-
-      {/* Archive */}
-      <RibbonBtn disabled={!hasMsg || archiveMutation.isPending} label="Archive" onClick={() => archiveMutation.mutate()}>
+      {/* ─── Group: Delete + Archive + Report + Sweep + Move ─── */}
+      <RibbonBtn large disabled={!hasMsg || deleteMutation.isPending} label="Delete" onClick={() => hasMsg && deleteMutation.mutate()}>
+        <Trash2 size={15} />
+        <span className="flex items-center gap-0.5">Delete{hasMsg ? <ChevronDown size={10} /> : null}</span>
+      </RibbonBtn>
+      <RibbonBtn large disabled={!hasMsg || archiveMutation.isPending} label="Archive" onClick={() => archiveMutation.mutate()}>
         <Archive size={15} /><span>Archive</span>
       </RibbonBtn>
-
-      {/* Report — with dropdown when selected */}
-      <div className="relative" ref={reportRef}>
-        <RibbonBtn disabled={!hasMsg} label="Report" onClick={() => hasMsg ? setReportOpen((v) => !v) : undefined}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l6.5 12H1.5L8 1.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M8 6v3M8 11v.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-          <span>Report</span>
+      <div ref={reportRef}>
+        <RibbonBtn large disabled={!hasMsg} label="Report" onClick={() => hasMsg ? setReportOpen((v) => !v) : undefined}>
+          <ShieldAlert size={15} />
+          <span className="flex items-center gap-0.5">Report <ChevronDown size={10} /></span>
         </RibbonBtn>
         {reportOpen && (() => {
           const rect = reportRef.current?.getBoundingClientRect()
@@ -1077,12 +1113,16 @@ function HomeRibbon() {
           )
         })()}
       </div>
-
-      {/* Move to — with dropdown */}
-      <div className="relative" ref={moveRef}>
-        <RibbonBtn disabled={!hasMsg} label="Move to" onClick={() => setMoveOpen((v) => !v)}>
+      {/* Sweep — promoted from More overflow per senior. Senders without a
+          known from_address get the action disabled. */}
+      <RibbonBtn large disabled={!hasMsg || !message?.from_address} label="Sweep" onClick={() => setSweepOpen(true)}>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M3 16l5-10M8 6l5 10M8 6v10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        <span>Sweep</span>
+      </RibbonBtn>
+      <div ref={moveRef}>
+        <RibbonBtn large disabled={!hasMsg} label="Move to" onClick={() => setMoveOpen((v) => !v)}>
           <FolderInput size={15} />
-          <span className="flex items-center gap-0.5">Move to <ChevronDown size={8} /></span>
+          <span className="flex items-center gap-0.5">Move <ChevronDown size={10} /></span>
         </RibbonBtn>
         {moveOpen && (
           <MoveToDropdown
@@ -1094,37 +1134,59 @@ function HomeRibbon() {
         )}
       </div>
 
-      <RibbonSep />
+      <RibbonSep tall />
 
-      {/* Respond group — Reply all shown always */}
-      <RibbonBtn disabled={!hasMsg} label="Reply all" onClick={() => message && openComposer(draftFromReply(message, 'reply_all'))}>
+      {/* ─── Group: Respond (Reply / Reply all / Forward) ─── */}
+      <RibbonBtn large disabled={!hasMsg} label="Reply" onClick={() => message && openComposer(draftFromReply(message, 'reply'))}>
+        <Reply size={15} />
+        <span>Reply</span>
+      </RibbonBtn>
+      <RibbonBtn large disabled={!hasMsg} label="Reply all" onClick={() => message && openComposer(draftFromReply(message, 'reply_all'))}>
         <ReplyAll size={15} />
-        {hasMsg ? (
-          <span className="flex items-center gap-0.5">Reply all <ChevronDown size={8} /></span>
-        ) : (
-          <span>Reply all</span>
-        )}
+        <span>Reply all</span>
+      </RibbonBtn>
+      <RibbonBtn large disabled={!hasMsg} label="Forward" onClick={() => message && openComposer(draftFromReply(message, 'forward'))}>
+        <Forward size={15} />
+        <span>Forward</span>
       </RibbonBtn>
 
-      <RibbonSep />
+      <RibbonSep tall />
 
-      {/* State-dependent: Mark all as read (no selection) vs Read/Unread + Flag/Unflag (selected) */}
+      {/* ─── Group: Read / Flag / Snooze / Pin / Categorize ─── */}
       {hasMsg ? (
         <>
-          <RibbonBtn label="Read / Unread" onClick={() => markReadMutation.mutate(!message?.is_read)}>
-            <MailOpen size={15} /><span>Read / Unread</span>
+          <RibbonBtn large label="Read / Unread" onClick={() => markReadMutation.mutate(!message?.is_read)}>
+            <MailOpen size={15} /><span>{message?.is_read ? 'Unread' : 'Read'}</span>
           </RibbonBtn>
-          <RibbonBtn label="Flag / Unflag" active={!!message?.is_flagged} onClick={() => flagMutation.mutate()}>
-            <Flag size={15} className={message?.is_flagged ? 'text-[#D13438]' : ''} />
-            <span className="flex items-center gap-0.5">Flag / Unflag <ChevronDown size={8} /></span>
-          </RibbonBtn>
+          <div ref={flagRef}>
+            <RibbonBtn large label="Flag / Unflag" active={!!message?.is_flagged} onClick={() => setFlagRibbonOpen((v) => !v)}>
+              <Flag size={15} className={message?.is_flagged ? 'text-[#D13438]' : ''} />
+              <span className="flex items-center gap-0.5">Flag <ChevronDown size={10} /></span>
+            </RibbonBtn>
+            {flagRibbonOpen && (() => {
+              const rect = flagRef.current?.getBoundingClientRect()
+              return (
+              <div className="fixed z-[200] w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+                style={{ top: rect ? rect.bottom + 4 : 0, left: rect?.left ?? 0 }}>
+                <button onClick={() => { flagMutation.mutate(); setFlagRibbonOpen(false) }}
+                  className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
+                  <Flag size={14} className={message?.is_flagged ? 'text-[#D13438]' : ''} />
+                  {message?.is_flagged ? 'Remove flag' : 'Flag for follow-up'}
+                </button>
+                <button onClick={() => { showNotification('Custom flag scheduling not available'); setFlagRibbonOpen(false) }}
+                  className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
+                  <Clock size={14} /> Custom flag…
+                </button>
+              </div>
+              )
+            })()}
+          </div>
 
-          {/* Snooze — not shown for sent folder */}
           {!isSentFolder && (
             <div ref={snoozeToolbarRef}>
-              <RibbonBtn label="Snooze" active={!!message?.snooze_until} onClick={() => setSnoozeToolbarOpen((v) => !v)}>
+              <RibbonBtn large label="Snooze" active={!!message?.snooze_until} onClick={() => setSnoozeToolbarOpen((v) => !v)}>
                 <Clock size={15} className={message?.snooze_until ? 'text-[#0078D4]' : ''} />
-                <span className="flex items-center gap-0.5">Snooze <ChevronDown size={8} /></span>
+                <span className="flex items-center gap-0.5">Snooze <ChevronDown size={10} /></span>
               </RibbonBtn>
               {snoozeToolbarOpen && (() => {
                 const rect = snoozeToolbarRef.current?.getBoundingClientRect()
@@ -1153,21 +1215,61 @@ function HomeRibbon() {
               })()}
             </div>
           )}
+
+          {/* Categorize — split-button with category list dropdown */}
+          <div ref={catRef}>
+            <RibbonBtn large label="Categorize" onClick={() => setCatRibbonOpen((v) => !v)}>
+              <Tag size={15} />
+              <span className="flex items-center gap-0.5">Categorize <ChevronDown size={10} /></span>
+            </RibbonBtn>
+            {catRibbonOpen && (() => {
+              const rect = catRef.current?.getBoundingClientRect()
+              return (
+              <div className="fixed z-[200] w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+                style={{ top: rect ? rect.bottom + 4 : 0, left: rect?.left ?? 0 }}>
+                {categoryList.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-[#A19F9D] italic">No categories yet</p>
+                ) : (
+                  categoryList.map((c: { id: string; name: string; color: string }) => {
+                    const checked = messageCategoryIds.has(c.id)
+                    return (
+                      <button key={c.id} onClick={() => toggleCategory(c.id)}
+                        className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
+                        <Tag size={14} className="flex-shrink-0" style={{ color: c.color }} />
+                        <span className="flex-1 truncate">{c.name}</span>
+                        {checked && <span className="text-[#0078D4] text-xs">✓</span>}
+                      </button>
+                    )
+                  })
+                )}
+                <div className="border-t border-[#EDEBE9] mt-1 pt-1">
+                  <button onClick={() => { setCatRibbonOpen(false); useUIStore.getState().openSettings('categories') }}
+                    className="w-full text-left text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1]">Manage categories</button>
+                </div>
+              </div>
+              )
+            })()}
+          </div>
+
+          {/* Pin — top-level toggle */}
+          <RibbonBtn large label={message?.is_pinned ? 'Unpin' : 'Pin'} active={!!message?.is_pinned} onClick={() => pinMutation.mutate()}>
+            <Pin size={15} className={message?.is_pinned ? 'text-[#FFB900]' : ''} />
+            <span>{message?.is_pinned ? 'Unpin' : 'Pin'}</span>
+          </RibbonBtn>
         </>
       ) : (
-        <RibbonBtn label="Mark all as read" onClick={() => markAllReadMutation.mutate()}>
-          <MailOpen size={15} /><span>Mark all as read</span>
+        <RibbonBtn large label="Mark all as read" onClick={() => markAllReadMutation.mutate()}>
+          <MailOpen size={15} /><span>Mark all read</span>
         </RibbonBtn>
       )}
 
-      {/* Quick steps — always visible (so the user discovers the feature even
-          before creating any). Popover uses fixed positioning anchored to the
-          button via getBoundingClientRect so it escapes the toolbar's
-          overflow / stacking context. Same pattern as Snooze above. */}
+      <RibbonSep tall />
+
+      {/* ─── Group: Quick steps + Rules ─── */}
       <div ref={qsRef}>
-        <RibbonBtn disabled={!hasMsg} label="Quick steps" onClick={() => setQsOpen((v) => !v)}>
+        <RibbonBtn large disabled={!hasMsg} label="Quick steps" onClick={() => setQsOpen((v) => !v)}>
           <Zap size={15} />
-          <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={8} /></span>
+          <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={10} /></span>
         </RibbonBtn>
         {qsOpen && (() => {
           const rect = qsRef.current?.getBoundingClientRect()
@@ -1200,15 +1302,74 @@ function HomeRibbon() {
           )
         })()}
       </div>
+      <div ref={rulesRef}>
+        <RibbonBtn large label="Rules" onClick={() => setRulesRibbonOpen((v) => !v)}>
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M3 5h14M3 10h14M3 15h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="15" r="2" stroke="currentColor" strokeWidth="1.5"/></svg>
+          <span className="flex items-center gap-0.5">Rules <ChevronDown size={10} /></span>
+        </RibbonBtn>
+        {rulesRibbonOpen && (() => {
+          const rect = rulesRef.current?.getBoundingClientRect()
+          return (
+          <div className="fixed z-[200] w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+            style={{ top: rect ? rect.bottom + 4 : 0, left: rect?.left ?? 0 }}>
+            <button onClick={() => { setRulesRibbonOpen(false); useUIStore.getState().openSettings('rules') }}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Create rule</button>
+            <button onClick={() => { setRulesRibbonOpen(false); useUIStore.getState().openSettings('rules') }}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Manage rules</button>
+            <button onClick={() => { setRulesRibbonOpen(false); router.push('/settings/rules') }}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Run rules now…</button>
+          </div>
+          )
+        })()}
+      </div>
 
-      <RibbonSep />
+      <RibbonSep tall />
 
-      {/* Undo */}
-      <RibbonBtn disabled label="Undo">
-        <RotateCcw size={15} /><span>Undo</span>
+      {/* ─── Group: Find / Filter / Send-Receive ─── */}
+      <RibbonBtn large label="Find" onClick={() => {
+        const el = document.querySelector<HTMLInputElement>('input[type="search"], input[placeholder*="Search" i]')
+        el?.focus()
+      }}>
+        <Search size={15} />
+        <span>Find</span>
+      </RibbonBtn>
+      <div ref={filterRef}>
+        <RibbonBtn large label="Filter" onClick={() => setFilterRibbonOpen((v) => !v)}>
+          <Filter size={15} />
+          <span className="flex items-center gap-0.5">Filter <ChevronDown size={10} /></span>
+        </RibbonBtn>
+        {filterRibbonOpen && (() => {
+          const rect = filterRef.current?.getBoundingClientRect()
+          return (
+          <div className="fixed z-[200] w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+            style={{ top: rect ? rect.bottom + 4 : 0, left: rect?.left ?? 0 }}>
+            <p className="px-3 py-1 text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide">Filter</p>
+            <button onClick={() => { setFilterRibbonOpen(false); router.push('/mail/inbox?is_read=false') }}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Unread</button>
+            <button onClick={() => { setFilterRibbonOpen(false); router.push('/mail/inbox?is_flagged=true') }}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Flagged</button>
+            <button onClick={() => { setFilterRibbonOpen(false); router.push('/mail/inbox?has_attachments=true') }}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">With attachments</button>
+            <button onClick={() => { setFilterRibbonOpen(false); router.push('/mail/inbox?mentions_only=true') }}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Mentions me</button>
+            <div className="h-px bg-[#EDEBE9] my-1" />
+            <button onClick={() => { setFilterRibbonOpen(false); router.push('/mail/inbox') }}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Clear filter</button>
+          </div>
+          )
+        })()}
+      </div>
+      <RibbonBtn large label="Send / Receive" onClick={() => {
+        queryClient.invalidateQueries({ queryKey: ['messages'] })
+        queryClient.invalidateQueries({ queryKey: ['folders'] })
+        showNotification('Refreshed inbox')
+      }}>
+        <RefreshCw size={15} />
+        <span>Send / Receive</span>
       </RibbonBtn>
 
-      {/* Overflow — categorized dropdown matching Outlook */}
+      {/* Overflow — categorized dropdown matching Outlook (extras: Block,
+          Cleanup conversation, Create task, Print, Customize) */}
       <div className="ml-auto flex-shrink-0">
         <button
           ref={moreRef}
@@ -1216,7 +1377,7 @@ function HomeRibbon() {
           onClick={() => setMoreOpen((v: boolean) => !v)}
           aria-label="More commands"
           title="More commands"
-          className="flex flex-col items-center justify-center gap-0.5 px-2 py-0.5 rounded text-[11px] transition-colors min-w-[42px] h-full text-[#323130] hover:bg-[#F3F2F1]"
+          className="flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded text-[11px] transition-colors min-w-[56px] h-full text-[#323130] hover:bg-[#F3F2F1]"
         >
           <MoreHorizontal size={15} />
         </button>
