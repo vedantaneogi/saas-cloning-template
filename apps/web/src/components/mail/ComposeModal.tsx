@@ -83,7 +83,6 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   const [dlpViolations, setDlpViolations] = useState<string[]>([])
   // Live DLP — re-evaluated by debounced effect below.
   const [dlpLive, setDlpLive] = useState<DlpResult | null>(null)
-  const [dlpExpanded, setDlpExpanded] = useState(false)
   // Attachment-intent: pending = the user mentioned "attached" but staged
   // no files; once dismissed (clicked "Send anyway") we don't re-prompt
   // for the same compose session.
@@ -654,81 +653,31 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
             blue, warn uses yellow. */}
         {dlpLive && dlpLive.status !== 'allow' && dlpLive.policy_tips.length > 0 && (() => {
           const top = dlpLive.policy_tips[0]
-          // Per-rule color used only inside the expanded detail list. Banner
-          // chrome itself is neutral (Outlook-style) regardless of severity.
-          const toneFor = (action: string) =>
-            action === 'block' ? { bg: '#FDE7E9', fg: '#A4262C', label: 'Block' }
-            : action === 'encrypt' ? { bg: '#EFF6FC', fg: '#0E5C9C', label: 'Encrypt' }
-            : action === 'warn' ? { bg: '#FFF4CE', fg: '#7A5900', label: 'Warn' }
-            : { bg: '#F3F2F1', fg: '#323130', label: 'Info' }
+          // Border color reflects severity — yellow for warn (less dangerous),
+          // red for block (more dangerous), blue for encrypt. Surface stays
+          // white so the banner reads as a status outline, not a full alert.
+          const borderColor =
+            dlpLive.status === 'block' ? '#D13438'
+            : dlpLive.status === 'encrypt' ? '#0078D4'
+            : '#C19C00'
           return (
             <div
               role="status"
-              className="mx-4 mt-2 mb-1 rounded border border-[#D2D0CE] bg-white text-[#323130]"
+              className="mx-4 mt-2 mb-1 rounded border-2 bg-white text-[#323130] flex items-center gap-2 px-3 py-2 text-xs"
+              style={{ borderColor }}
             >
-              {/* Neutral header — clicking the row toggles detail. */}
-              <button
-                type="button"
-                onClick={() => setDlpExpanded((v) => !v)}
-                aria-expanded={dlpExpanded}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[#F3F2F1] transition-colors"
+              <Lock size={14} className="flex-shrink-0 text-[#605E5C]" />
+              <span className="flex-1 min-w-0 truncate">
+                <span className="font-semibold">Policy tip:</span> {top.message}
+              </span>
+              <a
+                href="https://learn.microsoft.com/en-us/microsoft-365/compliance/dlp-policy-tips-reference"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#0078D4] hover:underline whitespace-nowrap"
               >
-                <Lock size={14} className="flex-shrink-0 text-[#605E5C]" />
-                <span className="flex-1 min-w-0 truncate">
-                  <span className="font-semibold">Policy tip:</span> {top.message}
-                  {dlpLive.policy_tips.length > 1 && (
-                    <span className="ml-1 text-[#605E5C]">
-                      (+{dlpLive.policy_tips.length - 1} more)
-                    </span>
-                  )}
-                </span>
-                <a
-                  href="https://learn.microsoft.com/en-us/microsoft-365/compliance/dlp-policy-tips-reference"
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-[#0078D4] hover:underline whitespace-nowrap"
-                >
-                  Learn more
-                </a>
-                <ChevronDown
-                  size={14}
-                  className={cn(
-                    'text-[#605E5C] flex-shrink-0 transition-transform',
-                    dlpExpanded && 'rotate-180',
-                  )}
-                />
-              </button>
-              {dlpExpanded && (
-                <div className="border-t border-[#EDEBE9] px-3 py-2 space-y-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#605E5C]">
-                    All matched rules ({dlpLive.policy_tips.length})
-                  </p>
-                  <ul className="space-y-1">
-                    {dlpLive.policy_tips.map((tip) => {
-                      const t = toneFor(tip.action)
-                      return (
-                        <li
-                          key={tip.rule_id}
-                          className="flex items-start gap-2 px-2 py-1.5 rounded text-xs"
-                          style={{ backgroundColor: t.bg, color: t.fg }}
-                        >
-                          <span
-                            className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0"
-                            style={{ backgroundColor: t.fg, color: '#fff' }}
-                          >
-                            {t.label}
-                          </span>
-                          <span className="flex-1 min-w-0">
-                            <span className="font-mono text-[10px] opacity-70 mr-1">{tip.rule_id}</span>
-                            {tip.message}
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              )}
+                Learn more
+              </a>
             </div>
           )
         })()}
