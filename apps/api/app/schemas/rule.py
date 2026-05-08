@@ -11,6 +11,7 @@ class RuleCreate(BaseModel):
     priority: int = 0
     conditions: list[dict[str, Any]]
     actions: list[dict[str, Any]]
+    exceptions: list[dict[str, Any]] = []
     stop_processing: bool = False
     apply_to: str = "incoming"
 
@@ -21,6 +22,7 @@ class RuleUpdate(BaseModel):
     priority: Optional[int] = None
     conditions: Optional[list[dict[str, Any]]] = None
     actions: Optional[list[dict[str, Any]]] = None
+    exceptions: Optional[list[dict[str, Any]]] = None
     stop_processing: Optional[bool] = None
     apply_to: Optional[str] = None
 
@@ -35,6 +37,7 @@ class RuleOut(BaseModel):
     priority: int
     conditions: list[Any]
     actions: list[Any]
+    exceptions: list[Any] = []
     stop_processing: bool
     apply_to: str
     created_at: datetime

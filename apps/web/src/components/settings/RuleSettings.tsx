@@ -1,14 +1,116 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { rules, folders } from '@/lib/api'
-import type { Rule, RuleCondition, RuleAction } from '@/lib/api'
+import { rules, folders, categories } from '@/lib/api'
+import type { Rule, RuleCondition, RuleAction, Folder, Category } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Plus, Trash2, Edit2, Play, ToggleLeft, ToggleRight, CheckCircle2, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  Plus, Trash2, Edit2, Play, CheckCircle2, ChevronUp, ChevronDown,
+  ChevronDown as CaretDown, FolderPlus, Search,
+} from 'lucide-react'
 import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
+
+// ─── Outlook condition catalog ────────────────────────────────────────────────
+// Mirrors the dropdown groups in rule1.png / rule4.png.
+const CONDITION_GROUPS: { label: string; items: { value: RuleCondition['field']; label: string }[] }[] = [
+  {
+    label: 'People',
+    items: [
+      { value: 'from', label: 'From' },
+      { value: 'to', label: 'To' },
+      { value: 'im_on_to', label: "I'm on the To line" },
+      { value: 'im_on_to_or_cc', label: "I'm on the To or Cc line" },
+      { value: 'im_not_on_to', label: "I'm not on the To line" },
+      { value: 'im_only_recipient', label: "I'm the only recipient" },
+    ],
+  },
+  {
+    label: 'Subject',
+    items: [
+      { value: 'subject', label: 'Subject includes' },
+      { value: 'subject_or_body', label: 'Subject or body includes' },
+    ],
+  },
+  {
+    label: 'Keywords',
+    items: [
+      { value: 'body', label: 'Message body includes' },
+      { value: 'sender_address', label: 'Sender address includes' },
+      { value: 'recipient_address', label: 'Recipient address includes' },
+      { value: 'message_header', label: 'Message header includes' },
+    ],
+  },
+  {
+    label: 'Marked with',
+    items: [
+      { value: 'importance', label: 'Importance' },
+      { value: 'sensitivity', label: 'Sensitivity' },
+      { value: 'flag', label: 'Flag' },
+      { value: 'has_attachment', label: 'Has attachment' },
+    ],
+  },
+]
+
+// Conditions with no operator/value — they're a self-contained predicate.
+const STANDALONE_FIELDS: ReadonlySet<string> = new Set([
+  'im_on_to', 'im_on_to_or_cc', 'im_not_on_to', 'im_only_recipient',
+])
+
+// Conditions with a fixed-choice value.
+const VALUE_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  importance: [
+    { value: 'low', label: 'Low' },
+    { value: 'normal', label: 'Normal' },
+    { value: 'high', label: 'High' },
+  ],
+  sensitivity: [
+    { value: 'normal', label: 'Normal' },
+    { value: 'personal', label: 'Personal' },
+    { value: 'private', label: 'Private' },
+    { value: 'confidential', label: 'Confidential' },
+  ],
+  flag: [
+    { value: 'true', label: 'Flagged' },
+    { value: 'false', label: 'Not flagged' },
+  ],
+  has_attachment: [
+    { value: 'true', label: 'Yes' },
+    { value: 'false', label: 'No' },
+  ],
+}
+
+// ─── Outlook action catalog ───────────────────────────────────────────────────
+const ACTION_GROUPS: { label: string; items: { value: RuleAction['type']; label: string }[] }[] = [
+  {
+    label: 'Organize',
+    items: [
+      { value: 'move_to_folder', label: 'Move to' },
+      { value: 'copy_to_folder', label: 'Copy to' },
+      { value: 'delete', label: 'Delete' },
+    ],
+  },
+  {
+    label: 'Mark message',
+    items: [
+      { value: 'mark_as_read', label: 'Mark as read' },
+      { value: 'flag', label: 'Flag' },
+      { value: 'set_importance', label: 'Mark with importance' },
+      { value: 'set_sensitivity', label: 'Mark with sensitivity' },
+      { value: 'set_category', label: 'Categorize' },
+    ],
+  },
+  {
+    label: 'Route',
+    items: [
+      { value: 'forward_to', label: 'Forward to' },
+      { value: 'forward_as_attachment', label: 'Forward as attachment' },
+      { value: 'redirect_to', label: 'Redirect to' },
+    ],
+  },
+]
 
 export function RuleSettings() {
   const queryClient = useQueryClient()
@@ -108,8 +210,6 @@ export function RuleSettings() {
               key={rule.id}
               className="grid grid-cols-[auto,auto,1fr,auto] items-center gap-3 px-4 py-3 border-b border-[#EDEBE9] hover:bg-[#F3F2F1] transition-colors"
             >
-              {/* On/Off — proper switch instead of just an icon, with label so the
-                  state is unambiguous. */}
               <button
                 onClick={() => toggleMutation.mutate(rule)}
                 aria-label={rule.is_enabled ? `Disable ${rule.name}` : `Enable ${rule.name}`}
@@ -129,7 +229,6 @@ export function RuleSettings() {
                 />
               </button>
 
-              {/* Order — numbered badge + small inline up/down arrows */}
               <div className="flex items-center gap-1.5 w-16">
                 <span
                   aria-label={`Priority ${idx + 1}`}
@@ -157,12 +256,12 @@ export function RuleSettings() {
                 </div>
               </div>
 
-              {/* Name + summary */}
               <div className="min-w-0">
                 <p className="text-sm font-medium text-[#323130] truncate">{rule.name}</p>
                 <p className="text-xs text-[#605E5C]">
                   {rule.conditions.length} condition{rule.conditions.length !== 1 ? 's' : ''},{' '}
                   {rule.actions.length} action{rule.actions.length !== 1 ? 's' : ''}
+                  {rule.exceptions?.length ? `, ${rule.exceptions.length} exception${rule.exceptions.length !== 1 ? 's' : ''}` : ''}
                   {' · '}
                   <span className={rule.is_enabled ? 'text-[#107C10]' : 'text-[#605E5C]'}>
                     {rule.is_enabled ? 'On' : 'Off'}
@@ -170,7 +269,6 @@ export function RuleSettings() {
                 </p>
               </div>
 
-              {/* Actions — always visible, larger hit targets */}
               <div className="flex items-center gap-1 relative">
                 <button
                   onClick={() => openRunPicker(rule.id)}
@@ -203,17 +301,12 @@ export function RuleSettings() {
         )}
       </div>
 
-      {/* Editor — keyed on the rule id (or "new") so React remounts the form
-          when the user picks a different rule, otherwise useState clings to
-          the previous rule's conditions/actions and the save clobbers them. */}
       {(creating || editing) && (
         <RuleEditor
           key={editing?.id ?? 'new'}
           rule={editing ?? undefined}
+          folderList={folderList}
           onSave={async () => {
-            // Wait for the refetch to complete before closing the editor so the
-            // new/updated rule is visible immediately — invalidate alone fires
-            // a background refetch which can briefly show stale data.
             await queryClient.refetchQueries({ queryKey: ['rules'] })
             setEditing(null)
             setCreating(false)
@@ -222,8 +315,6 @@ export function RuleSettings() {
         />
       )}
 
-      {/* Run-on-folder modal — centred overlay so it never gets clipped by
-          the rules table column. */}
       {runPickerRuleId && (() => {
         const rule = ruleList.find((r) => r.id === runPickerRuleId)
         if (!rule) return null
@@ -261,9 +352,16 @@ export function RuleSettings() {
                   aria-label="Select folder"
                   className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
                 >
-                  {folderList.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
-                  ))}
+                  <optgroup label="System">
+                    {folderList.filter((f) => f.is_system).map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Your folders">
+                    {folderList.filter((f) => !f.is_system).map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
               <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
@@ -292,12 +390,411 @@ export function RuleSettings() {
   )
 }
 
+// ─── Folder picker (with inline create) ───────────────────────────────────────
+// Renders a button styled like the rest of the form. Clicking opens a popover
+// with a search box, system + user folder lists, and an inline "Create new
+// folder" form. Matches Outlook's rule3.png picker.
+function FolderPicker({
+  folderList,
+  selectedId,
+  onSelect,
+  ariaLabel,
+}: {
+  folderList: Folder[]
+  selectedId: string
+  onSelect: (folderId: string) => void
+  ariaLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [creatingErr, setCreatingErr] = useState<string | null>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setCreating(false)
+        setNewName('')
+        setCreatingErr(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const createMutation = useMutation({
+    mutationFn: (name: string) => folders.create({ name }),
+    onSuccess: (folder) => {
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      onSelect(folder.id)
+      setCreating(false)
+      setNewName('')
+      setCreatingErr(null)
+      setOpen(false)
+    },
+    onError: () => setCreatingErr('Could not create folder'),
+  })
+
+  const selected = folderList.find((f) => f.id === selectedId)
+  const systemFolders = folderList.filter((f) => f.is_system)
+  const userFolders = folderList.filter((f) => !f.is_system)
+  const q = query.trim().toLowerCase()
+  const matchesQuery = (f: Folder) => !q || f.name.toLowerCase().includes(q)
+
+  return (
+    <div className="relative flex-1" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        className="w-full flex items-center justify-between gap-2 text-sm border border-[#EDEBE9] rounded px-2 py-1 text-left text-[#323130] hover:border-[#8A8886] focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
+      >
+        <span className={cn('truncate', !selected && 'text-[#A19F9D]')}>
+          {selected?.name ?? 'Select a folder'}
+        </span>
+        <CaretDown size={12} className="text-[#605E5C] flex-shrink-0" />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg max-h-80 overflow-y-auto">
+          <div className="px-2 py-2 border-b border-[#EDEBE9] sticky top-0 bg-white">
+            <div className="relative">
+              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[#A19F9D]" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search for a folder"
+                aria-label="Search folders"
+                autoFocus
+                className="w-full text-xs border border-[#EDEBE9] rounded pl-6 pr-2 py-1 focus:outline-none focus:border-[#0078D4]"
+              />
+            </div>
+          </div>
+
+          {systemFolders.filter(matchesQuery).length > 0 && (
+            <div className="py-1">
+              <p className="px-3 py-1 text-[10px] font-semibold uppercase text-[#605E5C] tracking-wide">System</p>
+              {systemFolders.filter(matchesQuery).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => { onSelect(f.id); setOpen(false) }}
+                  className={cn(
+                    'w-full text-left px-3 py-1.5 text-sm hover:bg-[#F3F2F1]',
+                    selectedId === f.id && 'bg-[#EFF6FC] text-[#0078D4]'
+                  )}
+                >
+                  {f.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {userFolders.filter(matchesQuery).length > 0 && (
+            <div className="py-1 border-t border-[#EDEBE9]">
+              <p className="px-3 py-1 text-[10px] font-semibold uppercase text-[#605E5C] tracking-wide">Your folders</p>
+              {userFolders.filter(matchesQuery).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => { onSelect(f.id); setOpen(false) }}
+                  className={cn(
+                    'w-full text-left px-3 py-1.5 text-sm hover:bg-[#F3F2F1]',
+                    selectedId === f.id && 'bg-[#EFF6FC] text-[#0078D4]'
+                  )}
+                >
+                  {f.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="border-t border-[#EDEBE9] py-1">
+            {creating ? (
+              <div className="px-3 py-2 space-y-2">
+                <Input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="New folder name"
+                  aria-label="New folder name"
+                  autoFocus
+                />
+                {creatingErr && <p className="text-xs text-[#D13438]">{creatingErr}</p>}
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => newName.trim() && createMutation.mutate(newName.trim())}
+                    disabled={!newName.trim() || createMutation.isPending}
+                  >
+                    {createMutation.isPending ? 'Creating…' : 'Create'}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setCreating(false); setNewName('') }}
+                    className="text-xs text-[#605E5C] hover:text-[#323130]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className="w-full text-left px-3 py-1.5 text-sm text-[#0078D4] hover:bg-[#F3F2F1] flex items-center gap-2"
+              >
+                <FolderPlus size={14} />
+                Create new folder
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Condition row (shared between conditions and exceptions) ─────────────────
+function ConditionRow({
+  cond,
+  index,
+  onRemove,
+  onChange,
+  ariaPrefix,
+}: {
+  cond: RuleCondition
+  index: number
+  onRemove?: () => void
+  onChange: (update: Partial<RuleCondition>) => void
+  ariaPrefix: string
+}) {
+  const isStandalone = STANDALONE_FIELDS.has(cond.field)
+  const valueOpts = VALUE_OPTIONS[cond.field]
+
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      <select
+        aria-label={`${ariaPrefix} ${index + 1} field`}
+        value={cond.field}
+        onChange={(e) => {
+          const newField = e.target.value as RuleCondition['field']
+          // Reset operator/value sensibly when switching field shape.
+          const isNewStandalone = STANDALONE_FIELDS.has(newField)
+          const newOpts = VALUE_OPTIONS[newField]
+          onChange({
+            field: newField,
+            value: isNewStandalone ? 'true' : (newOpts ? newOpts[0].value : ''),
+            operator: isNewStandalone || newOpts ? 'equals' : 'contains',
+          })
+        }}
+        className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] min-w-[180px]"
+      >
+        {CONDITION_GROUPS.map((g) => (
+          <optgroup key={g.label} label={g.label}>
+            {g.items.map((it) => (
+              <option key={it.value} value={it.value}>{it.label}</option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+
+      {!isStandalone && !valueOpts && (
+        <>
+          <select
+            aria-label={`${ariaPrefix} ${index + 1} operator`}
+            value={cond.operator}
+            onChange={(e) => onChange({ operator: e.target.value as RuleCondition['operator'] })}
+            className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
+          >
+            <option value="contains">contains</option>
+            <option value="equals">equals</option>
+            <option value="starts_with">starts with</option>
+            <option value="ends_with">ends with</option>
+          </select>
+          <Input
+            value={cond.value}
+            onChange={(e) => onChange({ value: e.target.value })}
+            placeholder="Value"
+            aria-label={`${ariaPrefix} ${index + 1} value`}
+            className="flex-1"
+          />
+        </>
+      )}
+
+      {valueOpts && (
+        <select
+          aria-label={`${ariaPrefix} ${index + 1} value`}
+          value={cond.value}
+          onChange={(e) => onChange({ value: e.target.value })}
+          className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
+        >
+          {valueOpts.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      )}
+
+      {isStandalone && (
+        <span className="flex-1 text-xs text-[#605E5C] italic">No value needed</span>
+      )}
+
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${ariaPrefix.toLowerCase()} ${index + 1}`}
+          className="text-[#605E5C] hover:text-[#D13438]"
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Action row ───────────────────────────────────────────────────────────────
+function ActionRow({
+  action,
+  index,
+  onRemove,
+  onChange,
+  folderList,
+}: {
+  action: RuleAction
+  index: number
+  onRemove?: () => void
+  onChange: (update: Partial<RuleAction>) => void
+  folderList: Folder[]
+}) {
+  const { data: categoryList = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categories.list(),
+    enabled: action.type === 'set_category',
+  })
+
+  const params = (action.params ?? {}) as Record<string, string | string[] | undefined>
+  const stringParam = (k: string) => {
+    const v = params[k]
+    return Array.isArray(v) ? '' : (v ?? '')
+  }
+
+  const setParam = (patch: Record<string, string | string[] | undefined>) =>
+    onChange({ params: { ...params, ...patch } })
+
+  const isFolderAction = action.type === 'move_to_folder' || action.type === 'copy_to_folder'
+  const isEmailAction = action.type === 'forward_to' || action.type === 'forward_as_attachment' || action.type === 'redirect_to'
+  const isImportance = action.type === 'set_importance'
+  const isSensitivity = action.type === 'set_sensitivity'
+  const isCategorize = action.type === 'set_category'
+
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      <select
+        aria-label={`Action ${index + 1} type`}
+        value={action.type}
+        onChange={(e) => onChange({ type: e.target.value as RuleAction['type'], params: {} })}
+        className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] min-w-[180px]"
+      >
+        {ACTION_GROUPS.map((g) => (
+          <optgroup key={g.label} label={g.label}>
+            {g.items.map((it) => (
+              <option key={it.value} value={it.value}>{it.label}</option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+
+      {isFolderAction && (
+        <FolderPicker
+          folderList={folderList}
+          selectedId={stringParam('folder_id')}
+          onSelect={(id) => setParam({ folder_id: id })}
+          ariaLabel={`Action ${index + 1} folder`}
+        />
+      )}
+
+      {isEmailAction && (
+        <Input
+          type="email"
+          value={stringParam('email')}
+          onChange={(e) => setParam({ email: e.target.value })}
+          placeholder="Email address"
+          aria-label={`Action ${index + 1} email`}
+          className="flex-1"
+        />
+      )}
+
+      {isImportance && (
+        <select
+          aria-label={`Action ${index + 1} importance`}
+          value={stringParam('level') || 'normal'}
+          onChange={(e) => setParam({ level: e.target.value })}
+          className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
+        >
+          <option value="low">Low</option>
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+        </select>
+      )}
+
+      {isSensitivity && (
+        <select
+          aria-label={`Action ${index + 1} sensitivity`}
+          value={stringParam('level') || 'normal'}
+          onChange={(e) => setParam({ level: e.target.value })}
+          className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
+        >
+          <option value="normal">Normal</option>
+          <option value="personal">Personal</option>
+          <option value="private">Private</option>
+          <option value="confidential">Confidential</option>
+        </select>
+      )}
+
+      {isCategorize && (
+        <select
+          aria-label={`Action ${index + 1} category`}
+          value={stringParam('category_id')}
+          onChange={(e) => setParam({ category_id: e.target.value, category_ids: undefined })}
+          className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
+        >
+          <option value="">Select a category</option>
+          {categoryList.map((c: Category) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      )}
+
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove action ${index + 1}`}
+          className="text-[#605E5C] hover:text-[#D13438]"
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Editor ───────────────────────────────────────────────────────────────────
 function RuleEditor({
   rule,
+  folderList,
   onSave,
   onCancel,
 }: {
   rule?: Rule
+  folderList: Folder[]
   onSave: () => void | Promise<void>
   onCancel: () => void
 }) {
@@ -308,49 +805,39 @@ function RuleEditor({
   const [actions, setActions] = useState<RuleAction[]>(
     rule?.actions ?? [{ type: 'mark_as_read', params: {} }]
   )
+  const [exceptions, setExceptions] = useState<RuleCondition[]>(rule?.exceptions ?? [])
+  const [stopProcessing, setStopProcessing] = useState<boolean>(rule?.stop_processing ?? true)
   const [saving, setSaving] = useState(false)
 
   const save = async () => {
     setSaving(true)
     try {
       if (rule) {
-        // Include the existing scalar settings so the PATCH doesn't accidentally
-        // clear them in clients that read the response back into form state.
         await rules.update(rule.id, {
           name,
           conditions,
           actions,
+          exceptions,
           is_enabled: rule.is_enabled,
           priority: rule.priority,
-          stop_processing: rule.stop_processing,
+          stop_processing: stopProcessing,
           apply_to: rule.apply_to,
         })
       } else {
-        await rules.create({ name, conditions, actions, is_enabled: true })
+        await rules.create({
+          name,
+          conditions,
+          actions,
+          exceptions,
+          stop_processing: stopProcessing,
+          is_enabled: true,
+        })
       }
       await onSave()
     } finally {
       setSaving(false)
     }
   }
-
-  const addCondition = () =>
-    setConditions((c) => [...c, { field: 'from', operator: 'contains', value: '' }])
-
-  const removeCondition = (i: number) =>
-    setConditions((c) => c.filter((_, idx) => idx !== i))
-
-  const updateCondition = (i: number, update: Partial<RuleCondition>) =>
-    setConditions((c) => c.map((cond, idx) => (idx === i ? { ...cond, ...update } : cond)))
-
-  const addAction = () =>
-    setActions((a) => [...a, { type: 'mark_as_read', params: {} }])
-
-  const removeAction = (i: number) =>
-    setActions((a) => a.filter((_, idx) => idx !== i))
-
-  const updateAction = (i: number, update: Partial<RuleAction>) =>
-    setActions((a) => a.map((act, idx) => (idx === i ? { ...act, ...update } : act)))
 
   return (
     <div className="border border-[#EDEBE9] rounded p-4 space-y-4" aria-label="Rule editor">
@@ -375,53 +862,31 @@ function RuleEditor({
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium text-[#323130]">When a message matches</p>
-          <button onClick={addCondition} className="text-xs text-[#0078D4] hover:underline">
+          <button
+            type="button"
+            onClick={() =>
+              setConditions((c) => [...c, { field: 'from', operator: 'contains', value: '' }])
+            }
+            className="text-xs text-[#0078D4] hover:underline"
+          >
             + Add condition
           </button>
         </div>
         {conditions.map((cond, i) => (
-          <div key={i} className="flex items-center gap-2 mb-2">
-            <select
-              aria-label={`Condition ${i + 1} field`}
-              value={cond.field}
-              onChange={(e) => updateCondition(i, { field: e.target.value as RuleCondition['field'] })}
-              className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
-            >
-              <option value="from">From</option>
-              <option value="to">To</option>
-              <option value="subject">Subject</option>
-              <option value="body">Body</option>
-              <option value="has_attachment">Has attachment</option>
-              <option value="importance">Importance</option>
-            </select>
-            <select
-              aria-label={`Condition ${i + 1} operator`}
-              value={cond.operator}
-              onChange={(e) => updateCondition(i, { operator: e.target.value as RuleCondition['operator'] })}
-              className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
-            >
-              <option value="contains">contains</option>
-              <option value="equals">equals</option>
-              <option value="starts_with">starts with</option>
-              <option value="ends_with">ends with</option>
-            </select>
-            <Input
-              value={cond.value}
-              onChange={(e) => updateCondition(i, { value: e.target.value })}
-              placeholder="Value"
-              aria-label={`Condition ${i + 1} value`}
-              className="flex-1"
-            />
-            {conditions.length > 1 && (
-              <button
-                onClick={() => removeCondition(i)}
-                aria-label={`Remove condition ${i + 1}`}
-                className="text-[#605E5C] hover:text-[#D13438]"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
-          </div>
+          <ConditionRow
+            key={i}
+            cond={cond}
+            index={i}
+            ariaPrefix="Condition"
+            onChange={(update) =>
+              setConditions((c) => c.map((x, idx) => (idx === i ? { ...x, ...update } : x)))
+            }
+            onRemove={
+              conditions.length > 1
+                ? () => setConditions((c) => c.filter((_, idx) => idx !== i))
+                : undefined
+            }
+          />
         ))}
       </div>
 
@@ -429,52 +894,75 @@ function RuleEditor({
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium text-[#323130]">Do the following</p>
-          <button onClick={addAction} className="text-xs text-[#0078D4] hover:underline">
+          <button
+            type="button"
+            onClick={() => setActions((a) => [...a, { type: 'mark_as_read', params: {} }])}
+            className="text-xs text-[#0078D4] hover:underline"
+          >
             + Add action
           </button>
         </div>
         {actions.map((action, i) => (
-          <div key={i} className="flex items-center gap-2 mb-2">
-            <select
-              aria-label={`Action ${i + 1} type`}
-              value={action.type}
-              onChange={(e) => updateAction(i, { type: e.target.value as RuleAction['type'] })}
-              className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
-            >
-              <option value="mark_as_read">Mark as read</option>
-              <option value="flag">Flag</option>
-              <option value="delete">Delete</option>
-              <option value="move_to_folder">Move to folder</option>
-              <option value="forward_to">Forward to</option>
-              <option value="set_importance">Set importance</option>
-            </select>
-            {(action.type === 'move_to_folder' || action.type === 'forward_to') && (
-              <Input
-                value={action.params?.folder_id ?? action.params?.email ?? ''}
-                onChange={(e) =>
-                  updateAction(i, {
-                    params: action.type === 'forward_to'
-                      ? { email: e.target.value }
-                      : { folder_id: e.target.value },
-                  })
-                }
-                placeholder={action.type === 'forward_to' ? 'Email address' : 'Folder ID'}
-                aria-label={`Action ${i + 1} parameter`}
-                className="flex-1"
-              />
-            )}
-            {actions.length > 1 && (
-              <button
-                onClick={() => removeAction(i)}
-                aria-label={`Remove action ${i + 1}`}
-                className="text-[#605E5C] hover:text-[#D13438]"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
-          </div>
+          <ActionRow
+            key={i}
+            action={action}
+            index={i}
+            folderList={folderList}
+            onChange={(update) =>
+              setActions((a) => a.map((x, idx) => (idx === i ? { ...x, ...update } : x)))
+            }
+            onRemove={
+              actions.length > 1
+                ? () => setActions((a) => a.filter((_, idx) => idx !== i))
+                : undefined
+            }
+          />
         ))}
       </div>
+
+      {/* Exceptions */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-medium text-[#323130]">
+            Add an exception <span className="text-xs text-[#605E5C] font-normal">(optional)</span>
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              setExceptions((e) => [...e, { field: 'from', operator: 'contains', value: '' }])
+            }
+            className="text-xs text-[#0078D4] hover:underline"
+          >
+            + Add exception
+          </button>
+        </div>
+        {exceptions.length === 0 ? (
+          <p className="text-xs text-[#A19F9D] italic">No exceptions — the rule applies whenever the conditions match.</p>
+        ) : (
+          exceptions.map((cond, i) => (
+            <ConditionRow
+              key={i}
+              cond={cond}
+              index={i}
+              ariaPrefix="Exception"
+              onChange={(update) =>
+                setExceptions((c) => c.map((x, idx) => (idx === i ? { ...x, ...update } : x)))
+              }
+              onRemove={() => setExceptions((c) => c.filter((_, idx) => idx !== i))}
+            />
+          ))
+        )}
+      </div>
+
+      <label className="flex items-center gap-2 text-sm text-[#323130]">
+        <input
+          type="checkbox"
+          checked={stopProcessing}
+          onChange={(e) => setStopProcessing(e.target.checked)}
+          className="accent-[#0078D4]"
+        />
+        Stop processing more rules
+      </label>
 
       <div className="flex items-center gap-2 pt-2">
         <Button onClick={save} loading={saving} disabled={!name.trim()} aria-label="Save rule">
@@ -487,3 +975,4 @@ function RuleEditor({
     </div>
   )
 }
+

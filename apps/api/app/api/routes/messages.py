@@ -128,10 +128,15 @@ async def _deliver_to_recipients(
             .order_by(Rule.priority)
         )
         for r in rules_q.scalars().all():
-            if all(_message_matches_condition(delivered, c) for c in (r.conditions or [])):
-                await _apply_rule_to_message(db, r, delivered, rec_user.id)
-                if r.stop_processing:
-                    break
+            conds = r.conditions or []
+            excs = getattr(r, "exceptions", None) or []
+            if not all(_message_matches_condition(delivered, c, rec_email) for c in conds):
+                continue
+            if excs and any(_message_matches_condition(delivered, e, rec_email) for e in excs):
+                continue
+            await _apply_rule_to_message(db, r, delivered, rec_user.id)
+            if r.stop_processing:
+                break
         await db.flush()
         await _update_folder_counts(db, rec_inbox.id)
         rl_state.event_log.append("message_delivered", {

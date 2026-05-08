@@ -261,22 +261,47 @@ export interface TaskList {
   created_at: string
 }
 
+export type RuleConditionField =
+  | 'from'
+  | 'to'
+  | 'subject'
+  | 'body'
+  | 'subject_or_body'
+  | 'has_attachment'
+  | 'importance'
+  | 'sensitivity'
+  | 'sender_address'
+  | 'recipient_address'
+  | 'message_header'
+  | 'flag'
+  | 'im_on_to'
+  | 'im_on_to_or_cc'
+  | 'im_not_on_to'
+  | 'im_only_recipient'
+
 export interface RuleCondition {
-  field: 'from' | 'to' | 'subject' | 'body' | 'has_attachment' | 'importance'
+  field: RuleConditionField
   operator: 'contains' | 'equals' | 'starts_with' | 'ends_with'
   value: string
 }
 
+export type RuleActionType =
+  | 'move_to_folder'
+  | 'copy_to_folder'
+  | 'mark_as_read'
+  | 'flag'
+  | 'forward_to'
+  | 'forward_as_attachment'
+  | 'redirect_to'
+  | 'delete'
+  | 'set_category'
+  | 'set_importance'
+  | 'set_sensitivity'
+
 export interface RuleAction {
-  type:
-    | 'move_to_folder'
-    | 'mark_as_read'
-    | 'flag'
-    | 'forward_to'
-    | 'delete'
-    | 'set_category'
-    | 'set_importance'
-  params: Record<string, string>
+  type: RuleActionType
+  // Loose record so callers can stash folder_id, email, level, category_ids, etc.
+  params: Record<string, string | string[] | undefined>
 }
 
 export interface Rule {
@@ -287,6 +312,7 @@ export interface Rule {
   priority: number
   conditions: RuleCondition[]
   actions: RuleAction[]
+  exceptions: RuleCondition[]
   stop_processing: boolean
   apply_to: 'incoming' | 'outgoing' | 'both'
   created_at: string
