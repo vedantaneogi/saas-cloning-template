@@ -50,17 +50,24 @@ function TaskDetailPanel({ task, onClose, onDeleted }: { task: Task; onClose: ()
   const [dueDate, setDueDate] = useState(task.due_date ? task.due_date.slice(0, 10) : '')
   const [reminderAt, setReminderAt] = useState(task.reminder_at ? task.reminder_at.slice(0, 16) : '')
   const [steps, setSteps] = useState<TaskStep[]>(task.steps ?? [])
+  const [recurrenceFreq, setRecurrenceFreq] = useState<string>(
+    task.recurrence_rule?.frequency ?? ''
+  )
   const [newStep, setNewStep] = useState('')
   const newStepRef = useRef<HTMLInputElement>(null)
 
-  // Re-sync when a different task is selected
+  // Re-sync when a different task is selected. Recurrence syncs on id change
+  // only — local state owns the value while the user is on this task so the
+  // dropdown doesn't snap back to the old prop after a mutation refetch.
   useEffect(() => {
     setTitle(task.title)
     setBody(task.body ?? '')
     setDueDate(task.due_date ? task.due_date.slice(0, 10) : '')
     setReminderAt(task.reminder_at ? task.reminder_at.slice(0, 16) : '')
     setSteps(task.steps ?? [])
-  }, [task.id, task.title, task.body, task.due_date, task.reminder_at, task.steps])
+    setRecurrenceFreq(task.recurrence_rule?.frequency ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id])
 
   const updateMutation = useMutation({
     mutationFn: (patch: Partial<Task>) => tasks.update(task.id, patch),
@@ -285,9 +292,10 @@ function TaskDetailPanel({ task, onClose, onDeleted }: { task: Task; onClose: ()
           <div className="flex-1">
             <p className="text-xs text-[#605E5C] mb-1">Repeat</p>
             <select
-              value={task.recurrence_rule?.frequency ?? ''}
+              value={recurrenceFreq}
               onChange={(e) => {
                 const freq = e.target.value
+                setRecurrenceFreq(freq)
                 if (!freq) {
                   updateMutation.mutate({ recurrence_rule: null } as never)
                 } else {

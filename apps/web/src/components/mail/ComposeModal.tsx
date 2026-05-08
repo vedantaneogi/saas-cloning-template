@@ -353,11 +353,11 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
       const probe = `${subject} ${bodyHtml}`
         .replace(/<[^>]+>/g, ' ')
         .toLowerCase()
-      const phrases = [
-        'attached', 'attachment', 'enclosed', 'please find',
-        'see attached', 'i\'ve attached', 'i have attached',
-      ]
-      if (phrases.some((p) => probe.includes(p))) {
+      // Word-boundary regex so "attach" / "attaching" / "attached" / etc all
+      // hit, including "resume" and "cv" which strongly imply a file is meant
+      // to be enclosed.
+      const trigger = /\b(attach(ed|ment|ments|ing|s)?|enclos(ed|ing)|please find|see attached|herewith|resume|cv|spreadsheet|deck|slides|pdf|docx?|xlsx?)\b/i
+      if (trigger.test(probe)) {
         setAttachmentIntentPending(scheduled ? { scheduled } : 'send')
         return
       }
@@ -430,7 +430,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   // Inline mode — renders inside the reading pane with no modal wrapper
   if (inline) {
     return (
-      <div className="flex flex-col h-full bg-white" aria-label="Compose message">
+      <div className="flex flex-col h-full bg-white relative" aria-label="Compose message">
         {/* Send bar — sits flush at the top of the pane like Outlook's compose,
             with a heavier Send button + chevron for Schedule send. */}
         <div className="flex items-center gap-2 px-4 pt-3 pb-3 border-b border-[#EDEBE9] flex-shrink-0">
