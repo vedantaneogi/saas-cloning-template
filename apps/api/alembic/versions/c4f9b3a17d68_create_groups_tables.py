@@ -37,11 +37,15 @@ ROLE_COL_ENUM = sa.Enum(
 
 
 def upgrade() -> None:
-    sa.Enum("public", "private", name=PRIVACY_ENUM_NAME).create(
-        op.get_bind(), checkfirst=True
+    # checkfirst=True on async PG can mis-fire inside the migration's
+    # transaction. Use the canonical idempotent DO block instead.
+    op.execute(
+        f"DO $$ BEGIN CREATE TYPE {PRIVACY_ENUM_NAME} AS ENUM ('public','private');"
+        f" EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
     )
-    sa.Enum("member", "owner", name=ROLE_ENUM_NAME).create(
-        op.get_bind(), checkfirst=True
+    op.execute(
+        f"DO $$ BEGIN CREATE TYPE {ROLE_ENUM_NAME} AS ENUM ('member','owner');"
+        f" EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
     )
 
     op.create_table(
@@ -76,5 +80,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("group_members")
     op.drop_table("groups")
-    sa.Enum(name=ROLE_ENUM_NAME).drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name=PRIVACY_ENUM_NAME).drop(op.get_bind(), checkfirst=True)
+    op.execute(f"DROP TYPE IF EXISTS {ROLE_ENUM_NAME}")
+    op.execute(f"DROP TYPE IF EXISTS {PRIVACY_ENUM_NAME}")

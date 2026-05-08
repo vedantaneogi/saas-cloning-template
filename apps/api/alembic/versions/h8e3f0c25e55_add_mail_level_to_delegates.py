@@ -25,9 +25,11 @@ MAIL_LEVEL_COL_ENUM = sa.Enum(
 
 
 def upgrade() -> None:
-    sa.Enum(
-        "none", "read", "send_on_behalf", "send_as", name=MAIL_LEVEL_ENUM_NAME
-    ).create(op.get_bind(), checkfirst=True)
+    op.execute(
+        f"DO $$ BEGIN CREATE TYPE {MAIL_LEVEL_ENUM_NAME} AS ENUM"
+        f" ('none','read','send_on_behalf','send_as');"
+        f" EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+    )
     op.add_column(
         "calendar_delegates",
         sa.Column(
@@ -41,4 +43,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_column("calendar_delegates", "mail_level")
-    sa.Enum(name=MAIL_LEVEL_ENUM_NAME).drop(op.get_bind(), checkfirst=True)
+    op.execute(f"DROP TYPE IF EXISTS {MAIL_LEVEL_ENUM_NAME}")

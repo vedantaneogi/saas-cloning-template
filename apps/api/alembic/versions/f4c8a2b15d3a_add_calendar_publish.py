@@ -31,8 +31,9 @@ def upgrade() -> None:
     op.create_unique_constraint(
         "uq_calendars_publish_token", "calendars", ["publish_token"]
     )
-    sa.Enum("free_busy", "full", name=SCOPE_ENUM_NAME).create(
-        op.get_bind(), checkfirst=True
+    op.execute(
+        f"DO $$ BEGIN CREATE TYPE {SCOPE_ENUM_NAME} AS ENUM ('free_busy','full');"
+        f" EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
     )
     op.add_column(
         "calendars",
@@ -49,4 +50,4 @@ def downgrade() -> None:
     op.drop_column("calendars", "publish_scope")
     op.drop_constraint("uq_calendars_publish_token", "calendars", type_="unique")
     op.drop_column("calendars", "publish_token")
-    sa.Enum(name=SCOPE_ENUM_NAME).drop(op.get_bind(), checkfirst=True)
+    op.execute(f"DROP TYPE IF EXISTS {SCOPE_ENUM_NAME}")

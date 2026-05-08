@@ -25,8 +25,10 @@ LEVEL_COL_ENUM = sa.Enum(
 
 
 def upgrade() -> None:
-    sa.Enum("free_busy", "reviewer", "editor", name=LEVEL_ENUM_NAME).create(
-        op.get_bind(), checkfirst=True
+    op.execute(
+        f"DO $$ BEGIN CREATE TYPE {LEVEL_ENUM_NAME} AS ENUM"
+        f" ('free_busy','reviewer','editor');"
+        f" EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
     )
     op.create_table(
         "calendar_delegates",
@@ -53,4 +55,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("calendar_delegates")
-    sa.Enum(name=LEVEL_ENUM_NAME).drop(op.get_bind(), checkfirst=True)
+    op.execute(f"DROP TYPE IF EXISTS {LEVEL_ENUM_NAME}")
