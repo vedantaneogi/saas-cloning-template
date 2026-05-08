@@ -29,6 +29,13 @@ class CalendarDelegate(Base):
         Enum("free_busy", "reviewer", "editor", name="calendar_delegate_level_enum"),
         default="reviewer",
     )
+    # Mail delegation: independent of calendar level. read = browse the
+    # owner's inbox; send_on_behalf = compose with "Owner via Delegate";
+    # send_as = compose as the owner. "none" disables.
+    mail_level: Mapped[str] = mapped_column(
+        Enum("none", "read", "send_on_behalf", "send_as", name="mail_delegate_level_enum"),
+        default="none",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

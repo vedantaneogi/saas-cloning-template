@@ -19,7 +19,7 @@ import {
   Clock,
   RotateCw,
 } from 'lucide-react'
-import { folders, messages, rules } from '@/lib/api'
+import { folders, messages, rules, settings } from '@/lib/api'
 import type { Folder as FolderType } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
 import { useAuthStore } from '@/store/auth'
@@ -531,6 +531,54 @@ export function FolderTree() {
           </>
         )}
       </div>
+
+      {/* Mailbox quota — only renders when meaningful (server returns
+          a real number). Banner styling escalates as usage grows. */}
+      <QuotaBanner />
     </nav>
+  )
+}
+
+function QuotaBanner() {
+  const { data } = useQuery({
+    queryKey: ['mailbox-quota'],
+    queryFn: () => settings.getQuota(),
+    refetchInterval: 60_000,
+  })
+  if (!data || data.limit_bytes <= 0) return null
+  const pct = Math.min(100, Math.max(0, data.percent))
+  const usedMb = (data.used_bytes / (1024 * 1024)).toFixed(1)
+  const limitMb = Math.round(data.limit_bytes / (1024 * 1024))
+  // Color tier: green < 70% < yellow < 90% < red
+  const barColor = pct >= 90 ? '#D13438' : pct >= 70 ? '#C19C00' : '#107C10'
+  const isWarn = pct >= 80
+  return (
+    <div
+      className={cn(
+        'border-t border-[#EDEBE9] px-3 py-2 text-[11px] flex-shrink-0',
+        isWarn ? 'bg-[#FDF7E1]' : 'bg-[#FAF9F8]'
+      )}
+      role={isWarn ? 'alert' : undefined}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[#605E5C] font-medium">
+          {usedMb} MB of {limitMb} MB used
+        </span>
+        <span className="text-[#605E5C]">{pct.toFixed(1)}%</span>
+      </div>
+      <div className="w-full h-1.5 bg-[#EDEBE9] rounded overflow-hidden">
+        <div
+          className="h-full transition-all"
+          style={{ width: `${pct}%`, backgroundColor: barColor }}
+        />
+      </div>
+      {isWarn && (
+        <p className="mt-1 text-[10px] text-[#7A5900]">
+          {pct >= 90
+            ? 'Mailbox almost full — delete or archive messages.'
+            : 'Mailbox is filling up.'}
+        </p>
+      )}
+    </div>
   )
 }

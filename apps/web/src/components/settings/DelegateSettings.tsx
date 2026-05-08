@@ -6,13 +6,20 @@ import { contacts, calendars } from '@/lib/api'
 import type { CalendarDelegateOut } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Plus, Trash2, Shield, Calendar } from 'lucide-react'
+import { Plus, Trash2, Shield, Calendar, Mail } from 'lucide-react'
 import { useUIStore } from '@/store/ui'
 
 const CAL_LEVELS: { value: 'free_busy' | 'reviewer' | 'editor'; label: string; hint: string }[] = [
   { value: 'free_busy', label: 'Free / busy', hint: 'See when I\'m available — no event detail' },
   { value: 'reviewer', label: 'Reviewer', hint: 'Read full event detail' },
   { value: 'editor', label: 'Editor', hint: 'Read and edit my events' },
+]
+
+const MAIL_LEVELS: { value: 'none' | 'read' | 'send_on_behalf' | 'send_as'; label: string }[] = [
+  { value: 'none', label: 'No access' },
+  { value: 'read', label: 'Read inbox' },
+  { value: 'send_on_behalf', label: 'Send on behalf' },
+  { value: 'send_as', label: 'Send as' },
 ]
 
 export function DelegateSettings() {
@@ -50,21 +57,27 @@ export function DelegateSettings() {
   }
 
   const addMutation = useMutation({
-    mutationFn: ({ email, level }: { email: string; level: 'free_busy' | 'reviewer' | 'editor' }) =>
-      calendars.addDelegate(email, level),
+    mutationFn: ({
+      email, level, mailLevel,
+    }: {
+      email: string
+      level?: 'free_busy' | 'reviewer' | 'editor'
+      mailLevel?: 'none' | 'read' | 'send_on_behalf' | 'send_as'
+    }) => calendars.addDelegate(email, level, mailLevel),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['calendar-delegates'] })
       setAddEmail('')
       setEmailSuggestions([])
-      showNotification('Delegate added')
+      showNotification('Delegate updated')
     },
-    onError: (e: Error) => showNotification(e.message || 'Could not add delegate'),
+    onError: (e: Error) => showNotification(e.message || 'Could not update delegate'),
   })
 
-  const updateLevel = (id: string, email: string, level: 'free_busy' | 'reviewer' | 'editor') => {
-    // The backend endpoint is upsert-style — POST with same email updates.
+  // Both updates go through the same upsert endpoint — different fields.
+  const updateCalLevel = (email: string, level: 'free_busy' | 'reviewer' | 'editor') =>
     addMutation.mutate({ email, level })
-  }
+  const updateMailLevel = (email: string, mailLevel: 'none' | 'read' | 'send_on_behalf' | 'send_as') =>
+    addMutation.mutate({ email, mailLevel })
 
   const removeMutation = useMutation({
     mutationFn: (id: string) => calendars.removeDelegate(id),
@@ -149,19 +162,20 @@ export function DelegateSettings() {
       {/* Delegates list */}
       {delegates.length === 0 ? (
         <div className="border border-[#EDEBE9] rounded py-8 text-center text-sm text-[#605E5C]">
-          No delegates yet. Add someone above to grant them calendar access.
+          No delegates yet. Add someone above to grant them access.
         </div>
       ) : (
         <div className="border border-[#EDEBE9] rounded overflow-hidden">
-          <div className="grid grid-cols-[1fr,200px,40px] px-4 py-2 bg-[#F3F2F1] border-b border-[#EDEBE9] text-xs font-medium text-[#605E5C]">
+          <div className="grid grid-cols-[1fr,160px,160px,40px] px-4 py-2 bg-[#F3F2F1] border-b border-[#EDEBE9] text-xs font-medium text-[#605E5C]">
             <span>Delegate</span>
-            <span className="flex items-center gap-1"><Calendar size={11} /> Calendar access</span>
+            <span className="flex items-center gap-1"><Calendar size={11} /> Calendar</span>
+            <span className="flex items-center gap-1"><Mail size={11} /> Mail</span>
             <span />
           </div>
           {delegates.map((d: CalendarDelegateOut) => (
             <div
               key={d.id}
-              className="grid grid-cols-[1fr,200px,40px] items-center px-4 py-3 border-b border-[#EDEBE9] last:border-b-0 hover:bg-[#F3F2F1] transition-colors"
+              className="grid grid-cols-[1fr,160px,160px,40px] items-center px-4 py-3 border-b border-[#EDEBE9] last:border-b-0 hover:bg-[#F3F2F1] transition-colors"
             >
               <div>
                 <p className="text-sm font-medium text-[#323130]">
@@ -173,12 +187,28 @@ export function DelegateSettings() {
                 value={d.level}
                 onChange={(e) =>
                   d.delegate_email &&
-                  updateLevel(d.id, d.delegate_email, e.target.value as 'free_busy' | 'reviewer' | 'editor')
+                  updateCalLevel(d.delegate_email, e.target.value as 'free_busy' | 'reviewer' | 'editor')
                 }
                 aria-label={`Calendar permission for ${d.delegate_name ?? d.delegate_email}`}
                 className="text-xs border border-[#EDEBE9] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:border-[#0078D4] w-full bg-white"
               >
                 {CAL_LEVELS.map((l) => (
+                  <option key={l.value} value={l.value}>{l.label}</option>
+                ))}
+              </select>
+              <select
+                value={d.mail_level ?? 'none'}
+                onChange={(e) =>
+                  d.delegate_email &&
+                  updateMailLevel(
+                    d.delegate_email,
+                    e.target.value as 'none' | 'read' | 'send_on_behalf' | 'send_as',
+                  )
+                }
+                aria-label={`Mail permission for ${d.delegate_name ?? d.delegate_email}`}
+                className="text-xs border border-[#EDEBE9] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:border-[#0078D4] w-full bg-white"
+              >
+                {MAIL_LEVELS.map((l) => (
                   <option key={l.value} value={l.value}>{l.label}</option>
                 ))}
               </select>

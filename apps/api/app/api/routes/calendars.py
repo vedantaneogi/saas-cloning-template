@@ -360,7 +360,8 @@ async def public_calendar(
 
 class DelegateCreate(BaseModel):
     email: str
-    level: str = "reviewer"  # free_busy | reviewer | editor
+    level: Optional[str] = None  # calendar level: free_busy | reviewer | editor
+    mail_level: Optional[str] = None  # mail level: none | read | send_on_behalf | send_as
 
 
 class DelegateOut(BaseModel):
@@ -372,6 +373,7 @@ class DelegateOut(BaseModel):
     delegate_email: Optional[str] = None
     delegate_name: Optional[str] = None
     level: str
+    mail_level: str = "none"
     created_at: datetime
 
 
@@ -406,13 +408,19 @@ async def add_delegate(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Grant another user access to the current user's calendar at the given
-    level. Idempotent on the (owner, delegate) pair — existing rows have
-    their level updated."""
-    if body.level not in ("free_busy", "reviewer", "editor"):
+    """Grant another user access to the current user's calendar and/or mail
+    at the given levels. Idempotent on the (owner, delegate) pair — existing
+    rows have their levels updated. Either level may be omitted to leave it
+    unchanged on update; on create, defaults are reviewer + none."""
+    if body.level is not None and body.level not in ("free_busy", "reviewer", "editor"):
         raise HTTPException(
             status_code=400,
             detail={"error": {"code": "invalid_level", "message": "level must be free_busy / reviewer / editor"}},
+        )
+    if body.mail_level is not None and body.mail_level not in ("none", "read", "send_on_behalf", "send_as"):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "invalid_mail_level", "message": "mail_level must be none / read / send_on_behalf / send_as"}},
         )
     target_q = await db.execute(select(User).where(User.email == body.email))
     target = target_q.scalar_one_or_none()
@@ -436,13 +444,17 @@ async def add_delegate(
     delegate = existing_q.scalar_one_or_none()
     now = rl_state.clock.now()
     if delegate:
-        delegate.level = body.level
+        if body.level is not None:
+            delegate.level = body.level
+        if body.mail_level is not None:
+            delegate.mail_level = body.mail_level
     else:
         delegate = CalendarDelegate(
             id=uuid.uuid4(),
             owner_user_id=current_user.id,
             delegate_user_id=target.id,
-            level=body.level,
+            level=body.level or "reviewer",
+            mail_level=body.mail_level or "none",
             created_at=now,
         )
         db.add(delegate)
@@ -450,7 +462,8 @@ async def add_delegate(
     rl_state.event_log.append("calendar_delegate_set", {
         "owner": str(current_user.id),
         "delegate": str(target.id),
-        "level": body.level,
+        "level": delegate.level,
+        "mail_level": delegate.mail_level,
     })
     out = DelegateOut.model_validate(delegate)
     out.delegate_email = target.email

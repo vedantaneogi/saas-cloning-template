@@ -695,10 +695,18 @@ export const calendars = {
   listDelegates: () =>
     request<CalendarDelegateOut[]>('/calendars/delegates'),
 
-  addDelegate: (email: string, level: 'free_busy' | 'reviewer' | 'editor') =>
+  addDelegate: (
+    email: string,
+    level?: 'free_busy' | 'reviewer' | 'editor',
+    mailLevel?: 'none' | 'read' | 'send_on_behalf' | 'send_as',
+  ) =>
     request<CalendarDelegateOut>('/calendars/delegates', {
       method: 'POST',
-      body: JSON.stringify({ email, level }),
+      body: JSON.stringify({
+        email,
+        ...(level ? { level } : {}),
+        ...(mailLevel ? { mail_level: mailLevel } : {}),
+      }),
     }),
 
   removeDelegate: (id: string) =>
@@ -712,6 +720,7 @@ export interface CalendarDelegateOut {
   delegate_email: string | null
   delegate_name: string | null
   level: 'free_busy' | 'reviewer' | 'editor'
+  mail_level: 'none' | 'read' | 'send_on_behalf' | 'send_as'
   created_at: string
 }
 
@@ -931,6 +940,12 @@ export const categories = {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
+export interface MailboxQuota {
+  used_bytes: number
+  limit_bytes: number
+  percent: number
+}
+
 export const settings = {
   get: () => request<AppSettings>('/settings'),
 
@@ -939,6 +954,8 @@ export const settings = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+
+  getQuota: () => request<MailboxQuota>('/settings/quota'),
 
   getOOF: () => request<OOFSettings>('/settings/oof'),
 
