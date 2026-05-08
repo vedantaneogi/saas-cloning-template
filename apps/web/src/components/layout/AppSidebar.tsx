@@ -109,6 +109,46 @@ const ACTIVE_ICONS: Record<string, React.ReactNode> = {
   groups: <GroupsIcon active />,
 }
 
+// ─── Add-in stubs ─────────────────────────────────────────────────────────────
+// Senior asked for sidebar add-ins matching Outlook's "More apps" rail. Clicks
+// are intentional no-ops — these are visual placeholders only.
+
+function ZoomAddInIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="1.5" y="5" width="13" height="10" rx="2" fill="#2D8CFF" />
+      <path d="M14.5 8.5L18.5 6.2v7.6l-4-2.3z" fill="#2D8CFF" />
+    </svg>
+  )
+}
+
+function SalesforceAddInIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path
+        d="M14 6.2c.6-.6 1.4-1 2.3-1 1.9 0 3.5 1.6 3.5 3.5 0 .4-.1.7-.2 1 .5.4.9 1 .9 1.7 0 1.2-1 2.2-2.2 2.2H5.2c-1.8 0-3.2-1.4-3.2-3.2 0-1.6 1.2-3 2.8-3.2.4-1.6 1.9-2.7 3.6-2.7 1 0 1.9.4 2.5 1 .8-1.1 2-1.8 3.5-1.8 1.7 0 3.1 1 3.7 2.4-.7.1-1.4.4-1.9 1z"
+        fill="#00A1E0"
+      />
+    </svg>
+  )
+}
+
+function AsanaAddInIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <circle cx="10" cy="13.5" r="3" fill="#F06A6A" />
+      <circle cx="5.5" cy="6.5" r="3" fill="#F06A6A" />
+      <circle cx="14.5" cy="6.5" r="3" fill="#F06A6A" />
+    </svg>
+  )
+}
+
+const ADD_INS: { id: string; label: string; icon: React.ReactNode }[] = [
+  { id: 'zoom', label: 'Zoom', icon: <ZoomAddInIcon /> },
+  { id: 'salesforce', label: 'Salesforce', icon: <SalesforceAddInIcon /> },
+  { id: 'asana', label: 'Asana', icon: <AsanaAddInIcon /> },
+]
+
 export function AppSidebar() {
   const pathname = usePathname()
   const router = useRouter()
@@ -154,6 +194,24 @@ export function AppSidebar() {
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Add-ins — visual stubs (no nav target) */}
+      <div className="w-full flex flex-col items-center gap-1 pb-1">
+        <div className="w-6 h-px bg-[#D2D0CE] my-1" aria-hidden="true" />
+        {ADD_INS.map((addIn) => (
+          <button
+            key={addIn.id}
+            type="button"
+            aria-label={`${addIn.label} add-in (preview)`}
+            title={addIn.label}
+            // Stub by senior request — click does nothing.
+            onClick={(e) => e.preventDefault()}
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#EDEBE9] transition-colors"
+          >
+            {addIn.icon}
+          </button>
+        ))}
+      </div>
     </nav>
   )
 }
