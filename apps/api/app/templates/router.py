@@ -32,8 +32,16 @@ async def list_templates(
     current_user: User = Depends(get_current_user),
 ):
     items, total = await svc.list_templates_paginated(db, current_user.id, filter=filter, search=search, page=page, per_page=per_page)
-    pages = max(1, -(-total // per_page))  # ceiling division
-    return TemplateListResponse(items=items, total=total, page=page, pages=pages, per_page=per_page)
+    pages = max(1, -(-total // per_page))
+    serialized = []
+    for t in items:
+        resp = TemplateResponse.model_validate(t)
+        if hasattr(t, "owner") and t.owner:
+            resp.owner_name = t.owner.name
+        else:
+            resp.owner_name = current_user.name
+        serialized.append(resp)
+    return TemplateListResponse(items=serialized, total=total, page=page, pages=pages, per_page=per_page)
 
 
 @router.get("/{template_id}", response_model=TemplateResponse)

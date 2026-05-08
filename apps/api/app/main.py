@@ -48,7 +48,9 @@ async def _run_reminder_and_expiry_loop() -> None:
 
                 # ── 1. Auto-void expired envelopes ────────────────────────
                 expired_result = await db.execute(
-                    select(Envelope).where(
+                    select(Envelope)
+                    .options(selectinload(Envelope.owner))
+                    .where(
                         Envelope.expires_at.isnot(None),
                         Envelope.expires_at <= now,
                         Envelope.status.in_([EnvelopeStatus.sent, EnvelopeStatus.delivered]),
@@ -69,6 +71,17 @@ async def _run_reminder_and_expiry_loop() -> None:
                     )
                     db.add(audit)
                     logger.info("Auto-voided expired envelope %s (expires_at=%s)", env.id, env.expires_at)
+                    if env.owner:
+                        try:
+                            from app.core.email import send_voided_notification
+                            await send_voided_notification(
+                                owner_email=env.owner.email,
+                                owner_name=env.owner.name or "",
+                                envelope_subject=env.subject,
+                                reason="Envelope expired and was automatically voided",
+                            )
+                        except Exception as email_err:
+                            logger.warning("Failed to send expiration notification for %s: %s", env.id, email_err)
 
                 if expired_envelopes:
                     await db.commit()

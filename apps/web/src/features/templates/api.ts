@@ -32,7 +32,7 @@ function normalizeTemplate(raw: Record<string, unknown>): Template {
   return {
     id: String(raw.id ?? ""),
     name: String(raw.name ?? ""),
-    owner: String(raw.owner ?? raw.user_id ?? ""),
+    owner: String(raw.owner_name ?? raw.owner ?? raw.user_id ?? ""),
     createdAt: String(raw.createdAt ?? raw.created_at ?? ""),
     lastModified: String(raw.lastModified ?? raw.updated_at ?? raw.created_at ?? ""),
     isFavorite: Boolean(raw.isFavorite ?? raw.is_favorite ?? false),

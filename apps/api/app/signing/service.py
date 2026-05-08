@@ -46,6 +46,14 @@ async def get_signing_session(db: AsyncSession, token: str) -> dict:
             detail=f"Envelope is not available for signing (status: {envelope.status.value})",
         )
 
+    if envelope.expires_at and envelope.expires_at <= datetime.now(timezone.utc):
+        envelope.status = EnvelopeStatus.voided
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This envelope has expired and is no longer available for signing",
+        )
+
     if recipient.status == RecipientStatus.signed:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

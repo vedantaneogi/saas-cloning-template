@@ -36,6 +36,7 @@ class TemplateResponse(BaseModel):
     document_ids: Optional[List[Any]] = None
     is_favorite: bool = False
     category: Optional[str] = None
+    owner_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

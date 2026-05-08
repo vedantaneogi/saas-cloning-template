@@ -3,6 +3,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.templates.models import Template
 from app.templates.schemas import TemplateCreate, TemplateUpdate
@@ -83,6 +84,7 @@ async def list_templates_paginated(
     # Data
     data_result = await db.execute(
         select(Template)
+        .options(selectinload(Template.owner))
         .where(*base_where)
         .order_by(Template.created_at.desc())
         .offset((page - 1) * per_page)

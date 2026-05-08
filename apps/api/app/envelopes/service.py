@@ -28,6 +28,7 @@ from app.envelopes.schemas import (
     RecipientUpdate,
     VoidEnvelopeRequest,
 )
+from fastapi import HTTPException, status
 from app.envelopes.state_machine import validate_transition
 
 
@@ -321,6 +322,13 @@ async def send_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
     if not envelope.recipients:
         raise ValueError("Envelope must have at least one recipient")
     validate_transition(envelope.status, EnvelopeStatus.sent)
+    # Validate all recipients have valid emails
+    for r in envelope.recipients:
+        if not r.email or not r.email.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Recipient '{r.name or 'unnamed'}' has no email address",
+            )
     envelope.status = EnvelopeStatus.sent
     envelope.sent_at = datetime.now(timezone.utc)
     # Assign signing tokens; for serial routing only activate recipients with the minimum routing_order
@@ -790,6 +798,11 @@ async def correct_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
         recipient.declined_at = None
         recipient.decline_reason = None
         recipient.signing_token = None
+    # Clear field values entered during previous signing session
+    for doc in envelope.documents:
+        for field in doc.fields:
+            if field.value and field.type.value not in ("formula",):
+                field.value = None
     audit = AuditEvent(
         envelope_id=envelope.id,
         recipient_id=None,

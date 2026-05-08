@@ -450,6 +450,49 @@ async def send_declined_notification(
         logger.error("Failed to send declined email to %s: %s", owner_email, exc)
 
 
+async def send_voided_notification(
+    owner_email: str,
+    owner_name: str,
+    envelope_subject: str,
+    reason: str = "Voided by sender",
+) -> None:
+    from app.core.config import get_settings
+    settings = get_settings()
+
+    if not settings.resend_api_key:
+        return
+
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background: #1B0A3C; padding: 20px 30px;">
+        <span style="color: white; font-size: 18px; font-weight: bold;">DocuSign Clone</span>
+      </div>
+      <div style="padding: 30px;">
+        <p>Dear {owner_name or 'User'},</p>
+        <p>The envelope <strong>"{envelope_subject}"</strong> has been voided.</p>
+        <p><strong>Reason:</strong> {reason}</p>
+        <p style="color: #888; font-size: 12px; margin-top: 24px;">This is an automated message from DocuSign Clone. Do not reply to this email.</p>
+      </div>
+    </div>
+    """
+
+    import resend as _resend
+    _resend.api_key = settings.resend_api_key
+
+    params: _resend.Emails.SendParams = {
+        "from": settings.email_from,
+        "to": [owner_email],
+        "subject": f"Voided: {envelope_subject}",
+        "html": html,
+    }
+
+    try:
+        await asyncio.to_thread(_resend.Emails.send, params)
+        logger.info("Voided notification sent to %s for '%s'", owner_email, envelope_subject)
+    except Exception as exc:
+        logger.error("Failed to send voided email to %s: %s", owner_email, exc)
+
+
 async def send_password_reset_email(email: str, name: str, reset_token: str) -> None:
     from app.core.config import get_settings
     settings = get_settings()
