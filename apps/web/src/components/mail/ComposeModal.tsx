@@ -6,7 +6,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { messages, signatures } from '@/lib/api'
+import { messages, signatures, dlp } from '@/lib/api'
+import type { DlpResult } from '@/lib/api'
 import { useUIStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
 import { useEditorStore } from '@/store/editor'
@@ -79,6 +80,8 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   const [sensitivity, setSensitivity] = useState<'normal' | 'personal' | 'private' | 'confidential'>('normal')
   const [sensitivityWarningPending, setSensitivityWarningPending] = useState<false | 'send' | { scheduled: string }>(false)
   const [dlpViolations, setDlpViolations] = useState<string[]>([])
+  // Live DLP — re-evaluated by debounced effect below.
+  const [dlpLive, setDlpLive] = useState<DlpResult | null>(null)
   // Attachment-intent: pending = the user mentioned "attached" but staged
   // no files; once dismissed (clicked "Send anyway") we don't re-prompt
   // for the same compose session.
@@ -316,6 +319,46 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
 
   const requiresWarning = sensitivity === 'private' || sensitivity === 'confidential'
 
+  // Live DLP — debounced 500ms after the user stops typing / changing
+  // recipients. Backend rules also re-check on send so a malicious client
+  // can't bypass.
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const labelMap: Record<string, 'public' | 'internal' | 'confidential' | 'encrypt'> = {
+          normal: 'public',
+          personal: 'internal',
+          private: 'confidential',
+          confidential: 'confidential',
+        }
+        const result = await dlp.evaluate({
+          to: to.map((t) => {
+            const m = t.match(/^(.+)\s<(.+)>$/)
+            return m ? { email: m[2], name: m[1].trim() } : { email: t }
+          }),
+          cc: cc.map((t) => {
+            const m = t.match(/^(.+)\s<(.+)>$/)
+            return m ? { email: m[2], name: m[1].trim() } : { email: t }
+          }),
+          bcc: bcc.map((t) => {
+            const m = t.match(/^(.+)\s<(.+)>$/)
+            return m ? { email: m[2], name: m[1].trim() } : { email: t }
+          }),
+          subject,
+          body: bodyHtml,
+          attachments: attachedFiles.map((f) => ({ name: f.name })),
+          sensitivity_label: labelMap[sensitivity] ?? 'public',
+        })
+        setDlpLive(result)
+      } catch {
+        // Soft-fail — never let a DLP error block the editor; the send-time
+        // re-check is the source of truth.
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [to, cc, bcc, subject, bodyHtml, sensitivity, attachedFiles.length])
+
   const scanForSensitiveContent = (text: string): string[] => {
     const warnings: string[] = []
     const plainText = text.replace(/<[^>]+>/g, ' ')
@@ -344,6 +387,16 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     // with nobody on it.
     if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
       showNotification('Add at least one recipient before sending')
+      return
+    }
+
+    // DLP block — server enforces too, but bail early so the user gets a
+    // clear message rather than a generic 403.
+    if (dlpLive?.status === 'block') {
+      const lines = dlpLive.policy_tips
+        .filter((t) => t.action === 'block')
+        .map((t) => t.message)
+      showNotification(lines.join(' • ') || 'DLP policy blocks this message.')
       return
     }
 
@@ -593,6 +646,44 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
             </button>
           </div>
         </div>
+
+        {/* DLP policy-tip banner — shows the most-severe matched rule above
+            the To field while composing. Block status uses red, encrypt uses
+            blue, warn uses yellow. */}
+        {dlpLive && dlpLive.status !== 'allow' && dlpLive.policy_tips.length > 0 && (() => {
+          const top = dlpLive.policy_tips[0]
+          const tone =
+            dlpLive.status === 'block' ? { bg: '#FDE7E9', fg: '#A4262C', icon: '#D13438' }
+            : dlpLive.status === 'encrypt' ? { bg: '#EFF6FC', fg: '#0E5C9C', icon: '#0078D4' }
+            : { bg: '#FFF4CE', fg: '#7A5900', icon: '#C19C00' }
+          return (
+            <div
+              role="status"
+              className="mx-4 mt-2 mb-1 px-3 py-2 rounded border flex items-start gap-2 text-xs"
+              style={{ backgroundColor: tone.bg, borderColor: tone.fg, color: tone.fg }}
+            >
+              <ShieldAlert size={14} style={{ color: tone.icon }} className="flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold">
+                  Policy tip: {top.message}
+                </p>
+                {dlpLive.policy_tips.length > 1 && (
+                  <p className="opacity-80 mt-0.5">
+                    +{dlpLive.policy_tips.length - 1} more rule{dlpLive.policy_tips.length > 2 ? 's' : ''} triggered
+                  </p>
+                )}
+              </div>
+              <a
+                href="https://learn.microsoft.com/en-us/microsoft-365/compliance/dlp-policy-tips-reference"
+                target="_blank"
+                rel="noreferrer"
+                className="hover:underline whitespace-nowrap"
+              >
+                Learn more
+              </a>
+            </div>
+          )
+        })()}
 
         {/* Recipients — each field on its own row with a button-style label prefix
             ("To"/"Cc"/"Bcc"), Bcc toggle on the right of the To row. Mirrors the

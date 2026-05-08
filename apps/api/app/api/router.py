@@ -6,6 +6,7 @@ from app.api.routes import (
     categories,
     contacts,
     conversations,
+    dlp,
     events,
     folders,
     groups,
@@ -35,3 +36,4 @@ api_router.include_router(rules.router)
 api_router.include_router(signatures.router)
 api_router.include_router(categories.router)
 api_router.include_router(settings.router)
+api_router.include_router(dlp.router)

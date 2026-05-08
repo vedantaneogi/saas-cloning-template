@@ -588,6 +588,39 @@ async def create_message(
 ):
     now = rl_state.clock.now()
 
+    # Server-side DLP enforcement — runs only on real sends (drafts are
+    # exempt so the user can save in-progress work without tripping rules).
+    # Frontend already runs the same engine for the live policy tip + a
+    # warn dialog, but a malicious client can bypass that, so we re-check
+    # here before persisting + delivering.
+    if not body.is_draft:
+        from app.api.routes.dlp import (
+            evaluate_dlp,
+            DlpEvaluateRequest,
+            AddressIn,
+            AttachmentIn,
+        )
+        dlp_req = DlpEvaluateRequest(
+            to=[AddressIn(email=a.get("email", ""), name=a.get("name"))
+                for a in (body.to_addresses or []) if isinstance(a, dict)],
+            cc=[AddressIn(email=a.get("email", ""), name=a.get("name"))
+                for a in (body.cc_addresses or []) if isinstance(a, dict)],
+            bcc=[AddressIn(email=a.get("email", ""), name=a.get("name"))
+                for a in (body.bcc_addresses or []) if isinstance(a, dict)],
+            subject=body.subject or "",
+            body=body.body_html or body.body_text or "",
+            attachments=[AttachmentIn(name="")],  # filenames hydrated post-create
+            sensitivity_label=(body.sensitivity or "public"),
+        )
+        dlp_result = evaluate_dlp(dlp_req, current_user.email)
+        if dlp_result.status == "block":
+            messages_summary = "; ".join(t.message for t in dlp_result.policy_tips)
+            _err(
+                "dlp_blocked",
+                f"Message blocked by DLP policy: {messages_summary}",
+                403,
+            )
+
     # Resolve folder. Schedule-send rides the drafts path even when the user
     # hit "Send" — the message sits in Drafts (not Sent) until dispatch so the
     # user can find/cancel it and so list filters that exclude drafts don't

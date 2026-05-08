@@ -1069,6 +1069,39 @@ export const groups = {
     request<void>(`/groups/${id}/members/${userId}`, { method: 'DELETE' }),
 }
 
+// ─── DLP ──────────────────────────────────────────────────────────────────────
+
+export interface DlpPolicyTip {
+  rule_id: string
+  severity: 'info' | 'warning' | 'high' | 'critical'
+  action: 'allow' | 'warn' | 'block' | 'encrypt'
+  message: string
+}
+
+export interface DlpResult {
+  status: 'allow' | 'warn' | 'block' | 'encrypt'
+  matched_rules: string[]
+  policy_tips: DlpPolicyTip[]
+}
+
+export interface DlpEvaluateRequest {
+  to?: { email: string; name?: string }[]
+  cc?: { email: string; name?: string }[]
+  bcc?: { email: string; name?: string }[]
+  subject?: string
+  body?: string
+  attachments?: { name: string; text_preview?: string }[]
+  sensitivity_label?: 'public' | 'internal' | 'confidential' | 'encrypt'
+}
+
+export const dlp = {
+  evaluate: (data: DlpEvaluateRequest) =>
+    request<DlpResult>('/dlp/evaluate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+}
+
 // ─── RL Environment ───────────────────────────────────────────────────────────
 
 export const rl = {
