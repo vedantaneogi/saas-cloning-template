@@ -23,13 +23,26 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-PRIVACY_ENUM = sa.Enum("public", "private", name="group_privacy_enum")
-ROLE_ENUM = sa.Enum("member", "owner", name="group_role_enum")
+PRIVACY_ENUM_NAME = "group_privacy_enum"
+ROLE_ENUM_NAME = "group_role_enum"
+
+# create_type=False so the table-create hook doesn't try to CREATE TYPE again
+# (we explicitly create them at the top of upgrade() with checkfirst=True).
+PRIVACY_COL_ENUM = sa.Enum(
+    "public", "private", name=PRIVACY_ENUM_NAME, create_type=False
+)
+ROLE_COL_ENUM = sa.Enum(
+    "member", "owner", name=ROLE_ENUM_NAME, create_type=False
+)
 
 
 def upgrade() -> None:
-    PRIVACY_ENUM.create(op.get_bind(), checkfirst=True)
-    ROLE_ENUM.create(op.get_bind(), checkfirst=True)
+    sa.Enum("public", "private", name=PRIVACY_ENUM_NAME).create(
+        op.get_bind(), checkfirst=True
+    )
+    sa.Enum("member", "owner", name=ROLE_ENUM_NAME).create(
+        op.get_bind(), checkfirst=True
+    )
 
     op.create_table(
         "groups",
@@ -38,7 +51,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("email", sa.String(length=500), nullable=False),
-        sa.Column("privacy", PRIVACY_ENUM, nullable=False, server_default="public"),
+        sa.Column("privacy", PRIVACY_COL_ENUM, nullable=False, server_default="public"),
         sa.Column("color", sa.String(length=20), nullable=False, server_default="#0078D4"),
         sa.Column("member_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -51,7 +64,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("group_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("role", ROLE_ENUM, nullable=False, server_default="member"),
+        sa.Column("role", ROLE_COL_ENUM, nullable=False, server_default="member"),
         sa.Column("joined_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["group_id"], ["groups.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
@@ -63,5 +76,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("group_members")
     op.drop_table("groups")
-    ROLE_ENUM.drop(op.get_bind(), checkfirst=True)
-    PRIVACY_ENUM.drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name=ROLE_ENUM_NAME).drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name=PRIVACY_ENUM_NAME).drop(op.get_bind(), checkfirst=True)

@@ -17,13 +17,17 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-LEVEL_ENUM = sa.Enum(
-    "free_busy", "reviewer", "editor", name="calendar_delegate_level_enum"
+LEVEL_ENUM_NAME = "calendar_delegate_level_enum"
+# create_type=False so the table-create hook doesn't re-CREATE TYPE.
+LEVEL_COL_ENUM = sa.Enum(
+    "free_busy", "reviewer", "editor", name=LEVEL_ENUM_NAME, create_type=False
 )
 
 
 def upgrade() -> None:
-    LEVEL_ENUM.create(op.get_bind(), checkfirst=True)
+    sa.Enum("free_busy", "reviewer", "editor", name=LEVEL_ENUM_NAME).create(
+        op.get_bind(), checkfirst=True
+    )
     op.create_table(
         "calendar_delegates",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -31,7 +35,7 @@ def upgrade() -> None:
         sa.Column("delegate_user_id", sa.Uuid(), nullable=False),
         sa.Column(
             "level",
-            LEVEL_ENUM,
+            LEVEL_COL_ENUM,
             nullable=False,
             server_default="reviewer",
         ),
@@ -49,4 +53,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("calendar_delegates")
-    LEVEL_ENUM.drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name=LEVEL_ENUM_NAME).drop(op.get_bind(), checkfirst=True)

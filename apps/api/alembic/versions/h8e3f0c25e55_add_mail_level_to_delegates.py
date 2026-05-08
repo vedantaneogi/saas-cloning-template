@@ -17,18 +17,22 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-MAIL_LEVEL_ENUM = sa.Enum(
-    "none", "read", "send_on_behalf", "send_as", name="mail_delegate_level_enum"
+MAIL_LEVEL_ENUM_NAME = "mail_delegate_level_enum"
+MAIL_LEVEL_COL_ENUM = sa.Enum(
+    "none", "read", "send_on_behalf", "send_as",
+    name=MAIL_LEVEL_ENUM_NAME, create_type=False,
 )
 
 
 def upgrade() -> None:
-    MAIL_LEVEL_ENUM.create(op.get_bind(), checkfirst=True)
+    sa.Enum(
+        "none", "read", "send_on_behalf", "send_as", name=MAIL_LEVEL_ENUM_NAME
+    ).create(op.get_bind(), checkfirst=True)
     op.add_column(
         "calendar_delegates",
         sa.Column(
             "mail_level",
-            MAIL_LEVEL_ENUM,
+            MAIL_LEVEL_COL_ENUM,
             nullable=False,
             server_default="none",
         ),
@@ -37,4 +41,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_column("calendar_delegates", "mail_level")
-    MAIL_LEVEL_ENUM.drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name=MAIL_LEVEL_ENUM_NAME).drop(op.get_bind(), checkfirst=True)

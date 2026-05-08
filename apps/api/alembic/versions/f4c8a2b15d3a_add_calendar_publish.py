@@ -17,7 +17,10 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-SCOPE_ENUM = sa.Enum("free_busy", "full", name="calendar_publish_scope_enum")
+SCOPE_ENUM_NAME = "calendar_publish_scope_enum"
+SCOPE_COL_ENUM = sa.Enum(
+    "free_busy", "full", name=SCOPE_ENUM_NAME, create_type=False
+)
 
 
 def upgrade() -> None:
@@ -28,12 +31,14 @@ def upgrade() -> None:
     op.create_unique_constraint(
         "uq_calendars_publish_token", "calendars", ["publish_token"]
     )
-    SCOPE_ENUM.create(op.get_bind(), checkfirst=True)
+    sa.Enum("free_busy", "full", name=SCOPE_ENUM_NAME).create(
+        op.get_bind(), checkfirst=True
+    )
     op.add_column(
         "calendars",
         sa.Column(
             "publish_scope",
-            SCOPE_ENUM,
+            SCOPE_COL_ENUM,
             nullable=False,
             server_default="free_busy",
         ),
@@ -44,4 +49,4 @@ def downgrade() -> None:
     op.drop_column("calendars", "publish_scope")
     op.drop_constraint("uq_calendars_publish_token", "calendars", type_="unique")
     op.drop_column("calendars", "publish_token")
-    SCOPE_ENUM.drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name=SCOPE_ENUM_NAME).drop(op.get_bind(), checkfirst=True)
