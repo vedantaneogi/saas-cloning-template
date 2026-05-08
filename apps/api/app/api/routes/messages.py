@@ -73,6 +73,33 @@ async def _deliver_to_recipients(
     all_recipients = list(to_addresses or []) + list(cc_addresses or []) + list(bcc_addresses or [])
     now = rl_state.clock.now()
 
+    # Group fan-out: any recipient whose address matches a Group.email gets
+    # expanded to that group's members, so a message to "team-a@company.com"
+    # actually lands in every member's inbox. The original to/cc keeps the
+    # group address visible so Reply / Reply All still target the group.
+    from app.models.group import Group, GroupMember
+    rec_emails_lower = {
+        (r.get("email", "") if isinstance(r, dict) else "").lower()
+        for r in all_recipients
+    }
+    rec_emails_lower.discard("")
+    if rec_emails_lower:
+        group_q = await db.execute(
+            select(Group).where(Group.email.in_(rec_emails_lower))
+        )
+        for g in group_q.scalars().all():
+            members_q = await db.execute(
+                select(User)
+                .join(GroupMember, GroupMember.user_id == User.id)
+                .where(GroupMember.group_id == g.id)
+            )
+            for m in members_q.scalars().all():
+                # Deduplicate against existing recipients (case-insensitive).
+                if m.email.lower() in rec_emails_lower:
+                    continue
+                rec_emails_lower.add(m.email.lower())
+                all_recipients.append({"email": m.email, "name": m.display_name})
+
     # Internal DB delivery for users in our system
     for recipient in all_recipients:
         rec_email = recipient.get("email", "") if isinstance(recipient, dict) else ""

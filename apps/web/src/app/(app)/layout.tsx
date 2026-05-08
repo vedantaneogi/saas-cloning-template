@@ -106,9 +106,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Compose is now inline in ReadingPane — no modal needed on mail pages */}
-      {/* Show modal only on non-mail pages (calendar, contacts, tasks) */}
-      {composerOpen && !pathname?.startsWith('/mail') && (
+      {/* Compose is now inline in ReadingPane on /mail and inline in the
+          group EmailTab on /groups — no popup modal on those pages. Other
+          surfaces (calendar, contacts, tasks) still get the popup. */}
+      {composerOpen
+        && !pathname?.startsWith('/mail')
+        && !pathname?.startsWith('/groups') && (
         <ComposeModal open={composerOpen} onClose={closeComposer} />
       )}
 

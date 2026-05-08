@@ -728,14 +728,19 @@ export default function GroupsPage() {
         }}
       />
 
-      {/* New event — opens in-place over the groups page rather than
-          redirecting to the calendar. */}
+      {/* New event — opens in-place over the groups page. The group's email
+          is pre-attached as an attendee so the event surfaces in the group's
+          Events tab (which filters by attendee.email == group.email), and
+          the title is seeded "<Group> event" so it's identifiable at a
+          glance. */}
       {selectedGroup && (
         <EventModal
           key={`group-event-${selectedGroup.id}-${eventModalOpen}`}
           open={eventModalOpen}
           onClose={() => setEventModalOpen(false)}
           initialDate={new Date()}
+          initialAttendees={[{ email: selectedGroup.email, name: selectedGroup.name }]}
+          initialTitle={`${selectedGroup.name} event`}
         />
       )}
     </div>

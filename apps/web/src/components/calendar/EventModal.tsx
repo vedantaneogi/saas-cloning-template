@@ -42,6 +42,12 @@ interface EventModalProps {
   onClose: () => void
   initialDate?: Date
   event?: Event
+  // Pre-fill the attendee chip list when opened from a context that already
+  // knows participants (e.g. the Groups page seeds the group address here so
+  // the event is identifiable as belonging to that group).
+  initialAttendees?: { email: string; name: string }[]
+  // Pre-fill the title field for new events (e.g. "Team A event" from groups).
+  initialTitle?: string
 }
 
 function formatDateTimeLocal(date: Date): string {
@@ -50,7 +56,7 @@ function formatDateTimeLocal(date: Date): string {
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
-export function EventModal({ open, onClose, initialDate, event }: EventModalProps) {
+export function EventModal({ open, onClose, initialDate, event, initialAttendees, initialTitle }: EventModalProps) {
   const queryClient = useQueryClient()
   const [scopeDialog, setScopeDialog] = useState<{ action: 'save'; data: FormValues } | { action: 'delete' } | null>(null)
 
@@ -118,7 +124,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           repeat_days_of_week: existingDays,
         }
       : {
-          title: '',
+          title: initialTitle ?? '',
           calendar_id: defaultCalendar?.id ?? '',
           start_time: formatDateTimeLocal(now),
           end_time: formatDateTimeLocal(nowPlus1),
@@ -155,7 +161,9 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
 
   const currentUser = useAuthStore((s) => s.currentUser)
   const isOrganizer = !event || (currentUser?.id === event.user_id)
-  const [invitedAttendees, setInvitedAttendees] = useState<{ email: string; name: string }[]>([])
+  const [invitedAttendees, setInvitedAttendees] = useState<{ email: string; name: string }[]>(
+    initialAttendees ?? []
+  )
 
   // Pull the full attendee list when editing — the list endpoint doesn't include them.
   // For recurring events the calendar list passes a virtual-occurrence id (uuid5) that
