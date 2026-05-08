@@ -834,8 +834,8 @@ export const rules = {
 
   reorder: (ordered_ids: string[]) =>
     request<void>('/rules/reorder', {
-      method: 'POST',
-      body: JSON.stringify({ ordered_ids }),
+      method: 'PATCH',
+      body: JSON.stringify({ rule_ids: ordered_ids }),
     }),
 }
 
