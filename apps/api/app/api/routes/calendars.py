@@ -183,6 +183,12 @@ async def public_calendar_by_token(
             detail={"error": {"code": "not_found", "message": "Public calendar not found"}},
         )
 
+    # Owner info — public consumers see who's calendar they're looking at.
+    owner_q = await db.execute(select(User).where(User.id == cal.user_id))
+    owner = owner_q.scalar_one_or_none()
+    owner_name = owner.display_name if owner else cal.name
+    owner_email = owner.email if owner else None
+
     now = rl_state.clock.now()
     window_start = now - timedelta(days=7)
     window_end = now + timedelta(days=90)
@@ -223,6 +229,8 @@ async def public_calendar_by_token(
     if cal.publish_scope == "full":
         return {
             "calendar": cal.name,
+            "owner_name": owner_name,
+            "owner_email": owner_email,
             "scope": "full",
             "events": [
                 {
@@ -241,6 +249,8 @@ async def public_calendar_by_token(
     # free_busy default — strip everything except the time block + status.
     return {
         "calendar": cal.name,
+        "owner_name": owner_name,
+        "owner_email": owner_email,
         "scope": "free_busy",
         "slots": [
             {

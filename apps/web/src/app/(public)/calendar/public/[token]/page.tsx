@@ -39,12 +39,16 @@ interface FullEvent {
 
 interface FreeBusyResponse {
   calendar: string
+  owner_name?: string
+  owner_email?: string | null
   scope: 'free_busy'
   slots: FreeBusySlot[]
 }
 
 interface FullResponse {
   calendar: string
+  owner_name?: string
+  owner_email?: string | null
   scope: 'full'
   events: FullEvent[]
 }
@@ -136,15 +140,23 @@ export default function PublicCalendarPage() {
 
   return (
     <div className="min-h-screen bg-[#FAF9F8]">
-      {/* Hero header */}
+      {/* Hero header — show the owner's name (e.g. "Frank Miller") so the
+          public viewer immediately knows whose calendar they're looking at. */}
       <header className="bg-gradient-to-r from-[#0078D4] to-[#106EBE] text-white">
         <div className="max-w-6xl mx-auto px-6 py-6 flex items-center gap-4">
-          <div className="w-12 h-12 bg-white/15 rounded flex items-center justify-center">
-            <CalIcon size={24} />
+          <div className="w-12 h-12 bg-white/15 rounded flex items-center justify-center text-xl font-semibold">
+            {(data.owner_name || data.calendar)[0].toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs uppercase tracking-wide opacity-80">Public calendar</p>
-            <h1 className="text-xl font-semibold truncate">{data.calendar}</h1>
+            <p className="text-xs uppercase tracking-wide opacity-80 flex items-center gap-1.5">
+              <CalIcon size={11} /> Public calendar
+            </p>
+            <h1 className="text-xl font-semibold truncate">
+              {data.owner_name ?? data.calendar}
+            </h1>
+            {data.owner_email && (
+              <p className="text-xs opacity-80 truncate">{data.owner_email}</p>
+            )}
           </div>
           <span className="hidden sm:inline-flex items-center gap-1.5 text-xs bg-white/15 px-2.5 py-1 rounded">
             {data.scope === 'full' ? <Globe size={12} /> : <Lock size={12} />}
