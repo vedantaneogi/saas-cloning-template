@@ -79,6 +79,7 @@ export default function TemplatesPage() {
     queryKey: ["templates", activeSection, search, page, perPage],
     queryFn: () => getTemplates({ filter: activeSection, search, page, perPage }),
     placeholderData: (prev) => prev,
+    staleTime: 0,
   });
 
   const templates = data?.items ?? [];
@@ -99,6 +100,7 @@ export default function TemplatesPage() {
     mutationFn: () =>
       createEnvelope({ subject: "Untitled Template", message: "", recipients: [] }),
     onSuccess: (envelope) => {
+      queryClient.invalidateQueries({ queryKey: ["templates"] });
       router.push(`/envelope/${envelope.id}/prepare?mode=template`);
     },
     onError: () => {

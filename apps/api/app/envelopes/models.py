@@ -127,6 +127,7 @@ class Envelope(Base):
     allow_comments: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     responsive_signing: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     allow_reassign: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
     owner: Mapped["User"] = relationship("User", back_populates="envelopes")  # noqa: F821
@@ -211,6 +212,7 @@ class Recipient(Base):
     decline_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     access_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     private_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    template_role_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Relationships
     envelope: Mapped["Envelope"] = relationship("Envelope", back_populates="recipients")

@@ -11,6 +11,7 @@ class TemplateCreate(BaseModel):
     fields_config: Optional[List[Any]] = None
     roles: Optional[List[Any]] = None
     document_ids: Optional[List[str]] = None
+    category: Optional[str] = None
 
 
 class TemplateUpdate(BaseModel):
@@ -20,6 +21,7 @@ class TemplateUpdate(BaseModel):
     roles: Optional[List[Any]] = None
     document_ids: Optional[List[str]] = None
     is_favorite: Optional[bool] = None
+    category: Optional[str] = None
 
 
 class TemplateResponse(BaseModel):
@@ -33,6 +35,7 @@ class TemplateResponse(BaseModel):
     roles: Optional[List[Any]] = None
     document_ids: Optional[List[Any]] = None
     is_favorite: bool = False
+    category: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

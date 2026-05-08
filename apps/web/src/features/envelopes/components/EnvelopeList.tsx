@@ -233,7 +233,7 @@ function StatusCell({ envelope, currentUserEmail }: { envelope: Envelope; curren
     (r) => r.email?.toLowerCase() === currentUserEmail.toLowerCase() && (r.role === "signer" || !r.role)
   );
 
-  if (!isSelfSend || status === "draft") {
+  if (!isSelfSend || status === "draft" || status === "declined" || status === "voided") {
     const dotColor = statusDotColors[status] ?? MUTED_TEXT;
     const label = statusLabels[status] ?? status;
     return (
@@ -365,6 +365,16 @@ export function EnvelopeList() {
     setAppliedRecipientSearch("");
     setPendingRecipientSearch("");
   };
+
+  const prevFilterRef = useRef(filter);
+  useEffect(() => {
+    if (prevFilterRef.current !== filter) {
+      prevFilterRef.current = filter;
+      clearAllFilters();
+      setSelectedIds(new Set());
+      setPage(1);
+    }
+  }, [filter]);
 
   const hasActiveFilters =
     dateFilterActive ||
@@ -811,13 +821,13 @@ export function EnvelopeList() {
               <div className="absolute left-0 top-full mt-1 bg-white rounded shadow-lg border z-20 py-4 px-5" style={{ borderColor: BORDER_COLOR, minWidth: "240px", borderRadius: "8px" }}>
                 <p style={{ fontSize: "16px", fontWeight: 600, color: PRIMARY_TEXT, margin: "0 0 2px", fontFamily: DS_FONT }}>Status</p>
                 <p style={{ fontSize: "12px", color: SECONDARY_TEXT, margin: "0 0 14px", fontFamily: DS_FONT }}>Envelopes Status Filter</p>
-                {["Completed", "Declined", "Draft", "In progress", "Voided"].map((opt) => (
+                {["All", "Completed", "Declined", "Draft", "In progress", "Voided"].map((opt) => (
                   <label key={opt} className="flex items-center gap-3 py-1.5 cursor-pointer">
                     <input
                       type="radio"
                       name="status-filter"
-                      checked={pendingStatus === opt}
-                      onChange={() => setPendingStatus(opt)}
+                      checked={opt === "All" ? pendingStatus === null : pendingStatus === opt}
+                      onChange={() => setPendingStatus(opt === "All" ? null : opt)}
                       style={{ accentColor: PRIMARY_COLOR, width: "16px", height: "16px" }}
                     />
                     <span style={{ fontSize: "14px", color: PRIMARY_TEXT, fontFamily: DS_FONT }}>{opt}</span>

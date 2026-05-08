@@ -104,7 +104,7 @@ async def list_envelopes(
 
     if envelope_filter == "inbox":
         inbox = True
-        statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered, EnvelopeStatus.completed]
+        statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered, EnvelopeStatus.completed, EnvelopeStatus.declined, EnvelopeStatus.voided]
         status_filter = None
     elif envelope_filter == "waiting_for_others":
         # "Waiting for Others" — envelopes the current user sent that recipients
@@ -133,8 +133,8 @@ async def list_envelopes(
         status_filter = None
     elif envelope_filter == "sent":
         # "Sent" folder — all envelopes authored by current user that are in
-        # progress: covers both "sent" (not yet opened) and "delivered" (opened).
-        statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered]
+        # progress or have been declined/voided.
+        statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered, EnvelopeStatus.declined, EnvelopeStatus.voided]
         status_filter = None
 
     items, total = await svc.list_envelopes(
@@ -553,16 +553,22 @@ async def save_envelope_as_template(
     document_ids = [str(doc.id) for doc in envelope.documents]
 
     # Build roles list from the envelope's recipients (placeholder roles)
-    roles = [
-        {
+    role_labels = data.role_labels or {}
+    roles = []
+    for r in envelope.recipients:
+        role_entry: dict = {
             "recipient_id": str(r.id),
             "name": r.name,
             "email": r.email,
             "role": r.role.value,
             "routing_order": r.routing_order,
         }
-        for r in envelope.recipients
-    ]
+        if r.access_code:
+            role_entry["access_code"] = r.access_code
+        label = role_labels.get(str(r.id))
+        if label:
+            role_entry["role_label"] = label
+        roles.append(role_entry)
 
     # Build fields_config from all fields across all documents
     fields_config = [
@@ -777,6 +783,19 @@ async def delete_document(
             status_code=status.HTTP_409_CONFLICT,
             detail="Documents can only be removed from draft envelopes",
         )
+    # Clean up files from disk
+    if doc.file_path and os.path.exists(doc.file_path):
+        try:
+            os.remove(doc.file_path)
+        except OSError:
+            pass
+    if doc.preview_filename:
+        preview_path = os.path.join(settings.upload_dir, doc.preview_filename)
+        if os.path.exists(preview_path):
+            try:
+                os.remove(preview_path)
+            except OSError:
+                pass
     await svc.delete_document(db, doc)
 
 

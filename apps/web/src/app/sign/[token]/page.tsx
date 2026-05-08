@@ -23,16 +23,16 @@ export default function SigningPage() {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ background: "linear-gradient(135deg, #1B0A3C, #2D0A7A)" }}
+        style={{ background: "#F5F5F5" }}
       >
         <div className="flex flex-col items-center gap-4">
           <div
-            className="w-14 h-14 rounded-full animate-spin"
-            style={{ border: "3px solid rgba(255,255,255,0.15)", borderTopColor: "#ffffff" }}
+            className="w-10 h-10 rounded-full animate-spin"
+            style={{ border: "3px solid #E0E0E0", borderTopColor: "#1B0A3C" }}
           />
           <div className="text-center">
-            <p className="text-white font-semibold mb-1">Loading your document...</p>
-            <p className="text-white/40 text-sm">Please wait</p>
+            <p className="font-semibold mb-1" style={{ color: "#1B0A3C" }}>Loading your document...</p>
+            <p className="text-gray-400 text-sm">Please wait</p>
           </div>
         </div>
       </div>
@@ -43,7 +43,7 @@ export default function SigningPage() {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-4"
-        style={{ background: "linear-gradient(135deg, #1B0A3C, #2D0A7A)" }}
+        style={{ background: "#F5F5F5" }}
       >
         <div className="bg-white rounded-2xl shadow-2xl p-10 max-w-md w-full text-center">
           <div

@@ -24,28 +24,28 @@ def upgrade() -> None:
     envelope_status = postgresql.ENUM(
         'draft', 'sent', 'delivered', 'completed', 'declined', 'voided',
         name='envelopestatus',
-        create_type=True,
+        create_type=False,
     )
     envelope_status.create(op.get_bind(), checkfirst=True)
 
     recipient_role = postgresql.ENUM(
         'signer', 'cc', 'viewer', 'approver',
         name='recipientrole',
-        create_type=True,
+        create_type=False,
     )
     recipient_role.create(op.get_bind(), checkfirst=True)
 
     recipient_status = postgresql.ENUM(
         'pending', 'sent', 'delivered', 'signed', 'declined',
         name='recipientstatus',
-        create_type=True,
+        create_type=False,
     )
     recipient_status.create(op.get_bind(), checkfirst=True)
 
     field_type = postgresql.ENUM(
         'signature', 'initial', 'date_signed', 'text', 'checkbox', 'dropdown', 'radio', 'attachment',
         name='fieldtype',
-        create_type=True,
+        create_type=False,
     )
     field_type.create(op.get_bind(), checkfirst=True)
 

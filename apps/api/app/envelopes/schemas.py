@@ -135,6 +135,7 @@ class RecipientResponse(BaseModel):
     decline_reason: Optional[str] = None
     access_code: Optional[str] = None
     private_message: Optional[str] = None
+    template_role_label: Optional[str] = None
     fields: List[FieldResponse] = []
 
 
@@ -164,6 +165,7 @@ class EnvelopeCreate(BaseModel):
     allow_comments: Optional[bool] = None
     responsive_signing: Optional[bool] = None
     allow_reassign: Optional[bool] = None
+    category: Optional[str] = None
 
 
 class EnvelopeUpdate(BaseModel):
@@ -174,6 +176,7 @@ class EnvelopeUpdate(BaseModel):
     allow_comments: Optional[bool] = None
     responsive_signing: Optional[bool] = None
     allow_reassign: Optional[bool] = None
+    category: Optional[str] = None
 
 
 class EnvelopeResponse(BaseModel):
@@ -193,6 +196,7 @@ class EnvelopeResponse(BaseModel):
     allow_comments: bool = True
     responsive_signing: bool = True
     allow_reassign: bool = True
+    category: Optional[str] = None
 
 
 class EnvelopeDetailResponse(EnvelopeResponse):
@@ -234,7 +238,8 @@ class EnvelopeListResponse(BaseModel):
 # ── Save as Template Schemas ──────────────────────────────────────────────────
 
 class SaveAsTemplateRequest(BaseModel):
-    name: Optional[str] = None  # defaults to envelope subject
+    name: Optional[str] = None
+    role_labels: Optional[dict[str, str]] = None
 
 
 class SaveAsTemplateResponse(BaseModel):

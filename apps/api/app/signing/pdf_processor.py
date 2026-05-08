@@ -9,24 +9,22 @@ from typing import Any
 import fitz  # PyMuPDF
 
 
-def get_page_count(file_path: str) -> int:
+def get_page_count(file_path: str, preview_path: str | None = None) -> int:
     """Return the number of pages in a document file.
 
-    Supports PDF via PyMuPDF. For DOCX/DOC files, falls back to 1
-    (python-docx does not expose a reliable page count).
+    For PDF files, uses PyMuPDF directly. For DOCX/DOC files, uses the
+    converted preview PDF if available (accurate), otherwise falls back to 1.
     """
     import os
     ext = os.path.splitext(file_path)[-1].lower()
     if ext in (".docx", ".doc"):
-        if ext == ".docx":
+        if preview_path and os.path.exists(preview_path):
             try:
-                from docx import Document as DocxDocument
-                docx_doc = DocxDocument(file_path)
-                return max(1, len(docx_doc.sections))
+                with fitz.open(preview_path) as doc:
+                    return doc.page_count
             except Exception:
-                return 1
-        return 1  # .doc — no pure-Python page counter
-    # Default: treat as PDF
+                pass
+        return 1
     with fitz.open(file_path) as doc:
         return doc.page_count
 

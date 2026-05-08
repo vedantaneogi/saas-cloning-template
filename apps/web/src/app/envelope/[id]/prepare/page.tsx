@@ -28,9 +28,20 @@ interface RecipientForm {
   name: string;
   email: string;
   role: string;
+  templateRole?: string;
   order: number;
   color: string;
   privateMessage?: string;
+  accessCode?: string;
+}
+
+// Per-recipient inline section visibility
+interface RecipientInlineState {
+  showAccessCode: boolean;
+  showPrivateMessage: boolean;
+  accessCodeCollapsed: boolean;
+  privateMessageCollapsed: boolean;
+  verificationMethod: string;
 }
 
 const formatSize = (bytes: number) => {
@@ -80,13 +91,24 @@ export default function PrepareEnvelopePage() {
   const [addRecipientDropdownOpen, setAddRecipientDropdownOpen] = useState(false);
   const [customizeDropdownOpen, setCustomizeDropdownOpen] = useState<Record<string, boolean>>({});
 
-  // ── Access code dialog ─────────────────────────────────────────────────────
-  const [accessCodeDialog, setAccessCodeDialog] = useState<{ recipientId: string; currentCode: string } | null>(null);
-  const [accessCodeInput, setAccessCodeInput] = useState("");
+  // ── Inline expandable sections per recipient ──────────────────────────────
+  const [recipientInlineState, setRecipientInlineState] = useState<Record<string, RecipientInlineState>>({});
 
-  // ── Private message dialog ─────────────────────────────────────────────────
-  const [privateMessageDialog, setPrivateMessageDialog] = useState<{ recipientId: string } | null>(null);
-  const [privateMessageInput, setPrivateMessageInput] = useState("");
+  const getInlineState = (recipientId: string): RecipientInlineState =>
+    recipientInlineState[recipientId] ?? {
+      showAccessCode: false,
+      showPrivateMessage: false,
+      accessCodeCollapsed: false,
+      privateMessageCollapsed: false,
+      verificationMethod: "Access Code",
+    };
+
+  const updateInlineState = (recipientId: string, updates: Partial<RecipientInlineState>) => {
+    setRecipientInlineState((prev) => ({
+      ...prev,
+      [recipientId]: { ...getInlineState(recipientId), ...updates },
+    }));
+  };
 
   // ── File state ─────────────────────────────────────────────────────────────
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ id: string; name: string; size: number }>>([]);
@@ -115,6 +137,7 @@ export default function PrepareEnvelopePage() {
   const isTemplateMode = searchParams.get("mode") === "template";
   const [templateName, setTemplateName] = useState("");
   const [templateDescription, setTemplateDescription] = useState("");
+  const [category, setCategory] = useState<string>("");
 
   // ── Bulk send modal ────────────────────────────────────────────────────────
   const isBulkMode = searchParams.get("bulk") === "true";
@@ -164,6 +187,7 @@ export default function PrepareEnvelopePage() {
 
     if (envelope.subject) setSubject(envelope.subject);
     if (envelope.message) setMessage(envelope.message);
+    if ((envelope as any).category) setCategory((envelope as any).category);
     // Restore reminder_days from saved envelope
     if (typeof envelope.reminder_days === "number" && envelope.reminder_days > 0) {
       setReminderDays(envelope.reminder_days);
@@ -183,7 +207,7 @@ export default function PrepareEnvelopePage() {
       setAdvResponsiveSigning((envelope as any).responsive_signing as boolean);
     }
     if (envelope.recipients && envelope.recipients.length > 0) {
-      setRecipients(envelope.recipients.map((r, i) => ({
+      const loaded = envelope.recipients.map((r, i) => ({
         id: r.id,
         name: r.name,
         email: r.email,
@@ -191,7 +215,24 @@ export default function PrepareEnvelopePage() {
         order: r.order || i + 1,
         color: getRecipientColor(i),
         privateMessage: r.private_message ?? undefined,
-      })));
+        accessCode: r.access_code ?? undefined,
+      }));
+      setRecipients(loaded);
+      // Restore inline section visibility for any recipient with saved values
+      setRecipientInlineState((prev) => {
+        const next = { ...prev };
+        for (const r of loaded) {
+          if (r.accessCode || r.privateMessage) {
+            next[r.id] = {
+              ...{ showAccessCode: false, showPrivateMessage: false, accessCodeCollapsed: false, privateMessageCollapsed: false, verificationMethod: "Access Code" },
+              ...(next[r.id] ?? {}),
+              showAccessCode: !!r.accessCode,
+              showPrivateMessage: !!r.privateMessage,
+            };
+          }
+        }
+        return next;
+      });
       // Restore imOnlySigner if envelope was saved with only the sender as recipient
       const userEmail = currentUser?.email?.toLowerCase();
       if (
@@ -281,6 +322,7 @@ export default function PrepareEnvelopePage() {
         message,
         reminder_days: reminderDays,
         ...(expiresAt ? { expires_at: expiresAt } : {}),
+        ...(category ? { category } : {}),
       });
 
       // Build a map of persisted recipients keyed by their server-assigned UUID.
@@ -311,19 +353,28 @@ export default function PrepareEnvelopePage() {
       const seen = new Set<string>();
       for (const r of recipients) {
         const email = r.email.trim().toLowerCase();
-        if (!r.name.trim() || !email) continue;
-        if (seen.has(email)) continue;
-        seen.add(email);
+        const name = r.name.trim();
+        // In template mode, skip only if both name and email are empty (fully blank row).
+        // In normal mode, require both name and a valid email.
+        if (isTemplateMode) {
+          if (!name && !email && !r.templateRole?.trim()) continue;
+        } else {
+          if (!name || !email) continue;
+        }
+        const dedupeKey = email || r.id;
+        if (email && seen.has(dedupeKey)) continue;
+        if (email) seen.add(dedupeKey);
 
         // When signing order is unchecked, all recipients get routing_order 1 (parallel).
         // When checked, use the individual order values set by the user.
         const routingOrder = setSigningOrder ? r.order : 1;
 
         const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
+        let savedRecipientId = r.id;
         if (isPersistedRecipient) {
           // Update existing recipient in case name/role/order was changed in the UI.
           await updateRecipientAPI(r.id, {
-            name: r.name.trim(),
+            name: r.name.trim() || r.templateRole?.trim() || "Recipient",
             email: r.email.trim(),
             role: r.role,
             routing_order: routingOrder,
@@ -331,12 +382,20 @@ export default function PrepareEnvelopePage() {
           });
         } else {
           // New recipient — add to envelope.
-          await addRecipientAPI(id, {
-            name: r.name.trim(),
+          const newR = await addRecipientAPI(id, {
+            name: r.name.trim() || r.templateRole?.trim() || "Recipient",
             email: r.email.trim(),
             role: r.role,
             routing_order: routingOrder,
             private_message: r.privateMessage || undefined,
+          });
+          if (newR?.id) savedRecipientId = newR.id;
+        }
+        // Persist access code if set
+        if (r.accessCode?.trim()) {
+          await setRecipientAccessCode(savedRecipientId, r.accessCode.trim()).catch((err) => {
+            console.error("Failed to save access code for recipient:", savedRecipientId, err);
+            addToast("Failed to save access code for a recipient.", "error");
           });
         }
       }
@@ -360,6 +419,7 @@ export default function PrepareEnvelopePage() {
   });
 
   // ── File drop ──────────────────────────────────────────────────────────────
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
   const handleFilesDrop = async (files: FileList | File[]) => {
     const fileArray = Array.from(files).filter(
       (f) =>
@@ -371,6 +431,10 @@ export default function PrepareEnvelopePage() {
         f.name.endsWith(".doc"),
     );
     for (const file of fileArray) {
+      if (file.size > MAX_FILE_SIZE) {
+        addToast(`${file.name} exceeds 10 MB limit.`, "error");
+        continue;
+      }
       await uploadMutation.mutateAsync(file);
     }
   };
@@ -455,12 +519,15 @@ export default function PrepareEnvelopePage() {
   // ── Proceed guard ──────────────────────────────────────────────────────────
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const hasDocuments = (uploadedFiles.length > 0) || (envelope?.documents?.length ?? 0) > 0;
-  const hasValidRecipient = imOnlySigner
+  // In template mode, name/email are optional — always considered valid
+  const hasValidRecipient = isTemplateMode
+    ? true
+    : imOnlySigner
     ? true
     : recipients.some(
         (r) => r.name?.trim() && r.email?.trim() && EMAIL_REGEX.test(r.email.trim()),
       );
-  const hasInvalidEmail = !imOnlySigner &&
+  const hasInvalidEmail = !isTemplateMode && !imOnlySigner &&
     recipients.some(
       (r) => r.email?.trim() && !EMAIL_REGEX.test(r.email.trim()),
     );
@@ -565,32 +632,40 @@ export default function PrepareEnvelopePage() {
                   }
 
                   const seen = new Set<string>();
+                  const roleLabelsMap: Record<string, string> = {};
                   for (const r of recipients) {
                     const email = r.email.trim().toLowerCase();
-                    if (!r.name.trim() || !email) continue;
-                    if (seen.has(email)) continue;
-                    seen.add(email);
+                    const name = r.name.trim() || r.templateRole?.trim() || "";
+                    if (!name && !email) continue;
+                    if (email && seen.has(email)) continue;
+                    if (email) seen.add(email);
+                    const recipientName = r.name.trim() || r.templateRole?.trim() || "Recipient";
                     const routingOrder = setSigningOrder ? r.order : 1;
                     const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
+                    let savedId = r.id;
                     if (isPersistedRecipient) {
                       await updateRecipientAPI(r.id, {
-                        name: r.name.trim(),
+                        name: recipientName,
                         email: r.email.trim(),
                         role: r.role,
                         routing_order: routingOrder,
                       });
                     } else {
-                      await addRecipientAPI(id, {
-                        name: r.name.trim(),
+                      const newR = await addRecipientAPI(id, {
+                        name: recipientName,
                         email: r.email.trim(),
                         role: r.role,
                         routing_order: routingOrder,
                       });
+                      if (newR?.id) savedId = newR.id;
+                    }
+                    if (r.templateRole?.trim()) {
+                      roleLabelsMap[savedId] = r.templateRole.trim();
                     }
                   }
 
                   // 3. Snapshot envelope → template record.
-                  await saveEnvelopeAsTemplate(id, templateName.trim() || undefined);
+                  await saveEnvelopeAsTemplate(id, templateName.trim() || undefined, roleLabelsMap);
                   router.push("/templates");
                 } catch {
                   addToast("Failed to save template. Please try again.", "error");
@@ -847,6 +922,9 @@ export default function PrepareEnvelopePage() {
                   </div>
                   <p style={{ fontSize: "16px", color: "rgba(19,0,50,0.9)", margin: 0 }}>
                     Drop your files here or
+                  </p>
+                  <p style={{ fontSize: "12px", color: "rgba(19,0,50,0.35)", margin: "4px 0 0" }}>
+                    PDF, DOCX, DOC — max 10 MB per file
                   </p>
 
                   {/* Upload split button — stop propagation so clicking the button doesn't also trigger the label */}
@@ -1115,43 +1193,46 @@ export default function PrepareEnvelopePage() {
                 <div style={{ height: "1px", background: "rgba(19,0,50,0.12)", marginBottom: "16px" }} />
                 {/* Options rows — stacked vertically like real DocuSign */}
                 <div className="mb-4" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <label className="flex items-center gap-2 cursor-pointer select-none" style={{ width: "fit-content" }}>
-                    <input
-                      type="checkbox"
-                      checked={imOnlySigner}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setImOnlySigner(checked);
-                        if (checked) {
-                          const userName = currentUser?.name || envelope?.from || "";
-                          const userEmail = currentUser?.email || envelope?.fromEmail || "";
-                          setRecipients([{
-                            id: "r1",
-                            name: userName,
-                            email: userEmail,
-                            role: "signer",
-                            order: 1,
-                            color: getRecipientColor(0),
-                          }]);
-                        } else if (!checked) {
-                          setRecipients([{
-                            id: "r1",
-                            name: "",
-                            email: "",
-                            role: "signer",
-                            order: 1,
-                            color: getRecipientColor(0),
-                          }]);
-                        }
-                      }}
-                      className="w-4 h-4"
-                      style={{ accentColor: "#4C00FF" }}
-                    />
-                    <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)" }}>
-                      I&apos;m the only signer
-                    </span>
-                    <Info size={15} weight="bold" color="rgba(19,0,50,0.5)" />
-                  </label>
+                  {/* "I'm the only signer" — hidden in template mode */}
+                  {!isTemplateMode && (
+                    <label className="flex items-center gap-2 cursor-pointer select-none" style={{ width: "fit-content" }}>
+                      <input
+                        type="checkbox"
+                        checked={imOnlySigner}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setImOnlySigner(checked);
+                          if (checked) {
+                            const userName = currentUser?.name || envelope?.from || "";
+                            const userEmail = currentUser?.email || envelope?.fromEmail || "";
+                            setRecipients([{
+                              id: "r1",
+                              name: userName,
+                              email: userEmail,
+                              role: "signer",
+                              order: 1,
+                              color: getRecipientColor(0),
+                            }]);
+                          } else if (!checked) {
+                            setRecipients([{
+                              id: "r1",
+                              name: "",
+                              email: "",
+                              role: "signer",
+                              order: 1,
+                              color: getRecipientColor(0),
+                            }]);
+                          }
+                        }}
+                        className="w-4 h-4"
+                        style={{ accentColor: "#4C00FF" }}
+                      />
+                      <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)" }}>
+                        I&apos;m the only signer
+                      </span>
+                      <Info size={15} weight="bold" color="rgba(19,0,50,0.5)" />
+                    </label>
+                  )}
 
                   {!imOnlySigner && (
                     <label className="flex items-center gap-2 select-none" style={{ width: "fit-content", cursor: "pointer" }}>
@@ -1172,13 +1253,15 @@ export default function PrepareEnvelopePage() {
                       >
                         View
                       </button>
-                      <button
-                        className="hover:underline"
-                        onClick={(e) => { e.preventDefault(); setBulkModalOpen(true); setBulkStep(1); }}
-                        style={{ fontSize: "14px", color: "#4C00FF", fontWeight: 400, background: "none", border: "none", cursor: "pointer" }}
-                      >
-                        Bulk send
-                      </button>
+                      {!isTemplateMode && (
+                        <button
+                          className="hover:underline"
+                          onClick={(e) => { e.preventDefault(); setBulkModalOpen(true); setBulkStep(1); }}
+                          style={{ fontSize: "14px", color: "#4C00FF", fontWeight: 400, background: "none", border: "none", cursor: "pointer" }}
+                        >
+                          Bulk send
+                        </button>
+                      )}
                     </label>
                   )}
                 </div>
@@ -1187,8 +1270,8 @@ export default function PrepareEnvelopePage() {
                 {!imOnlySigner && (
                 <div className="space-y-3" style={{ marginTop: "16px" }}>
                   {recipients.map((recipient, recipientIdx) => (
+                    <div key={recipient.id}>
                     <div
-                      key={recipient.id}
                       style={{
                         border: "1px solid rgba(19,0,50,0.12)",
                         borderLeft: `4px solid ${recipient.color}`,
@@ -1279,6 +1362,44 @@ export default function PrepareEnvelopePage() {
                         </div>
                       )}
 
+                      {/* Role name field — template mode only, shown above Name */}
+                      {isTemplateMode && (
+                        <div style={{ marginBottom: "12px" }}>
+                          <label
+                            className="block mb-1"
+                            style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}
+                          >
+                            Role
+                          </label>
+                          <input
+                            type="text"
+                            value={recipient.templateRole ?? ""}
+                            onChange={(e) =>
+                              updateRecipient(recipient.id, { templateRole: e.target.value })
+                            }
+                            placeholder="e.g., Customer, Admin, Sales Rep"
+                            className="focus:outline-none transition-all"
+                            style={{
+                              border: "1px solid rgba(19,0,50,0.25)",
+                              borderRadius: "4px",
+                              padding: "8px 12px",
+                              fontSize: "16px",
+                              width: "100%",
+                              maxWidth: "320px",
+                              color: "rgba(19,0,50,0.9)",
+                            }}
+                            onFocus={(e) => {
+                              e.target.style.borderColor = "#4C00FF";
+                              e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)";
+                            }}
+                            onBlur={(e) => {
+                              e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                              e.target.style.boxShadow = "none";
+                            }}
+                          />
+                        </div>
+                      )}
+
                       {/* Row 1: Name + Role dropdown + Customize + Remove */}
                       <div className="flex items-end gap-3 mb-3 flex-wrap">
                         {/* Name */}
@@ -1287,7 +1408,7 @@ export default function PrepareEnvelopePage() {
                             className="block mb-1"
                             style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}
                           >
-                            Name <span style={{ color: "#C0392B" }}>*</span>
+                            Name {!isTemplateMode && <span style={{ color: "#C0392B" }}>*</span>}
                           </label>
                           <div className="relative">
                             <AddressBook
@@ -1309,6 +1430,7 @@ export default function PrepareEnvelopePage() {
                                 updateRecipient(recipient.id, { name: e.target.value })
                               }
                               disabled={imOnlySigner}
+                              placeholder={undefined}
                               className="w-full focus:outline-none transition-all"
                               style={{
                                 paddingLeft: "36px",
@@ -1316,7 +1438,7 @@ export default function PrepareEnvelopePage() {
                                 paddingTop: "8px",
                                 paddingBottom: "8px",
                                 fontSize: "16px",
-                                border: `1px solid ${triedToProceed && !recipient.name?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
+                                border: `1px solid ${triedToProceed && !isTemplateMode && !recipient.name?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
                                 borderRadius: "4px",
                                 background: imOnlySigner ? "#F3F3F3" : "#fff",
                                 color: imOnlySigner ? "#888" : "rgba(19,0,50,0.9)",
@@ -1330,11 +1452,11 @@ export default function PrepareEnvelopePage() {
                                 }
                               }}
                               onBlur={(e) => {
-                                e.target.style.borderColor = triedToProceed && !recipient.name?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)";
+                                e.target.style.borderColor = triedToProceed && !isTemplateMode && !recipient.name?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)";
                                 e.target.style.boxShadow = "none";
                               }}
                             />
-                            {triedToProceed && !recipient.name?.trim() && (
+                            {triedToProceed && !isTemplateMode && !recipient.name?.trim() && (
                               <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
                                 Required
                               </p>
@@ -1459,8 +1581,7 @@ export default function PrepareEnvelopePage() {
                                 style={{ padding: "12px 16px" }}
                                 onClick={() => {
                                   setCustomizeDropdownOpen((prev) => ({ ...prev, [recipient.id]: false }));
-                                  setAccessCodeInput("");
-                                  setAccessCodeDialog({ recipientId: recipient.id, currentCode: "" });
+                                  updateInlineState(recipient.id, { showAccessCode: true, accessCodeCollapsed: false });
                                 }}
                               >
                                 <Key size={20} weight="bold" color="#555" style={{ flexShrink: 0, marginTop: "2px" }} />
@@ -1474,8 +1595,7 @@ export default function PrepareEnvelopePage() {
                                 style={{ padding: "12px 16px" }}
                                 onClick={() => {
                                   setCustomizeDropdownOpen((prev) => ({ ...prev, [recipient.id]: false }));
-                                  setPrivateMessageInput(recipient.privateMessage || "");
-                                  setPrivateMessageDialog({ recipientId: recipient.id });
+                                  updateInlineState(recipient.id, { showPrivateMessage: true, privateMessageCollapsed: false });
                                 }}
                               >
                                 <ChatText size={20} weight="bold" color="#555" style={{ flexShrink: 0, marginTop: "2px" }} />
@@ -1490,15 +1610,12 @@ export default function PrepareEnvelopePage() {
                           )}
                         </div>
 
-                        {/* Private message indicator */}
-                        {recipient.privateMessage && (
+                        {/* Private message indicator — shows when there's a saved message but section is hidden */}
+                        {recipient.privateMessage && !getInlineState(recipient.id).showPrivateMessage && (
                           <div title={recipient.privateMessage}>
                             <label className="block font-semibold mb-1 invisible" style={{ fontSize: "12px" }}>&nbsp;</label>
                             <button
-                              onClick={() => {
-                                setPrivateMessageInput(recipient.privateMessage || "");
-                                setPrivateMessageDialog({ recipientId: recipient.id });
-                              }}
+                              onClick={() => updateInlineState(recipient.id, { showPrivateMessage: true, privateMessageCollapsed: false })}
                               className="flex items-center gap-1 rounded transition-colors hover:bg-purple-50"
                               style={{ padding: "8px 10px", border: "1px solid rgba(76,0,255,0.3)", background: "rgba(76,0,255,0.05)", borderRadius: "4px" }}
                               title="Private message set — click to edit"
@@ -1539,7 +1656,7 @@ export default function PrepareEnvelopePage() {
                           className="block mb-1"
                           style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}
                         >
-                          Email <span style={{ color: "#C0392B" }}>*</span>
+                          Email {!isTemplateMode && <span style={{ color: "#C0392B" }}>*</span>}
                         </label>
                         <input
                           type="email"
@@ -1559,9 +1676,10 @@ export default function PrepareEnvelopePage() {
                             }
                           }}
                           disabled={imOnlySigner}
+                          placeholder={undefined}
                           className="focus:outline-none transition-all"
                           style={{
-                            border: `1px solid ${(triedToProceed && !recipient.email?.trim()) || duplicateEmailErrors[recipient.id] ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
+                            border: `1px solid ${(triedToProceed && !isTemplateMode && !recipient.email?.trim()) || duplicateEmailErrors[recipient.id] ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
                             borderRadius: "4px",
                             padding: "8px 16px",
                             fontSize: "16px",
@@ -1578,7 +1696,7 @@ export default function PrepareEnvelopePage() {
                             }
                           }}
                           onBlur={(e) => {
-                            e.target.style.borderColor = (triedToProceed && !recipient.email?.trim()) || duplicateEmailErrors[recipient.id] ? "#C0392B" : "rgba(19,0,50,0.25)";
+                            e.target.style.borderColor = (triedToProceed && !isTemplateMode && !recipient.email?.trim()) || duplicateEmailErrors[recipient.id] ? "#C0392B" : "rgba(19,0,50,0.25)";
                             e.target.style.boxShadow = "none";
                           }}
                         />
@@ -1587,12 +1705,239 @@ export default function PrepareEnvelopePage() {
                             This email address is already used by another recipient
                           </p>
                         )}
-                        {triedToProceed && !recipient.email?.trim() && (
+                        {triedToProceed && !isTemplateMode && !recipient.email?.trim() && (
                           <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
                             Required
                           </p>
                         )}
                       </div>
+                    </div>
+
+                    {/* ── Inline: Access Code ── */}
+                    {getInlineState(recipient.id).showAccessCode && (
+                      <div
+                        style={{
+                          borderLeft: `4px solid ${recipient.color}`,
+                          borderTop: "1px solid rgba(19,0,50,0.12)",
+                          borderRight: "1px solid rgba(19,0,50,0.12)",
+                          borderBottom: "1px solid rgba(19,0,50,0.12)",
+                          borderRadius: "0 0 4px 4px",
+                          background: "#fff",
+                          marginTop: "-1px",
+                        }}
+                      >
+                        {/* Header row */}
+                        <div
+                          className="flex items-center justify-between"
+                          style={{ padding: "12px 16px", borderBottom: getInlineState(recipient.id).accessCodeCollapsed ? "none" : "1px solid rgba(19,0,50,0.08)" }}
+                        >
+                          <span style={{ fontSize: "14px", fontWeight: 600, color: "rgba(19,0,50,0.9)" }}>
+                            Access code
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                updateRecipient(recipient.id, { accessCode: undefined });
+                                updateInlineState(recipient.id, { showAccessCode: false });
+                                const recipId = recipient.id;
+                                if (!/^r/.test(recipId)) {
+                                  setRecipientAccessCode(recipId, "").catch(() => { /* clearing access code — non-critical */ });
+                                }
+                              }}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title="Remove access code"
+                            >
+                              <Trash size={15} weight="bold" color="#999" />
+                            </button>
+                            <button
+                              onClick={() => updateInlineState(recipient.id, { accessCodeCollapsed: !getInlineState(recipient.id).accessCodeCollapsed })}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title={getInlineState(recipient.id).accessCodeCollapsed ? "Expand" : "Collapse"}
+                            >
+                              {getInlineState(recipient.id).accessCodeCollapsed
+                                ? <CaretDown size={14} weight="bold" color="#555" />
+                                : <CaretUp size={14} weight="bold" color="#555" />
+                              }
+                            </button>
+                          </div>
+                        </div>
+                        {/* Body */}
+                        {!getInlineState(recipient.id).accessCodeCollapsed && (
+                          <div style={{ padding: "14px 16px 16px" }}>
+                            {/* Verification method dropdown */}
+                            <div style={{ marginBottom: "14px" }}>
+                              <label
+                                style={{
+                                  display: "block",
+                                  fontSize: "13px",
+                                  fontWeight: 500,
+                                  color: "rgba(19,0,50,0.7)",
+                                  marginBottom: "6px",
+                                }}
+                              >
+                                Verification method
+                              </label>
+                              <select
+                                className="bg-white focus:outline-none"
+                                value={getInlineState(recipient.id).verificationMethod}
+                                onChange={(e) =>
+                                  updateInlineState(recipient.id, { verificationMethod: e.target.value })
+                                }
+                                style={{
+                                  border: "1px solid rgba(19,0,50,0.25)",
+                                  borderRadius: "4px",
+                                  padding: "8px 12px",
+                                  fontSize: "14px",
+                                  color: "rgba(19,0,50,0.9)",
+                                  width: "100%",
+                                  maxWidth: "320px",
+                                }}
+                              >
+                                {[
+                                  { value: "Access Code", label: "Access Code" },
+                                  { value: "SMS", label: "SMS (Coming Soon)" },
+                                  { value: "Knowledge-based", label: "Knowledge-based (Coming Soon)" },
+                                  { value: "ID Evidence", label: "ID Evidence (Coming Soon)" },
+                                  { value: "Phone Verification", label: "Phone Verification (Coming Soon)" },
+                                ].map((opt) => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {getInlineState(recipient.id).verificationMethod === "Access Code" ? (
+                              <>
+                                <input
+                                  type="text"
+                                  value={recipient.accessCode ?? ""}
+                                  onChange={(e) => updateRecipient(recipient.id, { accessCode: e.target.value })}
+                                  placeholder="Enter access code"
+                                  className="focus:outline-none transition-all"
+                                  style={{
+                                    width: "100%",
+                                    maxWidth: "320px",
+                                    padding: "8px 12px",
+                                    border: "1px solid rgba(19,0,50,0.25)",
+                                    borderRadius: "4px",
+                                    fontSize: "14px",
+                                    color: "rgba(19,0,50,0.9)",
+                                    marginBottom: "10px",
+                                    display: "block",
+                                  }}
+                                  onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)"; }}
+                                  onBlur={(e) => {
+                                    e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                                    e.target.style.boxShadow = "none";
+                                    const code = recipient.accessCode?.trim() || "";
+                                    if (code && !/^r/.test(recipient.id)) {
+                                      setRecipientAccessCode(recipient.id, code).catch(() => {});
+                                    }
+                                  }}
+                                />
+                                <div style={{ fontSize: "12px", color: "rgba(19,0,50,0.5)", lineHeight: "1.6" }}>
+                                  Codes are not case-sensitive.<br />
+                                  You must provide this code to the signer.<br />
+                                  This code is available for you to review on the Envelope Details page.
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{
+                                padding: "12px 16px",
+                                background: "#FFF8E1",
+                                border: "1px solid #FFE082",
+                                borderRadius: "6px",
+                                fontSize: "13px",
+                                color: "#F57F17",
+                                maxWidth: "320px",
+                              }}>
+                                This verification method is not yet available. Use Access Code for recipient authentication.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Inline: Private Message ── */}
+                    {getInlineState(recipient.id).showPrivateMessage && (
+                      <div
+                        style={{
+                          borderLeft: `4px solid ${recipient.color}`,
+                          borderTop: "1px solid rgba(19,0,50,0.12)",
+                          borderRight: "1px solid rgba(19,0,50,0.12)",
+                          borderBottom: "1px solid rgba(19,0,50,0.12)",
+                          borderRadius: "0 0 4px 4px",
+                          background: "#fff",
+                          marginTop: "-1px",
+                        }}
+                      >
+                        {/* Header row */}
+                        <div
+                          className="flex items-center justify-between"
+                          style={{ padding: "12px 16px", borderBottom: getInlineState(recipient.id).privateMessageCollapsed ? "none" : "1px solid rgba(19,0,50,0.08)" }}
+                        >
+                          <span style={{ fontSize: "14px", fontWeight: 600, color: "rgba(19,0,50,0.9)" }}>
+                            Private message
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                updateRecipient(recipient.id, { privateMessage: undefined });
+                                updateInlineState(recipient.id, { showPrivateMessage: false });
+                                if (!/^r/.test(recipient.id)) {
+                                  setRecipientPrivateMessage(recipient.id, "").catch(() => {});
+                                }
+                              }}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title="Remove private message"
+                            >
+                              <Trash size={15} weight="bold" color="#999" />
+                            </button>
+                            <button
+                              onClick={() => updateInlineState(recipient.id, { privateMessageCollapsed: !getInlineState(recipient.id).privateMessageCollapsed })}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title={getInlineState(recipient.id).privateMessageCollapsed ? "Expand" : "Collapse"}
+                            >
+                              {getInlineState(recipient.id).privateMessageCollapsed
+                                ? <CaretDown size={14} weight="bold" color="#555" />
+                                : <CaretUp size={14} weight="bold" color="#555" />
+                              }
+                            </button>
+                          </div>
+                        </div>
+                        {/* Body */}
+                        {!getInlineState(recipient.id).privateMessageCollapsed && (
+                          <div style={{ padding: "14px 16px 16px" }}>
+                            <div className="flex justify-end" style={{ marginBottom: "4px" }}>
+                              <span style={{ fontSize: "12px", color: "rgba(19,0,50,0.5)" }}>
+                                {(recipient.privateMessage || "").length}/1000
+                              </span>
+                            </div>
+                            <textarea
+                              value={recipient.privateMessage ?? ""}
+                              onChange={(e) => updateRecipient(recipient.id, { privateMessage: e.target.value.slice(0, 1000) })}
+                              rows={3}
+                              className="w-full focus:outline-none transition-all resize-none"
+                              style={{
+                                padding: "8px 12px",
+                                border: "1px solid rgba(19,0,50,0.25)",
+                                borderRadius: "4px",
+                                fontSize: "14px",
+                                color: "rgba(19,0,50,0.9)",
+                              }}
+                              onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)"; }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                                e.target.style.boxShadow = "none";
+                                const msg = recipient.privateMessage?.trim() || "";
+                                if (!/^r/.test(recipient.id)) {
+                                  setRecipientPrivateMessage(recipient.id, msg).catch(() => {});
+                                }
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
                     </div>
                   ))}
                 </div>
@@ -1779,6 +2124,45 @@ export default function PrepareEnvelopePage() {
                   />
                 </div>
 
+                {/* Category dropdown (envelope mode only) */}
+                {!isTemplateMode && (
+                  <div>
+                    <label style={{ fontSize: "16px", color: "rgba(19,0,50,0.9)", fontWeight: 600, display: "block", marginBottom: "8px" }}>
+                      Category
+                    </label>
+                    <select
+                      className="bg-white focus:outline-none"
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      style={{
+                        border: "1px solid rgba(19,0,50,0.25)",
+                        borderRadius: "4px",
+                        padding: "8px 12px",
+                        fontSize: "14px",
+                        color: category ? "rgba(19,0,50,0.9)" : "rgba(19,0,50,0.45)",
+                        width: "100%",
+                        maxWidth: "360px",
+                      }}
+                    >
+                      <option value="">-- Select --</option>
+                      {[
+                        "Agency Agreements", "Bank Account Opening Agreements", "Confidentiality Agreements",
+                        "Consulting Agreements", "Contractor Agreements", "Credit Card Agreements",
+                        "Distribution Agreements", "Employment Contracts", "Franchise Agreements",
+                        "Independent Contractor Agreements", "Intellectual Property Assignment Agreements",
+                        "Investment Account Agreements", "Joint Venture Agreements", "Lease Agreements",
+                        "Licensing Agreements", "Loan Agreements", "Loan Applications",
+                        "Non-Disclosure Agreements (NDAs)", "Onboarding Agreements", "Other",
+                        "Partnership Agreements", "Purchase Agreements", "Sales Contracts",
+                        "Service Agreements", "Software License Agreements", "Vendor Agreements",
+                        "Wealth Management Agreements",
+                      ].map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 {/* Frequency of reminders */}
                 <div className="flex items-center" style={{ gap: "12px" }}>
                   <label style={{ fontSize: "16px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}>
@@ -1823,182 +2207,6 @@ export default function PrepareEnvelopePage() {
           e.target.value = "";
         }}
       />
-
-      {/* Access Code Dialog */}
-      {accessCodeDialog && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.5)" }}
-          onClick={() => setAccessCodeDialog(null)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-2xl"
-            style={{ width: "420px", maxWidth: "90vw", padding: "28px", position: "relative" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Key size={18} weight="bold" color="#4C00FF" />
-                <h2 style={{ fontSize: "17px", fontWeight: 600, color: "rgba(19,0,50,0.9)", margin: 0 }}>
-                  Set Access Code
-                </h2>
-              </div>
-              <button
-                onClick={() => setAccessCodeDialog(null)}
-                style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}
-              >
-                <X size={18} weight="bold" color="#555" />
-              </button>
-            </div>
-            <p style={{ fontSize: "13px", color: "rgba(19,0,50,0.6)", marginBottom: "16px" }}>
-              The recipient will need to enter this code before they can view or sign the document.
-            </p>
-            <input
-              type="text"
-              value={accessCodeInput}
-              onChange={(e) => setAccessCodeInput(e.target.value)}
-              placeholder="Enter access code…"
-              autoFocus
-              className="w-full focus:outline-none"
-              style={{
-                border: "1px solid rgba(19,0,50,0.25)",
-                borderRadius: "4px",
-                padding: "10px 14px",
-                fontSize: "15px",
-                color: "rgba(19,0,50,0.9)",
-                marginBottom: "20px",
-                letterSpacing: "0.05em",
-              }}
-              onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)"; }}
-              onBlur={(e) => { e.target.style.borderColor = "rgba(19,0,50,0.25)"; e.target.style.boxShadow = "none"; }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && accessCodeInput.trim() && accessCodeDialog) {
-                  const recipId = accessCodeDialog.recipientId;
-                  // If the recipient has a real DB id (not a temp r... id), call API
-                  if (!recipId.startsWith("r")) {
-                    setRecipientAccessCode(recipId, accessCodeInput.trim()).catch(() => {});
-                  }
-                  setAccessCodeDialog(null);
-                }
-              }}
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setAccessCodeDialog(null)}
-                style={{
-                  padding: "8px 18px", borderRadius: "4px",
-                  border: "1px solid rgba(19,0,50,0.25)", background: "white",
-                  color: "rgba(19,0,50,0.9)", fontSize: "14px", cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (!accessCodeInput.trim() || !accessCodeDialog) return;
-                  const recipId = accessCodeDialog.recipientId;
-                  if (!recipId.startsWith("r")) {
-                    setRecipientAccessCode(recipId, accessCodeInput.trim()).catch(() => {});
-                  }
-                  setAccessCodeDialog(null);
-                }}
-                disabled={!accessCodeInput.trim()}
-                style={{
-                  padding: "8px 18px", borderRadius: "4px",
-                  background: "#4C00FF", color: "white",
-                  fontSize: "14px", fontWeight: 500, cursor: "pointer",
-                  border: "none", opacity: accessCodeInput.trim() ? 1 : 0.4,
-                }}
-              >
-                Save Code
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Private Message Dialog */}
-      {privateMessageDialog && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.5)" }}
-          onClick={() => setPrivateMessageDialog(null)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-2xl"
-            style={{ width: "440px", maxWidth: "90vw", padding: "28px", position: "relative" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <ChatText size={18} weight="bold" color="#4C00FF" />
-                <h2 style={{ fontSize: "17px", fontWeight: 600, color: "rgba(19,0,50,0.9)", margin: 0 }}>
-                  Private Message
-                </h2>
-              </div>
-              <button
-                onClick={() => setPrivateMessageDialog(null)}
-                style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}
-              >
-                <X size={18} weight="bold" color="#555" />
-              </button>
-            </div>
-            <p style={{ fontSize: "13px", color: "rgba(19,0,50,0.6)", marginBottom: "16px" }}>
-              This note will be included in the email sent to this recipient. It is private and not visible to other recipients.
-            </p>
-            <textarea
-              value={privateMessageInput}
-              onChange={(e) => setPrivateMessageInput(e.target.value)}
-              placeholder="Add a personal note for this recipient…"
-              autoFocus
-              rows={4}
-              className="w-full focus:outline-none resize-none"
-              style={{
-                border: "1px solid rgba(19,0,50,0.25)",
-                borderRadius: "4px",
-                padding: "10px 14px",
-                fontSize: "14px",
-                color: "rgba(19,0,50,0.9)",
-                marginBottom: "20px",
-              }}
-              onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)"; }}
-              onBlur={(e) => { e.target.style.borderColor = "rgba(19,0,50,0.25)"; e.target.style.boxShadow = "none"; }}
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setPrivateMessageDialog(null)}
-                style={{
-                  padding: "8px 18px", borderRadius: "4px",
-                  border: "1px solid rgba(19,0,50,0.25)", background: "white",
-                  color: "rgba(19,0,50,0.9)", fontSize: "14px", cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (!privateMessageDialog) return;
-                  const recipId = privateMessageDialog.recipientId;
-                  const msg = privateMessageInput.trim();
-                  updateRecipient(recipId, { privateMessage: msg || undefined });
-                  if (!recipId.startsWith("r")) {
-                    setRecipientPrivateMessage(recipId, msg).catch(() => {});
-                  }
-                  setPrivateMessageDialog(null);
-                }}
-                style={{
-                  padding: "8px 18px", borderRadius: "4px",
-                  background: "#4C00FF", color: "white",
-                  fontSize: "14px", fontWeight: 500, cursor: "pointer",
-                  border: "none",
-                }}
-              >
-                Save Message
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Signing Order Diagram Modal */}
       {signingDiagramOpen && (

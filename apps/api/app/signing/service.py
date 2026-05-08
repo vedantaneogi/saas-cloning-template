@@ -331,6 +331,8 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
 async def decline_signing(
     db: AsyncSession, token: str, reason: str | None, ip_address: str | None, user_agent: str | None
 ) -> Recipient:
+    from app.envelopes.state_machine import validate_transition
+
     result = await db.execute(
         select(Recipient)
         .options(
@@ -343,13 +345,15 @@ async def decline_signing(
     if not recipient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Signing session not found")
 
-    if recipient.status == RecipientStatus.signed:
+    if recipient.status in (RecipientStatus.signed, RecipientStatus.declined):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Cannot decline — this recipient has already signed",
+            detail=f"Cannot decline — this recipient has already {recipient.status.value}",
         )
 
     envelope = recipient.envelope
+    validate_transition(envelope.status, EnvelopeStatus.declined)
+
     recipient.status = RecipientStatus.declined
     recipient.declined_at = datetime.now(timezone.utc)
     recipient.decline_reason = reason

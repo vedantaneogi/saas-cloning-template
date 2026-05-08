@@ -1577,11 +1577,6 @@ export default function EditorPage() {
     }
   }, [state.fields.length, sendMutation]);
 
-  // Template mode: "Save and Close" opens the name modal
-  const handleSaveAsTemplateClick = useCallback(() => {
-    setShowTemplateNameModal(true);
-  }, []);
-
   // Confirm save template with a given name
   const handleConfirmSaveTemplate = useCallback(async (name: string) => {
     setIsSavingTemplate(true);
@@ -1600,6 +1595,12 @@ export default function EditorPage() {
       setShowTemplateNameModal(false);
     }
   }, [id, state.fields, router]);
+
+  // Template mode: "Save and Close" — always use name from prepare step
+  const handleSaveAsTemplateClick = useCallback(() => {
+    const name = envelope?.subject || `Untitled ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
+    handleConfirmSaveTemplate(name);
+  }, [envelope?.subject, handleConfirmSaveTemplate]);
 
   // Duplicate selected field with a small offset so it's visually distinct
   const handleDuplicate = useCallback(() => {

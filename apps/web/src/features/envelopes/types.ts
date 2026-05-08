@@ -18,6 +18,7 @@ export interface Recipient {
   signing_token?: string;
   private_message?: string;
   access_code?: string;
+  template_role_label?: string;
 }
 
 export interface EnvelopeDocument {
@@ -47,6 +48,7 @@ export interface Envelope {
   allow_comments?: boolean;
   responsive_signing?: boolean;
   allow_reassign?: boolean;
+  category?: string;
   user_id?: number;
 }
 

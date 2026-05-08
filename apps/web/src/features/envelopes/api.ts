@@ -160,8 +160,12 @@ export async function downloadCertificate(id: string): Promise<Blob> {
 export async function saveEnvelopeAsTemplate(
   id: string,
   name?: string,
+  roleLabels?: Record<string, string>,
 ): Promise<{ template_id: string }> {
-  const res = await apiClient.post(`/envelopes/${id}/save-as-template`, { name });
+  const res = await apiClient.post(`/envelopes/${id}/save-as-template`, {
+    name,
+    role_labels: roleLabels,
+  });
   return res.data;
 }
 

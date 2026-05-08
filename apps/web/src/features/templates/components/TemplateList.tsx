@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/features/auth/store";
 import { formatDateWithTime } from "@/lib/utils";
-import { toggleFavoriteTemplate, useTemplate, deleteTemplate } from "../api";
+import { toggleFavoriteTemplate, deleteTemplate, useTemplate } from "../api";
 import type { Template } from "../api";
 
 const PRIMARY_COLOR = "#260559";
@@ -465,12 +465,21 @@ export function TemplateList({ templates, isLoading, onCreateTemplate, section }
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["templates"] }),
   });
 
-  const useMut = useMutation({
-    mutationFn: (id: string) => useTemplate(id),
-    onSuccess: (data) => {
-      router.push(`/envelope/${data.envelopeId}/prepare`);
-    },
-  });
+  const [usingTemplateId, setUsingTemplateId] = useState<string | null>(null);
+
+  // Call POST /templates/{id}/use to create an envelope, then navigate to the
+  // simplified intermediate "Use Template" page at /envelope/{envelopeId}/use-template.
+  async function handleUse(id: string) {
+    if (usingTemplateId) return; // prevent double-click
+    setUsingTemplateId(id);
+    try {
+      const { envelopeId } = await useTemplate(id);
+      router.push(`/envelope/${envelopeId}/use-template`);
+    } catch (err) {
+      console.error("Failed to use template:", err);
+      setUsingTemplateId(null);
+    }
+  }
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => deleteTemplate(id),
@@ -509,26 +518,60 @@ export function TemplateList({ templates, isLoading, onCreateTemplate, section }
           <span style={{ fontSize: "14px", fontWeight: 600, color: PRIMARY_TEXT, fontFamily: DS_FONT }}>
             {selectedIds.size} Selected
           </span>
-          {["Move", "Export as CSV"].map((label) => (
-            <button
-              key={label}
-              style={{
-                padding: "5px 16px",
-                fontSize: "14px",
-                fontWeight: 600,
-                color: PRIMARY_TEXT,
-                background: "white",
-                border: `1.5px solid ${BORDER_COLOR}`,
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontFamily: DS_FONT,
-              }}
-              onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
-              onMouseOut={(e) => (e.currentTarget.style.background = "white")}
-            >
-              {label}
-            </button>
-          ))}
+          <button
+            onClick={() => alert("Coming soon")}
+            style={{
+              padding: "5px 16px",
+              fontSize: "14px",
+              fontWeight: 600,
+              color: PRIMARY_TEXT,
+              background: "white",
+              border: `1.5px solid ${BORDER_COLOR}`,
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontFamily: DS_FONT,
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+            onMouseOut={(e) => (e.currentTarget.style.background = "white")}
+          >
+            Move
+          </button>
+          <button
+            onClick={() => {
+              const selectedTemplates = templates.filter((t) => selectedIds.has(t.id));
+              const rows = [
+                ["name", "owner", "created_date"],
+                ...selectedTemplates.map((t) => [
+                  `"${t.name.replace(/"/g, '""')}"`,
+                  `"${t.owner.replace(/"/g, '""')}"`,
+                  `"${t.createdAt}"`,
+                ]),
+              ];
+              const csv = rows.map((r) => r.join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "templates.csv";
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            style={{
+              padding: "5px 16px",
+              fontSize: "14px",
+              fontWeight: 600,
+              color: PRIMARY_TEXT,
+              background: "white",
+              border: `1.5px solid ${BORDER_COLOR}`,
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontFamily: DS_FONT,
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+            onMouseOut={(e) => (e.currentTarget.style.background = "white")}
+          >
+            Export as CSV
+          </button>
         </div>
       )}
 
@@ -635,7 +678,7 @@ export function TemplateList({ templates, isLoading, onCreateTemplate, section }
                 onFavoriteToggle={(id, fav) =>
                   favoriteMutation.mutate({ id, isFavorite: fav })
                 }
-                onUse={(id) => useMut.mutate(id)}
+                onUse={(id) => handleUse(id)}
                 onDelete={(id) => deleteMut.mutate(id)}
               />
             ))

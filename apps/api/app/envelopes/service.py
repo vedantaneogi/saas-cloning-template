@@ -305,6 +305,8 @@ async def update_envelope(
         envelope.responsive_signing = data.responsive_signing
     if data.allow_reassign is not None:
         envelope.allow_reassign = data.allow_reassign
+    if data.category is not None:
+        envelope.category = data.category
     await db.commit()
     await db.refresh(envelope)
     return envelope
