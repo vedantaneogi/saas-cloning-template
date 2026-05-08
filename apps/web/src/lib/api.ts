@@ -34,7 +34,17 @@ async function request<T>(
     let message = `HTTP ${res.status}`
     try {
       const body = await res.json()
-      message = body?.detail ?? body?.message ?? message
+      // FastAPI returns detail as either a string or our standard
+      // {error: {code, message}} envelope. Pluck the human-readable bit
+      // so toasts don't show "[object Object]".
+      const d = body?.detail
+      if (typeof d === 'string') {
+        message = d
+      } else if (d?.error?.message) {
+        message = d.error.message
+      } else if (typeof body?.message === 'string') {
+        message = body.message
+      }
     } catch {
       // ignore
     }
