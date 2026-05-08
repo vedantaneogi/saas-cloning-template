@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -55,6 +55,7 @@ interface ComposeModalProps {
 
 export function ComposeModal({ open, onClose, inline = false }: ComposeModalProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const composerDraft = useUIStore((s) => s.composerDraft)
   const setComposerDraft = useUIStore((s) => s.setComposerDraft)
   const showNotification = useUIStore((s) => s.showNotification)
@@ -205,7 +206,11 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
         showNotification('Draft saved')
       } else {
         showNotification('Message sent')
-        router.push('/mail/sent')
+        // Stay put on /groups (and any other surface that owns its own
+        // inbox view); only kick the user to Sent from the mail flow.
+        if (pathname?.startsWith('/mail')) {
+          router.push('/mail/sent')
+        }
       }
       onClose()
     },

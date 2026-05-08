@@ -470,6 +470,7 @@ function ContextItem({
 
 // ─── Events tab ───────────────────────────────────────────────────────────────
 function EventsTab({ group }: { group: Group }) {
+  const queryClient = useQueryClient()
   const { data: eventList = [], isLoading } = useQuery({
     queryKey: ['group-events', group.id],
     queryFn: async () => {
@@ -486,6 +487,10 @@ function EventsTab({ group }: { group: Group }) {
         ev.attendees?.some((a) => (a.email || '').toLowerCase() === group.email.toLowerCase())
       )
     },
+    // Safety-net poll so a freshly-created event appears without the user
+    // having to refresh the page. The explicit invalidations on EventModal
+    // close handle the immediate path.
+    refetchInterval: 15_000,
   })
 
   // Click-to-edit state — opens EventModal pre-filled with the clicked event.
@@ -605,7 +610,10 @@ function EventsTab({ group }: { group: Group }) {
         <EventModal
           key={`edit-${editingEvent.id}`}
           open={true}
-          onClose={() => setEditingEvent(null)}
+          onClose={() => {
+            setEditingEvent(null)
+            queryClient.invalidateQueries({ queryKey: ['group-events', group.id] })
+          }}
           event={editingEvent}
         />
       )}
@@ -1129,7 +1137,11 @@ export default function GroupsPage() {
         <EventModal
           key={`group-event-${selectedGroup.id}-${eventModalOpen}`}
           open={eventModalOpen}
-          onClose={() => setEventModalOpen(false)}
+          onClose={() => {
+            setEventModalOpen(false)
+            // Refetch the group's events so a freshly-created one shows up.
+            queryClient.invalidateQueries({ queryKey: ['group-events', selectedGroup.id] })
+          }}
           initialDate={new Date()}
           initialAttendees={[{ email: selectedGroup.email, name: selectedGroup.name }]}
         />

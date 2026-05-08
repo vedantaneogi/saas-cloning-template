@@ -520,6 +520,13 @@ async def search_messages(
         filters.append(Message.received_at <= date_to)
     if folder_id:
         filters.append(Message.folder_id == folder_id)
+    else:
+        # Default scope mirrors Outlook search: exclude the trash so a soft-
+        # deleted message disappears from the result list. Callers that want
+        # the trash explicitly can pass folder_id=<deleted folder>.
+        deleted_folder = await _get_folder_by_slug(db, "deleted", current_user.id)
+        if deleted_folder:
+            filters.append(Message.folder_id != deleted_folder.id)
 
     total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
     total = total_result.scalar() or 0
