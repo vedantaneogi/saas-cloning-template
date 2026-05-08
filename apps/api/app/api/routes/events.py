@@ -198,6 +198,37 @@ class EventDetail(BaseModel):
     categories: list[CategoryOut] = []
 
 
+async def _filter_valid_category_ids(
+    db: AsyncSession, user_id: uuid.UUID, requested: list[uuid.UUID]
+) -> list[uuid.UUID]:
+    """Drop any category_ids that aren't real categories owned by the user.
+
+    Stale UUIDs (deleted categories, or IDs from another user's seed) used to
+    raise a FK violation 500. Silent-drop is safer — the caller still gets a
+    valid update on the rest of the payload.
+    """
+    if not requested:
+        return []
+    cleaned: list[uuid.UUID] = []
+    for raw in requested:
+        try:
+            cid = raw if isinstance(raw, uuid.UUID) else uuid.UUID(str(raw))
+        except (ValueError, AttributeError):
+            continue
+        cleaned.append(cid)
+    if not cleaned:
+        return []
+    valid_q = await db.execute(
+        select(Category.id).where(
+            Category.id.in_(cleaned),
+            Category.user_id == user_id,
+        )
+    )
+    valid_ids = set(valid_q.scalars().all())
+    # Preserve request order for deterministic updates.
+    return [cid for cid in cleaned if cid in valid_ids]
+
+
 async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID, user_id: uuid.UUID) -> Event:
     result = await db.execute(
         select(Event).where(Event.id == event_id, Event.user_id == user_id)
@@ -487,6 +518,25 @@ async def list_events(
     total = len(all_items)
     page_items = all_items[:limit]
 
+    # 5. Hydrate categories so the grid can color-code by category. We look up
+    # by source-id (parent for virtual recurring instances, own id otherwise)
+    # and copy onto each EventOut. One query covers everything.
+    source_ids: set[uuid.UUID] = set()
+    for ev in page_items:
+        source_ids.add(ev.recurrence_parent_id or ev.id)
+    if source_ids:
+        cat_q = await db.execute(
+            select(EventCategory.event_id, Category)
+            .join(Category, Category.id == EventCategory.category_id)
+            .where(EventCategory.event_id.in_(source_ids))
+        )
+        cat_map: dict[uuid.UUID, list[CategoryOut]] = {}
+        for event_id, cat in cat_q.all():
+            cat_map.setdefault(event_id, []).append(CategoryOut.model_validate(cat))
+        for ev in page_items:
+            key = ev.recurrence_parent_id or ev.id
+            ev.categories = cat_map.get(key, [])
+
     return EventList(
         items=page_items,
         next_cursor=None,
@@ -601,7 +651,8 @@ async def create_event(
 
     # Categories: replace EventCategory rows from the body. None = no change.
     if body.category_ids is not None:
-        for cid in body.category_ids:
+        valid_cids = await _filter_valid_category_ids(db, current_user.id, body.category_ids)
+        for cid in valid_cids:
             db.add(EventCategory(event_id=ev.id, category_id=cid))
 
     await db.flush()
@@ -741,12 +792,15 @@ async def update_event(
             ))
 
     # Replace EventCategory rows when the body explicitly provides a list.
-    # (None means "don't touch", empty list means "clear all".)
+    # (None means "don't touch", empty list means "clear all".) Drop any IDs
+    # that aren't valid categories for this user before insert — otherwise a
+    # stale UUID from a deleted category nukes the whole PATCH with FK 500.
     if body.category_ids is not None:
         await db.execute(
             EventCategory.__table__.delete().where(EventCategory.event_id == ev.id)
         )
-        for cid in body.category_ids:
+        valid_cids = await _filter_valid_category_ids(db, current_user.id, body.category_ids)
+        for cid in valid_cids:
             db.add(EventCategory(event_id=ev.id, category_id=cid))
 
     ev.updated_at = now

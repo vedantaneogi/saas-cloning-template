@@ -115,6 +115,14 @@ class EventOut(BaseModel):
     sensitivity: str
     created_at: datetime
     updated_at: datetime
+    # Populated by list_events / get_event for color/filter rendering. Empty
+    # by default so model_validate(Event ORM row) still works.
+    categories: list["CategoryOut"] = []
+
+
+from app.schemas.message import CategoryOut  # noqa: E402  (forward ref above; uses the
+# id/name/color shape that the rest of the events code already returns)
+EventOut.model_rebuild()
 
 
 class RespondRequest(BaseModel):

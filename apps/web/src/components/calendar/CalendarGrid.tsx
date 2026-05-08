@@ -41,6 +41,15 @@ function isCalendarShared(calendars: Calendar[], calendarId: string): boolean {
   return calendars.find((c) => c.id === calendarId)?.is_shared ?? false
 }
 
+// Prefer the category color when an event has one — that's the visual signal
+// the user just set. Fall back to the calendar's own color.
+function getEventColor(calendars: Calendar[], event: Event): string {
+  if (event.categories && event.categories.length > 0 && event.categories[0].color) {
+    return event.categories[0].color
+  }
+  return getCalendarColor(calendars, event.calendar_id)
+}
+
 function MonthView({
   currentDate,
   events,
@@ -117,7 +126,7 @@ function MonthView({
                           key={event.id}
                           event={event}
                           compact
-                          color={getCalendarColor(calList, event.calendar_id)}
+                          color={getEventColor(calList, event)}
                           isShared={isCalendarShared(calList, event.calendar_id)}
                           onClick={onEventClick}
                         />
@@ -221,7 +230,7 @@ function WeekView({
                     <EventCard
                       key={event.id}
                       event={event}
-                      color={getCalendarColor(calList, event.calendar_id)}
+                      color={getEventColor(calList, event)}
                       isShared={isCalendarShared(calList, event.calendar_id)}
                       onClick={onEventClick}
                     />
@@ -290,7 +299,7 @@ function DayView({
                   <EventCard
                     key={event.id}
                     event={event}
-                    color={getCalendarColor(calList, event.calendar_id)}
+                    color={getEventColor(calList, event)}
                     isShared={isCalendarShared(calList, event.calendar_id)}
                     onClick={onEventClick}
                   />
