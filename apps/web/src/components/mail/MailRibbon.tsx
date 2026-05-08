@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 
 function RibbonBtn({
@@ -74,7 +75,9 @@ export function MailRibbon() {
   const [qsOpen, setQsOpen] = useState(false)
   const [qsPos, setQsPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
   const [moveOpen, setMoveOpen] = useState(false)
+  const [movePos, setMovePos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
   const [catOpen, setCatOpen] = useState(false)
+  const [catPos, setCatPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
   const qsRef = useRef<HTMLDivElement>(null)
   const moveRef = useRef<HTMLDivElement>(null)
   const catRef = useRef<HTMLDivElement>(null)
@@ -116,6 +119,10 @@ export function MailRibbon() {
 
   useEffect(() => {
     if (!moveOpen) return
+    if (moveRef.current) {
+      const r = moveRef.current.getBoundingClientRect()
+      setMovePos({ top: r.bottom + 2, left: r.left })
+    }
     const handler = (e: MouseEvent) => {
       if (moveRef.current && !moveRef.current.contains(e.target as Node)) setMoveOpen(false)
     }
@@ -125,6 +132,10 @@ export function MailRibbon() {
 
   useEffect(() => {
     if (!catOpen) return
+    if (catRef.current) {
+      const r = catRef.current.getBoundingClientRect()
+      setCatPos({ top: r.bottom + 2, left: r.left })
+    }
     const handler = (e: MouseEvent) => {
       if (catRef.current && !catRef.current.contains(e.target as Node)) setCatOpen(false)
     }
@@ -283,52 +294,60 @@ export function MailRibbon() {
       </RibbonBtn>
 
       {/* Move to */}
-      <div className="relative" ref={moveRef}>
+      <div ref={moveRef}>
         <RibbonBtn disabled={!hasMsg} label="Move to" onClick={() => setMoveOpen((v) => !v)}>
           <FolderInput size={16} />
           <span className="flex items-center gap-0.5">Move to <ChevronDown size={10} /></span>
         </RibbonBtn>
-        {moveOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-            {folderList.map((f) => (
-              <button key={f.id} onClick={() => moveMutation.mutate(f.id)}
-                className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate">
-                {f.name}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
+      {moveOpen && typeof window !== 'undefined' && createPortal(
+        <div
+          style={{ top: movePos.top, left: movePos.left }}
+          className="fixed z-[9999] w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1"
+        >
+          {folderList.map((f) => (
+            <button key={f.id} onClick={() => moveMutation.mutate(f.id)}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate">
+              {f.name}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
 
       {/* Categorize */}
-      <div className="relative" ref={catRef}>
+      <div ref={catRef}>
         <RibbonBtn disabled={!hasMsg} label="Categorize" onClick={() => setCatOpen((v) => !v)}>
           <Tag size={16} />
           <span className="flex items-center gap-0.5">Categorize <ChevronDown size={10} /></span>
         </RibbonBtn>
-        {catOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-            {categoryList.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-[#605E5C]">No categories yet</div>
-            ) : (
-              categoryList.map((c) => {
-                const checked = messageCategoryIds.has(c.id)
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => toggleCategory(c.id)}
-                    className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
-                  >
-                    <Tag size={14} className="flex-shrink-0" style={{ color: c.color }} />
-                    <span className="flex-1 truncate">{c.name}</span>
-                    {checked && <span className="text-[#0078D4] text-xs">✓</span>}
-                  </button>
-                )
-              })
-            )}
-          </div>
-        )}
       </div>
+      {catOpen && typeof window !== 'undefined' && createPortal(
+        <div
+          style={{ top: catPos.top, left: catPos.left }}
+          className="fixed z-[9999] w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1"
+        >
+          {categoryList.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-[#605E5C]">No categories yet</div>
+          ) : (
+            categoryList.map((c) => {
+              const checked = messageCategoryIds.has(c.id)
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => toggleCategory(c.id)}
+                  className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+                >
+                  <Tag size={14} className="flex-shrink-0" style={{ color: c.color }} />
+                  <span className="flex-1 truncate">{c.name}</span>
+                  {checked && <span className="text-[#0078D4] text-xs">✓</span>}
+                </button>
+              )
+            })
+          )}
+        </div>,
+        document.body,
+      )}
 
       <RibbonSep />
 
@@ -386,10 +405,10 @@ export function MailRibbon() {
           <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={10} /></span>
         </RibbonBtn>
       </div>
-      {qsOpen && (
+      {qsOpen && typeof window !== 'undefined' && createPortal(
         <div
           style={{ top: qsPos.top, left: qsPos.left }}
-          className="fixed z-[200] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1"
+          className="fixed z-[9999] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1"
         >
           {quickStepList.length === 0 ? (
             <p className="px-3 py-2 text-xs text-[#A19F9D] italic">
@@ -413,7 +432,8 @@ export function MailRibbon() {
               Manage quick steps
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
