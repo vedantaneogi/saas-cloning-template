@@ -688,22 +688,53 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
           </div>
         </div>
 
+        {/* Encryption notice — shown when the user picked an Encrypt option
+            (Encrypt-Only / Do Not Forward / company-Confidential preset).
+            Mirrors Outlook's "This message is encrypted" pill above To. */}
+        {encryptMode !== 'none' && (() => {
+          const ENCRYPT_LABELS: Record<Exclude<typeof encryptMode, 'none'>, string> = {
+            company_confidential: 'Acme Corp - Confidential',
+            company_confidential_view_only: 'Acme Corp - Confidential View Only',
+            do_not_forward: 'Do Not Forward',
+            encrypt_only: 'Encrypt',
+          }
+          return (
+            <div
+              role="status"
+              className="mx-4 mt-2 mb-1 rounded border border-[#0078D4] bg-[#EBF3FB] text-[#323130] flex items-center gap-2 px-3 py-2 text-xs"
+            >
+              <Lock size={14} className="flex-shrink-0 text-[#0078D4]" />
+              <span className="flex-1 min-w-0 truncate">
+                <span className="font-semibold">{ENCRYPT_LABELS[encryptMode]}:</span> This message is encrypted. Recipients can&apos;t remove encryption.
+              </span>
+              <button
+                type="button"
+                onClick={() => useEditorStore.getState().setEncryptMode('none')}
+                className="text-[#0078D4] hover:underline whitespace-nowrap"
+              >
+                Remove encryption
+              </button>
+            </div>
+          )
+        })()}
+
         {/* DLP policy-tip banner — shows the most-severe matched rule above
             the To field while composing. Block status uses red, encrypt uses
-            blue, warn uses yellow. */}
+            blue, warn uses yellow. When more than one rule fires we swap to
+            "Multiple restricted items detected" so the user knows it's not
+            a single hit (still no expand / +N indicator per senior). */}
         {dlpLive && dlpLive.status !== 'allow' && dlpLive.policy_tips.length > 0 && (() => {
-          // Border color reflects severity — yellow for warn (less dangerous),
-          // red for block (more dangerous), blue for encrypt. Generic body
-          // copy matches the senior's mock so every triggered rule reads the
-          // same regardless of which rule_id fired.
           const borderColor =
             dlpLive.status === 'block' ? '#D13438'
             : dlpLive.status === 'encrypt' ? '#0078D4'
             : '#C19C00'
+          const multi = dlpLive.policy_tips.length > 1
           const bannerText =
-            dlpLive.status === 'block' ? 'DLP BLOCK: Restricted data detected'
-            : dlpLive.status === 'encrypt' ? 'DLP NOTICE: Message will be encrypted'
-            : 'DLP WARNING: Restricted data detected'
+            dlpLive.status === 'block'
+              ? (multi ? 'DLP BLOCK: Multiple restricted items detected' : 'DLP BLOCK: Restricted data detected')
+            : dlpLive.status === 'encrypt'
+              ? 'DLP NOTICE: Message will be encrypted'
+            : (multi ? 'DLP WARNING: Multiple restricted items detected' : 'DLP WARNING: Restricted data detected')
           return (
             <div
               role="status"

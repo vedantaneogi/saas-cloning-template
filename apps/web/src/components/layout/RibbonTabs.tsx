@@ -695,8 +695,10 @@ function SensitivityRibbonBtn() {
   )
 }
 
-// Encrypt (Outlook Tags group, screenshot 2) — separate split-button with
-// "Encrypt-Only" / "Do Not Forward" sub-options. Either choice flips the
+// Encrypt (Outlook Tags group) — separate split-button mirroring Outlook's
+// "Set permission on this item" menu (tenant Confidential presets, Do Not
+// Forward, generic Encrypt-Only, and a "No permission set" reset). Each
+// option carries its own icon. Picking anything except 'none' flips the
 // DLP sensitivity_label to 'encrypt' so the existing ENCRYPT_LABEL_SET rule
 // fires; Do-Not-Forward additionally signals downstream that recipients
 // shouldn't be able to forward (reading-pane will respect this once wired).
@@ -719,6 +721,53 @@ function EncryptRibbonBtn() {
   }, [open])
 
   const active = encryptMode !== 'none'
+
+  // Tenant-specific labels are pseudo-presets — Outlook pulls them from the
+  // M365 sensitivity-label policy. We hardcode an Acme Corp pair to match
+  // the demo seed (Frank Miller, frank.miller@acmecorp.com).
+  const TENANT = 'Acme Corp'
+  const OPTIONS: { value: Exclude<typeof encryptMode, 'none'>; label: string; icon: React.ReactNode }[] = [
+    {
+      value: 'company_confidential',
+      label: `${TENANT} - Confidential`,
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="M4 7V5a4 4 0 118 0v2" stroke="currentColor" strokeWidth="1.3"/>
+          <rect x="3" y="7" width="10" height="7" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+          <circle cx="8" cy="10.5" r="1" fill="currentColor"/>
+        </svg>
+      ),
+    },
+    {
+      value: 'company_confidential_view_only',
+      label: `${TENANT} - Confidential View Only`,
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="M4 7V5a4 4 0 118 0v2" stroke="currentColor" strokeWidth="1.3"/>
+          <rect x="3" y="7" width="10" height="7" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+          <path d="M5.5 10.5c.7-1.2 1.7-1.7 2.5-1.7s1.8.5 2.5 1.7c-.7 1.2-1.7 1.7-2.5 1.7s-1.8-.5-2.5-1.7z" stroke="currentColor" strokeWidth="0.9"/>
+          <circle cx="8" cy="10.5" r="0.6" fill="currentColor"/>
+        </svg>
+      ),
+    },
+    {
+      value: 'do_not_forward',
+      label: 'Do Not Forward',
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <rect x="2" y="4" width="12" height="8" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+          <path d="M2 4l6 4 6-4" stroke="currentColor" strokeWidth="1.2"/>
+          <path d="M3 13L13 3" stroke="#D13438" strokeWidth="1.5"/>
+        </svg>
+      ),
+    },
+    {
+      value: 'encrypt_only',
+      label: 'Encrypt-Only',
+      icon: <Lock size={14} />,
+    },
+  ]
+
   return (
     <>
       <div ref={btnRef}>
@@ -734,31 +783,32 @@ function EncryptRibbonBtn() {
         </RibbonBtn>
       </div>
       {open && (
-        <div ref={menuRef} className="fixed z-[200] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in" style={{ top: pos.top, left: pos.left }}>
+        <div ref={menuRef} className="fixed z-[200] w-72 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in" style={{ top: pos.top, left: pos.left }}>
           <p className="px-3 py-1 text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide">Set permission on this item</p>
-          <button type="button" onClick={() => { setEncryptMode(encryptMode === 'encrypt_only' ? 'none' : 'encrypt_only'); setOpen(false) }}
+          {OPTIONS.map((o) => {
+            const selected = encryptMode === o.value
+            return (
+              <button key={o.value} type="button"
+                onClick={() => { setEncryptMode(selected ? 'none' : o.value); setOpen(false) }}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
+                <span className={cn('flex-shrink-0', selected ? 'text-[#0078D4]' : 'text-[#605E5C]')}>{o.icon}</span>
+                <span className={cn('flex-1 text-sm truncate', selected ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>{o.label}</span>
+                {selected && <span className="text-[#0078D4] text-xs flex-shrink-0">✓</span>}
+              </button>
+            )
+          })}
+          <div className="h-px bg-[#EDEBE9] my-1" />
+          <button type="button" onClick={() => { setEncryptMode('none'); setOpen(false) }}
             className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
-            <Lock size={14} className={encryptMode === 'encrypt_only' ? 'text-[#0078D4]' : 'text-[#605E5C]'} />
-            <span className={cn('flex-1 text-sm', encryptMode === 'encrypt_only' ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>Encrypt-Only</span>
-            {encryptMode === 'encrypt_only' && <span className="text-[#0078D4] text-xs">✓</span>}
+            <span className="flex-shrink-0 text-[#605E5C]">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M4 7V5a4 4 0 016.5-3.1" stroke="currentColor" strokeWidth="1.3"/>
+                <rect x="3" y="7" width="10" height="7" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+              </svg>
+            </span>
+            <span className={cn('flex-1 text-sm', !active ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>No permission set</span>
+            {!active && <span className="text-[#0078D4] text-xs flex-shrink-0">✓</span>}
           </button>
-          <button type="button" onClick={() => { setEncryptMode(encryptMode === 'do_not_forward' ? 'none' : 'do_not_forward'); setOpen(false) }}
-            className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={encryptMode === 'do_not_forward' ? 'text-[#0078D4]' : 'text-[#605E5C]'}>
-              <path d="M2 4h12v8H2V4z" stroke="currentColor" strokeWidth="1.2"/>
-              <path d="M2 4l6 4 6-4" stroke="currentColor" strokeWidth="1.2"/>
-              <path d="M3 13L13 3" stroke="#D13438" strokeWidth="1.4"/>
-            </svg>
-            <span className={cn('flex-1 text-sm', encryptMode === 'do_not_forward' ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>Do Not Forward</span>
-            {encryptMode === 'do_not_forward' && <span className="text-[#0078D4] text-xs">✓</span>}
-          </button>
-          {active && (
-            <>
-              <div className="h-px bg-[#EDEBE9] my-1" />
-              <button type="button" onClick={() => { setEncryptMode('none'); setOpen(false) }}
-                className="w-full text-left text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#F3F2F1]">Remove encryption</button>
-            </>
-          )}
         </div>
       )}
     </>
