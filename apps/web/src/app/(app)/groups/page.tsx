@@ -157,6 +157,9 @@ function MembersTab({ group }: { group: Group }) {
 }
 
 // ─── Add member dialog ────────────────────────────────────────────────────────
+// Standalone "Add members" dialog — wraps the same picker the create-group
+// flow uses so the UX is identical: search box + scrollable contact list with
+// + buttons, chip preview of picks, Skip / Add footer.
 function AddMemberDialog({
   group,
   open,
@@ -166,81 +169,27 @@ function AddMemberDialog({
   open: boolean
   onClose: () => void
 }) {
-  const queryClient = useQueryClient()
-  const showNotification = useUIStore((s) => s.showNotification)
-  const [email, setEmail] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  const addMutation = useMutation({
-    mutationFn: (e: string) => groups.addMember(group.id, e),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['group-members', group.id] })
-      queryClient.invalidateQueries({ queryKey: ['groups'] })
-      showNotification('Member added')
-      setEmail('')
-      onClose()
-    },
-    onError: (e: Error) => setError(e.message || 'Could not add member'),
-  })
-
   if (!open) return null
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Add members"
+      aria-label={`Add members to ${group.name}`}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-      <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-md flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
-          <h2 className="text-base font-semibold text-[#323130]">Add members to {group.name}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]"
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <div className="px-4 py-4 space-y-2">
-          <label className="block text-xs font-medium text-[#605E5C]" htmlFor="add-member-email">
-            Member email
-          </label>
-          <input
-            id="add-member-email"
-            type="email"
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setError(null) }}
-            placeholder="name@company.com"
-            autoFocus
-            className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
-          />
-          {error && <p className="text-xs text-[#D13438]">{error}</p>}
-        </div>
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => email.trim() && addMutation.mutate(email.trim())}
-            disabled={!email.trim() || addMutation.isPending}
-            className={cn(
-              'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
-              (!email.trim() || addMutation.isPending) && 'opacity-50 cursor-not-allowed'
-            )}
-          >
-            {addMutation.isPending ? 'Adding…' : 'Add'}
-          </button>
-        </div>
+      <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-3xl flex max-h-[90vh] overflow-hidden">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-3 right-3 p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C] z-10"
+        >
+          <X size={14} />
+        </button>
+        <AddMembersStep group={group} onDone={onClose} />
       </div>
     </div>
   )
