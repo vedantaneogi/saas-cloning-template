@@ -943,8 +943,13 @@ function HomeRibbon() {
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l6.5 12H1.5L8 1.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M8 6v3M8 11v.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
           <span>Report</span>
         </RibbonBtn>
-        {reportOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+        {reportOpen && (() => {
+          const rect = reportRef.current?.getBoundingClientRect()
+          return (
+          <div
+            className="fixed z-[200] w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+            style={{ top: rect ? rect.bottom + 4 : 0, left: rect?.left ?? 0 }}
+          >
             <button onClick={() => reportMutation.mutate('phishing')}
               className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Report phishing</button>
             <button onClick={() => reportMutation.mutate('junk')}
@@ -952,7 +957,8 @@ function HomeRibbon() {
             <button onClick={() => { showNotification('Marked as not junk'); setReportOpen(false) }}
               className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">Not junk</button>
           </div>
-        )}
+          )
+        })()}
       </div>
 
       {/* Move to — with dropdown */}
@@ -1037,25 +1043,46 @@ function HomeRibbon() {
         </RibbonBtn>
       )}
 
-      {/* Quick steps */}
-      {quickStepList.length > 0 && (
-        <div className="relative" ref={qsRef}>
-          <RibbonBtn disabled={!hasMsg} label="Quick steps" onClick={() => setQsOpen((v) => !v)}>
-            <Zap size={15} />
-            <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={8} /></span>
-          </RibbonBtn>
-          {qsOpen && (
-            <div className="absolute left-0 top-full mt-0.5 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-              {quickStepList.map((qs) => (
+      {/* Quick steps — always visible (so the user discovers the feature even
+          before creating any). Popover uses fixed positioning anchored to the
+          button via getBoundingClientRect so it escapes the toolbar's
+          overflow / stacking context. Same pattern as Snooze above. */}
+      <div ref={qsRef}>
+        <RibbonBtn disabled={!hasMsg} label="Quick steps" onClick={() => setQsOpen((v) => !v)}>
+          <Zap size={15} />
+          <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={8} /></span>
+        </RibbonBtn>
+        {qsOpen && (() => {
+          const rect = qsRef.current?.getBoundingClientRect()
+          return (
+          <div
+            className="fixed z-[200] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+            style={{ top: rect ? rect.bottom + 4 : 0, left: rect?.left ?? 0 }}
+          >
+            {quickStepList.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-[#A19F9D] italic">
+                No quick steps yet. Create one in settings.
+              </p>
+            ) : (
+              quickStepList.map((qs) => (
                 <button key={qs.id} onClick={() => runQsMutation.mutate(qs.id)}
                   className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate flex items-center gap-2">
                   <Zap size={12} className="text-[#0078D4] flex-shrink-0" />{qs.name}
                 </button>
-              ))}
+              ))
+            )}
+            <div className="border-t border-[#EDEBE9] mt-1 pt-1">
+              <button
+                onClick={() => { setQsOpen(false); useUIStore.getState().openSettings('quick-steps') }}
+                className="w-full text-left text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1]"
+              >
+                Manage quick steps
+              </button>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+          )
+        })()}
+      </div>
 
       <RibbonSep />
 
