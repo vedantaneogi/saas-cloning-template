@@ -276,13 +276,25 @@ function EmailTab({
       {/* Reading pane / inline compose. Compose takes over the right side
           when "New mail" is clicked, mirroring the regular mail-page flow
           (no popup) and pre-filling To with the group's email. */}
-      <div className="flex-1 overflow-hidden bg-white">
+      <div className="flex-1 overflow-hidden bg-white flex flex-col">
         {composing ? (
-          <ComposeModal
-            inline
-            open={true}
-            onClose={onCloseCompose}
-          />
+          <>
+            {/* Compose-pane toolbar — gives the user a way out without sending. */}
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#EDEBE9] bg-[#FAF9F8] flex-shrink-0">
+              <span className="text-xs text-[#605E5C]">New message · {group.email}</span>
+              <button
+                type="button"
+                onClick={onCloseCompose}
+                aria-label="Discard new email"
+                className="flex items-center gap-1 text-xs text-[#605E5C] hover:text-[#D13438] hover:bg-[#FDE7E9] px-2 py-1 rounded"
+              >
+                <X size={12} /> Discard
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <ComposeModal inline open={true} onClose={onCloseCompose} />
+            </div>
+          </>
         ) : selected ? (
           <div className="h-full overflow-y-auto outlook-scrollbar px-6 py-4">
             <h2 className="text-xl font-semibold text-[#323130] mb-3">{selected.subject}</h2>
