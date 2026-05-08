@@ -185,10 +185,15 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
 
   const subscribeMutation = useMutation({
     mutationFn: (email: string) => calendars.subscribe(email),
-    onSuccess: () => {
-      // Invalidate events too — the new subscription expands the user's
-      // visible event set and the cached `['events']` won't refire on its
-      // own without this nudge.
+    onSuccess: (newCal) => {
+      // Optimistic-style update — append the freshly-created subscription
+      // calendar to the cache straight away so the sidebar shows it without
+      // waiting for the refetch round-trip. Invalidate after to reconcile.
+      queryClient.setQueryData<Calendar[]>(['calendars'], (old) => {
+        if (!old) return old
+        if (old.some((c) => c.id === newCal.id)) return old
+        return [...old, newCal]
+      })
       queryClient.invalidateQueries({ queryKey: ['calendars'] })
       queryClient.invalidateQueries({ queryKey: ['events'] })
       setSubscribeEmail('')
