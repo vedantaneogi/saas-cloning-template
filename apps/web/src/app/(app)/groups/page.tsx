@@ -1051,13 +1051,23 @@ function FrequentCard({
   onPeople: () => void
 }) {
   const isPrivate = group.privacy === 'private'
+  // Outer wrapper is a div (not a button) so the Favorite + QuickAction
+  // buttons can live inside without producing nested-<button> hydration errors.
+  // Keyboard support is preserved via role + onKeyDown.
   return (
     <div className="bg-white border border-[#EDEBE9] rounded-lg overflow-hidden hover:shadow-sm transition-shadow flex flex-col">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onPreview}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onPreview()
+          }
+        }}
         aria-label={`Open ${group.name}`}
-        className="text-left px-4 pt-4 pb-3 flex-1"
+        className="text-left px-4 pt-4 pb-3 flex-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
       >
         <div className="flex items-start gap-2">
           <Avatar name={group.name} color={group.color} size={36} />
@@ -1065,6 +1075,7 @@ function FrequentCard({
             <div className="flex items-center gap-1">
               <p className="text-sm font-semibold text-[#323130] truncate">{group.name}</p>
               <button
+                type="button"
                 aria-label="Favorite"
                 onClick={(e) => e.stopPropagation()}
                 className="text-[#A19F9D] hover:text-[#FFB900]"
@@ -1082,7 +1093,7 @@ function FrequentCard({
             </p>
           </div>
         </div>
-      </button>
+      </div>
       {/* Action icons */}
       <div className="border-t border-[#EDEBE9] px-2 py-1.5 flex items-center justify-around">
         <QuickAction icon={<Mail size={14} />} label="Email" onClick={onEmail} />
