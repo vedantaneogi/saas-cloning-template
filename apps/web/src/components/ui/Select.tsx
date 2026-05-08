@@ -12,10 +12,17 @@ export interface SelectOption {
   icon?: React.ReactNode
 }
 
+export interface SelectGroup {
+  label: string
+  items: SelectOption[]
+}
+
 export interface SelectProps {
   value: string
   onChange: (value: string) => void
-  options: SelectOption[]
+  /** Flat options. Use `groups` instead for grouped (optgroup-style) menus. */
+  options?: SelectOption[]
+  groups?: SelectGroup[]
   placeholder?: string
   disabled?: boolean
   className?: string
@@ -34,6 +41,7 @@ export function Select({
   value,
   onChange,
   options,
+  groups,
   placeholder,
   disabled,
   className,
@@ -46,7 +54,9 @@ export function Select({
   const wrapRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const current = options.find((o) => o.value === value)
+  // Resolve to a flat list when looking up the current item.
+  const flat = options ?? groups?.flatMap((g) => g.items) ?? []
+  const current = flat.find((o) => o.value === value)
 
   useEffect(() => {
     if (!open) return
@@ -111,10 +121,8 @@ export function Select({
           role="listbox"
           className="fixed z-[9999] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 max-h-64 overflow-y-auto"
         >
-          {options.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-[#A19F9D] italic">No options</p>
-          ) : (
-            options.map((o) => {
+          {(() => {
+            const renderItem = (o: SelectOption) => {
               const selected = o.value === value
               return (
                 <button
@@ -134,8 +142,25 @@ export function Select({
                   {selected && <Check size={12} className="text-[#0078D4] flex-shrink-0" />}
                 </button>
               )
-            })
-          )}
+            }
+
+            if (groups && groups.length > 0) {
+              return groups.map((g) => (
+                <div key={g.label} className="py-1 [&:not(:first-child)]:border-t [&:not(:first-child)]:border-[#EDEBE9]">
+                  <p className="px-3 py-1 text-[10px] font-semibold uppercase text-[#605E5C] tracking-wide">
+                    {g.label}
+                  </p>
+                  {g.items.map(renderItem)}
+                </div>
+              ))
+            }
+
+            const list = options ?? []
+            if (list.length === 0) {
+              return <p className="px-3 py-2 text-xs text-[#A19F9D] italic">No options</p>
+            }
+            return list.map(renderItem)
+          })()}
         </div>,
         document.body,
       )}

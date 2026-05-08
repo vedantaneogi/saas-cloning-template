@@ -6,6 +6,7 @@ import { rules, folders, categories } from '@/lib/api'
 import type { Rule, RuleCondition, RuleAction, Folder, Category } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
 import { FolderPicker } from '@/components/ui/FolderPicker'
 import {
   Plus, Trash2, Edit2, Play, CheckCircle2, ChevronUp, ChevronDown,
@@ -346,23 +347,28 @@ export function RuleSettings() {
                 <p className="text-sm text-[#605E5C]">
                   Choose a folder. The rule will run against every message in it.
                 </p>
-                <select
+                <Select
                   value={runFolderId}
-                  onChange={(e) => setRunFolderId(e.target.value)}
-                  aria-label="Select folder"
-                  className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
-                >
-                  <optgroup label="System">
-                    {folderList.filter((f) => f.is_system).map((f) => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Your folders">
-                    {folderList.filter((f) => !f.is_system).map((f) => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </optgroup>
-                </select>
+                  onChange={setRunFolderId}
+                  ariaLabel="Select folder"
+                  className="w-full"
+                  groups={[
+                    {
+                      label: 'System',
+                      items: folderList.filter((f) => f.is_system).map((f) => ({
+                        value: f.id,
+                        label: f.name,
+                      })),
+                    },
+                    {
+                      label: 'Your folders',
+                      items: folderList.filter((f) => !f.is_system).map((f) => ({
+                        value: f.id,
+                        label: f.name,
+                      })),
+                    },
+                  ].filter((g) => g.items.length > 0)}
+                />
               </div>
               <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
                 <button
@@ -410,12 +416,11 @@ function ConditionRow({
 
   return (
     <div className="flex items-center gap-2 mb-2">
-      <select
-        aria-label={`${ariaPrefix} ${index + 1} field`}
+      <Select
+        ariaLabel={`${ariaPrefix} ${index + 1} field`}
         value={cond.field}
-        onChange={(e) => {
-          const newField = e.target.value as RuleCondition['field']
-          // Reset operator/value sensibly when switching field shape.
+        onChange={(v) => {
+          const newField = v as RuleCondition['field']
           const isNewStandalone = STANDALONE_FIELDS.has(newField)
           const newOpts = VALUE_OPTIONS[newField]
           onChange({
@@ -424,30 +429,28 @@ function ConditionRow({
             operator: isNewStandalone || newOpts ? 'equals' : 'contains',
           })
         }}
-        className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] min-w-[180px]"
-      >
-        {CONDITION_GROUPS.map((g) => (
-          <optgroup key={g.label} label={g.label}>
-            {g.items.map((it) => (
-              <option key={it.value} value={it.value}>{it.label}</option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+        groups={CONDITION_GROUPS.map((g) => ({
+          label: g.label,
+          items: g.items.map((it) => ({ value: it.value, label: it.label })),
+        }))}
+        size="sm"
+        className="min-w-[180px]"
+      />
 
       {!isStandalone && !valueOpts && (
         <>
-          <select
-            aria-label={`${ariaPrefix} ${index + 1} operator`}
+          <Select
+            ariaLabel={`${ariaPrefix} ${index + 1} operator`}
             value={cond.operator}
-            onChange={(e) => onChange({ operator: e.target.value as RuleCondition['operator'] })}
-            className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
-          >
-            <option value="contains">contains</option>
-            <option value="equals">equals</option>
-            <option value="starts_with">starts with</option>
-            <option value="ends_with">ends with</option>
-          </select>
+            onChange={(v) => onChange({ operator: v as RuleCondition['operator'] })}
+            options={[
+              { value: 'contains', label: 'contains' },
+              { value: 'equals', label: 'equals' },
+              { value: 'starts_with', label: 'starts with' },
+              { value: 'ends_with', label: 'ends with' },
+            ]}
+            size="sm"
+          />
           <Input
             value={cond.value}
             onChange={(e) => onChange({ value: e.target.value })}
@@ -459,16 +462,14 @@ function ConditionRow({
       )}
 
       {valueOpts && (
-        <select
-          aria-label={`${ariaPrefix} ${index + 1} value`}
+        <Select
+          ariaLabel={`${ariaPrefix} ${index + 1} value`}
           value={cond.value}
-          onChange={(e) => onChange({ value: e.target.value })}
-          className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
-        >
-          {valueOpts.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          onChange={(v) => onChange({ value: v })}
+          options={valueOpts.map((o) => ({ value: o.value, label: o.label }))}
+          size="sm"
+          className="flex-1"
+        />
       )}
 
       {isStandalone && (
@@ -526,20 +527,17 @@ function ActionRow({
 
   return (
     <div className="flex items-center gap-2 mb-2">
-      <select
-        aria-label={`Action ${index + 1} type`}
+      <Select
+        ariaLabel={`Action ${index + 1} type`}
         value={action.type}
-        onChange={(e) => onChange({ type: e.target.value as RuleAction['type'], params: {} })}
-        className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] min-w-[180px]"
-      >
-        {ACTION_GROUPS.map((g) => (
-          <optgroup key={g.label} label={g.label}>
-            {g.items.map((it) => (
-              <option key={it.value} value={it.value}>{it.label}</option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+        onChange={(v) => onChange({ type: v as RuleAction['type'], params: {} })}
+        groups={ACTION_GROUPS.map((g) => ({
+          label: g.label,
+          items: g.items.map((it) => ({ value: it.value, label: it.label })),
+        }))}
+        size="sm"
+        className="min-w-[180px]"
+      />
 
       {isFolderAction && (
         <FolderPicker
@@ -563,44 +561,46 @@ function ActionRow({
       )}
 
       {isImportance && (
-        <select
-          aria-label={`Action ${index + 1} importance`}
+        <Select
+          ariaLabel={`Action ${index + 1} importance`}
           value={stringParam('level') || 'normal'}
-          onChange={(e) => setParam({ level: e.target.value })}
-          className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
-        >
-          <option value="low">Low</option>
-          <option value="normal">Normal</option>
-          <option value="high">High</option>
-        </select>
+          onChange={(v) => setParam({ level: v })}
+          options={[
+            { value: 'low', label: 'Low' },
+            { value: 'normal', label: 'Normal' },
+            { value: 'high', label: 'High' },
+          ]}
+          size="sm"
+          className="flex-1"
+        />
       )}
 
       {isSensitivity && (
-        <select
-          aria-label={`Action ${index + 1} sensitivity`}
+        <Select
+          ariaLabel={`Action ${index + 1} sensitivity`}
           value={stringParam('level') || 'normal'}
-          onChange={(e) => setParam({ level: e.target.value })}
-          className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
-        >
-          <option value="normal">Normal</option>
-          <option value="personal">Personal</option>
-          <option value="private">Private</option>
-          <option value="confidential">Confidential</option>
-        </select>
+          onChange={(v) => setParam({ level: v })}
+          options={[
+            { value: 'normal', label: 'Normal' },
+            { value: 'personal', label: 'Personal' },
+            { value: 'private', label: 'Private' },
+            { value: 'confidential', label: 'Confidential' },
+          ]}
+          size="sm"
+          className="flex-1"
+        />
       )}
 
       {isCategorize && (
-        <select
-          aria-label={`Action ${index + 1} category`}
+        <Select
+          ariaLabel={`Action ${index + 1} category`}
           value={stringParam('category_id')}
-          onChange={(e) => setParam({ category_id: e.target.value, category_ids: undefined })}
-          className="text-sm border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] focus:outline-none focus:ring-1 focus:ring-[#0078D4] flex-1"
-        >
-          <option value="">Select a category</option>
-          {categoryList.map((c: Category) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+          onChange={(v) => setParam({ category_id: v, category_ids: undefined })}
+          placeholder="Select a category"
+          options={categoryList.map((c: Category) => ({ value: c.id, label: c.name }))}
+          size="sm"
+          className="flex-1"
+        />
       )}
 
       {onRemove && (
