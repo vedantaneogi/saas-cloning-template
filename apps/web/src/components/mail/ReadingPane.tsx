@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
-import { messages, conversations, events } from '@/lib/api'
+import { messages, conversations, events, categories as categoriesApi } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import { Avatar } from '@/components/ui/Avatar'
 import { AttachmentBar } from './AttachmentBar'
@@ -232,6 +233,7 @@ import {
   Forward,
   MoreHorizontal,
   Mail,
+  MailOpen,
   Send,
   Maximize2,
   X,
@@ -240,6 +242,10 @@ import {
   Check,
   HelpCircle,
   Clock,
+  Tag,
+  Flag,
+  Pin,
+  Printer,
 } from 'lucide-react'
 
 export function ReadingPane() {
@@ -255,6 +261,55 @@ export function ReadingPane() {
   const [inlineReplyType, setInlineReplyType] = useState<'reply' | 'reply_all' | 'forward' | null>(null)
   const [inlineBodyHtml, setInlineBodyHtml] = useState('')
   const [inlineForwardTo, setInlineForwardTo] = useState('')
+
+  // More-actions menu state (the ••• button at the right of each msg header).
+  const [moreMenuMsgId, setMoreMenuMsgId] = useState<string | null>(null)
+  const [moreMenuPos, setMoreMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const [catSubOpen, setCatSubOpen] = useState(false)
+
+  const { data: categoryList = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.list(),
+  })
+
+  const categorizeMutation = useMutation({
+    mutationFn: ({ msgId, categoryIds }: { msgId: string; categoryIds: string[] }) =>
+      messages.update(msgId, { category_ids: categoryIds } as never),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
+      queryClient.invalidateQueries({ queryKey: ['conversation', message?.conversation_id] })
+    },
+  })
+
+  const toggleMsgCategory = (msg: Message, catId: string) => {
+    const current = (msg.categories ?? []).map((c) => c.id)
+    const next = current.includes(catId) ? current.filter((id) => id !== catId) : [...current, catId]
+    categorizeMutation.mutate({ msgId: msg.id, categoryIds: next })
+  }
+
+  const moreActionMutation = useMutation({
+    mutationFn: ({ msgId, patch }: { msgId: string; patch: Partial<Message> }) =>
+      messages.update(msgId, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
+    },
+  })
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!moreMenuMsgId) return
+    const handler = (e: MouseEvent) => {
+      const tgt = e.target as Element
+      if (!tgt.closest?.('[data-more-menu]')) {
+        setMoreMenuMsgId(null)
+        setCatSubOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [moreMenuMsgId])
 
   // Reset inline reply when message changes
   useEffect(() => {
@@ -445,7 +500,19 @@ export function ReadingPane() {
                           <button onClick={() => openComposer(draftFromReply(msg, 'forward'))} title="Forward" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><Forward size={15} /></button>
                           <button title="Schedule meeting" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><CalendarDays size={15} /></button>
                           <button title="More apps" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><LayoutGrid size={15} /></button>
-                          <button title="More actions" className="text-[#605E5C] hover:text-[#323130] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><MoreHorizontal size={15} /></button>
+                          <button
+                            title="More actions"
+                            data-more-menu
+                            onClick={(e) => {
+                              const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                              setMoreMenuPos({ top: r.bottom + 4, left: Math.max(8, r.right - 220) })
+                              setMoreMenuMsgId((cur) => (cur === msg.id ? null : msg.id))
+                              setCatSubOpen(false)
+                            }}
+                            className="text-[#605E5C] hover:text-[#323130] p-1 rounded hover:bg-[#F3F2F1] transition-colors"
+                          >
+                            <MoreHorizontal size={15} />
+                          </button>
                         </div>
                       </div>
                       {/* Row 2: To: ... + date. Cc rendered on its own line below
@@ -659,6 +726,102 @@ export function ReadingPane() {
       })()}
     </div>
 
+    {/* More-actions popover — portal so it floats above any overflow clipping. */}
+    {moreMenuMsgId && typeof window !== 'undefined' && (() => {
+      const targetMsg = allThreadMsgs.find((m) => m.id === moreMenuMsgId) ?? message
+      if (!targetMsg) return null
+      const msgCatIds = new Set((targetMsg.categories ?? []).map((c) => c.id))
+      return createPortal(
+        <div
+          data-more-menu
+          style={{ top: moreMenuPos.top, left: moreMenuPos.left }}
+          className="fixed z-[9999] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1"
+        >
+          <button
+            onClick={() => {
+              moreActionMutation.mutate({ msgId: targetMsg.id, patch: { is_read: !targetMsg.is_read } })
+              setMoreMenuMsgId(null)
+            }}
+            className="w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130]"
+          >
+            <MailOpen size={13} className="text-[#605E5C]" />
+            {targetMsg.is_read ? 'Mark as unread' : 'Mark as read'}
+          </button>
+          <button
+            onClick={() => {
+              moreActionMutation.mutate({ msgId: targetMsg.id, patch: { is_flagged: !targetMsg.is_flagged } })
+              setMoreMenuMsgId(null)
+            }}
+            className="w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130]"
+          >
+            <Flag size={13} className="text-[#605E5C]" />
+            {targetMsg.is_flagged ? 'Unflag' : 'Flag'}
+          </button>
+          <button
+            onClick={() => {
+              moreActionMutation.mutate({ msgId: targetMsg.id, patch: { is_pinned: !targetMsg.is_pinned } as never })
+              setMoreMenuMsgId(null)
+            }}
+            className="w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130]"
+          >
+            <Pin size={13} className="text-[#605E5C]" />
+            {targetMsg.is_pinned ? 'Unpin' : 'Pin to top'}
+          </button>
+
+          <div className="h-px bg-[#EDEBE9] my-1" />
+
+          {/* Categorize submenu */}
+          <div
+            className="relative"
+            onMouseEnter={() => setCatSubOpen(true)}
+          >
+            <button
+              onClick={() => setCatSubOpen((v) => !v)}
+              className="w-full flex items-center justify-between text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130]"
+            >
+              <span className="flex items-center gap-2">
+                <Tag size={13} className="text-[#605E5C]" />
+                Categorize
+              </span>
+              <span className="text-[#605E5C]">›</span>
+            </button>
+            {catSubOpen && (
+              <div className="absolute right-full top-0 mr-1 w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 max-h-64 overflow-y-auto">
+                {categoryList.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-[#A19F9D] italic">No categories yet</p>
+                ) : (
+                  categoryList.map((c) => {
+                    const checked = msgCatIds.has(c.id)
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => toggleMsgCategory(targetMsg, c.id)}
+                        className="w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130]"
+                      >
+                        <Tag size={12} style={{ color: c.color }} />
+                        <span className="flex-1 truncate">{c.name}</span>
+                        {checked && <span className="text-[#0078D4] text-xs">✓</span>}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="h-px bg-[#EDEBE9] my-1" />
+
+          <button
+            onClick={() => { window.print(); setMoreMenuMsgId(null) }}
+            className="w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130]"
+          >
+            <Printer size={13} className="text-[#605E5C]" />
+            Print
+          </button>
+        </div>,
+        document.body,
+      )
+    })()}
     </div>
   )
 }
