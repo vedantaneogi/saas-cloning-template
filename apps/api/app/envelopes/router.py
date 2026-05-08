@@ -554,6 +554,7 @@ async def save_envelope_as_template(
 
     # Build roles list from the envelope's recipients (placeholder roles)
     role_labels = data.role_labels or {}
+    role_counters: dict[str, int] = {}
     roles = []
     for r in envelope.recipients:
         role_entry: dict = {
@@ -566,8 +567,11 @@ async def save_envelope_as_template(
         if r.access_code:
             role_entry["access_code"] = r.access_code
         label = role_labels.get(str(r.id))
-        if label:
-            role_entry["role_label"] = label
+        if not label:
+            role_name = {"signer": "Signer", "approver": "Approver", "cc": "CC", "viewer": "Viewer", "in_person": "In Person Signer"}.get(r.role.value, "Recipient")
+            role_counters[role_name] = role_counters.get(role_name, 0) + 1
+            label = f"{role_name} {role_counters[role_name]}"
+        role_entry["role_label"] = label
         roles.append(role_entry)
 
     # Build fields_config from all fields across all documents

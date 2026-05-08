@@ -25,6 +25,7 @@ import {
   CaretDown,
   CaretRight,
   CreditCard,
+  X,
 } from "@phosphor-icons/react";
 import type { FieldType, EditorRecipient } from "../model/types";
 import { FIELD_LABELS, FIELD_PALETTE_CATEGORIES } from "../model/types";
@@ -142,6 +143,8 @@ export function FieldPalette({
 }: FieldPaletteProps) {
   const [recipientOpen, setRecipientOpen] = useState(false);
   const [standardFieldsOpen, setStandardFieldsOpen] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   return (
     <div
@@ -151,7 +154,7 @@ export function FieldPalette({
         borderRight: "1px solid rgba(19,0,50,0.12)",
       }}
     >
-      {/* Header: "Fields" title + search icon */}
+      {/* Header: "Fields" title + search */}
       <div
         className="flex items-center justify-between px-4 flex-shrink-0"
         style={{
@@ -159,22 +162,41 @@ export function FieldPalette({
           borderBottom: "1px solid rgba(19,0,50,0.12)",
         }}
       >
-        <span
-          style={{
-            fontSize: "14px",
-            fontWeight: 600,
-            color: "rgba(19,0,50,0.9)",
-          }}
-        >
-          Fields
-        </span>
-        <button
-          className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-gray-100"
-          style={{ color: "rgba(19,0,50,0.45)" }}
-          title="Search fields"
-        >
-          <MagnifyingGlass size={15} weight="bold" />
-        </button>
+        {searchOpen ? (
+          <div className="flex items-center gap-2 flex-1">
+            <MagnifyingGlass size={15} weight="bold" style={{ color: "rgba(19,0,50,0.45)", flexShrink: 0 }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search Fields"
+              autoFocus
+              className="flex-1 text-sm outline-none"
+              style={{ border: "none", background: "transparent", color: "rgba(19,0,50,0.9)", fontSize: "14px" }}
+            />
+            <button
+              onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
+              className="flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-gray-100"
+              style={{ color: "rgba(19,0,50,0.45)" }}
+            >
+              <X size={12} weight="bold" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <span style={{ fontSize: "14px", fontWeight: 600, color: "rgba(19,0,50,0.9)" }}>
+              Fields
+            </span>
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-gray-100"
+              style={{ color: "rgba(19,0,50,0.45)" }}
+              title="Search fields"
+            >
+              <MagnifyingGlass size={15} weight="bold" />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Recipient selector */}
@@ -300,39 +322,43 @@ export function FieldPalette({
 
         {standardFieldsOpen && (
           <div className="pb-2">
-            {FIELD_PALETTE_CATEGORIES.map((category) => (
-              <div key={category.label} className="px-3 pt-3 pb-1">
-                {/* Category label */}
-                <p
-                  className="px-0.5 mb-2"
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "rgba(19,0,50,0.40)",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {category.label}
-                </p>
-
-                {/* 2-column grid */}
-                <div
-                  className="grid gap-1.5"
-                  style={{ gridTemplateColumns: "1fr 1fr" }}
-                >
-                  {category.fields.map((type) => (
-                    <DraggableFieldItem
-                      key={type}
-                      type={type}
-                      activeTool={activeTool}
-                      activeRecipient={activeRecipient}
-                      onClick={() => onToolSelect(activeTool === type ? "select" : type)}
-                    />
-                  ))}
+            {FIELD_PALETTE_CATEGORIES.map((category) => {
+              const q = searchQuery.toLowerCase();
+              const matchingFields = q
+                ? category.fields.filter((type) => (FIELD_LABELS[type] ?? type).toLowerCase().includes(q))
+                : category.fields;
+              if (matchingFields.length === 0) return null;
+              return (
+                <div key={category.label} className="px-3 pt-3 pb-1">
+                  <p
+                    className="px-0.5 mb-2"
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      color: "rgba(19,0,50,0.40)",
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {category.label}
+                  </p>
+                  <div
+                    className="grid gap-1.5"
+                    style={{ gridTemplateColumns: "1fr 1fr" }}
+                  >
+                    {matchingFields.map((type) => (
+                      <DraggableFieldItem
+                        key={type}
+                        type={type}
+                        activeTool={activeTool}
+                        activeRecipient={activeRecipient}
+                        onClick={() => onToolSelect(activeTool === type ? "select" : type)}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

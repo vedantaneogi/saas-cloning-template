@@ -172,6 +172,8 @@ function TemplateRow({
   onSelect,
   onFavoriteToggle,
   onUse,
+  onEdit,
+  onCopy,
   onDelete,
 }: {
   template: Template;
@@ -180,6 +182,8 @@ function TemplateRow({
   onSelect: () => void;
   onFavoriteToggle: (id: string, isFavorite: boolean) => void;
   onUse: (id: string) => void;
+  onEdit: (id: string) => void;
+  onCopy: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
@@ -329,59 +333,29 @@ function TemplateRow({
                   >
                     Use Template
                   </button>
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm transition-colors"
-                    style={{ color: SECONDARY_TEXT, cursor: "not-allowed", opacity: 0.5 }}
-                    disabled
-                    title="Template editing is not yet available"
-                    onMouseOver={(e) =>
-                      ((e.currentTarget as HTMLButtonElement).style.background =
-                        "transparent")
-                    }
-                    onMouseOut={(e) =>
-                      ((e.currentTarget as HTMLButtonElement).style.background =
-                        "transparent")
-                    }
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm transition-colors"
-                    style={{ color: PRIMARY_TEXT }}
-                    onClick={() => {
-                      onFavoriteToggle(template.id, !template.isFavorite);
-                      setShowMenu(false);
-                    }}
-                    onMouseOver={(e) =>
-                      ((e.currentTarget as HTMLButtonElement).style.background =
-                        "rgba(19,0,50,0.04)")
-                    }
-                    onMouseOut={(e) =>
-                      ((e.currentTarget as HTMLButtonElement).style.background =
-                        "transparent")
-                    }
-                  >
-                    {template.isFavorite ? "Remove Favorite" : "Add to Favorites"}
-                  </button>
-                  <div
-                    className="my-1"
-                    style={{ borderTop: `1px solid ${BORDER_COLOR}` }}
-                  />
+                  {[
+                    { label: "Edit", action: () => onEdit(template.id) },
+                    { label: template.isFavorite ? "Remove Favorite" : "Add to Favorites", action: () => onFavoriteToggle(template.id, !template.isFavorite) },
+                    { label: "Copy", action: () => onCopy(template.id) },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      className="w-full text-left px-4 py-2 text-sm transition-colors"
+                      style={{ color: PRIMARY_TEXT }}
+                      onClick={() => { item.action(); setShowMenu(false); }}
+                      onMouseOver={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(19,0,50,0.04)")}
+                      onMouseOut={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "transparent")}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                  <div className="my-1" style={{ borderTop: `1px solid ${BORDER_COLOR}` }} />
                   <button
                     className="w-full text-left px-4 py-2 text-sm transition-colors"
                     style={{ color: "#D93025" }}
-                    onClick={() => {
-                      onDelete(template.id);
-                      setShowMenu(false);
-                    }}
-                    onMouseOver={(e) =>
-                      ((e.currentTarget as HTMLButtonElement).style.background =
-                        "rgba(217,48,37,0.06)")
-                    }
-                    onMouseOut={(e) =>
-                      ((e.currentTarget as HTMLButtonElement).style.background =
-                        "transparent")
-                    }
+                    onClick={() => { onDelete(template.id); setShowMenu(false); }}
+                    onMouseOver={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(217,48,37,0.06)")}
+                    onMouseOut={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "transparent")}
                   >
                     Delete
                   </button>
@@ -679,6 +653,18 @@ export function TemplateList({ templates, isLoading, onCreateTemplate, section }
                   favoriteMutation.mutate({ id, isFavorite: fav })
                 }
                 onUse={(id) => handleUse(id)}
+                onEdit={async (id) => {
+                  try {
+                    const { envelopeId } = await useTemplate(id);
+                    router.push(`/envelope/${envelopeId}/prepare?mode=template`);
+                  } catch { /* ignore */ }
+                }}
+                onCopy={async (id) => {
+                  try {
+                    const { envelopeId } = await useTemplate(id);
+                    router.push(`/envelope/${envelopeId}/prepare?mode=template`);
+                  } catch { /* ignore */ }
+                }}
                 onDelete={(id) => deleteMut.mutate(id)}
               />
             ))

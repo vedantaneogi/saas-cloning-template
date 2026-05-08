@@ -54,12 +54,12 @@ export function OverviewPanel() {
         className="bg-white"
         style={{ border: "1px solid #E0E0E0", borderRadius: "8px" }}
       >
-        <div className="flex items-center justify-between px-4 py-4 border-b" style={{ borderColor: "#E0E0E0" }}>
+        <Link href="/agreements" className="no-underline flex items-center justify-between px-4 py-4 border-b hover:bg-gray-50 transition-colors" style={{ borderColor: "#E0E0E0" }}>
           <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B7280", letterSpacing: "0.5px" }}>
             OVERVIEW
           </h2>
           <span className="text-gray-400 text-sm">›</span>
-        </div>
+        </Link>
         <div className="px-4 py-2">
           {isLoading ? (
             <div className="space-y-3 py-2">

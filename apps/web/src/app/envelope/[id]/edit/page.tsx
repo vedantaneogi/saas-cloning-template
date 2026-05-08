@@ -397,6 +397,10 @@ const FORMULA_FUNCTIONS = [
   "DateDiff(",
   "Day(",
   "Days(",
+  "Floor(",
+  "Round(",
+  "Abs(",
+  "if(",
 ];
 
 interface FormulaModalProps {
@@ -474,164 +478,194 @@ function FormulaModal({ field, allFields, onClose, onSave }: FormulaModalProps) 
     (f.label ?? "").toLowerCase().includes(autocompleteQuery.toLowerCase()),
   );
 
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const validateFormula = (f: string): string | null => {
+    if (!f.trim()) return null;
+    const refs = f.match(/\[([^\]]+)\]/g) || [];
+    const knownLabels = new Set(referenceable.map((r) => r.label?.toLowerCase()));
+    const invalid = refs.filter((r) => !knownLabels.has(r.slice(1, -1).toLowerCase()));
+    if (invalid.length > 0) return `Formula Error. Field${invalid.length > 1 ? "s" : ""} not found: ${invalid.join(", ")}`;
+    const cleaned = f.replace(/\[[^\]]+\]/g, "0").replace(/AddDays|AddMonths|AddYears|DateDiff|Day|Days|Floor|Round|Abs|if/gi, "").replace(/[0-9.+\-*/()%, >=<!]/g, "");
+    if (cleaned.trim()) return `Formula Error. Invalid characters: ${cleaned.trim()}`;
+    return null;
+  };
+
+  const handleSave = () => {
+    const err = validateFormula(formula);
+    if (err) { setValidationError(err); return; }
+    onSave(formula, decimalPlaces);
+  };
+
+  const allSuggestions = [
+    ...referenceable.map((f) => ({ type: "field" as const, label: f.label!, fieldType: f.type })),
+    ...FORMULA_FUNCTIONS.map((fn) => ({ type: "function" as const, label: fn, fieldType: "" })),
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="h-1.5 w-full" style={{ background: "linear-gradient(90deg, #1B0A3C, #4C00FF)" }} />
-        <div className="px-7 py-6">
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-2">
-            <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: "#F0EEFF" }}
-            >
-              <span style={{ fontSize: "18px", color: "#4C00FF", fontWeight: 700 }}>ƒ</span>
-            </div>
-            <div>
-              <h2 className="text-base font-bold" style={{ color: "#1B0A3C" }}>
-                Set up formula
-              </h2>
-              <p className="text-xs text-gray-400 leading-snug">
-                Build a formula from number and date fields. Field names must be in square brackets ([]).
-              </p>
-            </div>
-          </div>
+      <div
+        className="relative bg-white rounded-lg shadow-2xl w-full max-w-lg mx-4"
+        style={{ fontFamily: "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif" }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-0">
+          <h2 style={{ fontSize: "20px", fontWeight: 600, color: "rgba(19,0,50,0.9)", margin: 0 }}>
+            Set up formula
+          </h2>
+          <button
+            onClick={onClose}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(19,0,50,0.4)", fontSize: "20px", padding: "4px" }}
+          >
+            &times;
+          </button>
+        </div>
 
-          {/* Formula textarea */}
-          <div className="mt-4 mb-3 relative">
-            <label
-              style={{
-                display: "block",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "rgba(19,0,50,0.45)",
-                marginBottom: "4px",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-              }}
-            >
-              Formula
-            </label>
+        <div className="px-6 pb-6 pt-3">
+          {/* Description */}
+          <p style={{ fontSize: "13px", color: "rgba(19,0,50,0.6)", lineHeight: "1.5", margin: "0 0 16px" }}>
+            Build a formula from number and date fields in your envelope. Field names must be enclosed in square brackets
+            (&quot;[]&quot;). Select from suggested fields and date functions. Once completed click anywhere outside the box
+            to make autocomplete disappear and save.
+          </p>
+
+          {/* Formula label */}
+          <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "rgba(19,0,50,0.9)", marginBottom: "6px" }}>
+            Formula
+          </label>
+
+          {/* Validation error */}
+          {validationError && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "12px", padding: "10px 12px", background: "#FFF5F5", border: "1px solid #FED7D7", borderRadius: "4px" }}>
+              <span style={{ color: "#E53E3E", fontSize: "16px", lineHeight: 1, flexShrink: 0 }}>⚠</span>
+              <div>
+                <p style={{ fontSize: "13px", fontWeight: 600, color: "#C53030", margin: "0 0 2px" }}>Formula Error.</p>
+                <p style={{ fontSize: "12px", color: "#E53E3E", margin: 0 }}>{validationError.replace("Formula Error. ", "")}</p>
+                <p style={{ fontSize: "11px", color: "#E53E3E", margin: "4px 0 0", fontStyle: "italic" }}>For best results, use the autocomplete list of suggested fields and operators to build your formula.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Formula textarea + autocomplete */}
+          <div className="relative mb-1">
             <textarea
               ref={textareaRef}
               value={formula}
-              onChange={handleTextareaChange}
-              rows={3}
+              onChange={(e) => { handleTextareaChange(e); setValidationError(null); }}
+              onFocus={() => setShowDropdown(true)}
+              rows={4}
               placeholder="e.g. [Price] * [Quantity] + [Tax]"
               style={{
                 width: "100%",
-                border: "1px solid rgba(19,0,50,0.18)",
+                border: `2px solid ${validationError ? "#E53E3E" : "rgba(19,0,50,0.2)"}`,
                 borderRadius: "4px",
-                padding: "8px 10px",
-                fontSize: "13px",
-                fontFamily: "monospace",
+                padding: "10px 12px",
+                fontSize: "14px",
+                fontFamily: "inherit",
                 color: "rgba(19,0,50,0.9)",
                 outline: "none",
                 background: "white",
                 resize: "vertical",
+                boxSizing: "border-box",
               }}
-              onFocus={(e) => (e.target.style.borderColor = "#4C00FF")}
-              onBlur={(e) => (e.target.style.borderColor = "rgba(19,0,50,0.18)")}
+              onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
             />
-            {/* Autocomplete dropdown */}
-            {showAutocomplete && filteredLabels.length > 0 && (
+            {/* Autocomplete dropdown — shows on focus, combines fields + functions */}
+            {showDropdown && allSuggestions.length > 0 && (
               <div
-                className="absolute left-0 right-0 bg-white rounded shadow-lg border z-10 overflow-hidden"
-                style={{ top: "100%", border: "1px solid rgba(19,0,50,0.15)", maxHeight: "140px", overflowY: "auto" }}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: "100%",
+                  background: "white",
+                  border: "2px solid rgba(19,0,50,0.2)",
+                  borderTop: "none",
+                  borderRadius: "0 0 4px 4px",
+                  maxHeight: "200px",
+                  overflowY: "auto",
+                  zIndex: 10,
+                }}
               >
-                {filteredLabels.map((f) => (
-                  <button
-                    key={f.id}
-                    className="w-full text-left px-3 py-2 hover:bg-purple-50 transition-colors"
-                    style={{ fontSize: "12.5px", color: "#1B0A3C" }}
-                    onMouseDown={(e) => {
-                      e.preventDefault(); // prevent textarea blur
-                      insertLabel(f.label!);
-                    }}
-                  >
-                    <span style={{ color: "#4C00FF", fontWeight: 600 }}>[{f.label}]</span>
-                    <span className="text-gray-400 ml-2 text-xs">{f.type}</span>
-                  </button>
-                ))}
+                {allSuggestions
+                  .filter((s) =>
+                    !autocompleteQuery || s.label.toLowerCase().includes(autocompleteQuery.toLowerCase()),
+                  )
+                  .map((s, idx) => (
+                    <button
+                      key={`${s.type}-${idx}`}
+                      className="w-full text-left hover:bg-purple-50 transition-colors"
+                      style={{
+                        padding: "8px 12px",
+                        fontSize: "14px",
+                        color: "rgba(19,0,50,0.9)",
+                        border: "none",
+                        background: "none",
+                        cursor: "pointer",
+                        borderBottom: "1px solid rgba(19,0,50,0.06)",
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (s.type === "field") {
+                          if (showAutocomplete) {
+                            insertLabel(s.label);
+                          } else {
+                            insertFunction(`[${s.label}]`);
+                          }
+                        } else {
+                          insertFunction(s.label);
+                        }
+                        setShowDropdown(false);
+                      }}
+                    >
+                      {s.type === "field" ? `[${s.label}]` : s.label}
+                    </button>
+                  ))}
               </div>
             )}
           </div>
-
-          {/* Suggested functions */}
-          <div className="mb-4">
-            <p style={{ fontSize: "11px", fontWeight: 600, color: "rgba(19,0,50,0.45)", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-              Suggested functions
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {FORMULA_FUNCTIONS.map((fn) => (
-                <button
-                  key={fn}
-                  onClick={() => insertFunction(fn)}
-                  className="px-2.5 py-1 rounded text-xs font-mono hover:bg-purple-100 transition-colors"
-                  style={{
-                    background: "#F0EEFF",
-                    color: "#4C00FF",
-                    border: "1px solid #D4C6FF",
-                    fontSize: "11.5px",
-                  }}
-                >
-                  {fn}
-                </button>
-              ))}
-            </div>
-          </div>
+          <p style={{ fontSize: "12px", color: "rgba(19,0,50,0.4)", margin: "0 0 20px" }}>
+            Example: [Total Due]-[Deposit]
+          </p>
 
           {/* Decimal Places */}
-          <div className="mb-6">
-            <label
-              style={{
-                display: "block",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "rgba(19,0,50,0.45)",
-                marginBottom: "4px",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-              }}
-            >
-              Decimal Places
-            </label>
-            <select
-              value={decimalPlaces}
-              onChange={(e) => setDecimalPlaces(Number(e.target.value))}
-              style={{
-                width: "100%",
-                border: "1px solid rgba(19,0,50,0.18)",
-                borderRadius: "4px",
-                padding: "6px 9px",
-                fontSize: "12.5px",
-                color: "rgba(19,0,50,0.9)",
-                outline: "none",
-                background: "white",
-              }}
-            >
-              {[0, 2].map((n) => (
-                <option key={n} value={n}>
-                  {n === 0 ? "0 — No decimal places" : "2 — 2 decimal places"}
-                </option>
-              ))}
-            </select>
-          </div>
+          <label style={{ display: "block", fontSize: "14px", fontWeight: 500, color: "rgba(19,0,50,0.9)", marginBottom: "6px" }}>
+            Decimal Places
+          </label>
+          <select
+            value={decimalPlaces}
+            onChange={(e) => setDecimalPlaces(Number(e.target.value))}
+            style={{
+              width: "80px",
+              border: "1px solid rgba(19,0,50,0.2)",
+              borderRadius: "6px",
+              padding: "8px 12px",
+              fontSize: "14px",
+              color: "rgba(19,0,50,0.9)",
+              outline: "none",
+              background: "white",
+              marginBottom: "24px",
+            }}
+          >
+            <option value={0}>0</option>
+            <option value={2}>2</option>
+          </select>
 
           {/* Buttons */}
-          <div className="flex gap-3">
+          <div className="flex gap-3 justify-end">
             <button
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-lg border text-sm font-semibold transition-colors hover:bg-gray-50"
-              style={{ borderColor: "#1B0A3C", color: "#1B0A3C" }}
+              className="px-8 py-2.5 rounded border text-sm font-medium transition-colors hover:bg-gray-50"
+              style={{ borderColor: "rgba(19,0,50,0.25)", color: "rgba(19,0,50,0.9)" }}
             >
               Cancel
             </button>
             <button
-              onClick={() => onSave(formula, decimalPlaces)}
-              className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90"
-              style={{ background: "#4C00FF" }}
+              onClick={handleSave}
+              className="px-8 py-2.5 rounded text-sm font-bold text-white transition-opacity hover:opacity-90"
+              style={{ background: "#260559" }}
             >
               Save
             </button>

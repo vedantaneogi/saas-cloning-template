@@ -141,14 +141,64 @@ def _apply_date_functions(expr: str, values: dict[str, str]) -> str:
         # Days since epoch (Jan 1 1970)
         return str((d - date(1970, 1, 1)).days)
 
-    # Argument pattern: either [Label] or a quoted string or a number
+    def _floor(m: re.Match) -> str:
+        val_arg = m.group(1).strip()
+        try:
+            import math
+            return str(math.floor(float(val_arg)))
+        except (ValueError, TypeError):
+            return "0"
+
+    def _round(m: re.Match) -> str:
+        val_arg = m.group(1).strip()
+        places_arg = m.group(2).strip()
+        try:
+            return str(round(float(val_arg), int(float(places_arg))))
+        except (ValueError, TypeError):
+            return "0"
+
+    def _abs(m: re.Match) -> str:
+        val_arg = m.group(1).strip()
+        try:
+            return str(abs(float(val_arg)))
+        except (ValueError, TypeError):
+            return "0"
+
+    def _eval_comparison(cond_str: str) -> bool:
+        """Evaluate a comparison like '100 > 50' or '3.5 == 3.5'."""
+        for op, fn in [(">=", lambda a, b: a >= b), ("<=", lambda a, b: a <= b),
+                        ("!=", lambda a, b: a != b), ("==", lambda a, b: a == b),
+                        (">", lambda a, b: a > b), ("<", lambda a, b: a < b)]:
+            if op in cond_str:
+                parts = cond_str.split(op, 1)
+                try:
+                    return fn(float(parts[0].strip()), float(parts[1].strip()))
+                except (ValueError, IndexError):
+                    return False
+        try:
+            return float(cond_str.strip()) != 0
+        except (ValueError, TypeError):
+            return False
+
+    def _if_func(m: re.Match) -> str:
+        cond_arg = m.group(1).strip()
+        true_arg = m.group(2).strip()
+        false_arg = m.group(3).strip()
+        return true_arg if _eval_comparison(cond_arg) else false_arg
+
+    # Argument pattern: either [Label] or a quoted string or a number or a comparison expression
     _arg = r'(\[[^\]]+\]|"[^"]*"|\'[^\']*\'|[\d.+-]+)'
+    _if_arg = r'([^,]+)'
     expr = re.sub(rf'AddDays\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_days, expr)
     expr = re.sub(rf'AddMonths\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_months, expr)
     expr = re.sub(rf'AddYears\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_years, expr)
     expr = re.sub(rf'DateDiff\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _date_diff, expr)
     expr = re.sub(rf'Day\s*\(\s*{_arg}\s*\)', _day, expr)
     expr = re.sub(rf'Days\s*\(\s*{_arg}\s*\)', _days, expr)
+    expr = re.sub(rf'Floor\s*\(\s*{_arg}\s*\)', _floor, expr)
+    expr = re.sub(rf'Round\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _round, expr)
+    expr = re.sub(rf'Abs\s*\(\s*{_arg}\s*\)', _abs, expr)
+    expr = re.sub(rf'if\s*\(\s*{_if_arg}\s*,\s*{_if_arg}\s*,\s*{_if_arg}\s*\)', _if_func, expr)
     return expr
 
 
