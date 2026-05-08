@@ -698,6 +698,8 @@ async def create_event(
                 if m.email.lower() in seen_emails:
                     continue
                 seen_emails.add(m.email.lower())
+                # Group membership = implicit acceptance — members don't need
+                # to RSVP for events scheduled by their own team.
                 db.add(EventAttendee(
                     id=uuid.uuid4(),
                     event_id=ev.id,
@@ -705,6 +707,7 @@ async def create_event(
                     display_name=m.display_name,
                     is_organizer=False,
                     is_required=True,
+                    response_status="accepted",
                 ))
                 if m.email.lower() != current_user.email.lower():
                     invitee_emails.append(m.email)
