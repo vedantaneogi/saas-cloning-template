@@ -878,8 +878,26 @@ function HomeRibbon() {
     },
   })
 
+  // Quick-step run path. Backend handles mark/flag/move/delete server-side,
+  // but reply/reply_all/forward have to surface as a compose pane on the
+  // client (the macro can't actually compose for the user). Scan first,
+  // open the editor with the right draft, then fire the server run for the
+  // rest of the actions.
   const runQsMutation = useMutation({
-    mutationFn: (qsId: string) => quickSteps.run(qsId, selectedMessageId!),
+    mutationFn: async (qsId: string) => {
+      const qs = quickStepList.find((q) => q.id === qsId)
+      if (qs && message) {
+        const replyAction = qs.actions.find(
+          (a) => a.type === 'reply' || a.type === 'reply_all' || a.type === 'forward',
+        )
+        if (replyAction) {
+          openComposer(
+            draftFromReply(message, replyAction.type as 'reply' | 'reply_all' | 'forward'),
+          )
+        }
+      }
+      return quickSteps.run(qsId, selectedMessageId!)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['folders'] })
