@@ -181,6 +181,7 @@ async def update_group(
     current_user: User = Depends(get_current_user),
 ):
     g = await _get_group_or_404(db, group_id)
+    await _require_owner(db, group_id, current_user.id)
 
     if body.name is not None:
         g.name = body.name
@@ -206,6 +207,20 @@ async def update_group(
     out.is_member = membership is not None
     out.is_owner = membership is not None and membership.role == "owner"
     return out
+
+
+@router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_group(
+    group_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Owner-only group teardown. Memberships cascade via FK ondelete."""
+    g = await _get_group_or_404(db, group_id)
+    await _require_owner(db, group_id, current_user.id)
+    await db.delete(g)
+    await db.flush()
+    rl_state.event_log.append("group_deleted", {"id": str(group_id), "name": g.name})
 
 
 @router.post("/{group_id}/join", response_model=GroupMemberOut, status_code=status.HTTP_201_CREATED)

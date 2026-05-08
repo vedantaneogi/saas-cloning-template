@@ -426,6 +426,9 @@ export default function GroupsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [showAddMember, setShowAddMember] = useState(false)
   const [groupsExpanded, setGroupsExpanded] = useState(true)
+  const [favoritesExpanded, setFavoritesExpanded] = useState(true)
+  const [previewGroupId, setPreviewGroupId] = useState<string | null>(null)
+  const [editGroupId, setEditGroupId] = useState<string | null>(null)
 
   const { data: groupList = [] } = useQuery({
     queryKey: ['groups'],
@@ -483,7 +486,7 @@ export default function GroupsPage() {
           onNewMail={handleNewMail}
           onNewEvent={handleNewEvent}
           onAddMembers={() => setShowAddMember(true)}
-          onEditGroup={() => { /* TODO: edit dialog */ }}
+          onEditGroup={() => selectedGroup && setEditGroupId(selectedGroup.id)}
           onLeave={handleLeave}
           onNewGroup={() => setShowCreate(true)}
         />
@@ -505,6 +508,44 @@ export default function GroupsPage() {
                 <Home size={14} />
                 Home
               </button>
+
+              {/* Favorites — same as joined groups for now (no real favorite
+                  flag yet); senior wanted the section visible per newgroup3.png. */}
+              <button
+                type="button"
+                onClick={() => setFavoritesExpanded((v) => !v)}
+                className="w-full flex items-center gap-1 px-3 py-1.5 text-sm text-[#323130] hover:bg-[#F3F2F1]"
+              >
+                <ChevronDownIcon
+                  size={12}
+                  className={cn('transition-transform', !favoritesExpanded && '-rotate-90')}
+                />
+                <span className="font-semibold flex-1 text-left">Favorites</span>
+              </button>
+              {favoritesExpanded && (
+                <div className="pl-2">
+                  {groupList.filter((g) => g.is_member).length === 0 ? (
+                    <p className="text-xs text-[#A19F9D] italic px-3 py-1.5">No favorites yet.</p>
+                  ) : (
+                    groupList
+                      .filter((g) => g.is_member)
+                      .slice(0, 5)
+                      .map((g) => (
+                        <button
+                          key={`fav-${g.id}`}
+                          onClick={() => { setViewMode('group'); setSelectedId(g.id) }}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-[#F3F2F1] text-left',
+                            viewMode === 'group' && selectedId === g.id && 'bg-[#EBF3FB] text-[#0078D4]'
+                          )}
+                        >
+                          <Avatar name={g.name} color={g.color} size={20} />
+                          <span className="truncate">{g.name}</span>
+                        </button>
+                      ))
+                  )}
+                </div>
+              )}
 
               {/* Groups header */}
               <button
@@ -553,6 +594,7 @@ export default function GroupsPage() {
               groupList={groupList}
               onOpenCreate={() => setShowCreate(true)}
               onOpenGroup={(id) => { setViewMode('group'); setSelectedId(id) }}
+              onPreviewGroup={(id) => setPreviewGroupId(id)}
             />
           ) : (
             <div className="flex-1 flex flex-col overflow-hidden">
@@ -568,7 +610,12 @@ export default function GroupsPage() {
                           <path d="M8 1l2 5h5l-4 3 1.5 5L8 11l-4.5 3L5 9 1 6h5z" stroke="currentColor" strokeWidth="1" />
                         </svg>
                       </button>
-                      <button aria-label="Edit" className="text-[#A19F9D] hover:text-[#605E5C]">
+                      <button
+                        type="button"
+                        aria-label="Edit"
+                        onClick={() => setEditGroupId(selectedGroup.id)}
+                        className="text-[#A19F9D] hover:text-[#605E5C]"
+                      >
                         <Edit2 size={12} />
                       </button>
                     </div>
@@ -654,6 +701,37 @@ export default function GroupsPage() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreated={(g) => { setViewMode('group'); setSelectedId(g.id) }}
+      />
+
+      {/* Group detail popup — opened by clicking a Frequently used card. */}
+      <GroupDetailPopup
+        group={groupList.find((g) => g.id === previewGroupId) ?? null}
+        open={!!previewGroupId}
+        onClose={() => setPreviewGroupId(null)}
+        onOpenGroup={(id) => {
+          setPreviewGroupId(null)
+          setViewMode('group')
+          setSelectedId(id)
+        }}
+        onOpenEdit={() => {
+          if (previewGroupId) {
+            setEditGroupId(previewGroupId)
+            setPreviewGroupId(null)
+          }
+        }}
+      />
+
+      {/* Edit + delete dialog */}
+      <EditGroupDialog
+        key={editGroupId ?? 'edit'}
+        group={groupList.find((g) => g.id === editGroupId) ?? null}
+        open={!!editGroupId}
+        onClose={() => setEditGroupId(null)}
+        onDeleted={() => {
+          setEditGroupId(null)
+          setViewMode('home')
+          setSelectedId(null)
+        }}
       />
     </div>
   )
@@ -810,13 +888,16 @@ function HomeView({
   groupList,
   onOpenCreate,
   onOpenGroup,
+  onPreviewGroup,
 }: {
   groupList: Group[]
   onOpenCreate: () => void
   onOpenGroup: (id: string) => void
+  onPreviewGroup: (id: string) => void
 }) {
   const queryClient = useQueryClient()
   const showNotification = useUIStore((s) => s.showNotification)
+  const openComposer = useUIStore((s) => s.openComposer)
   const currentUser = useAuthStore((s) => s.currentUser)
   const firstName = (currentUser?.display_name || '').split(/\s+/)[0] || 'there'
 
@@ -887,6 +968,46 @@ function HomeView({
           </div>
         )}
 
+        {/* Frequently used groups — appears once the user has joined groups.
+            Cards have quick-action icons (Email/Files/Calendar/People) per
+            newgroup3.png. Clicking the card opens the detail popup. */}
+        {myGroups.length > 0 && (
+          <div>
+            <h2 className="text-base font-semibold text-[#323130] mb-3">Frequently used groups</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {myGroups.slice(0, 8).map((g) => (
+                <FrequentCard
+                  key={g.id}
+                  group={g}
+                  onPreview={() => onPreviewGroup(g.id)}
+                  onEmail={() => openComposer({ to: [g.email], subject: `[${g.name}] ` })}
+                  onFiles={() => { onOpenGroup(g.id); showNotification('Files') }}
+                  onCalendar={() => onOpenGroup(g.id)}
+                  onPeople={() => onOpenGroup(g.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent files — empty state. The clone doesn't yet have a per-group
+            files store, so we show the same "No files to show" placeholder
+            Outlook surfaces. */}
+        <div>
+          <h2 className="text-base font-semibold text-[#323130] mb-3">Recent files</h2>
+          <div className="bg-white border border-[#EDEBE9] rounded-lg py-12 flex flex-col items-center justify-center">
+            <svg width="64" height="48" viewBox="0 0 96 72" fill="none" className="mb-3 opacity-90">
+              <rect x="20" y="14" width="44" height="48" rx="3" fill="#E1DFDD" />
+              <rect x="32" y="20" width="44" height="48" rx="3" fill="#A19F9D" />
+              <path d="M40 12l-3 7-7-3 5-7-7-3 7-3 3-7 3 7 7 3-5 7 7 3z" fill="#FFB900" opacity="0.85" />
+            </svg>
+            <p className="text-sm text-[#323130]">No files to show</p>
+            <p className="text-xs text-[#605E5C] mt-1">
+              Recent files stored with groups appear here
+            </p>
+          </div>
+        </div>
+
         {/* Discover groups */}
         {discoverGroups.length > 0 && (
           <div>
@@ -914,6 +1035,82 @@ function HomeView({
         )}
       </div>
     </div>
+  )
+}
+
+// Card used in "Frequently used groups". Card body opens the detail popup;
+// the bottom action row deep-links into Email/Files/Calendar/People.
+function FrequentCard({
+  group, onPreview, onEmail, onFiles, onCalendar, onPeople,
+}: {
+  group: Group
+  onPreview: () => void
+  onEmail: () => void
+  onFiles: () => void
+  onCalendar: () => void
+  onPeople: () => void
+}) {
+  const isPrivate = group.privacy === 'private'
+  return (
+    <div className="bg-white border border-[#EDEBE9] rounded-lg overflow-hidden hover:shadow-sm transition-shadow flex flex-col">
+      <button
+        type="button"
+        onClick={onPreview}
+        aria-label={`Open ${group.name}`}
+        className="text-left px-4 pt-4 pb-3 flex-1"
+      >
+        <div className="flex items-start gap-2">
+          <Avatar name={group.name} color={group.color} size={36} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1">
+              <p className="text-sm font-semibold text-[#323130] truncate">{group.name}</p>
+              <button
+                aria-label="Favorite"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[#A19F9D] hover:text-[#FFB900]"
+              >
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 1l2 5h5l-4 3 1.5 5L8 11l-4.5 3L5 9 1 6h5z" stroke="currentColor" strokeWidth="1" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-[11px] text-[#605E5C] flex items-center gap-1 mt-0.5">
+              {isPrivate ? <Lock size={10} /> : <Globe size={10} />}
+              {isPrivate ? 'Private group' : 'Public group'}
+              <span>·</span>
+              {group.member_count} member{group.member_count !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
+      </button>
+      {/* Action icons */}
+      <div className="border-t border-[#EDEBE9] px-2 py-1.5 flex items-center justify-around">
+        <QuickAction icon={<Mail size={14} />} label="Email" onClick={onEmail} />
+        <QuickAction icon={<FileGlyph />} label="Files" onClick={onFiles} />
+        <QuickAction icon={<CalendarIcon size={14} />} label="Calendar" onClick={onCalendar} />
+        <QuickAction icon={<UsersGlyph />} label="People" onClick={onPeople} />
+      </div>
+    </div>
+  )
+}
+
+function QuickAction({
+  icon, label, onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      aria-label={label}
+      title={label}
+      className="w-7 h-7 flex items-center justify-center rounded text-[#605E5C] hover:text-[#0078D4] hover:bg-[#F3F2F1]"
+    >
+      {icon}
+    </button>
   )
 }
 
@@ -972,6 +1169,26 @@ function DiscoverCard({
 // Matches Outlook's "Create a group" flow: name, description, group email
 // (auto-suggested), privacy, plus initial people picker. Each member is added
 // via groups.addMember after the group is created (the creator is owner).
+// ─── Group illustrations ──────────────────────────────────────────────────────
+// Used by the create / add-members / edit dialogs as the left-column visual.
+function GroupHeroIllustration() {
+  return (
+    <svg width="160" height="160" viewBox="0 0 200 200" fill="none" aria-hidden="true">
+      <circle cx="100" cy="110" r="80" fill="#EFF6FC" />
+      <circle cx="70" cy="80" r="22" fill="#FFC845" />
+      <circle cx="130" cy="80" r="22" fill="#83C7F2" />
+      <path d="M40 160c0-22 13-40 30-40s30 18 30 40" fill="#FFC845" opacity="0.85" />
+      <path d="M100 160c0-22 13-40 30-40s30 18 30 40" fill="#83C7F2" opacity="0.85" />
+      <path d="M150 50l8 4 4 8 4-8 8-4-8-4-4-8-4 8z" fill="#FFC845" />
+      <path d="M30 130l5 2 2 5 2-5 5-2-5-2-2-5-2 5z" fill="#0078D4" />
+    </svg>
+  )
+}
+
+// ─── Two-step Create group dialog ────────────────────────────────────────────
+// Step 1 = group details + default settings. On submit, the group is created
+// and we slide to step 2 = picker for initial members. Matches newgroup1.png
+// and newgroup2.png. Ditches the cramped single-column form.
 function CreateGroupDialog({
   open, onClose, onCreated,
 }: {
@@ -982,16 +1199,16 @@ function CreateGroupDialog({
   const queryClient = useQueryClient()
   const showNotification = useUIStore((s) => s.showNotification)
 
+  const [step, setStep] = useState<1 | 2>(1)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [email, setEmail] = useState('')
   const [emailEdited, setEmailEdited] = useState(false)
-  const [privacy, setPrivacy] = useState<'public' | 'private'>('public')
-  const [members, setMembers] = useState<{ email: string; name: string }[]>([])
-  const [memberQuery, setMemberQuery] = useState('')
-  const [autoOpen, setAutoOpen] = useState(false)
-  const autoRef = useRef<HTMLDivElement>(null)
+  const [privacy, setPrivacy] = useState<'public' | 'private'>('private')
+  const [language, setLanguage] = useState('English (United States)')
+  const [subscribeMembers, setSubscribeMembers] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [createdGroup, setCreatedGroup] = useState<Group | null>(null)
 
   // Auto-fill the group email from the name unless the user has overridden it.
   useEffect(() => {
@@ -1000,61 +1217,29 @@ function CreateGroupDialog({
     setEmail(slug ? `${slug}@company.com` : '')
   }, [name, emailEdited])
 
-  const { data: suggestions = [] } = useQuery<Contact[]>({
-    queryKey: ['group-create-autocomplete', memberQuery],
-    queryFn: () => contacts.autocomplete(memberQuery || 'a'),
-    enabled: open && memberQuery.length >= 0 && autoOpen,
-  })
+  const reset = () => {
+    setStep(1); setName(''); setDescription(''); setEmail(''); setEmailEdited(false)
+    setPrivacy('private'); setLanguage('English (United States)'); setSubscribeMembers(true)
+    setError(null); setCreatedGroup(null)
+  }
 
-  useEffect(() => {
-    if (!autoOpen) return
-    const handler = (e: MouseEvent) => {
-      if (autoRef.current && !autoRef.current.contains(e.target as Node)) setAutoOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [autoOpen])
+  const close = () => { reset(); onClose() }
 
   const createMutation = useMutation({
-    mutationFn: async () => {
-      const created = await groups.create({
-        name: name.trim(),
-        description: description.trim() || undefined,
-        email: email.trim() || undefined,
-        privacy,
-      })
-      // Add each picked member. Failures are non-fatal — we still want the
-      // group, and the user can retry from the Members tab.
-      for (const m of members) {
-        try {
-          await groups.addMember(created.id, m.email)
-        } catch {
-          // Silent — surfaced as a generic toast below.
-        }
-      }
-      return created
-    },
+    mutationFn: () => groups.create({
+      name: name.trim(),
+      description: description.trim() || undefined,
+      email: email.trim() || undefined,
+      privacy,
+    }),
     onSuccess: (g) => {
       queryClient.invalidateQueries({ queryKey: ['groups'] })
-      queryClient.invalidateQueries({ queryKey: ['group-members', g.id] })
       showNotification(`Group "${g.name}" created`)
-      onCreated(g)
-      // Reset state
-      setName(''); setDescription(''); setEmail(''); setEmailEdited(false)
-      setPrivacy('public'); setMembers([]); setMemberQuery(''); setError(null)
-      onClose()
+      setCreatedGroup(g)
+      setStep(2)
     },
     onError: (e: Error) => setError(e.message || 'Could not create group'),
   })
-
-  const addMember = (c: Contact) => {
-    if (members.some((m) => m.email.toLowerCase() === c.email.toLowerCase())) return
-    setMembers((prev) => [...prev, { email: c.email, name: c.display_name }])
-    setMemberQuery('')
-  }
-
-  const removeMember = (idx: number) =>
-    setMembers((prev) => prev.filter((_, i) => i !== idx))
 
   if (!open) return null
 
@@ -1062,188 +1247,819 @@ function CreateGroupDialog({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Create new group"
+      aria-label={step === 1 ? 'Create new group' : `Add members to ${createdGroup?.name ?? ''}`}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) close() }}
+    >
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-3xl flex max-h-[90vh] overflow-hidden">
+        {/* Close X — absolute over both columns */}
+        <button
+          type="button"
+          onClick={close}
+          aria-label="Close"
+          className="absolute top-3 right-3 p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C] z-10"
+        >
+          <X size={14} />
+        </button>
+
+        {step === 1 ? (
+          <>
+            {/* Left illustration column */}
+            <div className="hidden md:flex w-[260px] flex-shrink-0 bg-[#FAF9F8] flex-col items-center justify-center px-6 py-8">
+              <h3 className="text-base font-semibold text-[#323130] mb-3 text-center">
+                New group
+              </h3>
+              <GroupHeroIllustration />
+              <p className="text-xs text-[#605E5C] text-center mt-4 leading-relaxed">
+                Working better as a project or shared goal? Create a group to give your team a space for conversations, shared files, scheduling events and more.
+              </p>
+            </div>
+
+            {/* Right form column */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 px-6 py-6 space-y-3 overflow-y-auto outlook-scrollbar">
+                <div>
+                  <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="g-name">
+                    Name
+                  </label>
+                  <input
+                    id="g-name"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Marketing team"
+                    autoFocus
+                    className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="g-email">
+                    Email address
+                  </label>
+                  <input
+                    id="g-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); setEmailEdited(true) }}
+                    placeholder="group@company.com"
+                    className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="g-desc">
+                    Description
+                  </label>
+                  <textarea
+                    id="g-desc"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    placeholder="Tell people the purpose of your group"
+                    className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                  />
+                </div>
+
+                {/* Default settings */}
+                <div className="border-t border-[#EDEBE9] pt-3 space-y-3">
+                  <p className="text-sm font-semibold text-[#323130]">Default settings</p>
+
+                  {/* Privacy */}
+                  <div>
+                    <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="g-privacy">
+                      Privacy
+                    </label>
+                    <select
+                      id="g-privacy"
+                      value={privacy}
+                      onChange={(e) => setPrivacy(e.target.value as 'public' | 'private')}
+                      className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 bg-white focus:outline-none focus:border-[#0078D4]"
+                    >
+                      <option value="private">Private</option>
+                      <option value="public">Public</option>
+                    </select>
+                  </div>
+
+                  {/* Language */}
+                  <div>
+                    <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="g-lang">
+                      Language for group-related notifications
+                    </label>
+                    <select
+                      id="g-lang"
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 bg-white focus:outline-none focus:border-[#0078D4]"
+                    >
+                      <option>English (United States)</option>
+                      <option>English (India)</option>
+                      <option>English (United Kingdom)</option>
+                      <option>Español</option>
+                      <option>Français</option>
+                      <option>Deutsch</option>
+                    </select>
+                  </div>
+
+                  {/* Subscription */}
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={subscribeMembers}
+                      onChange={(e) => setSubscribeMembers(e.target.checked)}
+                      className="mt-0.5 accent-[#0078D4]"
+                    />
+                    <span className="text-xs text-[#323130] leading-relaxed">
+                      <span className="font-medium">Subscription:</span> Members will receive all group conversations and events in their inboxes.
+                    </span>
+                  </label>
+                </div>
+
+                {error && <p className="text-xs text-[#D13438]">{error}</p>}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-[#EDEBE9]">
+                <button
+                  type="button"
+                  onClick={() => name.trim() && createMutation.mutate()}
+                  disabled={!name.trim() || createMutation.isPending}
+                  className={cn(
+                    'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
+                    (!name.trim() || createMutation.isPending) && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  {createMutation.isPending ? 'Creating…' : 'Create'}
+                </button>
+                <button
+                  type="button"
+                  onClick={close}
+                  className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          // Step 2 — add members. The created group exists, so we hand it off
+          // when the user clicks "Add" or "Not now".
+          createdGroup && (
+            <AddMembersStep
+              group={createdGroup}
+              onDone={() => {
+                onCreated(createdGroup)
+                close()
+              }}
+            />
+          )
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Step 2: Add members (also reusable as a stand-alone "Add members" flow) ─
+function AddMembersStep({
+  group, onDone,
+}: {
+  group: Group
+  onDone: () => void
+}) {
+  const queryClient = useQueryClient()
+  const showNotification = useUIStore((s) => s.showNotification)
+  const [query, setQuery] = useState('')
+  const [picked, setPicked] = useState<{ email: string; name: string }[]>([])
+
+  const { data: suggestions = [] } = useQuery<Contact[]>({
+    queryKey: ['group-add-autocomplete', query],
+    queryFn: () => contacts.autocomplete(query || 'a'),
+  })
+
+  const addAllMutation = useMutation({
+    mutationFn: async () => {
+      for (const m of picked) {
+        try { await groups.addMember(group.id, m.email) } catch { /* non-fatal */ }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      queryClient.invalidateQueries({ queryKey: ['group-members', group.id] })
+      if (picked.length > 0) {
+        showNotification(`Added ${picked.length} member${picked.length !== 1 ? 's' : ''}`)
+      }
+      onDone()
+    },
+  })
+
+  const filtered = suggestions.filter((c) =>
+    !picked.some((p) => p.email.toLowerCase() === c.email.toLowerCase())
+    && (c.email.toLowerCase() !== group.email.toLowerCase())
+  )
+
+  return (
+    <>
+      {/* Left illustration column */}
+      <div className="hidden md:flex w-[260px] flex-shrink-0 bg-[#FAF9F8] flex-col items-center justify-start px-6 py-8 overflow-y-auto outlook-scrollbar">
+        <h3 className="text-base font-semibold text-[#323130] mb-3 text-center">
+          Add members to {group.name}
+        </h3>
+        <GroupHeroIllustration />
+        <p className="text-xs text-[#605E5C] text-center mt-4 leading-relaxed">
+          Your group has been created. Add members to your group to start collaborating. You can choose to add colleagues, members of working groups or distribution lists, or guests.
+        </p>
+        <div className="mt-4 self-stretch">
+          <p className="text-xs font-semibold text-[#323130] mb-1">Who is a guest?</p>
+          <p className="text-[11px] text-[#605E5C] leading-relaxed">
+            Guests are people from outside your organization. They will receive all messages sent to the group in their inbox, and can collaborate as files in the group.
+          </p>
+        </div>
+      </div>
+
+      {/* Right column: search + suggestions */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#EDEBE9]">
+          <h3 className="text-base font-semibold text-[#323130] mb-2">Add members</h3>
+          <div className="relative">
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[#A19F9D]" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search"
+              autoFocus
+              className="w-full text-sm border border-[#8A8886] rounded pl-7 pr-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+            />
+          </div>
+          {picked.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {picked.map((m, idx) => (
+                <span
+                  key={`${m.email}-${idx}`}
+                  className="inline-flex items-center gap-1 bg-[#EFF6FC] border border-[#0078D4]/40 text-[#0078D4] rounded-full px-2 py-0.5 text-xs"
+                >
+                  {m.name || m.email}
+                  <button
+                    type="button"
+                    onClick={() => setPicked((p) => p.filter((_, i) => i !== idx))}
+                    aria-label={`Remove ${m.name || m.email}`}
+                    className="hover:text-[#D13438]"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto outlook-scrollbar">
+          {filtered.length === 0 ? (
+            <p className="text-xs text-[#A19F9D] italic px-6 py-4">No suggestions.</p>
+          ) : (
+            filtered.slice(0, 12).map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setPicked((p) => [...p, { email: c.email, name: c.display_name }])}
+                className="w-full flex items-center gap-2.5 px-6 py-2 hover:bg-[#F3F2F1] text-left"
+              >
+                <MemberAvatar name={c.display_name || c.email} size={28} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-[#323130] truncate">{c.display_name}</p>
+                  <p className="text-[11px] text-[#605E5C] truncate">{c.email}</p>
+                </div>
+                <Plus size={14} className="text-[#0078D4] flex-shrink-0" />
+              </button>
+            ))
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-[#EDEBE9]">
+          <button
+            type="button"
+            onClick={onDone}
+            className="text-sm text-[#605E5C] hover:bg-[#F3F2F1] px-4 py-1.5 rounded"
+          >
+            Skip
+          </button>
+          <button
+            type="button"
+            onClick={() => addAllMutation.mutate()}
+            disabled={picked.length === 0 || addAllMutation.isPending}
+            className={cn(
+              'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
+              (picked.length === 0 || addAllMutation.isPending) && 'opacity-50 cursor-not-allowed'
+            )}
+          >
+            {addAllMutation.isPending ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ─── Edit group dialog ────────────────────────────────────────────────────────
+// Mirrors the create dialog layout but loaded with current group data and adds
+// a Delete group destructive action. Owner-only.
+function EditGroupDialog({
+  group, open, onClose, onDeleted,
+}: {
+  group: Group | null
+  open: boolean
+  onClose: () => void
+  onDeleted?: () => void
+}) {
+  const queryClient = useQueryClient()
+  const showNotification = useUIStore((s) => s.showNotification)
+
+  const [activeTab, setActiveTab] = useState<'about' | 'members'>('about')
+  const [name, setName] = useState(group?.name ?? '')
+  const [description, setDescription] = useState(group?.description ?? '')
+  const [privacy, setPrivacy] = useState<'public' | 'private'>(group?.privacy ?? 'private')
+  const [language, setLanguage] = useState('English (United States)')
+  const [allowExternal, setAllowExternal] = useState(false)
+  const [subscribeMembers, setSubscribeMembers] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Re-seed when the group prop changes (parent uses key= but defensive).
+  useEffect(() => {
+    if (!group) return
+    setName(group.name)
+    setDescription(group.description ?? '')
+    setPrivacy(group.privacy)
+    setError(null)
+  }, [group])
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!group) throw new Error('No group')
+      return groups.update(group.id, {
+        name: name.trim(),
+        description: description.trim() || null,
+        privacy,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      showNotification('Group updated')
+      onClose()
+    },
+    onError: (e: Error) => setError(e.message || 'Could not save group'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => {
+      if (!group) throw new Error('No group')
+      return groups.delete(group.id)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      showNotification('Group deleted')
+      onDeleted?.()
+      onClose()
+    },
+    onError: (e: Error) => setError(e.message || 'Could not delete group'),
+  })
+
+  if (!open || !group) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Edit group"
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-      <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-lg flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
-          <h2 className="text-base font-semibold text-[#323130]">Create a group</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]"
-          >
-            <X size={14} />
-          </button>
+      <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-3xl flex max-h-[90vh] overflow-hidden">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-3 right-3 p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C] z-10"
+        >
+          <X size={14} />
+        </button>
+
+        {/* Left illustration */}
+        <div className="hidden md:flex w-[260px] flex-shrink-0 bg-[#FAF9F8] flex-col items-center justify-center px-6 py-8">
+          <h3 className="text-base font-semibold text-[#323130] mb-3 text-center">
+            Edit group
+          </h3>
+          <GroupHeroIllustration />
+          <p className="text-xs text-[#605E5C] text-center mt-4 leading-relaxed">
+            Working better as a project or shared goal? Update settings to tune privacy, subscriptions, and members.
+          </p>
         </div>
 
-        <div className="px-4 py-4 space-y-3 overflow-y-auto outlook-scrollbar">
-          {/* Name */}
-          <div>
-            <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="g-name">
-              Group name
-            </label>
-            <input
-              id="g-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Marketing team"
-              autoFocus
-              className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
-            />
+        {/* Right column */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Tabs */}
+          <div className="flex border-b border-[#EDEBE9] px-6 flex-shrink-0">
+            {([['about', 'About'], ['members', 'Members']] as const).map(([tab, label]) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                role="tab"
+                aria-selected={activeTab === tab}
+                className={cn(
+                  'px-1 py-2.5 mr-6 text-sm border-b-2 transition-colors',
+                  activeTab === tab
+                    ? 'border-[#0078D4] text-[#0078D4] font-medium'
+                    : 'border-transparent text-[#605E5C] hover:text-[#323130]'
+                )}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="g-desc">
-              Description <span className="text-[#A19F9D] font-normal">(optional)</span>
-            </label>
-            <textarea
-              id="g-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              placeholder="What's this group for?"
-              className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
-            />
+          <div className="flex-1 px-6 py-4 overflow-y-auto outlook-scrollbar">
+            {activeTab === 'about' ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="eg-name">
+                    Name
+                  </label>
+                  <input
+                    id="eg-name"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="eg-desc">
+                    Description
+                  </label>
+                  <textarea
+                    id="eg-desc"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                  />
+                </div>
+
+                <div className="border-t border-[#EDEBE9] pt-3 space-y-3">
+                  <p className="text-sm font-semibold text-[#323130]">Edit settings</p>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="eg-privacy">
+                      Privacy
+                    </label>
+                    <select
+                      id="eg-privacy"
+                      value={privacy}
+                      onChange={(e) => setPrivacy(e.target.value as 'public' | 'private')}
+                      className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 bg-white focus:outline-none focus:border-[#0078D4]"
+                    >
+                      <option value="private">Private — Only approved members can see what's inside</option>
+                      <option value="public">Public — Anyone in your org can see and join</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="eg-lang">
+                      Language for group-related notifications
+                    </label>
+                    <select
+                      id="eg-lang"
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 bg-white focus:outline-none focus:border-[#0078D4]"
+                    >
+                      <option>English (United States)</option>
+                      <option>English (India)</option>
+                      <option>English (United Kingdom)</option>
+                    </select>
+                  </div>
+
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allowExternal}
+                      onChange={(e) => setAllowExternal(e.target.checked)}
+                      className="mt-0.5 accent-[#0078D4]"
+                    />
+                    <span className="text-xs text-[#323130] leading-relaxed">
+                      Let people outside the organization email this group
+                    </span>
+                  </label>
+
+                  <div className="pt-1">
+                    <p className="text-xs font-medium text-[#605E5C] mb-1">Subscription</p>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={subscribeMembers}
+                        onChange={(e) => setSubscribeMembers(e.target.checked)}
+                        className="mt-0.5 accent-[#0078D4]"
+                      />
+                      <span className="text-xs text-[#323130] leading-relaxed">
+                        Members will receive all group conversations and events in their inboxes. They can stop following this group later if they want to.
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {error && <p className="text-xs text-[#D13438]">{error}</p>}
+              </div>
+            ) : (
+              // Members tab inside the edit dialog — reuses the standalone tab.
+              <MembersTab group={group} />
+            )}
           </div>
 
-          {/* Email */}
-          <div>
-            <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="g-email">
-              Group email address
-            </label>
-            <input
-              id="g-email"
-              type="email"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); setEmailEdited(true) }}
-              placeholder="group@company.com"
-              className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
-            />
-            <p className="text-[11px] text-[#605E5C] mt-1">
-              This is how members and others will email the group.
-            </p>
-          </div>
+          {/* Footer */}
+          <div className="flex items-center gap-2 px-6 py-3 border-t border-[#EDEBE9]">
+            <button
+              type="button"
+              onClick={() => saveMutation.mutate()}
+              disabled={!name.trim() || saveMutation.isPending}
+              className={cn(
+                'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
+                (!name.trim() || saveMutation.isPending) && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              {saveMutation.isPending ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
+            >
+              Discard
+            </button>
 
-          {/* Privacy */}
-          <div>
-            <p className="block text-xs font-medium text-[#323130] mb-1">Privacy</p>
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                ['public', 'Public', <Globe key="g" size={14} />, 'Anyone in your org can find and join.'],
-                ['private', 'Private', <Lock key="l" size={14} />, 'Members must be invited.'],
-              ] as const).map(([val, label, icon, hint]) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setPrivacy(val)}
-                  className={cn(
-                    'border rounded px-3 py-2 text-left transition-colors',
-                    privacy === val
-                      ? 'border-[#0078D4] bg-[#EFF6FC]'
-                      : 'border-[#EDEBE9] hover:bg-[#F3F2F1]'
-                  )}
-                >
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-[#323130]">
-                    {icon}
-                    {label}
-                    {privacy === val && <Check size={12} className="text-[#0078D4] ml-auto" />}
-                  </span>
-                  <p className="text-[11px] text-[#605E5C] mt-0.5">{hint}</p>
-                </button>
-              ))}
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`Delete the group "${group.name}"? This cannot be undone.`)) {
+                  deleteMutation.mutate()
+                }
+              }}
+              disabled={deleteMutation.isPending}
+              className={cn(
+                'ml-auto text-sm flex items-center gap-1.5 text-[#D13438] hover:bg-[#FDE7E9] px-3 py-1.5 rounded',
+                deleteMutation.isPending && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              <Trash2 size={13} />
+              {deleteMutation.isPending ? 'Deleting…' : 'Delete group'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Group detail popup ───────────────────────────────────────────────────────
+// Shown when a frequently-used group card is clicked. Quick overview with
+// Send Email, Members preview, About info, Apps grid, and Edit Group entry.
+function GroupDetailPopup({
+  group, open, onClose, onOpenGroup, onOpenEdit,
+}: {
+  group: Group | null
+  open: boolean
+  onClose: () => void
+  onOpenGroup: (id: string) => void
+  onOpenEdit: () => void
+}) {
+  const openComposer = useUIStore((s) => s.openComposer)
+  const [activeTab, setActiveTab] = useState<'overview' | 'members'>('overview')
+  const { data: memberList = [] } = useQuery({
+    queryKey: ['group-members', group?.id],
+    queryFn: () => (group ? groups.members(group.id) : Promise.resolve([])),
+    enabled: !!group && open,
+  })
+
+  if (!open || !group) return null
+
+  const apps: { label: string; icon: React.ReactNode; color: string; onClick?: () => void }[] = [
+    { label: 'Email', icon: <Mail size={16} />, color: '#0078D4', onClick: () => openComposer({ to: [group.email], subject: `[${group.name}] ` }) },
+    { label: 'Calendar', icon: <CalendarIcon size={16} />, color: '#107C10', onClick: () => onOpenGroup(group.id) },
+    { label: 'Groups', icon: <UsersGlyph />, color: '#5C2E91', onClick: () => onOpenGroup(group.id) },
+    { label: 'Files', icon: <FileGlyph />, color: '#0078D4' },
+    { label: 'Notebook', icon: <NotebookGlyph />, color: '#7719AA' },
+    { label: 'Site', icon: <SiteGlyph />, color: '#5C2E91' },
+    { label: 'Planner', icon: <PlannerGlyph />, color: '#107C10' },
+  ]
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${group.name} details`}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-md flex flex-col max-h-[85vh] overflow-hidden">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-3 right-3 p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C] z-10"
+        >
+          <X size={14} />
+        </button>
+
+        {/* Header */}
+        <div className="px-6 pt-5 pb-3">
+          <div className="flex items-center gap-3 mb-3">
+            <Avatar name={group.name} color={group.color} size={48} />
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-[#323130] truncate">{group.name}</h2>
+              <p className="text-xs text-[#605E5C] flex items-center gap-1">
+                {group.privacy === 'private' ? <Lock size={10} /> : <Globe size={10} />}
+                {group.privacy === 'private' ? 'Private group' : 'Public group'}
+                <span>·</span>
+                {group.member_count} Member{group.member_count !== 1 ? 's' : ''}
+              </p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openComposer({ to: [group.email], subject: `[${group.name}] ` })}
+              className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] text-white text-sm px-3 py-1.5 rounded"
+            >
+              <Send size={13} /> Send Email
+            </button>
+            <button
+              type="button"
+              aria-label="Following"
+              className="p-1.5 rounded border border-[#EDEBE9] hover:bg-[#F3F2F1] text-[#605E5C]"
+            >
+              <Mail size={14} />
+            </button>
+          </div>
+        </div>
 
-          {/* Members */}
-          <div ref={autoRef}>
-            <label className="block text-xs font-medium text-[#323130] mb-1" htmlFor="g-members">
-              Add people <span className="text-[#A19F9D] font-normal">(optional)</span>
-            </label>
-            {members.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-1.5">
-                {members.map((m, idx) => (
-                  <span
-                    key={`${m.email}-${idx}`}
-                    className="inline-flex items-center gap-1 bg-[#EFF6FC] border border-[#0078D4]/40 text-[#0078D4] rounded-full px-2 py-0.5 text-xs"
-                  >
-                    {m.name || m.email}
+        {/* Tabs */}
+        <div className="flex border-b border-[#EDEBE9] px-6 flex-shrink-0">
+          {([['overview', 'Overview'], ['members', 'Members']] as const).map(([tab, label]) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              role="tab"
+              aria-selected={activeTab === tab}
+              className={cn(
+                'px-1 py-2 mr-6 text-sm border-b-2 transition-colors',
+                activeTab === tab
+                  ? 'border-[#0078D4] text-[#0078D4] font-medium'
+                  : 'border-transparent text-[#605E5C] hover:text-[#323130]'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto outlook-scrollbar px-6 py-4 space-y-4">
+          {activeTab === 'overview' ? (
+            <>
+              {/* About */}
+              <section>
+                <h3 className="text-sm font-semibold text-[#323130] mb-2">About this group</h3>
+                {group.description && (
+                  <p className="text-xs text-[#605E5C] leading-relaxed mb-2">{group.description}</p>
+                )}
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex items-center gap-2 text-[#323130]">
+                    <UsersGlyph />
+                    <span>{group.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[#0078D4]">
+                    <Mail size={14} className="text-[#605E5C]" />
+                    <a href={`mailto:${group.email}`} className="hover:underline truncate">{group.email}</a>
+                  </div>
+                </div>
+              </section>
+
+              {/* Members preview */}
+              <section>
+                <h3 className="text-sm font-semibold text-[#323130] mb-2">
+                  Members ({group.member_count})
+                </h3>
+                <div className="space-y-2">
+                  {memberList.slice(0, 5).map((m) => (
+                    <div key={m.id} className="flex items-center gap-2.5">
+                      <MemberAvatar name={m.display_name || m.email || ''} size={28} />
+                      <div className="min-w-0">
+                        <p className="text-sm text-[#323130] truncate">{m.display_name || m.email}</p>
+                        <p className="text-[11px] text-[#605E5C] capitalize">{m.role}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {memberList.length > 5 && (
                     <button
                       type="button"
-                      onClick={() => removeMember(idx)}
-                      aria-label={`Remove ${m.name || m.email}`}
-                      className="hover:text-[#D13438]"
+                      onClick={() => setActiveTab('members')}
+                      className="text-xs text-[#0078D4] hover:underline"
                     >
-                      <X size={10} />
+                      See all {memberList.length} members
                     </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="relative">
-              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[#A19F9D]" />
-              <input
-                id="g-members"
-                type="text"
-                value={memberQuery}
-                onChange={(e) => { setMemberQuery(e.target.value); setAutoOpen(true) }}
-                onFocus={() => setAutoOpen(true)}
-                placeholder="Search by name or email"
-                className="w-full text-sm border border-[#8A8886] rounded pl-7 pr-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
-              />
-              {autoOpen && suggestions.length > 0 && (
-                <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg max-h-48 overflow-y-auto">
-                  {suggestions
-                    .filter((c) => !members.some((m) => m.email.toLowerCase() === c.email.toLowerCase()))
-                    .slice(0, 8)
-                    .map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => { addMember(c); setAutoOpen(false) }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[#F3F2F1] text-sm"
-                      >
-                        <MemberAvatar name={c.display_name || c.email} size={24} />
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate text-[#323130]">{c.display_name}</p>
-                          <p className="text-[11px] text-[#605E5C] truncate">{c.email}</p>
-                        </div>
-                      </button>
-                    ))}
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
+              </section>
 
-          {error && <p className="text-xs text-[#D13438]">{error}</p>}
+              {/* Apps grid */}
+              <section>
+                <h3 className="text-sm font-semibold text-[#323130] mb-2">Apps</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {apps.map((app) => (
+                    <button
+                      key={app.label}
+                      type="button"
+                      onClick={app.onClick}
+                      disabled={!app.onClick}
+                      className={cn(
+                        'flex items-center gap-2 px-2 py-2 rounded text-left text-sm',
+                        app.onClick ? 'hover:bg-[#F3F2F1] text-[#323130]' : 'text-[#A19F9D] cursor-not-allowed'
+                      )}
+                    >
+                      <span className="w-6 h-6 flex items-center justify-center" style={{ color: app.color }}>
+                        {app.icon}
+                      </span>
+                      {app.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </>
+          ) : (
+            <MembersTab group={group} />
+          )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
+        {/* Footer */}
+        <div className="border-t border-[#EDEBE9] px-6 py-2.5 flex items-center justify-center">
           <button
             type="button"
-            onClick={onClose}
-            className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => name.trim() && createMutation.mutate()}
-            disabled={!name.trim() || createMutation.isPending}
+            onClick={onOpenEdit}
+            disabled={!group.is_owner}
             className={cn(
-              'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
-              (!name.trim() || createMutation.isPending) && 'opacity-50 cursor-not-allowed'
+              'flex items-center gap-1.5 text-sm px-3 py-1.5 rounded',
+              group.is_owner
+                ? 'text-[#0078D4] hover:bg-[#EFF6FC]'
+                : 'text-[#A19F9D] cursor-not-allowed'
             )}
           >
-            {createMutation.isPending ? 'Creating…' : 'Create'}
+            <Edit2 size={13} /> Edit Group
           </button>
         </div>
       </div>
     </div>
+  )
+}
+
+// ─── App glyph helpers (used in the Apps grid) ───────────────────────────────
+function UsersGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="6" cy="6" r="2.5" fill="currentColor" />
+      <circle cx="11" cy="7" r="1.8" fill="currentColor" opacity="0.55" />
+      <path d="M2 13c0-1.8 1.7-3.2 4-3.2s4 1.4 4 3.2" fill="currentColor" />
+      <path d="M9.5 13c0-1.2 1-2.5 2.5-3 .5-.2 1-.3 1.5-.3 1 0 1.5.7 1.5 2" fill="currentColor" opacity="0.55" />
+    </svg>
+  )
+}
+function FileGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M3 2h6l4 4v8H3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M9 2v4h4" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function NotebookGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="3" y="2" width="10" height="12" rx="1" fill="currentColor" />
+      <line x1="6" y1="2" x2="6" y2="14" stroke="white" strokeWidth="1" />
+    </svg>
+  )
+}
+function SiteGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="3" width="12" height="10" rx="1" fill="currentColor" opacity="0.85" />
+      <rect x="2" y="3" width="12" height="3" fill="currentColor" />
+    </svg>
+  )
+}
+function PlannerGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="3" y="3" width="10" height="11" rx="1.5" fill="currentColor" opacity="0.85" />
+      <path d="M6 8l1.5 1.5L11 6" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }

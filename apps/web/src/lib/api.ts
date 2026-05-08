@@ -970,6 +970,9 @@ export const groups = {
   update: (id: string, data: Partial<Group>) =>
     request<Group>(`/groups/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
+  delete: (id: string) =>
+    request<void>(`/groups/${id}`, { method: 'DELETE' }),
+
   join: (id: string) =>
     request<GroupMember>(`/groups/${id}/join`, { method: 'POST' }),
 
