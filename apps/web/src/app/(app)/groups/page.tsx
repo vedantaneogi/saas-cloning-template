@@ -1054,7 +1054,16 @@ export default function GroupsPage() {
                   <EmailTab
                     group={selectedGroup}
                     composing={composing}
-                    onCloseCompose={() => { setComposing(false); closeComposer() }}
+                    onCloseCompose={() => {
+                      setComposing(false)
+                      closeComposer()
+                      // Just-sent messages land via the same delivery path as
+                      // a regular send — invalidating both group-message keys
+                      // here means they appear without waiting for the 15s
+                      // poll. Closing the compose is the trigger because Send
+                      // always closes the editor on success.
+                      refetchGroupMsgs()
+                    }}
                     selectedMsg={selectedMsg}
                     onSelect={setSelectedMsg}
                   />
