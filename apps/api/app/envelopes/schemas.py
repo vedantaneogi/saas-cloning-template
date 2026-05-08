@@ -132,7 +132,7 @@ class RecipientCreate(BaseModel):
 
 class RecipientUpdate(BaseModel):
     name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     role: Optional[RecipientRole] = None
     routing_order: Optional[int] = None
     access_code: Optional[str] = None
