@@ -461,11 +461,23 @@ async def list_events(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Events I'm invited to but don't own (excluding declined invites — Outlook hides those).
+    # Build the set of addresses we treat as "this user". The user themselves
+    # plus every group they're a member of — so events invited to a group
+    # show up in each member's calendar (mirrors the group fan-out for mail).
+    from app.models.group import Group, GroupMember
+    group_email_q = await db.execute(
+        select(Group.email)
+        .join(GroupMember, GroupMember.group_id == Group.id)
+        .where(GroupMember.user_id == current_user.id)
+    )
+    visible_emails = {current_user.email, *group_email_q.scalars().all()}
+
+    # Events the user is invited to (directly or via a group), excluding
+    # declined invites — Outlook hides those.
     invited_event_ids_subq = (
         select(EventAttendee.event_id)
         .where(
-            EventAttendee.email == current_user.email,
+            EventAttendee.email.in_(visible_emails),
             EventAttendee.response_status != "declined",
         )
         .scalar_subquery()
