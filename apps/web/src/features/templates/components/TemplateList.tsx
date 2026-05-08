@@ -519,7 +519,7 @@ export function TemplateList({ templates, isLoading, onCreateTemplate, section }
             {selectedIds.size} Selected
           </span>
           <button
-            onClick={() => alert("Coming soon")}
+            onClick={() => {}}
             style={{
               padding: "5px 16px",
               fontSize: "14px",

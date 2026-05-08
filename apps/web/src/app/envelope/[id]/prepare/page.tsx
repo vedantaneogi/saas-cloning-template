@@ -984,7 +984,7 @@ export default function PrepareEnvelopePage() {
                         <button
                           className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
                           style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
-                          onClick={() => { setUploadDropdownOpen(false); alert("Coming soon"); }}
+                          onClick={() => { setUploadDropdownOpen(false); }}
                         >
                           <span style={{ fontSize: "14px", fontWeight: 700, color: "#888", width: "22px", textAlign: "center", fontFamily: "sans-serif" }}>box</span>
                           Box
@@ -992,7 +992,7 @@ export default function PrepareEnvelopePage() {
                         <button
                           className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
                           style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
-                          onClick={() => { setUploadDropdownOpen(false); alert("Coming soon"); }}
+                          onClick={() => { setUploadDropdownOpen(false); }}
                         >
                           <svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 2l4.5 3L12 4l1.5 1L18 2v4.5L15 9l3 2.5V16l-4.5-3L12 14l-1.5-1L6 16v-4.5L9 9 6 6.5V2z" fill="#999"/></svg>
                           Dropbox
@@ -1000,7 +1000,7 @@ export default function PrepareEnvelopePage() {
                         <button
                           className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
                           style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
-                          onClick={() => { setUploadDropdownOpen(false); alert("Coming soon"); }}
+                          onClick={() => { setUploadDropdownOpen(false); }}
                         >
                           <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 11l8-5-4-3-4 2.5L8 3 4 6l8 5zm0 2L4 8v6l8 5 8-5V8l-8 5z" fill="#bbb"/><path d="M12 13l-8-5v6l8 5V13z" fill="#999"/><path d="M12 13l8-5v6l-8 5V13z" fill="#888"/></svg>
                           Google Drive
@@ -1008,7 +1008,7 @@ export default function PrepareEnvelopePage() {
                         <button
                           className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
                           style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
-                          onClick={() => { setUploadDropdownOpen(false); alert("Coming soon"); }}
+                          onClick={() => { setUploadDropdownOpen(false); }}
                         >
                           <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 16a4 4 0 01-4-4c0-1.95 1.4-3.57 3.25-3.92A5.5 5.5 0 0116.5 3 5.5 5.5 0 0122 8.5c0 .28-.02.55-.07.82A3.5 3.5 0 0121 16H12z" fill="#aaa" opacity="0.7"/><path d="M8 20a3 3 0 01-3-3c0-1.3.84-2.4 2-2.82V12a5 5 0 015-5c2.34 0 4.29 1.6 4.84 3.77A3.5 3.5 0 0117.5 17.5 3.49 3.49 0 0116 17H8z" fill="#999"/></svg>
                           OneDrive
@@ -2002,11 +2002,12 @@ export default function PrepareEnvelopePage() {
                         style={{ padding: "10px 16px", fontSize: "14px", color: "#333" }}
                         onClick={() => {
                           setAddRecipientDropdownOpen(false);
-                          alert("Coming soon");
                         }}
+                        disabled
+                        style={{ padding: "10px 16px", fontSize: "14px", color: "#999", cursor: "default" }}
                       >
-                        <AddressBook size={18} weight="bold" color="#555" />
-                        Add From Contacts
+                        <AddressBook size={18} weight="bold" color="#ccc" />
+                        Add From Contacts <span style={{ fontSize: "11px", color: "#bbb" }}>(Coming soon)</span>
                       </button>
                     </div>
                   )}

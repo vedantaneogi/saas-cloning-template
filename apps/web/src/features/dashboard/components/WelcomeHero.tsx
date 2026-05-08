@@ -759,8 +759,9 @@ export function WelcomeHero() {
                         onClick={() => {
                           setStartOpen(false);
                           setTemplatesHovered(false);
-                          alert("Coming soon");
+                          createTemplateMutation.mutate();
                         }}
+                        disabled={createTemplateMutation.isPending}
                       >
                         <UploadSimple size={14} weight="bold" />
                         Upload a Template

@@ -102,8 +102,8 @@ class FieldResponse(BaseModel):
 # ── Recipient Schemas ─────────────────────────────────────────────────────────
 
 class RecipientCreate(BaseModel):
-    name: str
-    email: EmailStr
+    name: str = ""
+    email: str = ""
     role: RecipientRole = RecipientRole.signer
     routing_order: int = 1
     access_code: Optional[str] = None
