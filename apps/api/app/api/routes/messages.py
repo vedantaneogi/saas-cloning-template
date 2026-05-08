@@ -541,10 +541,16 @@ async def create_message(
 ):
     now = rl_state.clock.now()
 
-    # Resolve folder
+    # Resolve folder. Schedule-send rides the drafts path even when the user
+    # hit "Send" — the message sits in Drafts (not Sent) until dispatch so the
+    # user can find/cancel it and so list filters that exclude drafts don't
+    # leak the unsent copy into Sent.
+    is_scheduled_send = bool(
+        body.scheduled_send_at and body.scheduled_send_at > now and not body.is_draft
+    )
     if body.folder_id:
         folder_id = body.folder_id
-    elif body.is_draft:
+    elif body.is_draft or is_scheduled_send:
         folder = await _get_folder_by_slug(db, "drafts", current_user.id)
         folder_id = folder.id if folder else None
     else:
@@ -599,10 +605,9 @@ async def create_message(
         await db.flush()
         conv_id = conv.id
 
-    # Schedule-send: if scheduled_send_at is in the future, treat as a draft
-    # that lives in the sender's Sent folder marked is_draft=True. A periodic
-    # flush in list_messages dispatches it once the time arrives.
-    is_scheduled = bool(body.scheduled_send_at and body.scheduled_send_at > now and not body.is_draft)
+    # Schedule-send: future scheduled_send_at means the message is parked as a
+    # draft (in Drafts) until _flush_due_scheduled dispatches it.
+    is_scheduled = is_scheduled_send
     effective_is_draft = body.is_draft or is_scheduled
 
     msg = Message(

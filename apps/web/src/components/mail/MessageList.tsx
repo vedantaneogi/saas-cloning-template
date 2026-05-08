@@ -162,6 +162,10 @@ export function MessageList() {
         category_ids: categoryFilterIds.length > 0 ? categoryFilterIds : undefined,
       }),
     enabled: !isFollowupView,
+    // Auto-poll so server-side schedule-send dispatch (which runs at the top of
+    // list_messages) fires while the user is sitting on the inbox.
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   })
 
   const allMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
