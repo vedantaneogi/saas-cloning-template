@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 
 revision: str = "h8e3f0c25e55"
@@ -18,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 MAIL_LEVEL_ENUM_NAME = "mail_delegate_level_enum"
-MAIL_LEVEL_COL_ENUM = sa.Enum(
+MAIL_LEVEL_COL_ENUM = PG_ENUM(
     "none", "read", "send_on_behalf", "send_as",
     name=MAIL_LEVEL_ENUM_NAME, create_type=False,
 )

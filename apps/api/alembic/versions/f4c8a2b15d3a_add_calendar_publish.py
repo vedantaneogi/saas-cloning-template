@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 
 revision: str = "f4c8a2b15d3a"
@@ -18,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 SCOPE_ENUM_NAME = "calendar_publish_scope_enum"
-SCOPE_COL_ENUM = sa.Enum(
+SCOPE_COL_ENUM = PG_ENUM(
     "free_busy", "full", name=SCOPE_ENUM_NAME, create_type=False
 )
 

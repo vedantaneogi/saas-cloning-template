@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 
 revision: str = "g7d2e9f81b44"
@@ -18,8 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 LEVEL_ENUM_NAME = "calendar_delegate_level_enum"
-# create_type=False so the table-create hook doesn't re-CREATE TYPE.
-LEVEL_COL_ENUM = sa.Enum(
+LEVEL_COL_ENUM = PG_ENUM(
     "free_busy", "reviewer", "editor", name=LEVEL_ENUM_NAME, create_type=False
 )
 

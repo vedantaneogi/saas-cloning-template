@@ -15,6 +15,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 
 revision: str = "c4f9b3a17d68"
@@ -26,12 +27,12 @@ depends_on: Union[str, Sequence[str], None] = None
 PRIVACY_ENUM_NAME = "group_privacy_enum"
 ROLE_ENUM_NAME = "group_role_enum"
 
-# create_type=False so the table-create hook doesn't try to CREATE TYPE again
-# (we explicitly create them at the top of upgrade() with checkfirst=True).
-PRIVACY_COL_ENUM = sa.Enum(
+# postgresql.ENUM honors create_type=False reliably under alembic; sa.Enum
+# does not (the before_create hook still fires).
+PRIVACY_COL_ENUM = PG_ENUM(
     "public", "private", name=PRIVACY_ENUM_NAME, create_type=False
 )
-ROLE_COL_ENUM = sa.Enum(
+ROLE_COL_ENUM = PG_ENUM(
     "member", "owner", name=ROLE_ENUM_NAME, create_type=False
 )
 
