@@ -140,7 +140,11 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
   const subscribeMutation = useMutation({
     mutationFn: (email: string) => calendars.subscribe(email),
     onSuccess: () => {
+      // Invalidate events too — the new subscription expands the user's
+      // visible event set and the cached `['events']` won't refire on its
+      // own without this nudge.
       queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
       setSubscribeEmail('')
       setSubscribeError('')
     },
@@ -149,7 +153,10 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
 
   const unsubscribeMutation = useMutation({
     mutationFn: (id: string) => calendars.unsubscribe(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calendars'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+    },
   })
 
   const myCalendars = calendarList.filter((c) => !c.shared_by_user_id)

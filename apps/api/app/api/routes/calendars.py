@@ -167,9 +167,13 @@ async def public_calendar_by_token(
     token: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Public read-only calendar endpoint. No auth — the token IS the auth."""
+    """Public read-only calendar endpoint. No auth — the token IS the auth.
+    Pulls every event the calendar's owner has on this calendar (recurring
+    parents get expanded into 90 days of occurrences) so a Weekly Standup
+    actually appears on the public month view."""
     from app.models.calendar import Event
-    from app.schemas.calendar import EventOut
+    from app.api.routes.events import _expand_recurring_event
+    from datetime import timedelta
 
     result = await db.execute(select(Calendar).where(Calendar.publish_token == token))
     cal = result.scalar_one_or_none()
@@ -179,15 +183,44 @@ async def public_calendar_by_token(
             detail={"error": {"code": "not_found", "message": "Public calendar not found"}},
         )
 
-    events_result = await db.execute(
-        select(Event)
-        .where(Event.calendar_id == cal.id, Event.is_recurring.is_(False))
-        .order_by(Event.start_time)
+    now = rl_state.clock.now()
+    window_start = now - timedelta(days=7)
+    window_end = now + timedelta(days=90)
+
+    # Non-recurring events on this calendar.
+    nr_q = await db.execute(
+        select(Event).where(
+            Event.calendar_id == cal.id,
+            Event.is_recurring.is_(False),
+            Event.start_time >= window_start,
+            Event.start_time <= window_end,
+        ).order_by(Event.start_time)
     )
-    events = events_result.scalars().all()
+    events = list(nr_q.scalars().all())
+
+    # Recurring parents — expand each into instances in the window.
+    rec_q = await db.execute(
+        select(Event).where(
+            Event.calendar_id == cal.id,
+            Event.is_recurring.is_(True),
+            Event.recurrence_parent_id.is_(None),
+            Event.start_time <= window_end,
+        )
+    )
+    recurring_events: list = []
+    for parent in rec_q.scalars().all():
+        instances = _expand_recurring_event(parent, window_start, window_end)
+        # _expand_recurring_event returns EventOut objects; we need raw-ish
+        # rows for the response shapes below.
+        for inst in instances:
+            recurring_events.append(inst)
+
+    # Merge non-recurring rows + expanded recurring instances. Both expose
+    # the same attribute names (.id, .title, .start_time, etc.).
+    all_blocks = list(events) + recurring_events
+    all_blocks.sort(key=lambda x: x.start_time)
 
     if cal.publish_scope == "full":
-        # Owner explicitly published full detail.
         return {
             "calendar": cal.name,
             "scope": "full",
@@ -196,13 +229,13 @@ async def public_calendar_by_token(
                     "id": str(e.id),
                     "title": e.title,
                     "location": e.location,
-                    "description": e.description,
+                    "description": getattr(e, "description", None),
                     "start_time": e.start_time.isoformat(),
                     "end_time": e.end_time.isoformat(),
                     "all_day": e.all_day,
                     "status": e.status,
                 }
-                for e in events
+                for e in all_blocks
             ],
         }
     # free_busy default — strip everything except the time block + status.
@@ -215,7 +248,7 @@ async def public_calendar_by_token(
                 "end": e.end_time.isoformat(),
                 "status": e.status,
             }
-            for e in events
+            for e in all_blocks
         ],
     }
 
