@@ -566,7 +566,7 @@ async def save_envelope_as_template(
         }
         if r.access_code:
             role_entry["access_code"] = r.access_code
-        label = role_labels.get(str(r.id))
+        label = role_labels.get(str(r.id)) or r.template_role_label
         if not label:
             role_name = {"signer": "Signer", "approver": "Approver", "cc": "CC", "viewer": "Viewer", "in_person": "In Person Signer"}.get(r.role.value, "Recipient")
             role_counters[role_name] = role_counters.get(role_name, 0) + 1

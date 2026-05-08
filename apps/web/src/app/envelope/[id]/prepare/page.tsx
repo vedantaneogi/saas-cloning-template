@@ -212,6 +212,7 @@ export default function PrepareEnvelopePage() {
         name: r.name,
         email: r.email,
         role: r.role || "signer",
+        templateRole: r.template_role_label ?? undefined,
         order: r.order || i + 1,
         color: getRecipientColor(i),
         privateMessage: r.private_message ?? undefined,
@@ -379,6 +380,7 @@ export default function PrepareEnvelopePage() {
             role: r.role,
             routing_order: routingOrder,
             private_message: r.privateMessage || undefined,
+            ...(isTemplateMode && r.templateRole?.trim() ? { template_role_label: r.templateRole.trim() } : {}),
           });
         } else {
           // New recipient — add to envelope.
@@ -388,6 +390,7 @@ export default function PrepareEnvelopePage() {
             role: r.role,
             routing_order: routingOrder,
             private_message: r.privateMessage || undefined,
+            ...(isTemplateMode && r.templateRole?.trim() ? { template_role_label: r.templateRole.trim() } : {}),
           });
           if (newR?.id) savedRecipientId = newR.id;
         }

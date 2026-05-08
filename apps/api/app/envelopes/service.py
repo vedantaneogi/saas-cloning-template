@@ -537,6 +537,7 @@ async def add_recipient(
         role=data.role,
         routing_order=data.routing_order,
         private_message=data.private_message or None,
+        template_role_label=data.template_role_label or None,
     )
     if data.access_code:
         import hashlib
@@ -571,6 +572,8 @@ async def update_recipient(
             recipient.access_code = hashlib.sha256(data.access_code.strip().encode()).hexdigest()
     if data.private_message is not None:
         recipient.private_message = data.private_message or None
+    if data.template_role_label is not None:
+        recipient.template_role_label = data.template_role_label or None
     await db.commit()
     await db.refresh(recipient)
     return recipient

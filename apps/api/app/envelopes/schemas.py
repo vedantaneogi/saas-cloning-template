@@ -128,10 +128,12 @@ class RecipientCreate(BaseModel):
     routing_order: int = 1
     access_code: Optional[str] = None
     private_message: Optional[str] = None
+    template_role_label: Optional[str] = None
 
 
 class RecipientUpdate(BaseModel):
     name: Optional[str] = None
+    template_role_label: Optional[str] = None
     email: Optional[str] = None
     role: Optional[RecipientRole] = None
     routing_order: Optional[int] = None
