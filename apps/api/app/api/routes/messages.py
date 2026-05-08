@@ -263,6 +263,7 @@ async def list_messages(
     from_addr: Optional[str] = None,
     focused: Optional[bool] = None,
     snoozed: Optional[bool] = None,
+    mentions_only: Optional[bool] = None,
     category_ids: list[uuid.UUID] = Query(default=[]),
     sort: str = "received_at:desc",
     cursor: Optional[str] = None,
@@ -347,6 +348,14 @@ async def list_messages(
         filters.append(Message.snooze_until > now)
     else:
         filters.append(or_(Message.snooze_until.is_(None), Message.snooze_until <= now))
+
+    # Mentions filter — match TipTap @mention spans pinned to the current
+    # user's email. The mention extension renders
+    #   <span data-type="mention" data-id="{email}">@Name</span>
+    # so an ILIKE on the address attribute is the simplest reliable check.
+    if mentions_only:
+        me = current_user.email.replace('"', '').replace("'", "")
+        filters.append(cast(Message.body_html, String).ilike(f'%data-id="{me}"%'))
 
     # Cursor-based pagination: cursor is the last message id
     if cursor:

@@ -233,6 +233,15 @@ export interface TaskStep {
   is_completed: boolean
 }
 
+export interface TaskRecurrenceRule {
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  interval?: number
+  days_of_week?: number[]
+  end_type?: 'never' | 'on_date' | 'after_occurrences'
+  end_date?: string
+  occurrences?: number
+}
+
 export interface Task {
   id: string
   user_id: string
@@ -246,6 +255,8 @@ export interface Task {
   importance: 'low' | 'normal' | 'high'
   steps: TaskStep[]
   source_message_id: string | null
+  parent_task_id: string | null
+  recurrence_rule: TaskRecurrenceRule | null
   sort_order: number
   created_at: string
   updated_at: string
@@ -409,6 +420,7 @@ export const messages = {
     is_flagged?: boolean
     focused?: boolean
     snoozed?: boolean
+    mentions_only?: boolean
     category_ids?: string[]
     conversation_grouping?: boolean
     from_addr?: string

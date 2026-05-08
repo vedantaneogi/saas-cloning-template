@@ -146,8 +146,9 @@ export function MessageList() {
 
   const focusedParam = isInbox ? (focusedTab === 'focused' ? true : false) : undefined
 
+  const mentionsActive = activeFilter === 'mentions'
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder, focusedParam, isSnoozedView, categoryFilterIds],
+    queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder, focusedParam, isSnoozedView, categoryFilterIds, mentionsActive],
     queryFn: () =>
       messages.list({
         // Snoozed is a virtual cross-folder view — don't pin it to a folder.
@@ -159,6 +160,7 @@ export function MessageList() {
         per_page: 50,
         focused: focusedParam,
         snoozed: isSnoozedView ? true : undefined,
+        mentions_only: mentionsActive ? true : undefined,
         category_ids: categoryFilterIds.length > 0 ? categoryFilterIds : undefined,
       }),
     enabled: !isFollowupView,
@@ -177,7 +179,7 @@ export function MessageList() {
       case 'flagged': return msg.is_flagged
       case 'has_attachment': return msg.has_attachments
       case 'to_me': return true // All messages in inbox are "to me"
-      case 'mentions': return true // Placeholder
+      case 'mentions': return true // Server-side filter via mentions_only
       default: return true
     }
   }) : allMessages

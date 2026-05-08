@@ -41,6 +41,14 @@ class Task(Base):
     source_message_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
     )
+    # Self-ref FK for sublists. Top-level tasks have parent_task_id = NULL;
+    # subtasks point at their parent's id and inherit the list_id.
+    parent_task_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True
+    )
+    # Recurrence rule mirroring the calendar event shape: {frequency, interval,
+    # days_of_week?, end_type, end_date?, occurrences?}. Optional.
+    recurrence_rule: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     steps: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

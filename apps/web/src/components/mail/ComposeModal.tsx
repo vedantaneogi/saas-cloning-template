@@ -78,6 +78,11 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   const [sensitivity, setSensitivity] = useState<'normal' | 'personal' | 'private' | 'confidential'>('normal')
   const [sensitivityWarningPending, setSensitivityWarningPending] = useState<false | 'send' | { scheduled: string }>(false)
   const [dlpViolations, setDlpViolations] = useState<string[]>([])
+  // Attachment-intent: pending = the user mentioned "attached" but staged
+  // no files; once dismissed (clicked "Send anyway") we don't re-prompt
+  // for the same compose session.
+  const [attachmentIntentPending, setAttachmentIntentPending] = useState<false | 'send' | { scheduled: string }>(false)
+  const [attachmentIntentDismissed, setAttachmentIntentDismissed] = useState(false)
   const [scheduledSendAt, setScheduledSendAt] = useState<string>('')
   const [composeTab, setComposeTab] = useState<ComposeTab>('Message')
   const [showInsertLink, setShowInsertLink] = useState(false)
@@ -339,6 +344,23 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
       showNotification('Add at least one recipient before sending')
       return
+    }
+
+    // "Did you forget the attachment?" — body or subject hints at one but
+    // none is staged. Failure-Mode #3 from the CSV. The check is skipped
+    // once the user explicitly OKs the warning (attachmentIntentDismissed).
+    if (!attachmentIntentDismissed && attachedFiles.length === 0) {
+      const probe = `${subject} ${bodyHtml}`
+        .replace(/<[^>]+>/g, ' ')
+        .toLowerCase()
+      const phrases = [
+        'attached', 'attachment', 'enclosed', 'please find',
+        'see attached', 'i\'ve attached', 'i have attached',
+      ]
+      if (phrases.some((p) => probe.includes(p))) {
+        setAttachmentIntentPending(scheduled ? { scheduled } : 'send')
+        return
+      }
     }
 
     // DLP content scanning — runs on every send
@@ -1143,6 +1165,50 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
                 }}
                 className="text-sm font-medium text-white px-3 py-1.5 rounded transition-colors"
                 style={{ backgroundColor: SENSITIVITY_COLORS[sensitivity] }}
+              >
+                Send anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attachment-intent warning — body mentions an attachment but none
+          is staged. Failure-mode #3. Single confirm and we don't ask again
+          this compose session. */}
+      {attachmentIntentPending !== false && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="attachment-intent-title"
+          className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 rounded-t"
+        >
+          <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
+            <h3 id="attachment-intent-title" className="text-sm font-semibold text-[#323130] mb-1">
+              Did you forget to attach a file?
+            </h3>
+            <p className="text-xs text-[#605E5C] mb-4">
+              Your message mentions an attachment but no files are attached.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAttachmentIntentPending(false)}
+                className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
+              >
+                Add attachment
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = attachmentIntentPending
+                  setAttachmentIntentPending(false)
+                  setAttachmentIntentDismissed(true)
+                  // Re-fire handleSend so DLP and the rest of the pipeline run.
+                  if (pending === 'send') handleSend()
+                  else if (typeof pending === 'object') handleSend(pending.scheduled)
+                }}
+                className="text-sm font-medium text-white bg-[#0078D4] hover:bg-[#106EBE] px-3 py-1.5 rounded transition-colors"
               >
                 Send anyway
               </button>

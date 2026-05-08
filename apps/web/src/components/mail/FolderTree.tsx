@@ -17,6 +17,7 @@ import {
   Pencil,
   Play,
   Clock,
+  RotateCw,
 } from 'lucide-react'
 import { folders, messages, rules } from '@/lib/api'
 import type { Folder as FolderType } from '@/lib/api'
@@ -59,6 +60,33 @@ function SnoozedFolderEntry({ currentSlug }: { currentSlug: string }) {
     >
       <Clock size={16} />
       Snoozed
+    </button>
+  )
+}
+
+// Follow-ups: surfaces sent messages with no reply in N days. Backed by the
+// /messages/needs-followup endpoint, no real folder row in the DB.
+function FollowupFolderEntry({ currentSlug }: { currentSlug: string }) {
+  const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
+  const setSelectedFolderId = useMailStore((s) => s.setSelectedFolderId)
+  const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
+  const isActive = currentSlug === 'followup'
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setSelectedFolderSlug('followup')
+        setSelectedFolderId(null)
+        setSelectedMessageId(null)
+      }}
+      className={cn(
+        'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-sm transition-colors text-left',
+        isActive ? 'bg-[#EBF3FB] text-[#0078D4] font-medium' : 'text-[#323130] hover:bg-[#F3F2F1]'
+      )}
+      aria-current={isActive ? 'page' : undefined}
+    >
+      <RotateCw size={16} />
+      Follow up
     </button>
   )
 }
@@ -457,6 +485,10 @@ export function FolderTree() {
                     filtered out of the inbox; this surface re-shows them). */}
                 <li>
                   <SnoozedFolderEntry currentSlug={currentSlug} />
+                </li>
+                {/* Follow up — sent messages with no reply in N days. */}
+                <li>
+                  <FollowupFolderEntry currentSlug={currentSlug} />
                 </li>
                 {userFolders.map((folder) => (
                   <FolderItem
