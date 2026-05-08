@@ -1998,13 +1998,10 @@ export default function PrepareEnvelopePage() {
                       }}
                     >
                       <button
-                        className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-2"
-                        style={{ padding: "10px 16px", fontSize: "14px", color: "#333" }}
-                        onClick={() => {
-                          setAddRecipientDropdownOpen(false);
-                        }}
-                        disabled
+                        className="w-full text-left flex items-center gap-2"
                         style={{ padding: "10px 16px", fontSize: "14px", color: "#999", cursor: "default" }}
+                        onClick={() => setAddRecipientDropdownOpen(false)}
+                        disabled
                       >
                         <AddressBook size={18} weight="bold" color="#ccc" />
                         Add From Contacts <span style={{ fontSize: "11px", color: "#bbb" }}>(Coming soon)</span>
