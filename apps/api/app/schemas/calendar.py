@@ -118,6 +118,9 @@ class EventOut(BaseModel):
     # Populated by list_events / get_event for color/filter rendering. Empty
     # by default so model_validate(Event ORM row) still works.
     categories: list["CategoryOut"] = []
+    # Attendees flow back so the frontend can filter group events without an
+    # extra round-trip per event. Populated by list_events.
+    attendees: list[EventAttendeeOut] = []
 
 
 from app.schemas.message import CategoryOut  # noqa: E402  (forward ref above; uses the

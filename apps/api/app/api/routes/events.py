@@ -549,6 +549,20 @@ async def list_events(
             key = ev.recurrence_parent_id or ev.id
             ev.categories = cat_map.get(key, [])
 
+    # 6. Hydrate attendees. The Groups page filters its Events tab by
+    # attendee.email — without this hydration the field is empty in EventOut
+    # so the filter never matches.
+    if source_ids:
+        att_q = await db.execute(
+            select(EventAttendee).where(EventAttendee.event_id.in_(source_ids))
+        )
+        att_map: dict[uuid.UUID, list[EventAttendeeOut]] = {}
+        for a in att_q.scalars().all():
+            att_map.setdefault(a.event_id, []).append(EventAttendeeOut.model_validate(a))
+        for ev in page_items:
+            key = ev.recurrence_parent_id or ev.id
+            ev.attendees = att_map.get(key, [])
+
     return EventList(
         items=page_items,
         next_cursor=None,
