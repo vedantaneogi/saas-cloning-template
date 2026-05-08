@@ -327,6 +327,14 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   }
 
   const handleSend = (scheduled?: string) => {
+    // Guard against empty recipients — applies to immediate AND scheduled
+    // sends. Schedule path used to skip this and silently dispatch a message
+    // with nobody on it.
+    if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
+      showNotification('Add at least one recipient before sending')
+      return
+    }
+
     // DLP content scanning — runs on every send
     const contentWarnings = scanForSensitiveContent(bodyHtml + ' ' + subject)
     const violations: string[] = [...contentWarnings]
@@ -418,7 +426,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
                   <p className="text-xs font-medium text-[#605E5C] mb-2">Schedule send</p>
                   <input type="datetime-local" value={scheduledSendAt} onChange={(e) => setScheduledSendAt(e.target.value)}
                     className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
-                  <button type="button" disabled={!scheduledSendAt} onClick={() => { handleSend(scheduledSendAt); setScheduleMenuOpen(false) }}
+                  <button type="button" disabled={!scheduledSendAt || (to.length === 0 && cc.length === 0 && bcc.length === 0)} onClick={() => { handleSend(scheduledSendAt); setScheduleMenuOpen(false) }}
                     className="w-full text-xs bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded">Schedule</button>
                 </div>
               )}
