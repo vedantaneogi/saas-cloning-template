@@ -207,14 +207,33 @@ function EmailTab({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  // Treat group inbox as messages where the group's email appears anywhere on
-  // the address lists. Server doesn't expose a dedicated endpoint for this, so
-  // we reuse the search route which already does fuzzy matching.
-  const { data, isLoading } = useQuery({
-    queryKey: ['group-messages', group.id, group.email],
-    queryFn: () => messages.search({ q: group.email }),
+  // Treat group inbox as messages where the group's email is anywhere on
+  // the address lines. We hit the search route twice — once filtering by
+  // To and once by Cc — and merge by id, because `q` only searches
+  // subject/body/from, not the recipient lists. Refetch every 15s so a
+  // freshly-sent message lands in the group's tab without a manual reload.
+  const { data: toData, isLoading: toLoading } = useQuery({
+    queryKey: ['group-messages-to', group.id, group.email],
+    queryFn: () => messages.search({ to: group.email }),
+    refetchInterval: 15_000,
   })
-  const list = data?.items ?? []
+  const { data: ccData, isLoading: ccLoading } = useQuery({
+    queryKey: ['group-messages-cc', group.id, group.email],
+    queryFn: () => messages.search({ cc: group.email }),
+    refetchInterval: 15_000,
+  })
+  const isLoading = toLoading || ccLoading
+  const list = (() => {
+    const combined = [...(toData?.items ?? []), ...(ccData?.items ?? [])]
+    const seen = new Set<string>()
+    return combined
+      .filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)))
+      .sort((a, b) => {
+        const at = new Date(a.received_at ?? a.sent_at ?? 0).getTime()
+        const bt = new Date(b.received_at ?? b.sent_at ?? 0).getTime()
+        return bt - at
+      })
+  })()
   const selected = list.find((m) => m.id === selectedId) ?? list[0] ?? null
 
   return (
