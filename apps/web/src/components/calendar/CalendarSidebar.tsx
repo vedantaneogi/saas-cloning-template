@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, isSameMonth } from 'date-fns'
 import { ChevronLeft, ChevronRight, EyeOff, Share2, X, Check, Globe, Copy, UserPlus, Trash2, Plus } from 'lucide-react'
@@ -101,6 +101,27 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
       calendars.update(cal.id, { is_visible: !cal.is_visible }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calendars'] }),
   })
+
+  // When the publish dialog opens (or the user changes scope), ensure the
+  // calendar has a real publish_token. The legacy /cal/pub/{id} URL is just
+  // a fallback — the new render page expects a token.
+  const publishMutation = useMutation({
+    mutationFn: ({ id, enable, scope }: { id: string; enable: boolean; scope: 'free_busy' | 'full' }) =>
+      calendars.publish(id, enable, scope),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calendars'] }),
+  })
+
+  useEffect(() => {
+    if (!publishDialog) return
+    const cal = publishDialog.cal
+    const wantedScope = publishDialog.detail === 'full' ? 'full' : 'free_busy'
+    // Only fire if either the token is missing OR the chosen scope differs
+    // from what's stored — keeps server writes minimal.
+    if (!cal.publish_token || cal.publish_scope !== wantedScope) {
+      publishMutation.mutate({ id: cal.id, enable: true, scope: wantedScope })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publishDialog?.cal.id, publishDialog?.detail])
 
   const shareMutation = useMutation({
     mutationFn: ({ cal, permission }: { cal: Calendar; permission: string }) =>
@@ -284,7 +305,13 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
 
       {/* Publish dialog overlay */}
       {publishDialog && (() => {
-        const pubUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://app.example.com'}/cal/pub/${publishDialog.cal.id}?detail=${publishDialog.detail}`
+        // Read the latest calendar from React Query so the URL reflects the
+        // freshly-generated publish_token after the mutation runs (the
+        // captured snapshot in publishDialog.cal stays stale).
+        const liveCal = calendarList.find((c) => c.id === publishDialog.cal.id) ?? publishDialog.cal
+        const pubUrl = liveCal.publish_token
+          ? `${typeof window !== 'undefined' ? window.location.origin : 'https://app.example.com'}/calendar/public/${liveCal.publish_token}`
+          : 'Generating link…'
         return (
           <div
             role="dialog"
