@@ -217,14 +217,18 @@ async def _flush_due_scheduled(db: AsyncSession, user: User) -> None:
     need a background worker.
     """
     now = rl_state.clock.now()
-    due_q = await db.execute(
-        select(Message).where(
-            Message.user_id == user.id,
-            Message.is_draft.is_(True),
-            Message.scheduled_send_at.is_not(None),
-            Message.scheduled_send_at <= now,
-        )
-    )
+    # Skip messages the user has soft-deleted before dispatch — moving the
+    # scheduled item to Deleted Items is the user's "cancel" affordance.
+    deleted_folder = await _get_folder_by_slug(db, "deleted", user.id)
+    where_clauses = [
+        Message.user_id == user.id,
+        Message.is_draft.is_(True),
+        Message.scheduled_send_at.is_not(None),
+        Message.scheduled_send_at <= now,
+    ]
+    if deleted_folder:
+        where_clauses.append(Message.folder_id != deleted_folder.id)
+    due_q = await db.execute(select(Message).where(*where_clauses))
     due = list(due_q.scalars().all())
     if not due:
         return
@@ -584,7 +588,15 @@ async def create_message(
     )
     if body.folder_id:
         folder_id = body.folder_id
-    elif body.is_draft or is_scheduled_send:
+    elif is_scheduled_send:
+        # Park in the Scheduled folder so the user can find / edit / cancel
+        # before dispatch. Falls back to Drafts if Scheduled doesn't exist
+        # (legacy users seeded before the folder was added).
+        folder = await _get_folder_by_slug(db, "scheduled", current_user.id)
+        if not folder:
+            folder = await _get_folder_by_slug(db, "drafts", current_user.id)
+        folder_id = folder.id if folder else None
+    elif body.is_draft:
         folder = await _get_folder_by_slug(db, "drafts", current_user.id)
         folder_id = folder.id if folder else None
     else:

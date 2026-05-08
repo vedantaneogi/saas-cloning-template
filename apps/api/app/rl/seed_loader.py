@@ -31,9 +31,10 @@ SYSTEM_FOLDERS = [
     {"name": "Inbox", "slug": "inbox", "icon": "inbox", "sort_order": 0},
     {"name": "Drafts", "slug": "drafts", "icon": "file-text", "sort_order": 1},
     {"name": "Sent Items", "slug": "sent", "icon": "send", "sort_order": 2},
-    {"name": "Archive", "slug": "archive", "icon": "archive", "sort_order": 3},
-    {"name": "Junk Email", "slug": "junk", "icon": "alert-triangle", "sort_order": 4},
-    {"name": "Deleted Items", "slug": "deleted", "icon": "trash-2", "sort_order": 5},
+    {"name": "Scheduled", "slug": "scheduled", "icon": "clock", "sort_order": 3},
+    {"name": "Archive", "slug": "archive", "icon": "archive", "sort_order": 4},
+    {"name": "Junk Email", "slug": "junk", "icon": "alert-triangle", "sort_order": 5},
+    {"name": "Deleted Items", "slug": "deleted", "icon": "trash-2", "sort_order": 6},
 ]
 
 DEFAULT_CATEGORIES = [
