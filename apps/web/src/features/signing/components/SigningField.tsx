@@ -425,9 +425,9 @@ export function SigningField({
           input.onchange = async () => {
             const file = input.files?.[0];
             if (!file) return;
-            const MAX_SIZE = 10 * 1024 * 1024;
+            const MAX_SIZE = 5 * 1024 * 1024;
             if (file.size > MAX_SIZE) {
-              alert("File must be under 10MB.");
+              alert("File must be under 5MB.");
               return;
             }
             if (signingToken) {
