@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.calendar import Event, EventAttendee, EventCategory
+from app.models.calendar import Calendar, Event, EventAttendee, EventCategory
 from app.models.category import Category
 from app.models.folder import Folder
 from app.models.message import Message
@@ -482,10 +482,30 @@ async def list_events(
         )
         .scalar_subquery()
     )
-    ownership_filter = or_(
+
+    # Calendar overlay: any user the current user has subscribed to (via the
+    # /calendars/subscribe flow) shows up as another calendar on the grid.
+    # We map their events back through the subscription Calendar row so the
+    # frontend's per-calendar color logic stays unchanged.
+    sub_q = await db.execute(
+        select(Calendar.shared_by_user_id, Calendar.id)
+        .where(
+            Calendar.user_id == current_user.id,
+            Calendar.shared_by_user_id.is_not(None),
+        )
+    )
+    subscribed_owners: dict[uuid.UUID, uuid.UUID] = {}  # owner_user_id -> sub_cal_id
+    for owner_id, sub_cal_id in sub_q.all():
+        if owner_id is not None:
+            subscribed_owners[owner_id] = sub_cal_id
+
+    ownership_clauses = [
         Event.user_id == current_user.id,
         Event.id.in_(invited_event_ids_subq),
-    )
+    ]
+    if subscribed_owners:
+        ownership_clauses.append(Event.user_id.in_(subscribed_owners.keys()))
+    ownership_filter = or_(*ownership_clauses)
 
     # 1. Fetch non-recurring events in the date range
     filters = [ownership_filter, Event.is_recurring.is_(False)]
@@ -499,7 +519,15 @@ async def list_events(
     result = await db.execute(
         select(Event).where(*filters).order_by(Event.start_time)
     )
-    non_recurring: list[EventOut] = [EventOut.model_validate(e) for e in result.scalars().all()]
+    non_recurring: list[EventOut] = []
+    for e in result.scalars().all():
+        out = EventOut.model_validate(e)
+        # Re-route overlay events to their subscription calendar so the grid
+        # picks up that calendar's color/name and the user can hide the
+        # overlay by toggling the subscription's visibility.
+        if e.user_id != current_user.id and e.user_id in subscribed_owners:
+            out.calendar_id = subscribed_owners[e.user_id]
+        non_recurring.append(out)
 
     # 2. Fetch recurring parent events (may start before the requested window)
     rec_filters = [

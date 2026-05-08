@@ -165,8 +165,16 @@ export interface Calendar {
   shared_by_user_id: string | null
   permission_level: 'none' | 'free_busy' | 'read' | 'write' | 'delegate'
   is_visible: boolean
+  publish_token: string | null
+  publish_scope: 'free_busy' | 'full'
   created_at: string
   updated_at: string
+}
+
+export interface CalendarPublishResponse {
+  publish_token: string | null
+  publish_scope: 'free_busy' | 'full'
+  public_url: string | null
 }
 
 export interface RecurrenceRule {
@@ -677,6 +685,34 @@ export const calendars = {
 
   unsubscribe: (id: string) =>
     request<void>(`/calendars/${id}`, { method: 'DELETE' }),
+
+  publish: (id: string, enable: boolean, scope?: 'free_busy' | 'full') =>
+    request<CalendarPublishResponse>(`/calendars/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({ enable, ...(scope ? { scope } : {}) }),
+    }),
+
+  listDelegates: () =>
+    request<CalendarDelegateOut[]>('/calendars/delegates'),
+
+  addDelegate: (email: string, level: 'free_busy' | 'reviewer' | 'editor') =>
+    request<CalendarDelegateOut>('/calendars/delegates', {
+      method: 'POST',
+      body: JSON.stringify({ email, level }),
+    }),
+
+  removeDelegate: (id: string) =>
+    request<void>(`/calendars/delegates/${id}`, { method: 'DELETE' }),
+}
+
+export interface CalendarDelegateOut {
+  id: string
+  owner_user_id: string
+  delegate_user_id: string
+  delegate_email: string | null
+  delegate_name: string | null
+  level: 'free_busy' | 'reviewer' | 'editor'
+  created_at: string
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────

@@ -31,6 +31,8 @@ class CalendarOut(BaseModel):
     shared_by_user_id: Optional[uuid.UUID] = None
     permission_level: str
     is_visible: bool
+    publish_token: Optional[str] = None
+    publish_scope: str = "free_busy"
     created_at: datetime
     updated_at: datetime
 

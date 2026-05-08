@@ -107,10 +107,117 @@ async def delete_calendar(
 
 
 from pydantic import BaseModel  # noqa: E402
+import secrets  # noqa: E402
+from datetime import datetime  # noqa: E402
+from app.models.delegate import CalendarDelegate  # noqa: E402
 
 
 class SubscribeRequest(BaseModel):
     email: str
+
+
+class PublishRequest(BaseModel):
+    enable: bool
+    scope: Optional[str] = None  # "free_busy" or "full"
+
+
+class PublishResponse(BaseModel):
+    publish_token: Optional[str] = None
+    publish_scope: str
+    public_url: Optional[str] = None
+
+
+@router.post("/{calendar_id}/publish", response_model=PublishResponse)
+async def publish_calendar(
+    calendar_id: uuid.UUID,
+    body: PublishRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Toggle a tokenized public link for the calendar. enable=true generates
+    a token if none exists; enable=false clears it. scope picks free-busy
+    (times only) vs full (full event detail) for the public consumer."""
+    cal = await _get_calendar_or_404(db, calendar_id, current_user.id)
+
+    if body.scope and body.scope in ("free_busy", "full"):
+        cal.publish_scope = body.scope
+
+    if body.enable:
+        if not cal.publish_token:
+            cal.publish_token = secrets.token_urlsafe(24)
+    else:
+        cal.publish_token = None
+
+    cal.updated_at = rl_state.clock.now()
+    await db.flush()
+    rl_state.event_log.append("calendar_published", {
+        "id": str(cal.id),
+        "enabled": cal.publish_token is not None,
+    })
+    public_url = f"/api/v1/calendars/public/{cal.publish_token}" if cal.publish_token else None
+    return PublishResponse(
+        publish_token=cal.publish_token,
+        publish_scope=cal.publish_scope,
+        public_url=public_url,
+    )
+
+
+@router.get("/public/{token}")
+async def public_calendar_by_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public read-only calendar endpoint. No auth — the token IS the auth."""
+    from app.models.calendar import Event
+    from app.schemas.calendar import EventOut
+
+    result = await db.execute(select(Calendar).where(Calendar.publish_token == token))
+    cal = result.scalar_one_or_none()
+    if not cal:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_found", "message": "Public calendar not found"}},
+        )
+
+    events_result = await db.execute(
+        select(Event)
+        .where(Event.calendar_id == cal.id, Event.is_recurring.is_(False))
+        .order_by(Event.start_time)
+    )
+    events = events_result.scalars().all()
+
+    if cal.publish_scope == "full":
+        # Owner explicitly published full detail.
+        return {
+            "calendar": cal.name,
+            "scope": "full",
+            "events": [
+                {
+                    "id": str(e.id),
+                    "title": e.title,
+                    "location": e.location,
+                    "description": e.description,
+                    "start_time": e.start_time.isoformat(),
+                    "end_time": e.end_time.isoformat(),
+                    "all_day": e.all_day,
+                    "status": e.status,
+                }
+                for e in events
+            ],
+        }
+    # free_busy default — strip everything except the time block + status.
+    return {
+        "calendar": cal.name,
+        "scope": "free_busy",
+        "slots": [
+            {
+                "start": e.start_time.isoformat(),
+                "end": e.end_time.isoformat(),
+                "status": e.status,
+            }
+            for e in events
+        ],
+    }
 
 
 @router.post("/subscribe", response_model=CalendarOut, status_code=status.HTTP_201_CREATED)
@@ -204,3 +311,129 @@ async def public_calendar(
             "calendar": cal.name,
             "events": [EventOut.model_validate(e).model_dump() for e in events],
         }
+
+
+# ─── Delegates ────────────────────────────────────────────────────────────────
+
+class DelegateCreate(BaseModel):
+    email: str
+    level: str = "reviewer"  # free_busy | reviewer | editor
+
+
+class DelegateOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    owner_user_id: uuid.UUID
+    delegate_user_id: uuid.UUID
+    delegate_email: Optional[str] = None
+    delegate_name: Optional[str] = None
+    level: str
+    created_at: datetime
+
+
+@router.get("/delegates", response_model=list[DelegateOut])
+async def list_delegates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """All delegates the current user has granted access to their calendar."""
+    rows = await db.execute(
+        select(CalendarDelegate, User)
+        .join(User, User.id == CalendarDelegate.delegate_user_id)
+        .where(CalendarDelegate.owner_user_id == current_user.id)
+        .order_by(CalendarDelegate.created_at)
+    )
+    out: list[DelegateOut] = []
+    for d, u in rows.all():
+        item = DelegateOut.model_validate(d)
+        item.delegate_email = u.email
+        item.delegate_name = u.display_name
+        out.append(item)
+    return out
+
+
+@router.post(
+    "/delegates",
+    response_model=DelegateOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_delegate(
+    body: DelegateCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Grant another user access to the current user's calendar at the given
+    level. Idempotent on the (owner, delegate) pair — existing rows have
+    their level updated."""
+    if body.level not in ("free_busy", "reviewer", "editor"):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "invalid_level", "message": "level must be free_busy / reviewer / editor"}},
+        )
+    target_q = await db.execute(select(User).where(User.email == body.email))
+    target = target_q.scalar_one_or_none()
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "user_not_found", "message": f"No user with email {body.email}"}},
+        )
+    if target.id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "invalid", "message": "Cannot delegate to yourself"}},
+        )
+
+    existing_q = await db.execute(
+        select(CalendarDelegate).where(
+            CalendarDelegate.owner_user_id == current_user.id,
+            CalendarDelegate.delegate_user_id == target.id,
+        )
+    )
+    delegate = existing_q.scalar_one_or_none()
+    now = rl_state.clock.now()
+    if delegate:
+        delegate.level = body.level
+    else:
+        delegate = CalendarDelegate(
+            id=uuid.uuid4(),
+            owner_user_id=current_user.id,
+            delegate_user_id=target.id,
+            level=body.level,
+            created_at=now,
+        )
+        db.add(delegate)
+    await db.flush()
+    rl_state.event_log.append("calendar_delegate_set", {
+        "owner": str(current_user.id),
+        "delegate": str(target.id),
+        "level": body.level,
+    })
+    out = DelegateOut.model_validate(delegate)
+    out.delegate_email = target.email
+    out.delegate_name = target.display_name
+    return out
+
+
+@router.delete("/delegates/{delegate_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_delegate(
+    delegate_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Revoke a delegate. Only the owner of the original grant can remove it."""
+    row_q = await db.execute(
+        select(CalendarDelegate).where(
+            CalendarDelegate.id == delegate_id,
+            CalendarDelegate.owner_user_id == current_user.id,
+        )
+    )
+    delegate = row_q.scalar_one_or_none()
+    if not delegate:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_found", "message": "Delegate not found"}},
+        )
+    await db.delete(delegate)
+    await db.flush()
+    rl_state.event_log.append("calendar_delegate_removed", {"id": str(delegate_id)})

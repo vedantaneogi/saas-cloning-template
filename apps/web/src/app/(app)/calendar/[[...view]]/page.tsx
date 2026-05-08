@@ -28,6 +28,7 @@ export default function CalendarPage() {
   const [eventModalOpen, setEventModalOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<Event | undefined>()
   const [initialDate, setInitialDate] = useState<Date | undefined>()
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
 
   // Listen for "New event" from ribbon toolbar
   useEffect(() => {
@@ -38,6 +39,13 @@ export default function CalendarPage() {
     }
     window.addEventListener('outlook:new-event', handler)
     return () => window.removeEventListener('outlook:new-event', handler)
+  }, [])
+
+  // Listen for ribbon "Share" button
+  useEffect(() => {
+    const handler = () => setShareDialogOpen(true)
+    window.addEventListener('outlook:share-calendar', handler)
+    return () => window.removeEventListener('outlook:share-calendar', handler)
   }, [])
 
   // Cross-page entry point: navigating with `?new=1` (e.g. from Groups page)
@@ -185,6 +193,182 @@ export default function CalendarPage() {
         initialDate={initialDate}
         event={editingEvent}
       />
+
+      <ShareCalendarDialog
+        open={shareDialogOpen}
+        onClose={() => setShareDialogOpen(false)}
+      />
+    </div>
+  )
+}
+
+// ─── Share calendar dialog ────────────────────────────────────────────────────
+// Toggles the publish_token on the user's default calendar and shows the
+// public URL the user can hand out. Scope picks free/busy vs full detail.
+function ShareCalendarDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data: calendarList = [] } = useQuery({
+    queryKey: ['calendars'],
+    queryFn: () => calendars.list(),
+    enabled: open,
+  })
+  const showNotification = useUIStore((s) => s.showNotification)
+  const defaultCal = calendarList.find((c) => c.is_default) ?? calendarList[0]
+  const [scope, setScope] = useState<'free_busy' | 'full'>(defaultCal?.publish_scope ?? 'free_busy')
+  const [token, setToken] = useState<string | null>(defaultCal?.publish_token ?? null)
+  const [copied, setCopied] = useState(false)
+
+  // Re-sync when the dialog opens or the default cal changes.
+  useEffect(() => {
+    if (defaultCal) {
+      setScope(defaultCal.publish_scope)
+      setToken(defaultCal.publish_token)
+    }
+  }, [defaultCal?.id, defaultCal?.publish_scope, defaultCal?.publish_token])
+
+  const togglePublish = async (enable: boolean) => {
+    if (!defaultCal) return
+    try {
+      const r = await calendars.publish(defaultCal.id, enable, scope)
+      setToken(r.publish_token)
+      setScope(r.publish_scope)
+      showNotification(enable ? 'Calendar published' : 'Public link removed')
+    } catch (e) {
+      showNotification(e instanceof Error ? e.message : 'Could not update publish state')
+    }
+  }
+
+  const updateScope = async (next: 'free_busy' | 'full') => {
+    setScope(next)
+    if (!defaultCal || !token) return
+    try {
+      const r = await calendars.publish(defaultCal.id, true, next)
+      setScope(r.publish_scope)
+    } catch (e) {
+      showNotification(e instanceof Error ? e.message : 'Could not update scope')
+    }
+  }
+
+  const publicUrl = token
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/calendars/public/${token}`
+    : null
+
+  const copyUrl = async () => {
+    if (!publicUrl) return
+    try {
+      await navigator.clipboard.writeText(publicUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      showNotification('Could not copy URL')
+    }
+  }
+
+  if (!open) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Share calendar"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-md flex flex-col max-h-[90vh] overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
+          <h2 className="text-base font-semibold text-[#323130]">Share calendar</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-4 py-4 space-y-4">
+          <p className="text-xs text-[#605E5C]">
+            Publish a read-only public link that lets anyone with the URL view
+            your <strong>{defaultCal?.name ?? 'calendar'}</strong>.
+          </p>
+
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!token}
+              onChange={(e) => togglePublish(e.target.checked)}
+              className="mt-0.5 accent-[#0078D4]"
+            />
+            <span className="text-sm text-[#323130]">
+              Publish my calendar
+              <span className="block text-[11px] text-[#605E5C]">
+                {token ? 'Anyone with the link can view' : 'Off — no public access'}
+              </span>
+            </span>
+          </label>
+
+          {token && (
+            <>
+              <div>
+                <p className="text-xs font-medium text-[#605E5C] mb-1">What can people see?</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['free_busy', 'Free / busy', 'Times only — titles, locations, and notes are hidden.'],
+                    ['full', 'Full detail', 'Title, time, location, and notes for every event.'],
+                  ] as const).map(([val, label, hint]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => updateScope(val)}
+                      className={`border rounded px-3 py-2 text-left transition-colors ${
+                        scope === val
+                          ? 'border-[#0078D4] bg-[#EFF6FC]'
+                          : 'border-[#EDEBE9] hover:bg-[#F3F2F1]'
+                      }`}
+                    >
+                      <p className="text-sm font-medium text-[#323130]">{label}</p>
+                      <p className="text-[11px] text-[#605E5C] mt-0.5">{hint}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-[#605E5C] mb-1">Public link</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={publicUrl ?? ''}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 text-xs border border-[#8A8886] rounded px-2 py-1.5 bg-[#FAF9F8] text-[#323130]"
+                  />
+                  <button
+                    type="button"
+                    onClick={copyUrl}
+                    className="text-xs bg-[#0078D4] hover:bg-[#106EBE] text-white px-3 py-1.5 rounded"
+                  >
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
+          >
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

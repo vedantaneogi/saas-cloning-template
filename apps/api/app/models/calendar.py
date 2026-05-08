@@ -26,6 +26,17 @@ class Calendar(Base):
         default="write",
     )
     is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Read-only public publish: when set, the calendar is reachable at
+    # /api/v1/calendar/public/{publish_token} with no auth. publish_scope
+    # decides what the consumer sees: free_busy = times only, full = full
+    # event detail (title/location/etc).
+    publish_token: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, unique=True
+    )
+    publish_scope: Mapped[str] = mapped_column(
+        Enum("free_busy", "full", name="calendar_publish_scope_enum"),
+        default="free_busy",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
