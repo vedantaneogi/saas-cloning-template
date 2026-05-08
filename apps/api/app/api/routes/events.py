@@ -484,9 +484,10 @@ async def list_events(
     )
 
     # Calendar overlay: any user the current user has subscribed to (via the
-    # /calendars/subscribe flow) shows up as another calendar on the grid.
-    # We map their events back through the subscription Calendar row so the
-    # frontend's per-calendar color logic stays unchanged.
+    # /calendars/subscribe flow) OR who has delegated calendar access to the
+    # current user shows up as another calendar on the grid. We map their
+    # events back through a Calendar row so the frontend's per-calendar color
+    # logic stays unchanged.
     sub_q = await db.execute(
         select(Calendar.shared_by_user_id, Calendar.id)
         .where(
@@ -499,12 +500,32 @@ async def list_events(
         if owner_id is not None:
             subscribed_owners[owner_id] = sub_cal_id
 
+    # Delegated grants — owners who explicitly gave the current user access.
+    # Even without a subscription row, the events should show up under a
+    # synthetic overlay using the user's default calendar id as a fallback.
+    from app.models.delegate import CalendarDelegate
+    deleg_q = await db.execute(
+        select(CalendarDelegate.owner_user_id)
+        .where(CalendarDelegate.delegate_user_id == current_user.id)
+    )
+    own_default_q = await db.execute(
+        select(Calendar.id).where(
+            Calendar.user_id == current_user.id,
+            Calendar.is_default.is_(True),
+        )
+    )
+    own_default_id = own_default_q.scalar_one_or_none()
+    for owner_id in deleg_q.scalars().all():
+        if owner_id and owner_id not in subscribed_owners and own_default_id:
+            subscribed_owners[owner_id] = own_default_id
+
     ownership_clauses = [
         Event.user_id == current_user.id,
         Event.id.in_(invited_event_ids_subq),
     ]
     if subscribed_owners:
-        ownership_clauses.append(Event.user_id.in_(subscribed_owners.keys()))
+        # SQLAlchemy needs a real list, not dict_keys, for the IN expansion.
+        ownership_clauses.append(Event.user_id.in_(list(subscribed_owners.keys())))
     ownership_filter = or_(*ownership_clauses)
 
     # 1. Fetch non-recurring events in the date range
@@ -548,9 +569,14 @@ async def list_events(
     expanded: list[EventOut] = []
     for parent in recurring_parents:
         if start_after and start_before:
-            expanded.extend(_expand_recurring_event(parent, start_after, start_before))
+            instances = _expand_recurring_event(parent, start_after, start_before)
         else:
-            expanded.append(EventOut.model_validate(parent))
+            instances = [EventOut.model_validate(parent)]
+        # Apply the same overlay calendar_id remap as non-recurring events.
+        if parent.user_id != current_user.id and parent.user_id in subscribed_owners:
+            for inst in instances:
+                inst.calendar_id = subscribed_owners[parent.user_id]
+        expanded.extend(instances)
 
     # 4. Merge, sort, paginate
     all_items = non_recurring + expanded

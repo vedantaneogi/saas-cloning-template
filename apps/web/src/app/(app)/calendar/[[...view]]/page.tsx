@@ -97,11 +97,22 @@ export default function CalendarPage() {
   })
 
   // Apply ribbon Filter: all / mine / invites / no-allday + category multiselect
+  // + per-calendar visibility (unchecking a calendar in the sidebar hides its
+  // events). Visibility lives on the Calendar row itself.
   const calendarFilter = useUIStore((s) => s.calendarFilter)
   const calendarCategoryFilter = useUIStore((s) => s.calendarCategoryFilter)
   const currentUserEmail = useAuthStore((s) => s.currentUser?.email)?.toLowerCase()
   const filteredEvents = useMemo(() => {
     let list = eventList
+
+    // Hide events whose calendar is currently unchecked in the sidebar.
+    const hiddenCalendarIds = new Set(
+      calendarList.filter((c) => !c.is_visible).map((c) => c.id)
+    )
+    if (hiddenCalendarIds.size > 0) {
+      list = list.filter((e) => !hiddenCalendarIds.has(e.calendar_id))
+    }
+
     if (calendarCategoryFilter.length > 0) {
       const wanted = new Set(calendarCategoryFilter)
       list = list.filter((e) =>
@@ -118,7 +129,7 @@ export default function CalendarPage() {
     if (calendarFilter === 'invites') return list.filter(isInvite)
     if (calendarFilter === 'mine') return list.filter((e) => !isInvite(e))
     return list
-  }, [eventList, calendarFilter, currentUserEmail, calendarCategoryFilter])
+  }, [eventList, calendarFilter, currentUserEmail, calendarCategoryFilter, calendarList])
 
   const handleSlotClick = (date: Date) => {
     setInitialDate(date)
@@ -248,8 +259,10 @@ function ShareCalendarDialog({ open, onClose }: { open: boolean; onClose: () => 
     }
   }
 
+  // Public link points at the rendered Next.js page (which fetches the API
+  // and renders a month grid). Recipients see a real calendar, not raw JSON.
   const publicUrl = token
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/calendars/public/${token}`
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/calendar/public/${token}`
     : null
 
   const copyUrl = async () => {
