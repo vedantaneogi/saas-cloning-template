@@ -150,17 +150,33 @@ async def run_quick_step(
         elif action_type == "move_to_folder":
             from sqlalchemy import select as sa_select
             from app.models.folder import Folder
-            folder_ref = params.get("folder", "")
-            folder_result = await db.execute(
-                sa_select(Folder).where(
-                    Folder.user_id == current_user.id,
-                    (Folder.slug == folder_ref) | (Folder.name == folder_ref),
+            folder_ref = params.get("folder", "") or params.get("folder_id", "")
+            target = None
+            # Resolve in order of reliability: UUID → slug → name. The frontend
+            # FolderPicker returns folder.id by default, but legacy quick steps
+            # may have name/slug stored.
+            try:
+                fid = uuid.UUID(str(folder_ref))
+                folder_result = await db.execute(
+                    sa_select(Folder).where(
+                        Folder.id == fid,
+                        Folder.user_id == current_user.id,
+                    )
                 )
-            )
-            target = folder_result.scalar_one_or_none()
+                target = folder_result.scalar_one_or_none()
+            except (ValueError, AttributeError):
+                pass
+            if not target and folder_ref:
+                folder_result = await db.execute(
+                    sa_select(Folder).where(
+                        Folder.user_id == current_user.id,
+                        (Folder.slug == folder_ref) | (Folder.name == folder_ref),
+                    )
+                )
+                target = folder_result.scalar_one_or_none()
             if target:
                 msg.folder_id = target.id
-                applied.append(f"move_to_folder:{folder_ref}")
+                applied.append(f"move_to_folder:{target.name}")
         elif action_type == "delete":
             from sqlalchemy import select as sa_select
             from app.models.folder import Folder

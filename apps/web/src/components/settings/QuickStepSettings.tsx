@@ -114,7 +114,6 @@ export function QuickStepSettings() {
                     folderList={folderList}
                     value={action.params.folder ?? ''}
                     onChange={(v) => updateActionParam(i, 'folder', v)}
-                    mode="slug"
                     ariaLabel="Target folder"
                     className="w-48"
                   />
