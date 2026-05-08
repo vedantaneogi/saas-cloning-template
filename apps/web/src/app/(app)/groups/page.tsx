@@ -12,7 +12,7 @@ import type { Group, Contact } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
-import { format } from 'date-fns'
+import { format, isSameDay } from 'date-fns'
 import { ComposeModal } from '@/components/mail/ComposeModal'
 import { EventModal } from '@/components/calendar/EventModal'
 
@@ -334,50 +334,211 @@ function EventsTab({ group }: { group: Group }) {
     },
   })
 
+  // Mini-cal selection — controls what slice of upcoming events shows. When
+  // a specific day is picked we filter to that day; otherwise show the next
+  // 60-day window (matches the "from May 26 to July 26" copy in group2.png).
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null)
+  const today = new Date()
+  const upcomingStart = selectedDay ?? today
+  const upcomingEnd = (() => {
+    if (selectedDay) {
+      const e = new Date(selectedDay)
+      e.setHours(23, 59, 59)
+      return e
+    }
+    const e = new Date(today)
+    e.setMonth(e.getMonth() + 2)
+    return e
+  })()
+
+  const upcoming = eventList
+    .filter((ev) => {
+      const s = new Date(ev.start_time)
+      return s >= upcomingStart && s <= upcomingEnd
+    })
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+
+  // Days that have at least one group event — used for indicators on the
+  // mini calendar so the user can spot busy days at a glance.
+  const eventDayKeys = new Set(
+    eventList.map((ev) => format(new Date(ev.start_time), 'yyyy-MM-dd'))
+  )
+
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
-      {isLoading ? (
-        <p className="text-xs text-[#605E5C] py-4">Loading events…</p>
-      ) : eventList.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16">
-          {/* Empty state — calendar illustration matches Outlook screenshot */}
-          <svg width="80" height="80" viewBox="0 0 96 96" fill="none" className="mb-3">
-            <rect x="14" y="22" width="68" height="58" rx="6" fill="#EFF6FC" />
-            <rect x="14" y="22" width="68" height="14" rx="6" fill="#83C7F2" />
-            <circle cx="32" cy="50" r="4" fill="#FFB900" />
-            <circle cx="48" cy="50" r="4" fill="#107C10" />
-            <circle cx="64" cy="50" r="4" fill="#E81123" />
-            <circle cx="32" cy="64" r="4" fill="#0078D4" />
-            <circle cx="48" cy="64" r="4" fill="#FFB900" />
-            <path d="M58 65l5 5 12-12" stroke="#0078D4" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          </svg>
-          <p className="text-sm text-[#323130] mb-1">
-            Nothing planned right now.
-          </p>
-          <p className="text-xs text-[#605E5C]">Enjoy!</p>
-        </div>
-      ) : (
-        <div className="max-w-2xl space-y-2">
-          {eventList.map((ev) => (
-            <div
-              key={ev.id}
-              className="flex items-center gap-3 p-3 border border-[#EDEBE9] rounded hover:bg-[#F3F2F1] transition-colors cursor-pointer"
+    <div className="flex-1 overflow-y-auto outlook-scrollbar px-6 py-6">
+      <div className="max-w-5xl flex flex-col md:flex-row gap-6">
+        {/* Mini month calendar — clicking a day filters Upcoming to that day. */}
+        <div className="md:w-[280px] flex-shrink-0">
+          <div className="border border-[#EDEBE9] rounded-lg bg-white">
+            <GroupMiniCalendar
+              selectedDay={selectedDay}
+              onSelectDay={(d) => setSelectedDay((prev) =>
+                prev && isSameDay(prev, d) ? null : d
+              )}
+              eventDayKeys={eventDayKeys}
+              groupColor={group.color}
+            />
+          </div>
+          {selectedDay && (
+            <button
+              type="button"
+              onClick={() => setSelectedDay(null)}
+              className="mt-2 text-xs text-[#0078D4] hover:underline"
             >
-              <div
-                className="w-2 self-stretch rounded-full flex-shrink-0"
-                style={{ backgroundColor: group.color }}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-[#323130] truncate">{ev.title}</p>
-                <p className="text-xs text-[#605E5C]">
-                  {format(new Date(ev.start_time), 'EEE, MMM d · p')}
-                  {ev.location ? ` · ${ev.location}` : ''}
-                </p>
-              </div>
-            </div>
-          ))}
+              Clear day filter
+            </button>
+          )}
         </div>
-      )}
+
+        {/* Upcoming events / empty state */}
+        <div className="flex-1 min-w-0">
+          {isLoading ? (
+            <p className="text-xs text-[#605E5C] py-4">Loading events…</p>
+          ) : upcoming.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <svg width="80" height="80" viewBox="0 0 96 96" fill="none" className="mb-3">
+                <rect x="14" y="22" width="68" height="58" rx="6" fill="#EFF6FC" />
+                <rect x="14" y="22" width="68" height="14" rx="6" fill="#83C7F2" />
+                <circle cx="32" cy="50" r="4" fill="#FFB900" />
+                <circle cx="48" cy="50" r="4" fill="#107C10" />
+                <circle cx="64" cy="50" r="4" fill="#E81123" />
+                <circle cx="32" cy="64" r="4" fill="#0078D4" />
+                <circle cx="48" cy="64" r="4" fill="#FFB900" />
+                <path d="M58 65l5 5 12-12" stroke="#0078D4" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+              <p className="text-sm text-[#323130] mb-1 text-center">
+                Nothing planned from {format(upcomingStart, 'MMM d, yyyy')} to {format(upcomingEnd, 'MMM d, yyyy')}
+              </p>
+              <p className="text-xs text-[#605E5C]">Enjoy!</p>
+            </div>
+          ) : (
+            <>
+              <h3 className="text-sm font-semibold text-[#323130] mb-3">
+                {selectedDay ? format(selectedDay, 'EEEE, MMMM d') : 'Upcoming'}
+              </h3>
+              <div className="space-y-2">
+                {upcoming.map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="flex items-center gap-3 p-3 border border-[#EDEBE9] rounded bg-white hover:bg-[#F3F2F1] transition-colors cursor-pointer"
+                  >
+                    <div
+                      className="w-1 self-stretch rounded-full flex-shrink-0"
+                      style={{ backgroundColor: group.color }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#323130] truncate">{ev.title}</p>
+                      <p className="text-xs text-[#605E5C]">
+                        {format(new Date(ev.start_time), 'EEE, MMM d · p')}
+                        {ev.location ? ` · ${ev.location}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Mini calendar (group-scoped) ─────────────────────────────────────────────
+// Standalone month grid that highlights the days where group events exist
+// (a small dot underneath the day number). Clicking a day filters Upcoming.
+function GroupMiniCalendar({
+  selectedDay, onSelectDay, eventDayKeys, groupColor,
+}: {
+  selectedDay: Date | null
+  onSelectDay: (d: Date) => void
+  eventDayKeys: Set<string>
+  groupColor: string
+}) {
+  const [viewMonth, setViewMonth] = useState(selectedDay ?? new Date())
+
+  const monthDays = (() => {
+    const start = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1)
+    const end = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0)
+    const days: Date[] = []
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      days.push(new Date(d))
+    }
+    return days
+  })()
+  const startPad = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1).getDay()
+  const today = new Date()
+
+  return (
+    <div className="p-3">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          type="button"
+          onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+          aria-label="Previous month"
+          className="p-1 rounded hover:bg-[#EDEBE9] text-[#605E5C]"
+        >
+          <ChevronDownIcon size={14} className="rotate-90" />
+        </button>
+        <span className="text-sm font-semibold text-[#323130]">
+          {format(viewMonth, 'MMMM yyyy')}
+        </span>
+        <button
+          type="button"
+          onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+          aria-label="Next month"
+          className="p-1 rounded hover:bg-[#EDEBE9] text-[#605E5C]"
+        >
+          <ChevronDownIcon size={14} className="-rotate-90" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 text-center gap-y-1">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+          <div key={`${d}-${i}`} className="text-[10px] text-[#605E5C] font-medium pb-1">
+            {d}
+          </div>
+        ))}
+        {Array.from({ length: startPad }).map((_, i) => (
+          <div key={`pad-${i}`} />
+        ))}
+        {monthDays.map((day) => {
+          const key = format(day, 'yyyy-MM-dd')
+          const hasEvents = eventDayKeys.has(key)
+          const isSelected = !!selectedDay && isSameDay(day, selectedDay)
+          const isCurrentDay = isSameDay(day, today)
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onSelectDay(day)}
+              aria-label={format(day, 'EEEE, MMMM d')}
+              aria-pressed={isSelected}
+              className="relative w-7 h-7 mx-auto flex items-center justify-center"
+            >
+              <span
+                className={cn(
+                  'w-7 h-7 rounded-full text-[11px] flex items-center justify-center transition-colors',
+                  isSelected
+                    ? 'bg-[#0078D4] text-white'
+                    : isCurrentDay
+                    ? 'border border-[#0078D4] text-[#0078D4] font-semibold'
+                    : 'text-[#323130] hover:bg-[#EDEBE9]'
+                )}
+              >
+                {format(day, 'd')}
+              </span>
+              {hasEvents && !isSelected && (
+                <span
+                  aria-hidden="true"
+                  className="absolute bottom-0.5 w-1 h-1 rounded-full"
+                  style={{ backgroundColor: groupColor }}
+                />
+              )}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
