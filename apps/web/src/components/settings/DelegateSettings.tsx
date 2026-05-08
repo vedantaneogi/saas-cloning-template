@@ -6,6 +6,7 @@ import { contacts, calendars } from '@/lib/api'
 import type { CalendarDelegateOut } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
 import { Plus, Trash2, Shield, Calendar, Mail } from 'lucide-react'
 import { useUIStore } from '@/store/ui'
 
@@ -141,16 +142,13 @@ export function DelegateSettings() {
             <label className="block text-xs text-[#605E5C] mb-1" htmlFor="delegate-level">
               Permission
             </label>
-            <select
-              id="delegate-level"
+            <Select
               value={addLevel}
-              onChange={(e) => setAddLevel(e.target.value as 'free_busy' | 'reviewer' | 'editor')}
-              className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 bg-white"
-            >
-              {CAL_LEVELS.map((l) => (
-                <option key={l.value} value={l.value}>{l.label}</option>
-              ))}
-            </select>
+              onChange={(v) => setAddLevel(v as 'free_busy' | 'reviewer' | 'editor')}
+              options={CAL_LEVELS.map((l) => ({ value: l.value, label: l.label }))}
+              ariaLabel="Permission level"
+              className="w-full"
+            />
           </div>
           <Button
             onClick={() => addEmail.trim() && addMutation.mutate({ email: addEmail.trim(), level: addLevel })}
@@ -188,35 +186,31 @@ export function DelegateSettings() {
                 </p>
                 <p className="text-xs text-[#605E5C]">{d.delegate_email}</p>
               </div>
-              <select
+              <Select
                 value={d.level}
-                onChange={(e) =>
+                onChange={(v) =>
                   d.delegate_email &&
-                  updateCalLevel(d.delegate_email, e.target.value as 'free_busy' | 'reviewer' | 'editor')
+                  updateCalLevel(d.delegate_email, v as 'free_busy' | 'reviewer' | 'editor')
                 }
-                aria-label={`Calendar permission for ${d.delegate_name ?? d.delegate_email}`}
-                className="text-xs border border-[#EDEBE9] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:border-[#0078D4] w-full bg-white"
-              >
-                {CAL_LEVELS.map((l) => (
-                  <option key={l.value} value={l.value}>{l.label}</option>
-                ))}
-              </select>
-              <select
+                options={CAL_LEVELS.map((l) => ({ value: l.value, label: l.label }))}
+                ariaLabel={`Calendar permission for ${d.delegate_name ?? d.delegate_email}`}
+                size="sm"
+                className="w-full"
+              />
+              <Select
                 value={d.mail_level ?? 'none'}
-                onChange={(e) =>
+                onChange={(v) =>
                   d.delegate_email &&
                   updateMailLevel(
                     d.delegate_email,
-                    e.target.value as 'none' | 'read' | 'send_on_behalf' | 'send_as',
+                    v as 'none' | 'read' | 'send_on_behalf' | 'send_as',
                   )
                 }
-                aria-label={`Mail permission for ${d.delegate_name ?? d.delegate_email}`}
-                className="text-xs border border-[#EDEBE9] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:border-[#0078D4] w-full bg-white"
-              >
-                {MAIL_LEVELS.map((l) => (
-                  <option key={l.value} value={l.value}>{l.label}</option>
-                ))}
-              </select>
+                options={MAIL_LEVELS.map((l) => ({ value: l.value, label: l.label }))}
+                ariaLabel={`Mail permission for ${d.delegate_name ?? d.delegate_email}`}
+                size="sm"
+                className="w-full"
+              />
               <button
                 onClick={() => removeMutation.mutate(d.id)}
                 aria-label="Remove delegate"
