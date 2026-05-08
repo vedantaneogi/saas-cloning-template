@@ -7,6 +7,7 @@ import type { QuickStep } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
+import { FolderPicker } from '@/components/ui/FolderPicker'
 import { Plus, Trash2, Zap } from 'lucide-react'
 
 const ACTION_TYPES = [
@@ -109,13 +110,13 @@ export function QuickStepSettings() {
                   className="flex-1"
                 />
                 {action.type === 'move_to_folder' && (
-                  <Select
+                  <FolderPicker
+                    folderList={folderList}
                     value={action.params.folder ?? ''}
                     onChange={(v) => updateActionParam(i, 'folder', v)}
-                    placeholder="Pick folder"
-                    options={folderList.map((f) => ({ value: f.slug, label: f.name }))}
+                    mode="slug"
                     ariaLabel="Target folder"
-                    className="w-44"
+                    className="w-48"
                   />
                 )}
                 <button type="button" onClick={() => removeAction(i)} className="text-[#D13438]">
