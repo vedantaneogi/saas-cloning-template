@@ -70,7 +70,7 @@ export async function createField(
     required: (f.required as boolean) ?? true,
     label: f.label as string | undefined,
     value: f.value as string | undefined,
-    groupName: f.group_name ?? f.groupName ?? undefined,
+    groupName: ((f as Record<string, unknown>).group_name ?? (f as Record<string, unknown>).groupName ?? undefined) as string | undefined,
   };
 }
 
@@ -105,7 +105,7 @@ export async function getEnvelopeFields(envelopeId: string): Promise<PlacedField
     label: f.label,
     value: f.value,
     options: f.options,
-    groupName: f.group_name ?? f.groupName ?? undefined,
+    groupName: ((f as Record<string, unknown>).group_name ?? (f as Record<string, unknown>).groupName ?? undefined) as string | undefined,
     conditionalOn: f.conditional_on ?? f.conditionalOn ?? undefined,
     conditionalValue: f.conditional_value ?? f.conditionalValue ?? undefined,
     conditionalAction: f.conditional_action ?? f.conditionalAction ?? undefined,
