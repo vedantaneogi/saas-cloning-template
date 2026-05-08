@@ -624,6 +624,110 @@ export function SigningField({
     );
   }
 
+  // NOTE field — read-only sender-set content displayed to signer
+  if (field.type === "note") {
+    return (
+      <div
+        className={`${posClass} flex items-center justify-center rounded`}
+        style={{
+          ...posStyle,
+          background: bgColor,
+          border: `2px solid ${borderColor}`,
+          zIndex: 10,
+        }}
+      >
+        <span className="text-xs italic text-gray-400">{field.value || "Note"}</span>
+      </div>
+    );
+  }
+
+  // STAMP field — one-click stamp button
+  if (field.type === "stamp") {
+    const isStamped = !!value;
+    return (
+      <div
+        className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all select-none`}
+        style={{
+          ...posStyle,
+          background: isStamped ? "rgba(0,184,81,0.08)" : bgColor,
+          border: `2px solid ${isStamped ? "#00B851" : borderColor}`,
+          zIndex: isCurrentField ? 15 : 10,
+        }}
+        onClick={() => { if (!isStamped) onValueChange(field.id, "stamped"); }}
+      >
+        {isStamped ? (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#00B851" }}>
+            <Check size={12} weight="bold" color="white" />
+            <span className="text-xs font-bold text-white">Stamped</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: borderColor }}>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M3 18h18v2H3v-2zm2-4h2v3H5v-3zm4-4h2v7H9v-7zm-4 0a3 3 0 0 1 3-3h0a3 3 0 0 1 3 3"/></svg>
+            <span className="text-xs font-bold text-white">Stamp</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // DECLINE field — red decline button
+  if (field.type === "decline") {
+    const isDeclined = !!value;
+    return (
+      <div
+        className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all select-none`}
+        style={{
+          ...posStyle,
+          background: isDeclined ? "rgba(220,38,38,0.08)" : bgColor,
+          border: `2px solid ${isDeclined ? "#DC2626" : borderColor}`,
+          zIndex: isCurrentField ? 15 : 10,
+        }}
+        onClick={() => { if (!isDeclined) onValueChange(field.id, "declined"); }}
+      >
+        {isDeclined ? (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#DC2626" }}>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7a1 1 0 0 0-1.41 1.42L10.59 12l-4.89 4.88a1 1 0 1 0 1.41 1.42L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.42L13.41 12l4.89-4.88a1 1 0 0 0 0-1.41z"/></svg>
+            <span className="text-xs font-bold text-white">Declined</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#DC2626" }}>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7a1 1 0 0 0-1.41 1.42L10.59 12l-4.89 4.88a1 1 0 1 0 1.41 1.42L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.42L13.41 12l4.89-4.88a1 1 0 0 0 0-1.41z"/></svg>
+            <span className="text-xs font-bold text-white">Decline</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // DRAWING field — placeholder stub (real canvas implementation is complex)
+  if (field.type === "drawing") {
+    const hasDrawing = !!value;
+    return (
+      <div
+        className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all select-none`}
+        style={{
+          ...posStyle,
+          background: hasDrawing ? "rgba(0,184,81,0.08)" : bgColor,
+          border: `2px solid ${hasDrawing ? "#00B851" : borderColor}`,
+          zIndex: isCurrentField ? 15 : 10,
+        }}
+        onClick={() => { if (!hasDrawing) onValueChange(field.id, "drawing_placeholder"); }}
+      >
+        {hasDrawing ? (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#00B851" }}>
+            <Check size={12} weight="bold" color="white" />
+            <span className="text-xs font-bold text-white">Drawn</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: borderColor }}>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            <span className="text-xs font-bold text-white">Draw</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Fallback
   return (
     <div

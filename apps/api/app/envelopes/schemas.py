@@ -30,6 +30,10 @@ class FieldCreate(BaseModel):
     conditional_action: Optional[str] = None
     formula: Optional[str] = None
     decimal_places: Optional[int] = None
+    payment_amount: Optional[int] = None
+    payment_currency: Optional[str] = None
+    payment_description: Optional[str] = None
+    options: Optional[str] = None
 
 
 class FieldBulkItem(BaseModel):
@@ -52,6 +56,10 @@ class FieldBulkItem(BaseModel):
     conditional_action: Optional[str] = None
     formula: Optional[str] = None
     decimal_places: Optional[int] = None
+    payment_amount: Optional[int] = None
+    payment_currency: Optional[str] = None
+    payment_description: Optional[str] = None
+    options: Optional[str] = None
 
 
 class FieldBulkSaveRequest(BaseModel):
@@ -75,6 +83,10 @@ class FieldUpdate(BaseModel):
     conditional_action: Optional[str] = None
     formula: Optional[str] = None
     decimal_places: Optional[int] = None
+    payment_amount: Optional[int] = None
+    payment_currency: Optional[str] = None
+    payment_description: Optional[str] = None
+    options: Optional[str] = None
 
 
 class FieldResponse(BaseModel):
@@ -97,6 +109,10 @@ class FieldResponse(BaseModel):
     conditional_action: Optional[str] = None
     formula: Optional[str] = None
     decimal_places: Optional[int] = None
+    payment_amount: Optional[int] = None
+    payment_currency: Optional[str] = None
+    payment_description: Optional[str] = None
+    options: Optional[str] = None
 
 
 # ── Recipient Schemas ─────────────────────────────────────────────────────────

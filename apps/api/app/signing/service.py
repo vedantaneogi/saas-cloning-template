@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -16,6 +17,8 @@ from app.envelopes.models import (
     RecipientStatus,
 )
 from app.signing.pdf_processor import apply_fields_to_pdf
+
+logger = logging.getLogger(__name__)
 
 
 async def get_signing_session(db: AsyncSession, token: str) -> dict:
@@ -253,8 +256,8 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
                     f.value = f"{numeric:.{dp}f}"
                 except (ValueError, TypeError):
                     f.value = str(result)
-            except Exception:
-                pass  # leave value as-is on error
+            except Exception as exc:
+                logger.warning("Formula evaluation failed for field %s: %s", f.label or f.id, exc)
 
     recipient.status = RecipientStatus.signed
     recipient.signed_at = datetime.now(timezone.utc)
