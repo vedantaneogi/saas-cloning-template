@@ -218,9 +218,17 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
                     continue  # formula fields will be computed below
                 # Skip conditionally hidden fields
                 if field.conditional_on:
-                    parent_val = id_to_field_value.get(field.conditional_on)
-                    matches = parent_val == field.conditional_value
+                    parent_val = id_to_field_value.get(field.conditional_on, "")
+                    expected = field.conditional_value or "checked"
                     action = field.conditional_action or "show"
+                    if expected == "checked":
+                        matches = parent_val in ("checked", "true")
+                    elif expected == "not_checked":
+                        matches = not parent_val or parent_val in ("", "false")
+                    elif expected == "any":
+                        matches = bool(parent_val) and parent_val not in ("", "false")
+                    else:
+                        matches = parent_val == expected
                     if (action == "show" and not matches) or (action == "hide" and matches):
                         continue  # field is hidden, skip validation
                 raise HTTPException(

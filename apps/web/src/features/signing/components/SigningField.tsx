@@ -58,16 +58,19 @@ export function SigningField({
     const parentValue = allFieldValues[field.conditionalOn] ?? "";
     const expectedValue = field.conditionalValue ?? "checked";
     const action = field.conditionalAction ?? "show";
-    const conditionMet = parentValue === expectedValue;
+    let conditionMet: boolean;
+    if (expectedValue === "checked") {
+      conditionMet = parentValue === "checked" || parentValue === "true";
+    } else if (expectedValue === "not_checked") {
+      conditionMet = parentValue === "" || parentValue === "false" || !parentValue;
+    } else if (expectedValue === "any") {
+      conditionMet = !!parentValue && parentValue !== "" && parentValue !== "false";
+    } else {
+      conditionMet = parentValue === expectedValue;
+    }
 
-    if (action === "show" && !conditionMet) {
-      // "show" action: only render when condition is met
-      return null;
-    }
-    if (action === "hide" && conditionMet) {
-      // "hide" action: do not render when condition is met
-      return null;
-    }
+    if (action === "show" && !conditionMet) return null;
+    if (action === "hide" && conditionMet) return null;
   }
 
   // Fields not for this recipient are greyed out and non-interactive

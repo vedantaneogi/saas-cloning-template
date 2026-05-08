@@ -486,6 +486,24 @@ export function FieldOverlay({
         onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(); }}
         onContextMenu={handleContextMenu}
       >
+        {/* Conditional field indicator — diagonal hatched pattern */}
+        {field.conditionalOn && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              borderRadius: "2px",
+              background: `repeating-linear-gradient(
+                -45deg,
+                transparent,
+                transparent 3px,
+                rgba(19,0,50,0.06) 3px,
+                rgba(19,0,50,0.06) 5px
+              )`,
+              zIndex: 1,
+            }}
+          />
+        )}
+
         {/* Field content */}
         {field.value && PREFILLABLE_TYPES.has(field.type) ? (
           <div className="flex items-center gap-1 px-1.5 pointer-events-none overflow-hidden w-full">

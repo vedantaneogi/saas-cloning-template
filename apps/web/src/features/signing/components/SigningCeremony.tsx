@@ -875,7 +875,16 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
     const parentValue = fieldValues[f.conditionalOn] ?? "";
     const expectedValue = f.conditionalValue ?? "checked";
     const action = f.conditionalAction ?? "show";
-    const conditionMet = parentValue === expectedValue;
+    let conditionMet: boolean;
+    if (expectedValue === "checked") {
+      conditionMet = parentValue === "checked" || parentValue === "true";
+    } else if (expectedValue === "not_checked") {
+      conditionMet = parentValue === "" || parentValue === "false" || !parentValue;
+    } else if (expectedValue === "any") {
+      conditionMet = !!parentValue && parentValue !== "" && parentValue !== "false";
+    } else {
+      conditionMet = parentValue === expectedValue;
+    }
     if (action === "show") return conditionMet;
     if (action === "hide") return !conditionMet;
     return true;

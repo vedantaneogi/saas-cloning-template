@@ -575,22 +575,31 @@ async def save_envelope_as_template(
         roles.append(role_entry)
 
     # Build fields_config from all fields across all documents
-    fields_config = [
-        {
-            "document_id": str(f.document_id),
-            "recipient_id": str(f.recipient_id),
-            "type": f.type.value,
-            "page": f.page,
-            "x": f.x,
-            "y": f.y,
-            "width": f.width,
-            "height": f.height,
-            "required": f.required,
-            "label": f.label,
-        }
-        for doc in envelope.documents
-        for f in doc.fields
-    ]
+    fields_config = []
+    for doc in envelope.documents:
+        for f in doc.fields:
+            fc: dict = {
+                "document_id": str(f.document_id),
+                "recipient_id": str(f.recipient_id),
+                "field_id": str(f.id),
+                "type": f.type.value,
+                "page": f.page,
+                "x": f.x,
+                "y": f.y,
+                "width": f.width,
+                "height": f.height,
+                "required": f.required,
+                "label": f.label,
+            }
+            if f.formula:
+                fc["formula"] = f.formula
+            if f.decimal_places is not None:
+                fc["decimal_places"] = f.decimal_places
+            if f.conditional_on:
+                fc["conditional_on"] = str(f.conditional_on)
+                fc["conditional_value"] = f.conditional_value
+                fc["conditional_action"] = f.conditional_action
+            fields_config.append(fc)
 
     template_name = data.name or envelope.subject
     template = Template(

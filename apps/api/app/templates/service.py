@@ -184,6 +184,9 @@ async def create_envelope_from_template(
             recipient_id_map[old_rid] = recip
 
     # 4. Recreate fields using the remapped doc/recipient IDs
+    # Two passes: first create all fields to build field_id_map, then set conditional_on
+    field_id_map: dict[str, str] = {}
+    new_fields: list[tuple[Field, dict]] = []
     for fc in (template.fields_config or []):
         new_doc = doc_id_map.get(fc.get("document_id", ""))
         new_rec = recipient_id_map.get(fc.get("recipient_id", ""))
@@ -200,7 +203,7 @@ async def create_envelope_from_template(
             ftype = FieldType(fc.get("type"))
         except ValueError:
             continue
-        db.add(Field(
+        new_field = Field(
             document_id=new_doc.id,
             recipient_id=new_rec.id,
             type=ftype,
@@ -211,7 +214,23 @@ async def create_envelope_from_template(
             height=float(fc.get("height", 40.0)),
             required=bool(fc.get("required", True)),
             label=fc.get("label"),
-        ))
+            formula=fc.get("formula"),
+            decimal_places=fc.get("decimal_places"),
+            conditional_value=fc.get("conditional_value"),
+            conditional_action=fc.get("conditional_action"),
+        )
+        db.add(new_field)
+        await db.flush()
+        old_field_id = fc.get("field_id")
+        if old_field_id:
+            field_id_map[old_field_id] = str(new_field.id)
+        new_fields.append((new_field, fc))
+
+    # Second pass: remap conditional_on field IDs
+    for new_field, fc in new_fields:
+        old_cond_on = fc.get("conditional_on")
+        if old_cond_on and old_cond_on in field_id_map:
+            new_field.conditional_on = field_id_map[old_cond_on]
 
     await db.commit()
     await db.refresh(envelope)

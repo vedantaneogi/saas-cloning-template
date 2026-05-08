@@ -1170,87 +1170,179 @@ function FieldPropertiesPanel({ field, recipients, allFields, onBack, onUpdate, 
           </div>
         </CollapsibleSection>
 
-        {/* Conditional Logic */}
-        <CollapsibleSection title="Conditional Logic">
+        {/* Conditional Fields */}
+        <CollapsibleSection title="Conditional Fields">
           <div className="space-y-3 pt-1">
-            {/* Controlling field selector */}
-            <div>
-              <label style={labelStyle}>Show/Hide this field when</label>
-              <select
-                value={field.conditionalOn ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value || undefined;
-                  onUpdate({ conditionalOn: val, conditionalValue: val ? (field.conditionalValue ?? "checked") : undefined, conditionalAction: val ? (field.conditionalAction ?? "show") : undefined });
-                }}
-                style={{ ...inputStyle }}
-              >
-                <option value="">— No condition —</option>
-                {allFields
-                  .filter((f) => f.id !== field.id)
-                  .map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.label ? `${f.label} (${f.type})` : `${f.type} field`}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            {field.conditionalOn && (
+            {field.conditionalOn ? (
               <>
-                {/* Trigger value */}
-                <div>
-                  <label style={labelStyle}>Has value</label>
-                  <input
-                    type="text"
-                    value={field.conditionalValue ?? "checked"}
-                    onChange={(e) => onUpdate({ conditionalValue: e.target.value || "checked" })}
-                    placeholder='e.g. "checked" for checkbox, "yes" for text'
-                    style={inputStyle}
-                  />
+                {/* Show existing rule summary */}
+                <div style={{ background: "#F8F7FF", border: "1px solid #E8E0FF", borderRadius: "6px", padding: "10px 12px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "rgba(19,0,50,0.5)", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.03em" }}>Active Rule</div>
+                  <p style={{ fontSize: "12px", color: "rgba(19,0,50,0.8)", margin: "0 0 4px", lineHeight: 1.4 }}>
+                    <span style={{ fontWeight: 600 }}>IF</span>{" "}
+                    {allFields.find((f) => f.id === field.conditionalOn)?.label || "field"}{" "}
+                    <span style={{ fontWeight: 600 }}>IS</span>{" "}
+                    {field.conditionalValue === "checked" ? "Checked" : field.conditionalValue === "not_checked" ? "Unchecked" : field.conditionalValue === "any" ? "Any Text" : `"${field.conditionalValue}"`}
+                  </p>
+                  <p style={{ fontSize: "12px", color: "rgba(19,0,50,0.8)", margin: 0 }}>
+                    <span style={{ fontWeight: 600 }}>THEN</span> {(field.conditionalAction ?? "show") === "show" ? "Show" : "Hide"} this field
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowConditionalRuleEditor(true)}
+                    className="flex-1 py-1.5 rounded text-xs transition-colors hover:bg-purple-50"
+                    style={{ border: "1px solid rgba(19,0,50,0.2)", color: "rgba(19,0,50,0.7)", fontWeight: 500, cursor: "pointer", background: "white" }}
+                  >
+                    Edit Rule
+                  </button>
+                  <button
+                    onClick={() => onUpdate({ conditionalOn: undefined, conditionalValue: undefined, conditionalAction: undefined })}
+                    className="flex-1 py-1.5 rounded text-xs transition-colors hover:bg-red-50"
+                    style={{ border: "1px solid rgba(239,68,68,0.35)", color: "#EF4444", fontWeight: 500, cursor: "pointer", background: "white" }}
+                  >
+                    Remove Rule
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={() => setShowConditionalRuleEditor(true)}
+                className="w-full py-2 rounded text-sm transition-colors hover:bg-purple-50"
+                style={{ border: "1px solid rgba(19,0,50,0.2)", color: "rgba(19,0,50,0.8)", fontWeight: 600, cursor: "pointer", background: "white", letterSpacing: "0.02em" }}
+              >
+                CREATE RULE
+              </button>
+            )}
+          </div>
+        </CollapsibleSection>
+
+        {/* Conditional Rule Editor Modal */}
+        {showConditionalRuleEditor && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowConditionalRuleEditor(false)} />
+            <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-md mx-4" style={{ fontFamily: "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif" }}>
+              <div className="flex items-center justify-between px-6 pt-5 pb-0">
+                <h2 style={{ fontSize: "18px", fontWeight: 600, color: "rgba(19,0,50,0.9)", margin: 0 }}>
+                  {field.conditionalOn ? "Edit Conditional Rule" : "Add Conditional Rule"}
+                </h2>
+                <button onClick={() => setShowConditionalRuleEditor(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(19,0,50,0.4)", fontSize: "20px" }}>&times;</button>
+              </div>
+              <div className="px-6 pb-6 pt-4 space-y-4">
+                {/* IF — trigger field (same recipient only) */}
+                <div className="flex items-center gap-3">
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "rgba(19,0,50,0.5)", width: "40px", flexShrink: 0 }}>IF</span>
+                  <select
+                    value={ruleOn}
+                    onChange={(e) => { setRuleOn(e.target.value); setRuleCondition(""); }}
+                    style={{ flex: 1, border: "1px solid rgba(19,0,50,0.2)", borderRadius: "4px", padding: "8px 10px", fontSize: "13px", color: "rgba(19,0,50,0.9)", outline: "none", background: "white" }}
+                  >
+                    <option value="">Select a field...</option>
+                    {allFields
+                      .filter((f) => f.id !== field.id && f.label && f.recipientId === field.recipientId)
+                      .map((f) => (
+                        <option key={f.id} value={f.id}>{f.label} ({f.type})</option>
+                      ))}
+                  </select>
                 </div>
 
-                {/* Show / Hide toggle */}
-                <div>
-                  <label style={labelStyle}>Action</label>
-                  <div className="flex gap-1">
-                    {(["show", "hide"] as const).map((action) => (
+                {/* IS — condition (dynamic per trigger field type) */}
+                {(() => {
+                  const triggerField = allFields.find((f) => f.id === ruleOn);
+                  const triggerType = triggerField?.type;
+                  const isCheckboxOrRadio = triggerType === "checkbox" || triggerType === "radio";
+                  const isDropdown = triggerType === "dropdown";
+                  return (
+                    <div className="flex items-center gap-3">
+                      <span style={{ fontSize: "13px", fontWeight: 700, color: "rgba(19,0,50,0.5)", width: "40px", flexShrink: 0 }}>IS</span>
+                      <select
+                        value={ruleCondition || (isCheckboxOrRadio ? "Checked" : "Any Value")}
+                        onChange={(e) => setRuleCondition(e.target.value)}
+                        style={{ flex: 1, border: "1px solid rgba(19,0,50,0.2)", borderRadius: "4px", padding: "8px 10px", fontSize: "13px", color: "rgba(19,0,50,0.9)", outline: "none", background: "white" }}
+                      >
+                        {isCheckboxOrRadio && <option value="Checked">Checked</option>}
+                        {isCheckboxOrRadio && <option value="Not Checked">Unchecked</option>}
+                        <option value="Any Value">Any Text</option>
+                        <option value="Specified Text">Specific Value...</option>
+                        {isDropdown && triggerField?.options?.map((opt) => (
+                          <option key={opt} value={`opt:${opt}`}>{opt}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })()}
+
+                {/* Specific value input */}
+                {ruleCondition === "Specified Text" && (
+                  <div className="flex items-center gap-3">
+                    <span style={{ width: "40px", flexShrink: 0 }} />
+                    <input
+                      type="text"
+                      value={ruleText}
+                      onChange={(e) => setRuleText(e.target.value)}
+                      placeholder="Enter trigger value..."
+                      style={{ flex: 1, border: "1px solid rgba(19,0,50,0.2)", borderRadius: "4px", padding: "8px 10px", fontSize: "13px", color: "rgba(19,0,50,0.9)", outline: "none" }}
+                    />
+                  </div>
+                )}
+
+                {/* THEN — action */}
+                <div className="flex items-center gap-3">
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "rgba(19,0,50,0.5)", width: "40px", flexShrink: 0 }}>THEN</span>
+                  <div className="flex gap-2 flex-1">
+                    {(["show", "hide"] as const).map((a) => (
                       <button
-                        key={action}
-                        onClick={() => onUpdate({ conditionalAction: action })}
-                        className="flex-1 py-1.5 rounded text-xs transition-colors"
+                        key={a}
+                        onClick={() => setRuleAction(a)}
+                        className="flex-1 py-2 rounded text-xs transition-colors"
                         style={{
-                          border: `1px solid ${(field.conditionalAction ?? "show") === action ? "#4C00FF" : "rgba(19,0,50,0.15)"}`,
-                          background: (field.conditionalAction ?? "show") === action ? "#F0EEFF" : "transparent",
-                          color: (field.conditionalAction ?? "show") === action ? "#4C00FF" : "rgba(19,0,50,0.7)",
-                          fontWeight: (field.conditionalAction ?? "show") === action ? 700 : 500,
-                          textTransform: "capitalize",
+                          border: `1px solid ${ruleAction === a ? "#4C00FF" : "rgba(19,0,50,0.15)"}`,
+                          background: ruleAction === a ? "#F0EEFF" : "transparent",
+                          color: ruleAction === a ? "#4C00FF" : "rgba(19,0,50,0.7)",
+                          fontWeight: ruleAction === a ? 700 : 500,
                           cursor: "pointer",
+                          textTransform: "capitalize",
                         }}
                       >
-                        {action === "show" ? "Show" : "Hide"}
+                        {a === "show" ? "Show" : "Hide"} this field
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Clear button */}
-                <button
-                  onClick={() => onUpdate({ conditionalOn: undefined, conditionalValue: undefined, conditionalAction: undefined })}
-                  className="w-full py-1.5 rounded text-xs transition-colors hover:bg-red-50"
-                  style={{
-                    border: "1px solid rgba(239,68,68,0.35)",
-                    color: "#EF4444",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    background: "transparent",
-                  }}
-                >
-                  Remove Condition
-                </button>
-              </>
-            )}
+                {/* Buttons */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setShowConditionalRuleEditor(false)}
+                    className="flex-1 py-2.5 rounded border text-sm font-medium hover:bg-gray-50"
+                    style={{ borderColor: "rgba(19,0,50,0.25)", color: "rgba(19,0,50,0.9)", cursor: "pointer", background: "white" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!ruleOn) return;
+                      const cond = ruleCondition || "Checked";
+                      let condValue: string;
+                      if (cond === "Checked") condValue = "checked";
+                      else if (cond === "Not Checked") condValue = "not_checked";
+                      else if (cond === "Any Value") condValue = "any";
+                      else if (cond.startsWith("opt:")) condValue = cond.slice(4);
+                      else condValue = ruleText || "checked";
+                      onUpdate({ conditionalOn: ruleOn, conditionalValue: condValue, conditionalAction: ruleAction });
+                      setShowConditionalRuleEditor(false);
+                    }}
+                    disabled={!ruleOn}
+                    className="flex-1 py-2.5 rounded text-sm font-bold text-white hover:opacity-90 disabled:opacity-40"
+                    style={{ background: "#260559", cursor: ruleOn ? "pointer" : "not-allowed", border: "none" }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </CollapsibleSection>
+        )}
 
         {/* Save as custom field */}
         <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
