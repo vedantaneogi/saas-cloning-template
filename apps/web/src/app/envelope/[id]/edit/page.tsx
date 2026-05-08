@@ -1306,9 +1306,9 @@ function FieldPropertiesPanel({ field, recipients, allFields, onBack, onUpdate, 
                   >
                     <option value="">Select a field...</option>
                     {allFields
-                      .filter((f) => f.id !== field.id && f.label && f.recipientId === field.recipientId)
+                      .filter((f) => f.id !== field.id && f.recipientId === field.recipientId)
                       .map((f) => (
-                        <option key={f.id} value={f.id}>{f.label} ({f.type})</option>
+                        <option key={f.id} value={f.id}>{f.label || f.type} ({f.type})</option>
                       ))}
                   </select>
                 </div>
