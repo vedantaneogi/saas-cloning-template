@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X, Plus, Edit2, Wind } from 'lucide-react'
+import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X, Plus, Edit2, Wind, Lock } from 'lucide-react'
 import { SweepDialog } from '@/components/layout/RibbonTabs'
 import type { Message } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
@@ -397,6 +397,9 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             )}
             {message.in_reply_to_id && (
               <Reply size={12} className="text-[#605E5C]" />
+            )}
+            {message.encrypt_mode && message.encrypt_mode !== 'none' && (
+              <Lock size={12} className="text-[#0078D4]" aria-label="Encrypted" />
             )}
             <span className="text-xs text-[#605E5C] whitespace-nowrap">
               {formatMessageDate(dateStr)}

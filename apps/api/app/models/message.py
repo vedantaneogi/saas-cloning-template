@@ -42,6 +42,22 @@ class Message(Base):
     sensitivity: Mapped[str] = mapped_column(
         Enum("normal", "personal", "private", "confidential", name="sensitivity_enum"), default="normal"
     )
+    # Encrypt mode (Outlook "Set permission on this item"). When != 'none' the
+    # message is treated as encrypted by the reading pane and the sent-folder
+    # row gets a lock pill. Independent of `sensitivity` because Outlook lets
+    # the user pick e.g. "General" + "Encrypt-Only" together.
+    encrypt_mode: Mapped[str] = mapped_column(
+        Enum(
+            "none",
+            "company_confidential",
+            "company_confidential_view_only",
+            "do_not_forward",
+            "encrypt_only",
+            name="encrypt_mode_enum",
+        ),
+        default="none",
+        server_default="none",
+    )
     has_attachments: Mapped[bool] = mapped_column(Boolean, default=False)
     in_reply_to_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL"), nullable=True

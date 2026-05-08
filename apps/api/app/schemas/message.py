@@ -36,6 +36,7 @@ class MessageCreate(BaseModel):
     body_html: Optional[str] = None
     importance: str = "normal"
     sensitivity: str = "normal"
+    encrypt_mode: str = "none"
     is_draft: bool = False
     is_flagged: bool = False
     scheduled_send_at: Optional[datetime] = None
@@ -86,6 +87,7 @@ class MessageOut(BaseModel):
     is_draft: bool
     importance: str
     sensitivity: str
+    encrypt_mode: str = "none"
     has_attachments: bool
     in_reply_to_id: Optional[uuid.UUID] = None
     reply_type: str

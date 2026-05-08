@@ -129,6 +129,7 @@ async def _deliver_to_recipients(
             body_text=sent_msg.body_text,
             importance=sent_msg.importance,
             sensitivity=sent_msg.sensitivity,
+            encrypt_mode=sent_msg.encrypt_mode,
             has_attachments=sent_msg.has_attachments,
             is_read=False,
             is_draft=False,
@@ -610,7 +611,15 @@ async def create_message(
             subject=body.subject or "",
             body=body.body_html or body.body_text or "",
             attachments=[AttachmentIn(name="")],  # filenames hydrated post-create
-            sensitivity_label=(body.sensitivity or "public"),
+            # Encrypt-mode picks (e.g. "Encrypt-Only", "Do Not Forward")
+            # override the sensitivity label so the engine's
+            # ENCRYPT_LABEL_SET rule fires server-side too — keeps the
+            # frontend live banner and the send-time gate in agreement.
+            sensitivity_label=(
+                "encrypt"
+                if (body.encrypt_mode and body.encrypt_mode != "none")
+                else (body.sensitivity or "public")
+            ),
         )
         dlp_result = evaluate_dlp(dlp_req, current_user.email)
         if dlp_result.status == "block":
@@ -715,6 +724,7 @@ async def create_message(
         body_text=body.body_text,
         importance=body.importance,
         sensitivity=body.sensitivity,
+        encrypt_mode=(body.encrypt_mode or "none"),
         is_draft=effective_is_draft,
         is_flagged=body.is_flagged,
         scheduled_send_at=body.scheduled_send_at,
@@ -1166,6 +1176,7 @@ async def copy_message(
         body_text=msg.body_text,
         importance=msg.importance,
         sensitivity=msg.sensitivity,
+        encrypt_mode=msg.encrypt_mode,
         has_attachments=msg.has_attachments,
         is_read=msg.is_read,
         is_flagged=msg.is_flagged,

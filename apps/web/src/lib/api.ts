@@ -115,6 +115,7 @@ export interface Message {
   is_draft: boolean
   importance: 'low' | 'normal' | 'high'
   sensitivity: 'normal' | 'personal' | 'private' | 'confidential'
+  encrypt_mode: 'none' | 'company_confidential' | 'company_confidential_view_only' | 'do_not_forward' | 'encrypt_only'
   has_attachments: boolean
   in_reply_to_id: string | null
   reply_type: 'none' | 'reply' | 'reply_all' | 'forward'

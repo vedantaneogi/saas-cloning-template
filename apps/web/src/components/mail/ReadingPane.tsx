@@ -246,6 +246,7 @@ import {
   Flag,
   Pin,
   Printer,
+  Lock,
 } from 'lucide-react'
 
 export function ReadingPane() {
@@ -424,6 +425,31 @@ export function ReadingPane() {
       {/* Message content — scrollable area */}
       <div className="flex-1 overflow-y-auto outlook-scrollbar">
         <div className="px-6 py-4">
+          {/* Encryption banner — top of reading pane, mirrors Outlook's
+              "This message is encrypted" pill. Shown for any encrypt_mode
+              other than 'none'. The label name comes from the encrypt mode
+              the sender picked. */}
+          {message.encrypt_mode && message.encrypt_mode !== 'none' && (() => {
+            const ENCRYPT_LABELS: Record<Exclude<typeof message.encrypt_mode, 'none'>, string> = {
+              company_confidential: 'Acme Corp - Confidential',
+              company_confidential_view_only: 'Acme Corp - Confidential View Only',
+              do_not_forward: 'Do Not Forward',
+              encrypt_only: 'Encrypt',
+            }
+            return (
+              <div
+                role="status"
+                className="mb-3 rounded border border-[#0078D4] bg-[#EBF3FB] text-[#323130] flex items-center gap-2 px-3 py-2 text-xs"
+              >
+                <Lock size={14} className="flex-shrink-0 text-[#0078D4]" />
+                <span className="flex-1 min-w-0">
+                  <span className="font-semibold">{ENCRYPT_LABELS[message.encrypt_mode]}:</span>{' '}
+                  This message is encrypted. Recipients can&apos;t remove encryption.
+                </span>
+              </div>
+            )
+          })()}
+
           {/* Subject bar — sensitivity badge mirrors Outlook's classification chip */}
           <div className="flex items-center gap-2 mb-4 pb-2 border-b border-[#EDEBE9]">
             <h1 className="text-xl font-semibold text-[#323130] flex-1 min-w-0">

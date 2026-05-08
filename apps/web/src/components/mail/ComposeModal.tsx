@@ -224,6 +224,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
         is_draft: draft,
         importance,
         sensitivity,
+        encrypt_mode: encryptMode,
         in_reply_to_id: composerDraft.replyToMessageId,
         reply_type: (composerDraft.replyType ?? 'none') as 'none' | 'reply' | 'reply_all' | 'forward',
         ...(scheduled ? { scheduled_send_at: new Date(scheduled).toISOString() } : {}),
