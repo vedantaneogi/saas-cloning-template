@@ -15,21 +15,28 @@ import {
   CalendarPlus, CalendarDays, CalendarRange, Share2,
   UserPlus, Pencil, Star, Plus, CheckSquare, Users,
   Pin, Clock, Tag,
+  Paperclip, Link2, Image as ImageIcon, ClipboardPaste, Paintbrush2,
+  Heading, Mic, Video, AlignJustify,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Shared ribbon button ────────────────────────────────────────────────────
+// `large` widens the button + bumps font size so the compose ribbon icons
+// read clearly (senior wanted bigger / broader icons on the new-email
+// toolbar). Default sizing stays compact for the rest of the app.
 function RibbonBtn({
-  onClick, disabled, label, children, active,
+  onClick, disabled, label, children, active, large = false,
 }: {
   onClick?: () => void; disabled?: boolean; label: string; children: React.ReactNode; active?: boolean
+  large?: boolean
 }) {
   return (
     <button
       type="button" onClick={onClick} disabled={disabled}
       aria-label={label} title={label}
       className={cn(
-        'flex flex-col items-center justify-center gap-0.5 px-2 py-0.5 rounded text-[11px] transition-colors min-w-[42px] h-full',
+        'flex flex-col items-center justify-center gap-0.5 rounded transition-colors h-full',
+        large ? 'px-3 py-1 min-w-[56px] text-[11px]' : 'px-2 py-0.5 min-w-[42px] text-[11px]',
         disabled ? 'text-[#A19F9D] cursor-not-allowed opacity-60'
           : active ? 'bg-[#EBF3FB] text-[#0078D4]'
           : 'text-[#323130] hover:bg-[#F3F2F1]',
@@ -40,8 +47,8 @@ function RibbonBtn({
   )
 }
 
-function RibbonSep() {
-  return <div className="w-px h-8 bg-[#EDEBE9] mx-0.5 flex-shrink-0" />
+function RibbonSep({ tall = false }: { tall?: boolean } = {}) {
+  return <div className={cn('w-px bg-[#EDEBE9] mx-1 flex-shrink-0', tall ? 'h-10' : 'h-8')} />
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
@@ -197,17 +204,24 @@ export function RibbonTabs() {
 // ─── Compose Message Ribbon (shown when composing inline) ────────────────────
 function ComposeMessageRibbon() {
   const editor = useEditorStore((s) => s.editor)
+  const showNotification = useUIStore((s) => s.showNotification)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const [highlightPickerOpen, setHighlightPickerOpen] = useState(false)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
+  const [stylesMenuOpen, setStylesMenuOpen] = useState(false)
+  const [spacingMenuOpen, setSpacingMenuOpen] = useState(false)
   const [linkUrl, setLinkUrl] = useState('')
   const [linkText, setLinkText] = useState('')
   const colorBtnRef = useRef<HTMLDivElement>(null)
   const highlightBtnRef = useRef<HTMLDivElement>(null)
   const linkBtnRef = useRef<HTMLDivElement>(null)
+  const stylesBtnRef = useRef<HTMLDivElement>(null)
+  const spacingBtnRef = useRef<HTMLDivElement>(null)
   const colorRef = useRef<HTMLDivElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
   const linkRef = useRef<HTMLDivElement>(null)
+  const stylesRef = useRef<HTMLDivElement>(null)
+  const spacingRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [popupPos, setPopupPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
 
@@ -216,6 +230,16 @@ function ComposeMessageRibbon() {
 
   const FONT_FAMILIES = ['Aptos', 'Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana']
   const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36']
+  // Outlook's "Spacing" flyout — line-height multipliers. Backed by inline
+  // style on the focused block so it survives copy/paste cleanly.
+  const LINE_SPACINGS: { label: string; value: string }[] = [
+    { label: '1.0', value: '1' },
+    { label: '1.15', value: '1.15' },
+    { label: '1.5', value: '1.5' },
+    { label: '2.0', value: '2' },
+    { label: '2.5', value: '2.5' },
+    { label: '3.0', value: '3' },
+  ]
 
   const getPos = (ref: React.RefObject<HTMLDivElement | null>) => {
     const rect = ref.current?.getBoundingClientRect()
@@ -224,16 +248,18 @@ function ComposeMessageRibbon() {
 
   // Close pickers on outside click
   useEffect(() => {
-    if (!colorPickerOpen && !highlightPickerOpen && !linkDialogOpen) return
+    if (!colorPickerOpen && !highlightPickerOpen && !linkDialogOpen && !stylesMenuOpen && !spacingMenuOpen) return
     const handler = (e: MouseEvent) => {
       const t = e.target as Node
       if (colorPickerOpen && colorRef.current && !colorRef.current.contains(t) && colorBtnRef.current && !colorBtnRef.current.contains(t)) setColorPickerOpen(false)
       if (highlightPickerOpen && highlightRef.current && !highlightRef.current.contains(t) && highlightBtnRef.current && !highlightBtnRef.current.contains(t)) setHighlightPickerOpen(false)
       if (linkDialogOpen && linkRef.current && !linkRef.current.contains(t) && linkBtnRef.current && !linkBtnRef.current.contains(t)) setLinkDialogOpen(false)
+      if (stylesMenuOpen && stylesRef.current && !stylesRef.current.contains(t) && stylesBtnRef.current && !stylesBtnRef.current.contains(t)) setStylesMenuOpen(false)
+      if (spacingMenuOpen && spacingRef.current && !spacingRef.current.contains(t) && spacingBtnRef.current && !spacingBtnRef.current.contains(t)) setSpacingMenuOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [colorPickerOpen, highlightPickerOpen, linkDialogOpen])
+  }, [colorPickerOpen, highlightPickerOpen, linkDialogOpen, stylesMenuOpen, spacingMenuOpen])
 
   const run = (cmd: () => void) => {
     if (!editor) return
@@ -276,56 +302,129 @@ function ComposeMessageRibbon() {
   const currentFont = editor?.getAttributes('textStyle')?.fontFamily || 'Aptos'
   const currentColor = editor?.getAttributes('textStyle')?.color || '#000000'
 
+  // Apply line-height to the focused block. TipTap doesn't ship a line-height
+  // mark; we set inline style on the closest block via DOM manipulation so
+  // the caller doesn't need a custom extension.
+  const setLineSpacing = (lh: string) => {
+    if (!editor) return
+    const dom = editor.view.domAtPos(editor.state.selection.from).node as Node
+    let el: HTMLElement | null = dom instanceof HTMLElement ? dom : (dom.parentElement as HTMLElement | null)
+    while (el && !['P', 'LI', 'H1', 'H2', 'H3', 'BLOCKQUOTE'].includes(el.tagName)) {
+      el = el.parentElement
+    }
+    if (el) el.style.lineHeight = lh
+    setSpacingMenuOpen(false)
+  }
+
+  // Match the actual Outlook compose-Message ribbon: Clipboard | Basic Text |
+  // Color | Lists+Align | Include | Collaborate | Voice | Compose-only
+  // (Importance + Discard). Buttons use the `large` size so icons read at
+  // the same density as desktop Outlook.
   return (
-    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Formatting toolbar">
-      {/* Font family */}
+    <div className="flex items-center h-14 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Compose toolbar">
+      {/* ─── Group: Clipboard ─── */}
+      <RibbonBtn large label="Undo (Ctrl+Z)" disabled={!editor?.can().undo()} onClick={() => run(() => editor!.chain().focus().undo().run())}>
+        <RotateCcw size={20} />
+      </RibbonBtn>
+      <RibbonBtn large label="Paste (Ctrl+V)" onClick={async () => {
+        try {
+          const text = await navigator.clipboard.readText()
+          run(() => editor!.chain().focus().insertContent(text).run())
+        } catch {
+          showNotification('Clipboard access denied — use Ctrl+V')
+        }
+      }}>
+        <ClipboardPaste size={20} />
+      </RibbonBtn>
+      <RibbonBtn large label="Format painter" onClick={() => showNotification('Format painter not available in this version')}>
+        <Paintbrush2 size={20} />
+      </RibbonBtn>
+
+      <RibbonSep tall />
+
+      {/* ─── Group: Basic Text ─── */}
       <select
         value={currentFont}
         onChange={(e) => run(() => editor!.chain().focus().setFontFamily(e.target.value).run())}
-        className="text-xs border border-[#EDEBE9] rounded px-1 py-0.5 text-[#323130] bg-white focus:outline-none w-20 h-7"
+        className="text-xs border border-[#D2D0CE] rounded px-2 py-1 text-[#323130] bg-white focus:outline-none focus:border-[#0078D4] w-28 h-9 mx-0.5"
         title="Font family"
+        aria-label="Font"
       >
         {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
       </select>
-
-      {/* Font size */}
       <select
-        onChange={(e) => run(() => {
-          const size = e.target.value
-          editor!.chain().focus().setFontSize(`${size}pt`).run()
-        })}
-        className="text-xs border border-[#EDEBE9] rounded px-1 py-0.5 text-[#323130] bg-white focus:outline-none w-12 h-7"
+        onChange={(e) => run(() => editor!.chain().focus().setFontSize(`${e.target.value}pt`).run())}
+        className="text-xs border border-[#D2D0CE] rounded px-2 py-1 text-[#323130] bg-white focus:outline-none focus:border-[#0078D4] w-14 h-9 mx-0.5"
         title="Font size"
+        aria-label="Font size"
         defaultValue="12"
       >
         {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
-
-      <RibbonSep />
-
-      {/* Bold */}
-      <RibbonBtn label="Bold" active={editor?.isActive('bold')} onClick={() => run(() => editor!.chain().focus().toggleBold().run())}>
-        <span className="font-bold text-sm">B</span>
+      <RibbonBtn large label="Bold (Ctrl+B)" active={editor?.isActive('bold')} onClick={() => run(() => editor!.chain().focus().toggleBold().run())}>
+        <span className="font-bold text-base leading-none">B</span>
       </RibbonBtn>
-      {/* Italic */}
-      <RibbonBtn label="Italic" active={editor?.isActive('italic')} onClick={() => run(() => editor!.chain().focus().toggleItalic().run())}>
-        <span className="italic text-sm">I</span>
+      <RibbonBtn large label="Italic (Ctrl+I)" active={editor?.isActive('italic')} onClick={() => run(() => editor!.chain().focus().toggleItalic().run())}>
+        <span className="italic text-base leading-none">I</span>
       </RibbonBtn>
-      {/* Underline */}
-      <RibbonBtn label="Underline" active={editor?.isActive('underline')} onClick={() => run(() => editor!.chain().focus().toggleUnderline().run())}>
-        <span className="underline text-sm">U</span>
+      <RibbonBtn large label="Underline (Ctrl+U)" active={editor?.isActive('underline')} onClick={() => run(() => editor!.chain().focus().toggleUnderline().run())}>
+        <span className="underline text-base leading-none">U</span>
       </RibbonBtn>
-      {/* Strikethrough */}
-      <RibbonBtn label="Strikethrough" active={editor?.isActive('strike')} onClick={() => run(() => editor!.chain().focus().toggleStrike().run())}>
-        <span className="line-through text-sm">S</span>
+      <RibbonBtn large label="Strikethrough" active={editor?.isActive('strike')} onClick={() => run(() => editor!.chain().focus().toggleStrike().run())}>
+        <span className="line-through text-base leading-none">S</span>
       </RibbonBtn>
 
-      <RibbonSep />
+      {/* Styles flyout — Heading 1/2/3 + Body */}
+      <div ref={stylesBtnRef}>
+        <RibbonBtn large label="Styles" onClick={() => { setPopupPos(getPos(stylesBtnRef)); setStylesMenuOpen((v) => !v) }}>
+          <div className="flex items-center gap-0.5"><Heading size={20} /><ChevronDown size={10} /></div>
+        </RibbonBtn>
+      </div>
+      {stylesMenuOpen && (
+        <div ref={stylesRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 w-48" style={{ top: popupPos.top, left: popupPos.left }}>
+          {[
+            { label: 'Body', cmd: () => editor!.chain().focus().setParagraph().run(), preview: 'text-sm' },
+            { label: 'Heading 1', cmd: () => editor!.chain().focus().setHeading({ level: 1 }).run(), preview: 'text-xl font-semibold' },
+            { label: 'Heading 2', cmd: () => editor!.chain().focus().setHeading({ level: 2 }).run(), preview: 'text-lg font-semibold' },
+            { label: 'Heading 3', cmd: () => editor!.chain().focus().setHeading({ level: 3 }).run(), preview: 'text-base font-semibold' },
+            { label: 'Quote', cmd: () => editor!.chain().focus().toggleBlockquote().run(), preview: 'text-sm italic text-[#605E5C]' },
+            { label: 'Code', cmd: () => editor!.chain().focus().toggleCodeBlock().run(), preview: 'text-sm font-mono' },
+          ].map((s) => (
+            <button key={s.label} type="button"
+              onClick={() => { run(s.cmd); setStylesMenuOpen(false) }}
+              className={cn('w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130]', s.preview)}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Text color */}
+      {/* Spacing flyout */}
+      <div ref={spacingBtnRef}>
+        <RibbonBtn large label="Line spacing" onClick={() => { setPopupPos(getPos(spacingBtnRef)); setSpacingMenuOpen((v) => !v) }}>
+          <div className="flex items-center gap-0.5"><AlignJustify size={20} /><ChevronDown size={10} /></div>
+        </RibbonBtn>
+      </div>
+      {spacingMenuOpen && (
+        <div ref={spacingRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 w-32" style={{ top: popupPos.top, left: popupPos.left }}>
+          {LINE_SPACINGS.map((sp) => (
+            <button key={sp.value} type="button"
+              onClick={() => setLineSpacing(sp.value)}
+              className="w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130]">
+              {sp.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <MoreFormattingBtn editor={editor} />
+
+      <RibbonSep tall />
+
+      {/* ─── Group: Color + Highlight ─── */}
       <div ref={colorBtnRef}>
-        <RibbonBtn label="Text color" onClick={() => { setPopupPos(getPos(colorBtnRef)); setColorPickerOpen((v) => !v); setHighlightPickerOpen(false) }}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 12h8M6 2l-4 9h2l1-2.5h6L12 11h2L10 2H6z" stroke="currentColor" strokeWidth="1.1"/><rect x="2" y="13" width="12" height="2" fill={currentColor} rx="0.5"/></svg>
+        <RibbonBtn large label="Font color" onClick={() => { setPopupPos(getPos(colorBtnRef)); setColorPickerOpen((v) => !v); setHighlightPickerOpen(false) }}>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 15h10M7.5 3l-4.5 10h2.2l1.3-3h6.5l1.3 3h2.2L11.5 3h-4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><rect x="3" y="16.5" width="14" height="2.5" fill={currentColor} rx="0.5"/></svg>
         </RibbonBtn>
       </div>
       {colorPickerOpen && (
@@ -341,10 +440,9 @@ function ComposeMessageRibbon() {
         </div>
       )}
 
-      {/* Highlight */}
       <div ref={highlightBtnRef}>
-        <RibbonBtn label="Highlight" active={editor?.isActive('highlight')} onClick={() => { setPopupPos(getPos(highlightBtnRef)); setHighlightPickerOpen((v) => !v); setColorPickerOpen(false) }}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 12h10M5 3l6 8H5V3z" fill="#FFD700" stroke="currentColor" strokeWidth="0.8"/></svg>
+        <RibbonBtn large label="Text highlight" active={editor?.isActive('highlight')} onClick={() => { setPopupPos(getPos(highlightBtnRef)); setHighlightPickerOpen((v) => !v); setColorPickerOpen(false) }}>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 16h12M6 4l8 9H6V4z" fill="#FFD700" stroke="currentColor" strokeWidth="1.1"/></svg>
         </RibbonBtn>
       </div>
       {highlightPickerOpen && (
@@ -364,36 +462,34 @@ function ComposeMessageRibbon() {
         </div>
       )}
 
-      <RibbonSep />
+      <RibbonSep tall />
 
-      {/* Bullets */}
-      <RibbonBtn label="Bullets" active={editor?.isActive('bulletList')} onClick={() => run(() => editor!.chain().focus().toggleBulletList().run())}>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="2" cy="3" r="1.2" fill="currentColor"/><circle cx="2" cy="7" r="1.2" fill="currentColor"/><circle cx="2" cy="11" r="1.2" fill="currentColor"/><path d="M5 3h7M5 7h7M5 11h7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
+      {/* ─── Group: Lists + Alignment ─── */}
+      <RibbonBtn large label="Bullets" active={editor?.isActive('bulletList')} onClick={() => run(() => editor!.chain().focus().toggleBulletList().run())}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="3" cy="5" r="1.5" fill="currentColor"/><circle cx="3" cy="10" r="1.5" fill="currentColor"/><circle cx="3" cy="15" r="1.5" fill="currentColor"/><path d="M7 5h10M7 10h10M7 15h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
-      {/* Numbering */}
-      <RibbonBtn label="Numbering" active={editor?.isActive('orderedList')} onClick={() => run(() => editor!.chain().focus().toggleOrderedList().run())}>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><text x="0" y="4.5" fontSize="5" fill="currentColor" fontFamily="Arial">1.</text><text x="0" y="8.5" fontSize="5" fill="currentColor" fontFamily="Arial">2.</text><text x="0" y="12.5" fontSize="5" fill="currentColor" fontFamily="Arial">3.</text><path d="M5 3h7M5 7h7M5 11h7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
+      <RibbonBtn large label="Numbering" active={editor?.isActive('orderedList')} onClick={() => run(() => editor!.chain().focus().toggleOrderedList().run())}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><text x="0" y="6.5" fontSize="6" fill="currentColor" fontFamily="Arial">1.</text><text x="0" y="11.5" fontSize="6" fill="currentColor" fontFamily="Arial">2.</text><text x="0" y="16.5" fontSize="6" fill="currentColor" fontFamily="Arial">3.</text><path d="M7 5h10M7 10h10M7 15h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
-
-      <RibbonSep />
-
-      {/* Alignment */}
-      <RibbonBtn label="Align left" active={editor?.isActive({ textAlign: 'left' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('left').run())}>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M1 6h8M1 9h12M1 12h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
+      <RibbonBtn large label="Align left" active={editor?.isActive({ textAlign: 'left' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('left').run())}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M2 9h12M2 13h16M2 17h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
-      <RibbonBtn label="Align center" active={editor?.isActive({ textAlign: 'center' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('center').run())}>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M3 6h8M1 9h12M3 12h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
+      <RibbonBtn large label="Align center" active={editor?.isActive({ textAlign: 'center' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('center').run())}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M5 9h10M2 13h16M5 17h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
-      <RibbonBtn label="Align right" active={editor?.isActive({ textAlign: 'right' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('right').run())}>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M5 6h8M1 9h12M5 12h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
+      <RibbonBtn large label="Align right" active={editor?.isActive({ textAlign: 'right' })} onClick={() => run(() => editor!.chain().focus().setTextAlign('right').run())}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5h16M6 9h12M2 13h16M6 17h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
       </RibbonBtn>
 
-      <RibbonSep />
+      <RibbonSep tall />
 
-      {/* Link */}
+      {/* ─── Group: Include ─── */}
+      <RibbonBtn large label="Attach file" onClick={() => useEditorStore.getState().triggerAttach()}>
+        <Paperclip size={20} />
+      </RibbonBtn>
       <div ref={linkBtnRef}>
-        <RibbonBtn label="Link" onClick={() => { setPopupPos(getPos(linkBtnRef)); openLinkDialog() }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 8l2-2M4.5 9.5a2.5 2.5 0 010-3.5l1-1a2.5 2.5 0 013.5 0M9.5 4.5a2.5 2.5 0 010 3.5l-1 1a2.5 2.5 0 01-3.5 0" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
+        <RibbonBtn large label="Link (Ctrl+K)" onClick={() => { setPopupPos(getPos(linkBtnRef)); openLinkDialog() }}>
+          <Link2 size={20} />
         </RibbonBtn>
       </div>
       {linkDialogOpen && (
@@ -415,42 +511,37 @@ function ComposeMessageRibbon() {
             </div>
         </div>
       )}
-
-      {/* Insert image */}
-      <RibbonBtn label="Insert image" onClick={() => imageInputRef.current?.click()}>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.1"/><circle cx="4.5" cy="5.5" r="1.2" fill="currentColor"/><path d="M1 10l3-3 2 2 3-3 4 4" stroke="currentColor" strokeWidth="1"/></svg>
+      <SignatureRibbonBtn />
+      <RibbonBtn large label="Insert image" onClick={() => imageInputRef.current?.click()}>
+        <ImageIcon size={20} />
       </RibbonBtn>
       <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
-
-      <RibbonSep />
-
-      {/* More formatting — Outlook: increase/decrease indent, clear formatting, etc. */}
-      <MoreFormattingBtn editor={editor} />
-
-      <RibbonSep />
-
-      {/* Link + Image (already above, but Outlook puts them after ...) */}
-
-      {/* Attach file */}
-      <RibbonBtn label="Attach file" onClick={() => useEditorStore.getState().triggerAttach()}>
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8.5 2.5v9a2.5 2.5 0 01-5 0V4a1.5 1.5 0 013 0v7a.5.5 0 01-1 0V4.5" stroke="#0078D4" strokeWidth="1.2" strokeLinecap="round"/></svg>
+      <RibbonBtn large label="Record video" onClick={() => showNotification('Video recording not available in this version')}>
+        <Video size={20} />
       </RibbonBtn>
 
-      <RibbonSep />
+      <RibbonSep tall />
 
-      {/* Signature */}
-      <SignatureRibbonBtn />
+      {/* ─── Group: Collaborate (Loop) ─── */}
+      <RibbonBtn large label="Loop components" onClick={() => showNotification('Loop components not available in this version')}>
+        <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path fill="#0078D4" d="M2 18V10C2 5.58 5.58 2 10 2C14.42 2 18 5.58 18 10C18 14.42 14.42 18 10 18H2ZM5.45 17H10C13.87 17 17 13.87 17 10C17 6.13 13.87 3 10 3C6.13 3 3 6.13 3 10V16.96C3.93 16.83 4.85 16.32 5.58 15.58C6.45 14.72 7 13.59 7 12.5V10C7 8.34 8.34 7 10 7C11.66 7 13 8.34 13 10C13 11.66 11.66 13 10 13H7.97C7.83 14.23 7.18 15.4 6.29 16.29C6.03 16.55 5.75 16.79 5.45 17ZM8 12H10C11.1 12 12 11.1 12 10C12 8.9 11.1 8 10 8C8.9 8 8 8.9 8 10V12Z"/>
+        </svg>
+      </RibbonBtn>
 
-      <RibbonSep />
+      <RibbonSep tall />
 
-      {/* Importance */}
+      {/* ─── Group: Voice (Dictate) ─── */}
+      <RibbonBtn large label="Dictate" onClick={() => showNotification('Dictation not available in this version')}>
+        <Mic size={20} />
+      </RibbonBtn>
+
+      <RibbonSep tall />
+
+      {/* ─── Compose-only: Importance + Discard ─── */}
       <ImportanceRibbonBtns />
-
-      <RibbonSep />
-
-      {/* Discard */}
-      <RibbonBtn label="Discard" onClick={() => useEditorStore.getState().onDiscard?.()}>
-        <Trash2 size={14} />
+      <RibbonBtn large label="Discard" onClick={() => useEditorStore.getState().onDiscard?.()}>
+        <Trash2 size={20} />
       </RibbonBtn>
     </div>
   )
@@ -479,7 +570,7 @@ function SignatureRibbonBtn() {
   return (
     <>
       <div ref={btnRef}>
-        <RibbonBtn label="Signature" active={!!selectedId} onClick={() => {
+        <RibbonBtn large label="Signature" active={!!selectedId} onClick={() => {
           if (btnRef.current) {
             const r = btnRef.current.getBoundingClientRect()
             setPos({ top: r.bottom + 4, left: r.left })
@@ -487,8 +578,8 @@ function SignatureRibbonBtn() {
           setOpen((v) => !v)
         }}>
           <div className="flex items-center gap-0.5">
-            <Pencil size={14} />
-            <ChevronDown size={8} />
+            <Pencil size={20} />
+            <ChevronDown size={10} />
           </div>
         </RibbonBtn>
       </div>
@@ -521,13 +612,13 @@ function ImportanceRibbonBtns() {
 
   return (
     <>
-      <RibbonBtn label="High importance" active={importance === 'high'}
+      <RibbonBtn large label="High importance" active={importance === 'high'}
         onClick={() => setImportance(importance === 'high' ? 'normal' : 'high')}>
-        <span className={cn('text-sm font-bold', importance === 'high' ? 'text-[#D13438]' : '')}>!</span>
+        <span className={cn('text-lg font-bold leading-none', importance === 'high' ? 'text-[#D13438]' : '')}>!</span>
       </RibbonBtn>
-      <RibbonBtn label="Low importance" active={importance === 'low'}
+      <RibbonBtn large label="Low importance" active={importance === 'low'}
         onClick={() => setImportance(importance === 'low' ? 'normal' : 'low')}>
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3v7M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 4v8M6 9l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
       </RibbonBtn>
     </>
   )
@@ -554,14 +645,14 @@ function MoreFormattingBtn({ editor }: { editor: ReturnType<typeof useEditorStor
   return (
     <>
       <div ref={btnRef}>
-        <RibbonBtn label="More formatting" onClick={() => {
+        <RibbonBtn large label="More formatting" onClick={() => {
           if (btnRef.current) {
             const r = btnRef.current.getBoundingClientRect()
             setPos({ top: r.bottom + 4, left: r.left })
           }
           setOpen((v) => !v)
         }}>
-          <MoreHorizontal size={15} />
+          <MoreHorizontal size={20} />
         </RibbonBtn>
       </div>
       {open && (
