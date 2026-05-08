@@ -170,8 +170,16 @@ export function RibbonTabs() {
 
       {/* Tab panel content — changes per section */}
       {isComposing ? (
-        // Compose toolbar — formatting options shown in the ribbon area
-        activeTab === 'Message' ? <ComposeMessageRibbon /> : null
+        // Compose toolbar — every compose tab (Message/Insert/Format text/
+        // Draw/Options) shows the formatting ribbon so the toolbar never
+        // goes blank while the user is composing. Outlook does the same;
+        // its tabs change the *highlighted* command but keep the ribbon
+        // populated.
+        (activeTab === 'Message'
+          || activeTab === 'Insert'
+          || activeTab === 'Format text'
+          || activeTab === 'Draw'
+          || activeTab === 'Options') ? <ComposeMessageRibbon /> : null
       ) : (
         <>
           {isMail && activeTab === 'Home' && <HomeRibbon />}
