@@ -90,6 +90,9 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
   const [copied, setCopied] = useState(false)
   const [subscribeEmail, setSubscribeEmail] = useState('')
   const [subscribeError, setSubscribeError] = useState('')
+  const [newCalendarOpen, setNewCalendarOpen] = useState(false)
+  const [newCalName, setNewCalName] = useState('')
+  const [newCalColor, setNewCalColor] = useState('#0078D4')
 
   const { data: calendarList = [] } = useQuery({
     queryKey: ['calendars'],
@@ -137,6 +140,19 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calendars'] }),
   })
 
+  // Create a custom calendar (name + color). Available in the event composer
+  // calendar dropdown after creation.
+  const createCalendarMutation = useMutation({
+    mutationFn: (data: { name: string; color: string }) => calendars.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      setNewCalendarOpen(false)
+      setNewCalName('')
+      setNewCalColor('#0078D4')
+    },
+  })
+
   const subscribeMutation = useMutation({
     mutationFn: (email: string) => calendars.subscribe(email),
     onSuccess: () => {
@@ -168,15 +184,12 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
 
       <div className="h-px bg-[#EDEBE9] mx-3" />
 
-      {/* Add calendar — prominent link, matches Outlook */}
+      {/* Add calendar — opens a small dialog to create a real calendar
+          (name + color). The user can then pick this calendar when
+          composing an event so events get color-coded by purpose. */}
       <button
         type="button"
-        onClick={() => {
-          // Focus the subscribe email input below
-          const el = document.querySelector<HTMLInputElement>('input[aria-label="Subscribe to another person\'s calendar"]')
-          el?.focus()
-          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }}
+        onClick={() => setNewCalendarOpen(true)}
         className="mx-3 mt-3 flex items-center gap-2 text-sm text-[#0078D4] hover:bg-[#EDEBE9] rounded px-2 py-1.5 transition-colors"
       >
         <Plus size={14} /> <span className="font-medium">Add calendar</span>
@@ -445,6 +458,94 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New calendar dialog */}
+      {newCalendarOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="New calendar"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setNewCalendarOpen(false) }}
+        >
+          <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+          <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-sm flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
+              <h2 className="text-base font-semibold text-[#323130]">New calendar</h2>
+              <button
+                type="button"
+                onClick={() => setNewCalendarOpen(false)}
+                aria-label="Close"
+                className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="px-4 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="newcal-name">
+                  Name
+                </label>
+                <input
+                  id="newcal-name"
+                  type="text"
+                  value={newCalName}
+                  onChange={(e) => setNewCalName(e.target.value)}
+                  placeholder="e.g. Project X"
+                  autoFocus
+                  className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                />
+              </div>
+              <div>
+                <p className="block text-xs font-medium text-[#605E5C] mb-1.5">Color</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    '#0078D4', '#107C10', '#FF8C00', '#D13438',
+                    '#8764B8', '#FFB900', '#5C2E91', '#00B7C3',
+                    '#E81123', '#A1A1A1',
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setNewCalColor(c)}
+                      aria-label={`Color ${c}`}
+                      aria-pressed={newCalColor === c}
+                      className={cn(
+                        'w-7 h-7 rounded-full border-2 transition-transform',
+                        newCalColor === c ? 'border-[#323130] scale-110' : 'border-transparent hover:scale-105'
+                      )}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
+              <button
+                type="button"
+                onClick={() => setNewCalendarOpen(false)}
+                className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  newCalName.trim() &&
+                  createCalendarMutation.mutate({ name: newCalName.trim(), color: newCalColor })
+                }
+                disabled={!newCalName.trim() || createCalendarMutation.isPending}
+                className={cn(
+                  'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
+                  (!newCalName.trim() || createCalendarMutation.isPending) && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {createCalendarMutation.isPending ? 'Creating…' : 'Create'}
+              </button>
             </div>
           </div>
         </div>

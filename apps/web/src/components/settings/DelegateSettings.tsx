@@ -65,7 +65,10 @@ export function DelegateSettings() {
       mailLevel?: 'none' | 'read' | 'send_on_behalf' | 'send_as'
     }) => calendars.addDelegate(email, level, mailLevel),
     onSuccess: () => {
+      // Events list keys overlay events off the delegate table — refetch
+      // so a freshly-granted (or revoked) delegate flips visibility.
       queryClient.invalidateQueries({ queryKey: ['calendar-delegates'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
       setAddEmail('')
       setEmailSuggestions([])
       showNotification('Delegate updated')
@@ -83,6 +86,8 @@ export function DelegateSettings() {
     mutationFn: (id: string) => calendars.removeDelegate(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['calendar-delegates'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
       showNotification('Delegate removed')
     },
   })
