@@ -34,6 +34,7 @@ export interface PlacedField {
   label?: string;
   value?: string;
   options?: string[];
+  groupName?: string;
   /** Feature: Conditional Fields — ID of the field that controls this field's visibility */
   conditionalOn?: string;
   /** Feature: Conditional Fields — the value the parent field must have for the action to trigger */

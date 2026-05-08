@@ -110,6 +110,11 @@ function mapSigningSession(raw: RawSigningSession): SigningSession {
     label: f.label,
     formula: f.formula,
     decimalPlaces: f.decimal_places,
+    options: (f as Record<string, unknown>).options as string[] | undefined,
+    groupName: ((f as Record<string, unknown>).group_name ?? (f as Record<string, unknown>).groupName) as string | undefined,
+    paymentAmount: ((f as Record<string, unknown>).payment_amount ?? (f as Record<string, unknown>).paymentAmount) as number | undefined,
+    paymentCurrency: ((f as Record<string, unknown>).payment_currency ?? (f as Record<string, unknown>).paymentCurrency) as string | undefined,
+    paymentDescription: ((f as Record<string, unknown>).payment_description ?? (f as Record<string, unknown>).paymentDescription) as string | undefined,
   }));
 
   const documents = raw.documents.map((d) => ({

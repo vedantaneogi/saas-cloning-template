@@ -33,7 +33,8 @@ class FieldCreate(BaseModel):
     payment_amount: Optional[int] = None
     payment_currency: Optional[str] = None
     payment_description: Optional[str] = None
-    options: Optional[str] = None
+    options: Optional[list] = None
+    group_name: Optional[str] = None
 
 
 class FieldBulkItem(BaseModel):
@@ -59,7 +60,8 @@ class FieldBulkItem(BaseModel):
     payment_amount: Optional[int] = None
     payment_currency: Optional[str] = None
     payment_description: Optional[str] = None
-    options: Optional[str] = None
+    options: Optional[list] = None
+    group_name: Optional[str] = None
 
 
 class FieldBulkSaveRequest(BaseModel):
@@ -86,7 +88,8 @@ class FieldUpdate(BaseModel):
     payment_amount: Optional[int] = None
     payment_currency: Optional[str] = None
     payment_description: Optional[str] = None
-    options: Optional[str] = None
+    options: Optional[list] = None
+    group_name: Optional[str] = None
 
 
 class FieldResponse(BaseModel):
@@ -112,7 +115,8 @@ class FieldResponse(BaseModel):
     payment_amount: Optional[int] = None
     payment_currency: Optional[str] = None
     payment_description: Optional[str] = None
-    options: Optional[str] = None
+    options: Optional[list] = None
+    group_name: Optional[str] = None
 
 
 # ── Recipient Schemas ─────────────────────────────────────────────────────────

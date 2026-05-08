@@ -1655,7 +1655,20 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                                   isCurrentField={hasStarted && myFields[currentNavIndex]?.id === field.id}
                                   isForRecipient={field.recipientId === recipientId}
                                   onSignatureRequest={handleSignatureRequest}
-                                  onValueChange={(fieldId, value) => setFieldValues((prev) => ({ ...prev, [fieldId]: value }))}
+                                  onValueChange={(fieldId, value) => setFieldValues((prev) => {
+                                    const next = { ...prev, [fieldId]: value };
+                                    if (value === "selected") {
+                                      const changedField = allFields.find((f) => f.id === fieldId);
+                                      if (changedField?.type === "radio" && changedField.groupName) {
+                                        for (const f of allFields) {
+                                          if (f.type === "radio" && f.groupName === changedField.groupName && f.id !== fieldId) {
+                                            next[f.id] = "";
+                                          }
+                                        }
+                                      }
+                                    }
+                                    return next;
+                                  })}
                                   allFieldValues={fieldValues}
                                   allFields={allFields}
                                   signingToken={token}

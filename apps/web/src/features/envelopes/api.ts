@@ -242,6 +242,11 @@ export async function saveFields(envelopeId: string, fields: Field[]): Promise<F
       conditional_action: f.conditionalAction ?? f.conditional_action ?? null,
       formula: f.formula ?? null,
       decimal_places: f.decimalPlaces ?? f.decimal_places ?? null,
+      options: f.options ?? null,
+      group_name: f.groupName ?? f.group_name ?? null,
+      payment_amount: f.paymentAmount ?? f.payment_amount ?? null,
+      payment_currency: f.paymentCurrency ?? f.payment_currency ?? null,
+      payment_description: f.paymentDescription ?? f.payment_description ?? null,
     };
   }).filter(Boolean); // drop null entries (fields missing document_id / recipient_id)
 

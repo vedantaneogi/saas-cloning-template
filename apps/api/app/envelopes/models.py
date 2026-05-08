@@ -262,7 +262,8 @@ class Field(Base):
     payment_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payment_currency: Mapped[str | None] = mapped_column(String(3), nullable=True, default="USD")
     payment_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    options: Mapped[str | None] = mapped_column(Text, nullable=True)
+    options: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    group_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship("Document", back_populates="fields")

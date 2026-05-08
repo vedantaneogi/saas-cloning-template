@@ -1170,6 +1170,73 @@ function FieldPropertiesPanel({ field, recipients, allFields, onBack, onUpdate, 
           </div>
         </CollapsibleSection>
 
+        {/* Dropdown Options */}
+        {field.type === "dropdown" && (
+          <CollapsibleSection title="Dropdown Options">
+            <div className="space-y-2 pt-1">
+              {(field.options ?? ["Option 1", "Option 2"]).map((opt, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={opt}
+                    onChange={(e) => {
+                      const newOpts = [...(field.options ?? ["Option 1", "Option 2"])];
+                      newOpts[i] = e.target.value;
+                      onUpdate({ options: newOpts });
+                    }}
+                    style={{ flex: 1, border: "1px solid rgba(19,0,50,0.18)", borderRadius: "4px", padding: "6px 8px", fontSize: "12px", outline: "none" }}
+                  />
+                  <button
+                    onClick={() => {
+                      const newOpts = [...(field.options ?? ["Option 1", "Option 2"])];
+                      newOpts.splice(i, 1);
+                      onUpdate({ options: newOpts.length > 0 ? newOpts : ["Option 1"] });
+                    }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(19,0,50,0.3)", fontSize: "14px" }}
+                  >&times;</button>
+                </div>
+              ))}
+              <button
+                onClick={() => onUpdate({ options: [...(field.options ?? ["Option 1", "Option 2"]), `Option ${(field.options?.length ?? 2) + 1}`] })}
+                style={{ fontSize: "12px", color: "#4C00FF", background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}
+              >
+                + Add option
+              </button>
+            </div>
+          </CollapsibleSection>
+        )}
+
+        {/* Radio Group */}
+        {field.type === "radio" && (
+          <CollapsibleSection title="Radio Group">
+            <div className="space-y-2 pt-1">
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "rgba(19,0,50,0.45)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.03em" }}>Group Name</label>
+                <input
+                  type="text"
+                  value={field.groupName ?? ""}
+                  onChange={(e) => onUpdate({ groupName: e.target.value })}
+                  placeholder="e.g. YesNo_Q1"
+                  style={{ width: "100%", border: "1px solid rgba(19,0,50,0.18)", borderRadius: "4px", padding: "6px 8px", fontSize: "12px", outline: "none" }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "rgba(19,0,50,0.45)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.03em" }}>Button Value</label>
+                <input
+                  type="text"
+                  value={field.value ?? ""}
+                  onChange={(e) => onUpdate({ value: e.target.value })}
+                  placeholder="e.g. Yes"
+                  style={{ width: "100%", border: "1px solid rgba(19,0,50,0.18)", borderRadius: "4px", padding: "6px 8px", fontSize: "12px", outline: "none" }}
+                />
+              </div>
+              <p style={{ fontSize: "11px", color: "rgba(19,0,50,0.4)", margin: "4px 0 0" }}>
+                Radio buttons with the same group name are mutually exclusive.
+              </p>
+            </div>
+          </CollapsibleSection>
+        )}
+
         {/* Conditional Fields */}
         <CollapsibleSection title="Conditional Fields">
           <div className="space-y-3 pt-1">

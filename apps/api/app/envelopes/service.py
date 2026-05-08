@@ -590,8 +590,13 @@ async def create_field(
         required=data.required,
         label=data.label,
         value=data.value,
-        formula=getattr(data, "formula", None),
-        decimal_places=getattr(data, "decimal_places", None),
+        formula=data.formula,
+        decimal_places=data.decimal_places,
+        options=data.options,
+        group_name=data.group_name,
+        payment_amount=data.payment_amount,
+        payment_currency=data.payment_currency,
+        payment_description=data.payment_description,
         conditional_on=data.conditional_on,
         conditional_value=data.conditional_value,
         conditional_action=data.conditional_action,
@@ -665,6 +670,11 @@ async def save_fields_for_envelope(
             field.conditional_on = getattr(item, "conditional_on", None)
             field.conditional_value = getattr(item, "conditional_value", None)
             field.conditional_action = getattr(item, "conditional_action", None)
+            field.options = getattr(item, "options", None)
+            field.group_name = getattr(item, "group_name", None)
+            field.payment_amount = getattr(item, "payment_amount", None)
+            field.payment_currency = getattr(item, "payment_currency", None)
+            field.payment_description = getattr(item, "payment_description", None)
             incoming_ids.add(item.id)
             result_fields.append(field)
         else:
@@ -686,6 +696,11 @@ async def save_fields_for_envelope(
                 conditional_on=getattr(item, "conditional_on", None),
                 conditional_value=getattr(item, "conditional_value", None),
                 conditional_action=getattr(item, "conditional_action", None),
+                options=getattr(item, "options", None),
+                group_name=getattr(item, "group_name", None),
+                payment_amount=getattr(item, "payment_amount", None),
+                payment_currency=getattr(item, "payment_currency", None),
+                payment_description=getattr(item, "payment_description", None),
             )
             db.add(new_field)
             result_fields.append(new_field)
