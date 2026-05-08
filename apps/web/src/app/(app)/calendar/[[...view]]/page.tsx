@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns'
-import { events, calendars, categories as categoriesApi } from '@/lib/api'
+import { events, calendars } from '@/lib/api'
 import type { Event } from '@/lib/api'
 import { CalendarGrid } from '@/components/calendar/CalendarGrid'
 import { CalendarSidebar } from '@/components/calendar/CalendarSidebar'
@@ -12,8 +12,6 @@ import { DateNavigator } from '@/components/calendar/DateNavigator'
 import { EventModal } from '@/components/calendar/EventModal'
 import { useUIStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
-import { Tag, ChevronDown, Check } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 type CalendarView = 'day' | 'week' | 'work-week' | 'month'
 
@@ -40,6 +38,20 @@ export default function CalendarPage() {
     }
     window.addEventListener('outlook:new-event', handler)
     return () => window.removeEventListener('outlook:new-event', handler)
+  }, [])
+
+  // Cross-page entry point: navigating with `?new=1` (e.g. from Groups page)
+  // pops the New Event modal once on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const sp = new URLSearchParams(window.location.search)
+    if (sp.get('new') === '1') {
+      setInitialDate(new Date())
+      setEditingEvent(undefined)
+      setEventModalOpen(true)
+      // Strip the query param so a refresh doesn't reopen the modal.
+      window.history.replaceState({}, '', window.location.pathname)
+    }
   }, [])
 
   // Calculate date range for events query
@@ -76,21 +88,16 @@ export default function CalendarPage() {
     queryFn: () => events.list({ start, end }),
   })
 
-  // Category filter — multi-select against event.categories
-  const [categoryFilterIds, setCategoryFilterIds] = useState<Set<string>>(new Set())
-  const { data: categoryList = [] } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => categoriesApi.list(),
-  })
-
-  // Apply ribbon Filter: all / mine / invites / no-allday
+  // Apply ribbon Filter: all / mine / invites / no-allday + category multiselect
   const calendarFilter = useUIStore((s) => s.calendarFilter)
+  const calendarCategoryFilter = useUIStore((s) => s.calendarCategoryFilter)
   const currentUserEmail = useAuthStore((s) => s.currentUser?.email)?.toLowerCase()
   const filteredEvents = useMemo(() => {
     let list = eventList
-    if (categoryFilterIds.size > 0) {
+    if (calendarCategoryFilter.length > 0) {
+      const wanted = new Set(calendarCategoryFilter)
       list = list.filter((e) =>
-        e.categories?.some((c) => categoryFilterIds.has(c.id))
+        e.categories?.some((c) => wanted.has(c.id))
       )
     }
     if (calendarFilter === 'all') return list
@@ -103,29 +110,7 @@ export default function CalendarPage() {
     if (calendarFilter === 'invites') return list.filter(isInvite)
     if (calendarFilter === 'mine') return list.filter((e) => !isInvite(e))
     return list
-  }, [eventList, calendarFilter, currentUserEmail, categoryFilterIds])
-
-  const [catMenuOpen, setCatMenuOpen] = useState(false)
-  const catMenuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!catMenuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (catMenuRef.current && !catMenuRef.current.contains(e.target as Node)) {
-        setCatMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [catMenuOpen])
-
-  const toggleCategory = (id: string) => {
-    setCategoryFilterIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+  }, [eventList, calendarFilter, currentUserEmail, calendarCategoryFilter])
 
   const handleSlotClick = (date: Date) => {
     setInitialDate(date)
@@ -171,61 +156,6 @@ export default function CalendarPage() {
             view={view}
             onDateChange={setCurrentDate}
           />
-
-          {/* Category filter — multi-select chip on the right of the toolbar */}
-          <div className="ml-auto relative" ref={catMenuRef}>
-            <button
-              type="button"
-              onClick={() => setCatMenuOpen((v) => !v)}
-              aria-haspopup="listbox"
-              aria-expanded={catMenuOpen}
-              aria-label="Filter by category"
-              className={cn(
-                'inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors',
-                categoryFilterIds.size > 0
-                  ? 'border-[#0078D4] bg-[#EFF6FC] text-[#0078D4]'
-                  : 'border-[#EDEBE9] text-[#605E5C] hover:bg-[#F3F2F1]'
-              )}
-            >
-              <Tag size={12} />
-              {categoryFilterIds.size === 0
-                ? 'All categories'
-                : `${categoryFilterIds.size} selected`}
-              <ChevronDown size={12} />
-            </button>
-            {catMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 z-30 max-h-72 overflow-y-auto">
-                <button
-                  type="button"
-                  onClick={() => { setCategoryFilterIds(new Set()); setCatMenuOpen(false) }}
-                  className="w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130] flex items-center gap-2"
-                >
-                  {categoryFilterIds.size === 0 && <Check size={12} className="text-[#0078D4]" />}
-                  <span className={categoryFilterIds.size === 0 ? '' : 'pl-4'}>All categories</span>
-                </button>
-                {categoryList.length === 0 && (
-                  <p className="px-3 py-2 text-xs text-[#A19F9D] italic">No categories yet</p>
-                )}
-                {categoryList.map((c) => {
-                  const checked = categoryFilterIds.has(c.id)
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => toggleCategory(c.id)}
-                      className="w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130] flex items-center gap-2"
-                    >
-                      {checked
-                        ? <Check size={12} className="text-[#0078D4]" />
-                        : <span className="w-3" />}
-                      <Tag size={12} style={{ color: c.color }} />
-                      <span className="truncate">{c.name}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Calendar grid */}

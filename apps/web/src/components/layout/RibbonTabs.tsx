@@ -1590,6 +1590,13 @@ function CalendarHomeRibbon() {
   const setSplitView = useUIStore((s) => s.setCalendarSplitView)
   const calendarFilter = useUIStore((s) => s.calendarFilter)
   const setCalendarFilter = useUIStore((s) => s.setCalendarFilter)
+  const calendarCategoryFilter = useUIStore((s) => s.calendarCategoryFilter)
+  const toggleCalendarCategoryFilter = useUIStore((s) => s.toggleCalendarCategoryFilter)
+  const clearCalendarCategoryFilter = useUIStore((s) => s.clearCalendarCategoryFilter)
+  const { data: ribbonCategoryList = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categories.list(),
+  })
   const [filterOpen, setFilterOpen] = useState(false)
   // Filter button ref + computed dropdown coords. We render the menu in a
   // fixed-positioned element so the toolbar's `overflow-x-auto` (which forces
@@ -1653,24 +1660,34 @@ function CalendarHomeRibbon() {
 
       {/* Filter */}
       <div ref={filterBtnRef}>
-        <RibbonBtn label="Filter" active={calendarFilter !== 'all'} onClick={() => setFilterOpen((v) => !v)}>
+        <RibbonBtn
+          label="Filter"
+          active={calendarFilter !== 'all' || calendarCategoryFilter.length > 0}
+          onClick={() => setFilterOpen((v) => !v)}
+        >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          <span>{calendarFilter === 'all' ? 'Filter' : 'Filter applied'}</span>
+          <span>
+            {calendarFilter === 'all' && calendarCategoryFilter.length === 0
+              ? 'Filter'
+              : 'Filter applied'}
+          </span>
         </RibbonBtn>
       </div>
       {filterOpen && (
         <div
           ref={filterMenuRef}
           style={{ top: filterPos.top, left: filterPos.left }}
-          className="fixed z-[200] w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+          className="fixed z-[200] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in max-h-[420px] overflow-y-auto"
         >
+          {/* Type filter — same set as before */}
+          <p className="px-3 py-1 text-[10px] font-semibold uppercase text-[#605E5C] tracking-wide">Show</p>
           {([
             ['all', 'Show all events'],
             ['mine', 'Only my events'],
             ['invites', 'Only invites'],
             ['no-allday', 'Hide all-day events'],
           ] as const).map(([val, label]) => (
-            <button key={val} onClick={() => { setCalendarFilter(val); setFilterOpen(false) }}
+            <button key={val} onClick={() => { setCalendarFilter(val) }}
               className={cn(
                 'w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors flex items-center justify-between',
                 calendarFilter === val ? 'text-[#0078D4]' : 'text-[#323130]'
@@ -1679,6 +1696,51 @@ function CalendarHomeRibbon() {
               {calendarFilter === val && <span className="text-xs">✓</span>}
             </button>
           ))}
+
+          {/* Category filter — multi-select */}
+          <div className="border-t border-[#EDEBE9] mt-1 pt-1">
+            <div className="flex items-center justify-between px-3 py-1">
+              <p className="text-[10px] font-semibold uppercase text-[#605E5C] tracking-wide">
+                Categories
+              </p>
+              {calendarCategoryFilter.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearCalendarCategoryFilter}
+                  className="text-[10px] text-[#0078D4] hover:underline"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {ribbonCategoryList.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-[#A19F9D] italic">No categories yet</p>
+            ) : (
+              ribbonCategoryList.map((c) => {
+                const checked = calendarCategoryFilter.includes(c.id)
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleCalendarCategoryFilter(c.id)}
+                    className="w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] text-[#323130] flex items-center gap-2"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      readOnly
+                      className="accent-[#0078D4]"
+                    />
+                    <span
+                      className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                      style={{ backgroundColor: c.color }}
+                    />
+                    <span className="truncate">{c.name}</span>
+                  </button>
+                )
+              })
+            )}
+          </div>
         </div>
       )}
 

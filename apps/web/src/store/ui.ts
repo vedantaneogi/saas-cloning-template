@@ -24,6 +24,10 @@ interface UIState {
   notificationMessage: string | null
   calendarSplitView: boolean
   calendarFilter: CalendarFilter
+  // Per-category filter — multi-select. Empty set means "all categories".
+  // Lives in the global store so the ribbon Filter dropdown (rendered by
+  // RibbonTabs) can drive the calendar page (rendered separately).
+  calendarCategoryFilter: string[]
 
   openComposer: (draft?: Partial<ComposerDraft>) => void
   closeComposer: () => void
@@ -36,6 +40,8 @@ interface UIState {
   clearNotification: () => void
   setCalendarSplitView: (v: boolean) => void
   setCalendarFilter: (f: CalendarFilter) => void
+  toggleCalendarCategoryFilter: (id: string) => void
+  clearCalendarCategoryFilter: () => void
 }
 
 const DEFAULT_DRAFT: ComposerDraft = {
@@ -56,6 +62,7 @@ export const useUIStore = create<UIState>((set) => ({
   notificationMessage: null,
   calendarSplitView: false,
   calendarFilter: 'all',
+  calendarCategoryFilter: [],
 
   openComposer: (draft) =>
     set({
@@ -86,6 +93,14 @@ export const useUIStore = create<UIState>((set) => ({
 
   setCalendarSplitView: (v) => set({ calendarSplitView: v }),
   setCalendarFilter: (f) => set({ calendarFilter: f }),
+  toggleCalendarCategoryFilter: (id) =>
+    set((state) => {
+      const next = state.calendarCategoryFilter.includes(id)
+        ? state.calendarCategoryFilter.filter((x) => x !== id)
+        : [...state.calendarCategoryFilter, id]
+      return { calendarCategoryFilter: next }
+    }),
+  clearCalendarCategoryFilter: () => set({ calendarCategoryFilter: [] }),
 }))
 
 export function draftFromReply(message: Message, type: 'reply' | 'reply_all' | 'forward'): Partial<ComposerDraft> {

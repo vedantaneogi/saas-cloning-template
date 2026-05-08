@@ -946,8 +946,19 @@ export interface Group {
   color: string
   member_count: number
   is_member: boolean
+  is_owner: boolean
   created_at: string
   updated_at: string
+}
+
+export interface GroupMember {
+  id: string
+  group_id: string
+  user_id: string
+  role: 'owner' | 'member'
+  joined_at: string
+  email?: string | null
+  display_name?: string | null
 }
 
 export const groups = {
@@ -960,11 +971,20 @@ export const groups = {
     request<Group>(`/groups/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   join: (id: string) =>
-    request<{ id: string; group_id: string; user_id: string; role: string; joined_at: string }>(
-      `/groups/${id}/join`, { method: 'POST' }
-    ),
+    request<GroupMember>(`/groups/${id}/join`, { method: 'POST' }),
 
   leave: (id: string) => request<void>(`/groups/${id}/leave`, { method: 'DELETE' }),
+
+  members: (id: string) => request<GroupMember[]>(`/groups/${id}/members`),
+
+  addMember: (id: string, email: string) =>
+    request<GroupMember>(`/groups/${id}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  removeMember: (id: string, userId: string) =>
+    request<void>(`/groups/${id}/members/${userId}`, { method: 'DELETE' }),
 }
 
 // ─── RL Environment ───────────────────────────────────────────────────────────
