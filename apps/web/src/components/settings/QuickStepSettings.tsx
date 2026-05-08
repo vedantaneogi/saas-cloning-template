@@ -9,6 +9,9 @@ import { Input } from '@/components/ui/Input'
 import { Plus, Trash2, Zap } from 'lucide-react'
 
 const ACTION_TYPES = [
+  { value: 'reply', label: 'Reply' },
+  { value: 'reply_all', label: 'Reply all' },
+  { value: 'forward', label: 'Forward' },
   { value: 'mark_read', label: 'Mark as read' },
   { value: 'mark_unread', label: 'Mark as unread' },
   { value: 'flag', label: 'Flag message' },
