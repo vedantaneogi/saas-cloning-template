@@ -17,7 +17,7 @@ import {
   Pin, Clock, Tag,
   Paperclip, Link2, Image as ImageIcon, ClipboardPaste, Paintbrush2,
   Heading, Mic, Video, AlignJustify,
-  Search, Filter, RefreshCw, ShieldAlert,
+  Search, Filter, RefreshCw, ShieldAlert, Lock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -539,9 +539,13 @@ function ComposeMessageRibbon() {
 
       <RibbonSep tall />
 
-      {/* ─── Compose-only: Importance — discard lives on the compose pane
-          itself (right-side trash icon) so it's not duplicated here. */}
+      {/* ─── Compose-only: Importance + Sensitivity + Encrypt (Tags group).
+          Discard lives on the compose pane itself (right-side trash icon)
+          so it's not duplicated here. Encrypt is a separate split-button
+          per real Outlook (screenshots 1+2) — not bundled into Sensitivity. */}
       <ImportanceRibbonBtns />
+      <SensitivityRibbonBtn />
+      <EncryptRibbonBtn />
     </div>
   )
 }
@@ -611,14 +615,152 @@ function ImportanceRibbonBtns() {
 
   return (
     <>
-      <RibbonBtn large label="High importance" active={importance === 'high'}
+      <RibbonBtn label="High importance" active={importance === 'high'}
         onClick={() => setImportance(importance === 'high' ? 'normal' : 'high')}>
-        <span className={cn('text-lg font-bold leading-none', importance === 'high' ? 'text-[#D13438]' : '')}>!</span>
+        <span className={cn('text-sm font-bold leading-none', importance === 'high' ? 'text-[#D13438]' : '')}>!</span>
       </RibbonBtn>
-      <RibbonBtn large label="Low importance" active={importance === 'low'}
+      <RibbonBtn label="Low importance" active={importance === 'low'}
         onClick={() => setImportance(importance === 'low' ? 'normal' : 'low')}>
-        <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M10 4v8M6 9l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3v7M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
       </RibbonBtn>
+    </>
+  )
+}
+
+// Sensitivity (Outlook Tags group, screenshot 1) — split-button with 4
+// labels matching real Outlook. Internal value stays normal/personal/private/
+// confidential to keep the API contract; the dropdown just shows the
+// Outlook-style names.
+function SensitivityRibbonBtn() {
+  const sensitivity = useEditorStore((s) => s.sensitivity)
+  const setSensitivity = useEditorStore((s) => s.setSensitivity)
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const SENS_OPTIONS: { value: 'normal' | 'personal' | 'private' | 'confidential'; label: string; description: string; color: string }[] = [
+    { value: 'personal', label: 'Public', description: 'No restrictions', color: '#6B7280' },
+    { value: 'normal', label: 'General', description: 'Default for internal mail', color: '#0078D4' },
+    { value: 'private', label: 'Confidential', description: 'Recipients should handle with care', color: '#FF8C00' },
+    { value: 'confidential', label: 'Highly Confidential', description: 'Strict handling — encryption recommended', color: '#D13438' },
+  ]
+  const current = SENS_OPTIONS.find((o) => o.value === sensitivity) ?? SENS_OPTIONS[1]
+
+  return (
+    <>
+      <div ref={btnRef}>
+        <RibbonBtn label="Sensitivity" active={sensitivity !== 'normal'} onClick={() => {
+          if (btnRef.current) {
+            const r = btnRef.current.getBoundingClientRect()
+            setPos({ top: r.bottom + 4, left: r.left })
+          }
+          setOpen((v) => !v)
+        }}>
+          <ShieldAlert size={15} style={sensitivity !== 'normal' ? { color: current.color } : undefined} />
+          <span className="flex items-center gap-0.5">Sensitivity <ChevronDown size={8} /></span>
+        </RibbonBtn>
+      </div>
+      {open && (
+        <div ref={menuRef} className="fixed z-[200] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in" style={{ top: pos.top, left: pos.left }}>
+          <p className="px-3 py-1 text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide">Sensitivity</p>
+          {SENS_OPTIONS.map((o) => {
+            const selected = o.value === sensitivity
+            return (
+              <button key={o.value} type="button"
+                onClick={() => { setSensitivity(o.value); setOpen(false) }}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-start gap-2">
+                <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" style={{ color: o.color }} />
+                <div className="flex-1 min-w-0">
+                  <p className={cn('text-sm', selected ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>{o.label}</p>
+                  <p className="text-[11px] text-[#A19F9D] truncate">{o.description}</p>
+                </div>
+                {selected && <span className="text-[#0078D4] text-xs flex-shrink-0">✓</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
+// Encrypt (Outlook Tags group, screenshot 2) — separate split-button with
+// "Encrypt-Only" / "Do Not Forward" sub-options. Either choice flips the
+// DLP sensitivity_label to 'encrypt' so the existing ENCRYPT_LABEL_SET rule
+// fires; Do-Not-Forward additionally signals downstream that recipients
+// shouldn't be able to forward (reading-pane will respect this once wired).
+function EncryptRibbonBtn() {
+  const encryptMode = useEditorStore((s) => s.encryptMode)
+  const setEncryptMode = useEditorStore((s) => s.setEncryptMode)
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const active = encryptMode !== 'none'
+  return (
+    <>
+      <div ref={btnRef}>
+        <RibbonBtn label="Encrypt" active={active} onClick={() => {
+          if (btnRef.current) {
+            const r = btnRef.current.getBoundingClientRect()
+            setPos({ top: r.bottom + 4, left: r.left })
+          }
+          setOpen((v) => !v)
+        }}>
+          <Lock size={15} className={active ? 'text-[#0078D4]' : ''} />
+          <span className="flex items-center gap-0.5">Encrypt <ChevronDown size={8} /></span>
+        </RibbonBtn>
+      </div>
+      {open && (
+        <div ref={menuRef} className="fixed z-[200] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in" style={{ top: pos.top, left: pos.left }}>
+          <p className="px-3 py-1 text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide">Set permission on this item</p>
+          <button type="button" onClick={() => { setEncryptMode(encryptMode === 'encrypt_only' ? 'none' : 'encrypt_only'); setOpen(false) }}
+            className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
+            <Lock size={14} className={encryptMode === 'encrypt_only' ? 'text-[#0078D4]' : 'text-[#605E5C]'} />
+            <span className={cn('flex-1 text-sm', encryptMode === 'encrypt_only' ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>Encrypt-Only</span>
+            {encryptMode === 'encrypt_only' && <span className="text-[#0078D4] text-xs">✓</span>}
+          </button>
+          <button type="button" onClick={() => { setEncryptMode(encryptMode === 'do_not_forward' ? 'none' : 'do_not_forward'); setOpen(false) }}
+            className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={encryptMode === 'do_not_forward' ? 'text-[#0078D4]' : 'text-[#605E5C]'}>
+              <path d="M2 4h12v8H2V4z" stroke="currentColor" strokeWidth="1.2"/>
+              <path d="M2 4l6 4 6-4" stroke="currentColor" strokeWidth="1.2"/>
+              <path d="M3 13L13 3" stroke="#D13438" strokeWidth="1.4"/>
+            </svg>
+            <span className={cn('flex-1 text-sm', encryptMode === 'do_not_forward' ? 'text-[#0078D4] font-medium' : 'text-[#323130]')}>Do Not Forward</span>
+            {encryptMode === 'do_not_forward' && <span className="text-[#0078D4] text-xs">✓</span>}
+          </button>
+          {active && (
+            <>
+              <div className="h-px bg-[#EDEBE9] my-1" />
+              <button type="button" onClick={() => { setEncryptMode('none'); setOpen(false) }}
+                className="w-full text-left text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#F3F2F1]">Remove encryption</button>
+            </>
+          )}
+        </div>
+      )}
     </>
   )
 }

@@ -7,6 +7,17 @@ import type { Editor } from '@tiptap/react'
 
 interface Signature { id: string; name: string; body_html: string; is_default_new?: boolean }
 
+// Sensitivity labels — display names ("General", "Public", "Confidential",
+// "Highly Confidential") match Outlook's Tags group; the four internal
+// values keep the existing API contract.
+export type Sensitivity = 'normal' | 'personal' | 'private' | 'confidential'
+
+// Encrypt is a separate Outlook control (not a sensitivity option). Internal
+// values match the dropdown sub-options Outlook shows. When it's anything
+// other than 'none' the DLP engine receives sensitivity_label='encrypt' and
+// the ENCRYPT_LABEL_SET rule fires.
+export type EncryptMode = 'none' | 'encrypt_only' | 'do_not_forward'
+
 interface EditorStore {
   editor: Editor | null
   setEditor: (editor: Editor | null) => void
@@ -21,6 +32,12 @@ interface EditorStore {
 
   importance: 'low' | 'normal' | 'high'
   setImportance: (v: 'low' | 'normal' | 'high') => void
+
+  sensitivity: Sensitivity
+  setSensitivity: (v: Sensitivity) => void
+
+  encryptMode: EncryptMode
+  setEncryptMode: (v: EncryptMode) => void
 
   signatures: Signature[]
   setSignatures: (sigs: Signature[]) => void
@@ -45,6 +62,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   importance: 'normal',
   setImportance: (v) => set({ importance: v }),
+
+  sensitivity: 'normal',
+  setSensitivity: (v) => set({ sensitivity: v }),
+
+  encryptMode: 'none',
+  setEncryptMode: (v) => set({ encryptMode: v }),
 
   signatures: [],
   setSignatures: (sigs) => set({ signatures: sigs }),

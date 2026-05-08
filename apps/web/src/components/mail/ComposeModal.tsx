@@ -128,6 +128,8 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   const setOnAttach = useEditorStore((s) => s.setOnAttach)
   const setOnDiscard = useEditorStore((s) => s.setOnDiscard)
   const setStoreImportance = useEditorStore((s) => s.setImportance)
+  const setStoreSensitivity = useEditorStore((s) => s.setSensitivity)
+  const setStoreEncryptMode = useEditorStore((s) => s.setEncryptMode)
   const setStoreSignatures = useEditorStore((s) => s.setSignatures)
   const setStoreSelectedSigId = useEditorStore((s) => s.setSelectedSignatureId)
   const setOnInsertSignature = useEditorStore((s) => s.setOnInsertSignature)
@@ -169,6 +171,31 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     if (inline && storeImportance !== importance) setImportance(storeImportance)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeImportance])
+
+  // Encrypt mode lives entirely in the editor store — no local mirror needed
+  // (it's only consumed by DLP eval + the send payload below).
+  const encryptMode = useEditorStore((s) => s.encryptMode)
+  // Reset encrypt + push initial sensitivity to the ribbon when this composer
+  // mounts so previous compose sessions don't leak state.
+  useEffect(() => {
+    if (!inline) return
+    setStoreSensitivity(sensitivity)
+    setStoreEncryptMode('none')
+    return () => { setStoreEncryptMode('none') }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inline])
+
+  // Mirror sensitivity from local → store (so the ribbon's chip can react).
+  useEffect(() => {
+    if (inline) setStoreSensitivity(sensitivity)
+  }, [inline, sensitivity, setStoreSensitivity])
+
+  // Mirror sensitivity from store → local (when ribbon picker changes it).
+  const storeSensitivity = useEditorStore((s) => s.sensitivity)
+  useEffect(() => {
+    if (inline && storeSensitivity !== sensitivity) setSensitivity(storeSensitivity)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeSensitivity])
 
   const { register, handleSubmit, watch } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -304,11 +331,13 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject, bodyHtml, to])
 
+  // Outlook-style labels (screenshots 1+2). Internal values stay
+  // normal/personal/private/confidential to keep the API contract.
   const SENSITIVITY_OPTIONS = [
-    { value: 'normal', label: 'Normal', description: 'No restrictions' },
-    { value: 'personal', label: 'Personal', description: 'Personal message' },
-    { value: 'private', label: 'Private', description: 'Do not forward' },
-    { value: 'confidential', label: 'Confidential', description: 'Handle with care' },
+    { value: 'personal', label: 'Public', description: 'No restrictions' },
+    { value: 'normal', label: 'General', description: 'Default for internal mail' },
+    { value: 'private', label: 'Confidential', description: 'Recipients should handle with care' },
+    { value: 'confidential', label: 'Highly Confidential', description: 'Strict handling — encryption recommended' },
   ] as const
 
   const SENSITIVITY_COLORS: Record<string, string> = {
@@ -326,12 +355,23 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   useEffect(() => {
     const timer = setTimeout(async () => {
       try {
+        // labelMap maps the four internal sensitivity values to DLP labels.
+        // The relabel (Outlook General/Public/Confidential/Highly Confidential)
+        // is display-only — internal values still mean the same thing here.
         const labelMap: Record<string, 'public' | 'internal' | 'confidential' | 'encrypt'> = {
-          normal: 'public',
-          personal: 'internal',
-          private: 'confidential',
-          confidential: 'confidential',
+          personal: 'public',           // "Public"
+          normal: 'internal',           // "General" (default internal)
+          private: 'confidential',      // "Confidential"
+          confidential: 'confidential', // "Highly Confidential"
         }
+        // Encrypt button (Encrypt-Only / Do Not Forward) overrides the
+        // sensitivity label so the engine's ENCRYPT_LABEL_SET rule fires
+        // and the banner switches to the blue "Message will be encrypted"
+        // notice. The internal sensitivity value is still sent on the
+        // create_message payload so audit trails see both.
+        const dlpLabel = encryptMode !== 'none'
+          ? 'encrypt'
+          : (labelMap[sensitivity] ?? 'public')
         const result = await dlp.evaluate({
           to: to.map((t) => {
             const m = t.match(/^(.+)\s<(.+)>$/)
@@ -348,7 +388,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
           subject,
           body: bodyHtml,
           attachments: attachedFiles.map((f) => ({ name: f.name })),
-          sensitivity_label: labelMap[sensitivity] ?? 'public',
+          sensitivity_label: dlpLabel,
         })
         setDlpLive(result)
       } catch {
@@ -358,7 +398,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     }, 500)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [to, cc, bcc, subject, bodyHtml, sensitivity, attachedFiles.length])
+  }, [to, cc, bcc, subject, bodyHtml, sensitivity, encryptMode, attachedFiles.length])
 
   const scanForSensitiveContent = (text: string): string[] => {
     const warnings: string[] = []
