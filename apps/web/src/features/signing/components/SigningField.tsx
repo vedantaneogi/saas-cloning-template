@@ -45,7 +45,7 @@ export function SigningField({
         : "0.00";
       onValueChange(field.id, `Payment pending - $${amountDollars}`);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field.id, field.type]);
 
   const posStyle: React.CSSProperties = inlinePositioned
@@ -269,11 +269,11 @@ export function SigningField({
           onChange={(e) => onValueChange(field.id, e.target.value)}
           placeholder={
             field.type === "name" ? "Full Name" :
-            field.type === "email" ? "Email Address" :
-            field.type === "company" ? "Company Name" :
-            field.type === "title" ? "Title" :
-            field.type === "number" ? "0" :
-            field.label || "Enter text"
+              field.type === "email" ? "Email Address" :
+                field.type === "company" ? "Company Name" :
+                  field.type === "title" ? "Title" :
+                    field.type === "number" ? "0" :
+                      field.label || "Enter text"
           }
           className="w-full h-full px-2 text-xs outline-none rounded"
           style={{
@@ -611,12 +611,12 @@ export function SigningField({
       >
         {isApproved ? (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#00B851" }}>
-            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" /></svg>
             <span className="text-xs font-bold text-white">Approved</span>
           </div>
         ) : (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: borderColor }}>
-            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" /></svg>
             <span className="text-xs font-bold text-white">Approve</span>
           </div>
         )}
@@ -662,7 +662,7 @@ export function SigningField({
           </div>
         ) : (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: borderColor }}>
-            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M3 18h18v2H3v-2zm2-4h2v3H5v-3zm4-4h2v7H9v-7zm-4 0a3 3 0 0 1 3-3h0a3 3 0 0 1 3 3"/></svg>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M3 18h18v2H3v-2zm2-4h2v3H5v-3zm4-4h2v7H9v-7zm-4 0a3 3 0 0 1 3-3h0a3 3 0 0 1 3 3" /></svg>
             <span className="text-xs font-bold text-white">Stamp</span>
           </div>
         )}
@@ -686,12 +686,12 @@ export function SigningField({
       >
         {isDeclined ? (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#DC2626" }}>
-            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7a1 1 0 0 0-1.41 1.42L10.59 12l-4.89 4.88a1 1 0 1 0 1.41 1.42L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.42L13.41 12l4.89-4.88a1 1 0 0 0 0-1.41z"/></svg>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7a1 1 0 0 0-1.41 1.42L10.59 12l-4.89 4.88a1 1 0 1 0 1.41 1.42L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.42L13.41 12l4.89-4.88a1 1 0 0 0 0-1.41z" /></svg>
             <span className="text-xs font-bold text-white">Declined</span>
           </div>
         ) : (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: "#DC2626" }}>
-            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7a1 1 0 0 0-1.41 1.42L10.59 12l-4.89 4.88a1 1 0 1 0 1.41 1.42L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.42L13.41 12l4.89-4.88a1 1 0 0 0 0-1.41z"/></svg>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7a1 1 0 0 0-1.41 1.42L10.59 12l-4.89 4.88a1 1 0 1 0 1.41 1.42L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.42L13.41 12l4.89-4.88a1 1 0 0 0 0-1.41z" /></svg>
             <span className="text-xs font-bold text-white">Decline</span>
           </div>
         )}
@@ -720,7 +720,7 @@ export function SigningField({
           </div>
         ) : (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: borderColor }}>
-            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
             <span className="text-xs font-bold text-white">Draw</span>
           </div>
         )}
