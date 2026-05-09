@@ -1394,8 +1394,30 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
             const isInEvent = eventStart && eventEnd &&
               hour >= eventStart.getHours() && hour < eventEnd.getHours() + (eventEnd.getMinutes() > 0 ? 1 : 0)
 
+            // Click on an hour cell → move the event's start to that
+            // hour and keep the existing duration. Mirrors the click
+            // behaviour on the main calendar grid for new events.
+            const moveToHour = () => {
+              const baseDate = startVal ? new Date(startVal) : new Date()
+              const durationMs = eventStart && eventEnd
+                ? Math.max(15 * 60_000, eventEnd.getTime() - eventStart.getTime())
+                : 60 * 60_000
+              const newStart = new Date(baseDate)
+              newStart.setHours(hour, 0, 0, 0)
+              const newEnd = new Date(newStart.getTime() + durationMs)
+              setValue('start_time', formatDateTimeLocal(newStart))
+              setValue('end_time', formatDateTimeLocal(newEnd))
+            }
+
             return (
-              <div key={hour} className="flex border-b border-[#F3F2F1]" style={{ height: 32 }}>
+              <button
+                key={hour}
+                type="button"
+                onClick={moveToHour}
+                aria-label={`Set start to ${hour <= 12 ? `${hour} ${hour < 12 ? 'AM' : 'PM'}` : `${hour - 12} PM`}`}
+                className="w-full flex border-b border-[#F3F2F1] hover:bg-[#F3F2F1] transition-colors text-left"
+                style={{ height: 32 }}
+              >
                 <span className="w-12 text-[10px] text-[#A19F9D] text-right pr-2 pt-0.5 flex-shrink-0">
                   {hour <= 12 ? `${hour} ${hour < 12 ? 'AM' : 'PM'}` : `${hour - 12} PM`}
                 </span>
@@ -1417,7 +1439,7 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
                     </div>
                   )}
                 </div>
-              </div>
+              </button>
             )
           })}
         </div>
