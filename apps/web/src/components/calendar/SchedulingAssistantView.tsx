@@ -46,6 +46,11 @@ interface SchedulingAssistantViewProps {
   extraRooms?: MockRoom[]
   /** Persist a newly-created room (e.g. quick-add inline). */
   onCreateRoom?: (room: MockRoom) => void
+  /** Currently picked room IDs (lifted to parent so the location-field
+   *  selection and SA's Rooms list stay in sync). */
+  pickedRoomIds?: string[]
+  /** Setter for picked rooms — parent merges with the location field. */
+  onPickedRoomsChange?: (ids: string[]) => void
   /** Confirm — emits the chosen date + "HH:MM" start + minutes-duration. */
   onConfirm: (date: Date, startHHMM: string, durationMinutes: number) => void
   /** Cancel — discard selection and return to event form. */
@@ -80,6 +85,8 @@ export function SchedulingAssistantView({
   organizer,
   extraRooms = [],
   onCreateRoom,
+  pickedRoomIds: pickedRoomIdsProp,
+  onPickedRoomsChange,
   onAddInvitee,
   onRemoveInvitee,
   onConfirm,
@@ -93,9 +100,15 @@ export function SchedulingAssistantView({
   // Optional-attendee toggle (SA-internal — the parent's invitee list is a
   // single bucket; we just visually split which ones are "optional" here).
   const [optionalEmails, setOptionalEmails] = useState<Set<string>>(new Set())
-  // Rooms picked here. Empty by default — user adds via the Rooms picker.
-  // Independent from the form's location field; SA grid is preview-only.
-  const [pickedRoomIds, setPickedRoomIds] = useState<string[]>([])
+  // Rooms picked — controlled when the parent passes pickedRoomIds (it
+  // does, so the location-field selection and SA stay in sync).
+  // Falls back to local state for standalone usage.
+  const [localPicked, setLocalPicked] = useState<string[]>([])
+  const pickedRoomIds = pickedRoomIdsProp ?? localPicked
+  const setPickedRoomIds = (updater: (prev: string[]) => string[]) => {
+    if (onPickedRoomsChange) onPickedRoomsChange(updater(pickedRoomIds))
+    else setLocalPicked(updater)
+  }
 
   // Inline + Add editors (open/close state only — Section manages email +
   // contact suggestions internally)
@@ -208,8 +221,9 @@ export function SchedulingAssistantView({
   })
   const required = liveAttendees.filter((a) => a.type === 'required')
   const optional = liveAttendees.filter((a) => a.type === 'optional')
+  const allKnownRooms = [...MOCK_ROOMS, ...extraRooms]
   const pickedRooms: MockRoom[] = pickedRoomIds
-    .map((id) => MOCK_ROOMS.find((r) => r.id === id))
+    .map((id) => allKnownRooms.find((r) => r.id === id))
     .filter((r): r is MockRoom => !!r)
 
   const selectedStartMin = timeToMinutes(selectedStart)

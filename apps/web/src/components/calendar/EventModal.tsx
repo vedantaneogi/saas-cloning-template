@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils'
 import { SchedulingAssistantView } from './SchedulingAssistantView'
 import { FindATimePane } from './FindATimePane'
 import { RoomFinderPopover } from './RoomFinderPopover'
-import type { MockRoom } from './scheduling-mock'
+import { MOCK_ROOMS, type MockRoom } from './scheduling-mock'
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -441,6 +441,12 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
   // new room" form. Displayed alongside MOCK_ROOMS in both the popover
   // and the SA add-room picker.
   const [extraRooms, setExtraRooms] = useState<MockRoom[]>([])
+  // Rooms picked for this event — shared between the location-field
+  // popover and the SA's Rooms section so picking in either place
+  // reflects in both. The location field stores the room *name* (it's a
+  // free-text input), but we also track IDs here so SA can render rows
+  // for them in the availability grid.
+  const [pickedRoomIds, setPickedRoomIds] = useState<string[]>([])
   const locationWrapperRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!roomFinderOpen) return
@@ -904,6 +910,21 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
           organizer={currentUser ? { email: currentUser.email, name: currentUser.display_name ?? currentUser.email } : undefined}
           extraRooms={extraRooms}
           onCreateRoom={(room) => setExtraRooms((prev) => [...prev, room])}
+          pickedRoomIds={pickedRoomIds}
+          onPickedRoomsChange={(ids) => {
+            setPickedRoomIds(ids)
+            // Reflect the latest pick in the location field too — only
+            // overwrite if the field is empty or matches a known room
+            // name (so we don't clobber a custom typed location).
+            const known = new Set([...MOCK_ROOMS, ...extraRooms].map((r) => r.name))
+            const current = watch('location') ?? ''
+            if (!current || known.has(current)) {
+              const last = ids[ids.length - 1]
+              const r = [...MOCK_ROOMS, ...extraRooms].find((x) => x.id === last)
+              if (r) setValue('location', r.name)
+              else if (ids.length === 0) setValue('location', '')
+            }
+          }}
           onAddInvitee={(email, name) => {
             if (invitedAttendees.find((a) => a.email === email)) return
             setInvitedAttendees((prev) => [...prev, { email, name: name?.trim() || email }])
@@ -1224,6 +1245,9 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
                 extraRooms={extraRooms}
                 onSelect={(room) => {
                   setValue('location', room.name)
+                  // Sync into the SA Rooms list so flipping to SA shows
+                  // the picked room as a row + counts its availability.
+                  setPickedRoomIds((prev) => prev.includes(room.id) ? prev : [...prev, room.id])
                   setRoomFinderOpen(false)
                 }}
                 onBusy={(room) =>
