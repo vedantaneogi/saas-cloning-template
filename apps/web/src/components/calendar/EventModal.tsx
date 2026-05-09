@@ -886,6 +886,7 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
             if (!startVal || !endVal) return 30
             return Math.max(15, Math.round((new Date(endVal).getTime() - new Date(startVal).getTime()) / 60_000))
           })()}
+          invitedAttendees={invitedAttendees}
           onConfirm={(start, dur) => {
             applyMockSlot(start, dur)
             setActiveView('event')

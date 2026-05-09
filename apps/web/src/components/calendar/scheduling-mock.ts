@@ -111,3 +111,85 @@ export const AVATAR_COLOR: Record<MockAttendee['avatarColor'], string> = {
   green: '#107C10',
   orange: '#FF8C00',
 }
+
+const COLOR_KEYS: MockAttendee['avatarColor'][] = ['pink', 'purple', 'blue', 'green', 'orange']
+
+/** Stable-ish hash → number, used to deterministically pick a color or
+ *  seed mock availability so the same email always renders the same way. */
+function djb2(str: string): number {
+  let h = 5381
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0
+  return h
+}
+
+/** Pull initials out of a display name; falls back to email local-part. */
+function deriveInitials(name: string | undefined, email: string): string {
+  const source = (name && name.trim()) || email.split('@')[0]
+  const parts = source.split(/[\s._-]+/).filter(Boolean)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return source.slice(0, 2).toUpperCase()
+}
+
+/** Build a MockAttendee from a real invitee. Color + availability are
+ *  deterministic on email so the SA grid is stable across re-renders.
+ *  Generates 1–3 busy/tentative blocks within 1 PM–5 PM. */
+export function makeAttendeeFromEmail(
+  email: string,
+  name?: string,
+  type: 'required' | 'optional' = 'required',
+): MockAttendee {
+  const h = djb2(email)
+  const color = COLOR_KEYS[h % COLOR_KEYS.length]
+  // Deterministic 1–2 busy + 0–1 tentative blocks, snapped to 5-min ticks.
+  const blocks: { start: string; end: string; status: 'busy' | 'tentative' }[] = []
+  // First busy block — somewhere in 1–3 PM
+  const b1Start = 13 * 60 + ((h >> 1) % 24) * 5
+  const b1Dur = 15 + ((h >> 5) % 4) * 10
+  blocks.push({
+    start: minutesToHHMM(b1Start),
+    end: minutesToHHMM(b1Start + b1Dur),
+    status: 'busy',
+  })
+  // Second busy block — somewhere in 3–5 PM (skip if hash bit 12 set)
+  if ((h & (1 << 12)) === 0) {
+    const b2Start = 15 * 60 + ((h >> 7) % 24) * 5
+    const b2Dur = 20 + ((h >> 9) % 4) * 10
+    blocks.push({
+      start: minutesToHHMM(b2Start),
+      end: minutesToHHMM(b2Start + b2Dur),
+      status: 'busy',
+    })
+  }
+  // Optional tentative — 50% based on hash bit
+  if ((h & (1 << 14)) !== 0) {
+    const tStart = 13 * 60 + 30 + ((h >> 11) % 36) * 5
+    const tDur = 20 + ((h >> 13) % 3) * 10
+    blocks.push({
+      start: minutesToHHMM(tStart),
+      end: minutesToHHMM(tStart + tDur),
+      status: 'tentative',
+    })
+  }
+  // Top-level status reflects the most-severe block.
+  const status: MockAttendee['status'] = blocks.some((b) => b.status === 'busy')
+    ? 'busy'
+    : blocks.some((b) => b.status === 'tentative')
+      ? 'tentative'
+      : 'available'
+  return {
+    id: `attendee-${email}`,
+    name: name?.trim() || email,
+    initials: deriveInitials(name, email),
+    email,
+    type,
+    status,
+    avatarColor: color,
+    availability: blocks.sort((a, b) => a.start.localeCompare(b.start)),
+  }
+}
+
+function minutesToHHMM(minutes: number): string {
+  const h = Math.max(SA_GRID_START_HOUR, Math.min(SA_GRID_END_HOUR, Math.floor(minutes / 60)))
+  const m = Math.max(0, Math.min(59, minutes % 60))
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}

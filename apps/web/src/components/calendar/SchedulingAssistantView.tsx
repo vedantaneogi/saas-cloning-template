@@ -7,6 +7,7 @@ import {
   MOCK_ATTENDEES,
   MOCK_ROOMS,
   AVATAR_COLOR,
+  makeAttendeeFromEmail,
   timeToMinutes,
   SA_GRID_START_HOUR,
   SA_GRID_END_HOUR,
@@ -20,6 +21,12 @@ interface SchedulingAssistantViewProps {
   initialStart?: string
   /** Initial duration in minutes. */
   initialDurationMinutes?: number
+  /** Real invitees from the parent form. When non-empty, these replace the
+   *  spec's static MOCK_ATTENDEES so the grid reflects the people the user
+   *  actually invited (with deterministic mock busy/tentative blocks per
+   *  email). When empty we fall back to the spec demo so the empty-state
+   *  is still recognisably Outlook-like. */
+  invitedAttendees?: { email: string; name?: string }[]
   /** Confirm — emits the chosen "HH:MM" start + minutes-duration. */
   onConfirm: (startHHMM: string, durationMinutes: number) => void
   /** Cancel — discard selection and return to event form. */
@@ -43,14 +50,21 @@ interface SchedulingAssistantViewProps {
 export function SchedulingAssistantView({
   initialStart = '15:00',
   initialDurationMinutes = 30,
+  invitedAttendees,
   onConfirm,
   onCancel,
 }: SchedulingAssistantViewProps) {
   const [selectedStart, setSelectedStart] = useState(initialStart)
   const [duration] = useState(initialDurationMinutes)
 
-  const required = MOCK_ATTENDEES.filter((a) => a.type === 'required')
-  const optional = MOCK_ATTENDEES.filter((a) => a.type === 'optional')
+  // If the parent invited real people, render them with deterministic mock
+  // availability. Otherwise show the spec's three demo attendees so the
+  // empty state still demonstrates the layout.
+  const liveAttendees: MockAttendee[] = (invitedAttendees && invitedAttendees.length > 0)
+    ? invitedAttendees.map((a) => makeAttendeeFromEmail(a.email, a.name, 'required'))
+    : MOCK_ATTENDEES
+  const required = liveAttendees.filter((a) => a.type === 'required')
+  const optional = liveAttendees.filter((a) => a.type === 'optional')
 
   const selectedStartMin = timeToMinutes(selectedStart)
   const selectedLeftPct = (selectedStartMin / SA_GRID_TOTAL_MINUTES) * 100
