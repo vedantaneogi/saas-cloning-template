@@ -1,17 +1,21 @@
 'use client'
 
 import { useState } from 'react'
-import { Building2, Users as UsersIcon } from 'lucide-react'
+import { Building2, Users as UsersIcon, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MOCK_ROOMS, type MockRoom } from './scheduling-mock'
 
 interface RoomFinderPopoverProps {
   /** Anchor input value — used to filter rooms by name. */
   query: string
+  /** Extra user-created rooms to display alongside the seeded MOCK_ROOMS. */
+  extraRooms?: MockRoom[]
   /** Choose an available room (parent fills the location field). */
   onSelect: (room: MockRoom) => void
   /** Show toast / inline warning when user clicks a busy room. */
   onBusy: (room: MockRoom) => void
+  /** Persist a newly-created room (parent appends to `extraRooms`). */
+  onCreateRoom?: (room: MockRoom) => void
   /** Open the "Browse all rooms" panel (full list). */
   onBrowseAll?: () => void
 }
@@ -22,14 +26,37 @@ interface RoomFinderPopoverProps {
  * footer link. Available rooms select on click; busy rooms call onBusy
  * which the parent typically maps to a toast.
  */
-export function RoomFinderPopover({ query, onSelect, onBusy, onBrowseAll }: RoomFinderPopoverProps) {
+export function RoomFinderPopover({ query, extraRooms = [], onSelect, onBusy, onCreateRoom, onBrowseAll }: RoomFinderPopoverProps) {
   const [browseOpen, setBrowseOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newLocation, setNewLocation] = useState('')
+  const [newCapacity, setNewCapacity] = useState('6')
+  const allRooms = [...MOCK_ROOMS, ...extraRooms]
   const term = query.trim().toLowerCase()
   const filtered = term
-    ? MOCK_ROOMS.filter((r) => r.name.toLowerCase().includes(term) || r.location.toLowerCase().includes(term))
-    : MOCK_ROOMS
+    ? allRooms.filter((r) => r.name.toLowerCase().includes(term) || r.location.toLowerCase().includes(term))
+    : allRooms
 
-  const list = browseOpen ? MOCK_ROOMS : filtered
+  const list = browseOpen ? allRooms : filtered
+
+  const submitCreate = () => {
+    const name = newName.trim()
+    if (!name) return
+    const room: MockRoom = {
+      id: `user-room-${Date.now()}`,
+      name,
+      location: newLocation.trim() || 'Custom room',
+      capacity: Math.max(1, Number(newCapacity) || 6),
+      status: 'available',
+    }
+    onCreateRoom?.(room)
+    onSelect(room)
+    setCreating(false)
+    setNewName('')
+    setNewLocation('')
+    setNewCapacity('6')
+  }
   return (
     <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg">
       <p className="px-3 py-2 text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide border-b border-[#EDEBE9]">
@@ -70,7 +97,7 @@ export function RoomFinderPopover({ query, onSelect, onBusy, onBrowseAll }: Room
           })}
         </ul>
       )}
-      <div className="px-3 py-2 border-t border-[#EDEBE9]">
+      <div className="px-3 py-2 border-t border-[#EDEBE9] space-y-2">
         <button
           type="button"
           onClick={() => {
@@ -81,6 +108,62 @@ export function RoomFinderPopover({ query, onSelect, onBusy, onBrowseAll }: Room
         >
           {browseOpen ? 'Show suggested only' : 'Browse all rooms'}
         </button>
+        {onCreateRoom && !creating && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="w-full text-left text-xs text-[#0078D4] hover:underline flex items-center gap-1"
+          >
+            <Plus size={12} /> Create new room
+          </button>
+        )}
+        {onCreateRoom && creating && (
+          <div className="space-y-1.5 pt-1 border-t border-[#EDEBE9]" onClick={(e) => e.stopPropagation()}>
+            <input
+              autoFocus
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitCreate() } if (e.key === 'Escape') setCreating(false) }}
+              placeholder="Room name"
+              className="w-full text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]"
+            />
+            <input
+              type="text"
+              value={newLocation}
+              onChange={(e) => setNewLocation(e.target.value)}
+              placeholder="Building, Floor (optional)"
+              className="w-full text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]"
+            />
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-[#605E5C] flex-shrink-0">Capacity</label>
+              <input
+                type="number"
+                min={1}
+                value={newCapacity}
+                onChange={(e) => setNewCapacity(e.target.value)}
+                className="flex-1 text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={submitCreate}
+                disabled={!newName.trim()}
+                className="text-xs bg-[#0078D4] text-white px-3 py-1 rounded hover:bg-[#106EBE] disabled:opacity-50"
+              >
+                Create
+              </button>
+              <button
+                type="button"
+                onClick={() => { setCreating(false); setNewName(''); setNewLocation(''); setNewCapacity('6') }}
+                className="text-xs text-[#605E5C] hover:text-[#323130] px-2 py-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

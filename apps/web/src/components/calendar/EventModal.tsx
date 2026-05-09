@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { SchedulingAssistantView } from './SchedulingAssistantView'
 import { FindATimePane } from './FindATimePane'
 import { RoomFinderPopover } from './RoomFinderPopover'
+import type { MockRoom } from './scheduling-mock'
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -436,6 +437,10 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
   // itself now uses RoomFinderPopover with the shared mock dataset.
   const [roomFinderOpen, setRoomFinderOpen] = useState(false)
   const [roomQuery, setRoomQuery] = useState('')
+  // User-created rooms (session-only) — added via the popover's "Create
+  // new room" form. Displayed alongside MOCK_ROOMS in both the popover
+  // and the SA add-room picker.
+  const [extraRooms, setExtraRooms] = useState<MockRoom[]>([])
   const locationWrapperRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!roomFinderOpen) return
@@ -897,6 +902,8 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
           initialDate={startVal ? new Date(startVal) : undefined}
           invitedAttendees={invitedAttendees}
           organizer={currentUser ? { email: currentUser.email, name: currentUser.display_name ?? currentUser.email } : undefined}
+          extraRooms={extraRooms}
+          onCreateRoom={(room) => setExtraRooms((prev) => [...prev, room])}
           onAddInvitee={(email, name) => {
             if (invitedAttendees.find((a) => a.email === email)) return
             setInvitedAttendees((prev) => [...prev, { email, name: name?.trim() || email }])
@@ -1214,6 +1221,7 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
             {roomFinderOpen && (
               <RoomFinderPopover
                 query={watch('location') ?? ''}
+                extraRooms={extraRooms}
                 onSelect={(room) => {
                   setValue('location', room.name)
                   setRoomFinderOpen(false)
@@ -1221,6 +1229,7 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
                 onBusy={(room) =>
                   showNotificationToast(`${room.name} is busy at the selected time.`)
                 }
+                onCreateRoom={(room) => setExtraRooms((prev) => [...prev, room])}
               />
             )}
           </div>

@@ -5,7 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, X as XIcon, Plus, Building2, Users as UsersIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
-import { events } from '@/lib/api'
+import { events, contacts } from '@/lib/api'
+import type { Contact } from '@/lib/api'
 import {
   MOCK_ROOMS,
   AVATAR_COLOR,
@@ -40,6 +41,11 @@ interface SchedulingAssistantViewProps {
   onAddInvitee?: (email: string, name?: string) => void
   /** Remove an invitee from the parent's list. */
   onRemoveInvitee?: (email: string) => void
+  /** User-created rooms (session-only) — shown alongside MOCK_ROOMS in the
+   *  Rooms add-picker. */
+  extraRooms?: MockRoom[]
+  /** Persist a newly-created room (e.g. quick-add inline). */
+  onCreateRoom?: (room: MockRoom) => void
   /** Confirm — emits the chosen date + "HH:MM" start + minutes-duration. */
   onConfirm: (date: Date, startHHMM: string, durationMinutes: number) => void
   /** Cancel — discard selection and return to event form. */
@@ -72,6 +78,8 @@ export function SchedulingAssistantView({
   initialDate,
   invitedAttendees = [],
   organizer,
+  extraRooms = [],
+  onCreateRoom,
   onAddInvitee,
   onRemoveInvitee,
   onConfirm,
@@ -89,11 +97,10 @@ export function SchedulingAssistantView({
   // Independent from the form's location field; SA grid is preview-only.
   const [pickedRoomIds, setPickedRoomIds] = useState<string[]>([])
 
-  // Inline + Add editors
+  // Inline + Add editors (open/close state only — Section manages email +
+  // contact suggestions internally)
   const [addReqOpen, setAddReqOpen] = useState(false)
   const [addOptOpen, setAddOptOpen] = useState(false)
-  const [addReqEmail, setAddReqEmail] = useState('')
-  const [addOptEmail, setAddOptEmail] = useState('')
   const [addRoomOpen, setAddRoomOpen] = useState(false)
   const addRoomRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -230,10 +237,10 @@ export function SchedulingAssistantView({
     })
   }
 
-  const submitAddInvitee = (email: string, asOptional: boolean) => {
+  const submitAddInvitee = (email: string, name: string | undefined, asOptional: boolean) => {
     const trimmed = email.trim()
     if (!trimmed || !trimmed.includes('@')) return
-    onAddInvitee?.(trimmed)
+    onAddInvitee?.(trimmed, name)
     if (asOptional) {
       setOptionalEmails((prev) => new Set(prev).add(trimmed))
     }
@@ -382,13 +389,8 @@ export function SchedulingAssistantView({
             nonRemovableEmail={organizer?.email}
             addOpen={addReqOpen}
             setAddOpen={setAddReqOpen}
-            addEmail={addReqEmail}
-            setAddEmail={setAddReqEmail}
-            onSubmitAdd={() => {
-              submitAddInvitee(addReqEmail, false)
-              setAddReqEmail('')
-              setAddReqOpen(false)
-            }}
+            onAdd={(email, name, asOpt) => submitAddInvitee(email, name, asOpt)}
+            asOptional={false}
             addLabel="Add required attendee"
             emptyLabel="None added"
           />
@@ -398,13 +400,8 @@ export function SchedulingAssistantView({
             onRemove={removeAttendee}
             addOpen={addOptOpen}
             setAddOpen={setAddOptOpen}
-            addEmail={addOptEmail}
-            setAddEmail={setAddOptEmail}
-            onSubmitAdd={() => {
-              submitAddInvitee(addOptEmail, true)
-              setAddOptEmail('')
-              setAddOptOpen(false)
-            }}
+            onAdd={(email, name, asOpt) => submitAddInvitee(email, name, asOpt)}
+            asOptional={true}
             addLabel="Add optional attendee"
             emptyLabel="None added"
           />
@@ -414,7 +411,8 @@ export function SchedulingAssistantView({
             addOpen={addRoomOpen}
             setAddOpen={setAddRoomOpen}
             anchorRef={addRoomRef}
-            availableRooms={MOCK_ROOMS.filter((r) => r.status === 'available' && !pickedRoomIds.includes(r.id))}
+            availableRooms={[...MOCK_ROOMS, ...extraRooms].filter((r) => r.status === 'available' && !pickedRoomIds.includes(r.id))}
+            onCreateRoom={onCreateRoom}
             onPick={(r) => { setPickedRoomIds((prev) => [...prev, r.id]); setAddRoomOpen(false) }}
           />
         </aside>
@@ -525,11 +523,10 @@ function Section({
   nonRemovableEmail,
   addOpen,
   setAddOpen,
-  addEmail,
-  setAddEmail,
-  onSubmitAdd,
+  onAdd,
   addLabel,
   emptyLabel,
+  asOptional = false,
 }: {
   title: string
   attendees: MockAttendee[]
@@ -537,13 +534,50 @@ function Section({
   nonRemovableEmail?: string
   addOpen: boolean
   setAddOpen: (v: boolean) => void
-  addEmail: string
-  setAddEmail: (v: string) => void
-  onSubmitAdd: () => void
+  /** Called when the user submits an entry (typed email or picked contact). */
+  onAdd: (email: string, name: string | undefined, asOptional: boolean) => void
   addLabel: string
   emptyLabel?: string
+  asOptional?: boolean
 }) {
   const lockedEmail = (nonRemovableEmail || '').toLowerCase()
+  const [draftEmail, setDraftEmail] = useState('')
+  const [draftName, setDraftName] = useState<string | undefined>(undefined)
+  const [suggestions, setSuggestions] = useState<Contact[]>([])
+  const [suggOpen, setSuggOpen] = useState(false)
+  const [suggIndex, setSuggIndex] = useState(0)
+  const suggDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suggBoxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!addOpen) {
+      setDraftEmail(''); setDraftName(undefined); setSuggestions([]); setSuggOpen(false)
+    }
+  }, [addOpen])
+
+  const queryContacts = (q: string) => {
+    if (suggDebounceRef.current) clearTimeout(suggDebounceRef.current)
+    if (q.trim().length < 2) {
+      setSuggestions([]); setSuggOpen(false); return
+    }
+    suggDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await contacts.autocomplete(q.trim())
+        setSuggestions(res.slice(0, 6))
+        setSuggOpen(res.length > 0)
+        setSuggIndex(0)
+      } catch {
+        setSuggestions([]); setSuggOpen(false)
+      }
+    }, 200)
+  }
+
+  const submit = (email?: string, name?: string) => {
+    const e = (email ?? draftEmail).trim()
+    if (!e || !e.includes('@')) return
+    onAdd(e, name ?? draftName, asOptional)
+    setDraftEmail(''); setDraftName(undefined); setSuggestions([]); setSuggOpen(false); setAddOpen(false)
+  }
   return (
     <div className="px-3 py-2 border-b border-[#EDEBE9]">
       <p className="text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide mb-1.5">{title}</p>
@@ -576,37 +610,69 @@ function Section({
       ))}
 
       {addOpen ? (
-        <div className="mt-1.5 flex items-center gap-1">
-          <input
-            type="email"
-            autoFocus
-            value={addEmail}
-            onChange={(e) => setAddEmail(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                onSubmitAdd()
-              }
-              if (e.key === 'Escape') setAddOpen(false)
-            }}
-            placeholder="email@example.com"
-            className="flex-1 text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]"
-          />
-          <button
-            type="button"
-            onClick={onSubmitAdd}
-            className="text-xs bg-[#0078D4] text-white px-2 py-1 rounded hover:bg-[#106EBE]"
-          >
-            Add
-          </button>
-          <button
-            type="button"
-            onClick={() => setAddOpen(false)}
-            aria-label="Cancel add"
-            className="text-[#605E5C] hover:text-[#323130] p-1"
-          >
-            <XIcon size={11} />
-          </button>
+        <div className="mt-1.5 relative">
+          <div className="flex items-center gap-1">
+            <input
+              type="email"
+              autoFocus
+              value={draftEmail}
+              onChange={(e) => {
+                const v = e.target.value
+                setDraftEmail(v)
+                setDraftName(undefined)  // typing clears any prior contact pick
+                queryContacts(v)
+              }}
+              onKeyDown={(e) => {
+                if (suggOpen && suggestions.length > 0) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setSuggIndex((i) => (i + 1) % suggestions.length); return }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); setSuggIndex((i) => (i + suggestions.length - 1) % suggestions.length); return }
+                  if (e.key === 'Enter') { e.preventDefault(); const c = suggestions[suggIndex]; submit(c.email, c.display_name); return }
+                }
+                if (e.key === 'Enter') { e.preventDefault(); submit(); return }
+                if (e.key === 'Escape') { setAddOpen(false); return }
+              }}
+              placeholder="Type a name or email"
+              className="flex-1 text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]"
+            />
+            <button
+              type="button"
+              onClick={() => submit()}
+              className="text-xs bg-[#0078D4] text-white px-2 py-1 rounded hover:bg-[#106EBE]"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddOpen(false)}
+              aria-label="Cancel add"
+              className="text-[#605E5C] hover:text-[#323130] p-1"
+            >
+              <XIcon size={11} />
+            </button>
+          </div>
+          {suggOpen && suggestions.length > 0 && (
+            <div ref={suggBoxRef} className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 max-h-56 overflow-y-auto outlook-scrollbar">
+              {suggestions.map((c, i) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); submit(c.email, c.display_name) }}
+                  className={cn(
+                    'w-full text-left px-3 py-1.5 flex items-center gap-2',
+                    i === suggIndex ? 'bg-[#EBF3FB]' : 'hover:bg-[#F3F2F1]',
+                  )}
+                >
+                  <span className="w-6 h-6 rounded-full bg-[#0078D4] text-white text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
+                    {(c.display_name || c.email).slice(0, 2).toUpperCase()}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-[#323130] truncate">{c.display_name || c.email}</p>
+                    <p className="text-[10px] text-[#605E5C] truncate">{c.email}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <button
@@ -629,6 +695,7 @@ function RoomSection({
   anchorRef,
   availableRooms,
   onPick,
+  onCreateRoom,
 }: {
   rooms: MockRoom[]
   onRemove: (roomId: string) => void
@@ -637,7 +704,27 @@ function RoomSection({
   anchorRef: React.RefObject<HTMLDivElement | null>
   availableRooms: MockRoom[]
   onPick: (r: MockRoom) => void
+  onCreateRoom?: (room: MockRoom) => void
 }) {
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newLocation, setNewLocation] = useState('')
+  const [newCapacity, setNewCapacity] = useState('6')
+  const submitCreate = () => {
+    const name = newName.trim()
+    if (!name || !onCreateRoom) return
+    const room: MockRoom = {
+      id: `user-room-${Date.now()}`,
+      name,
+      location: newLocation.trim() || 'Custom room',
+      capacity: Math.max(1, Number(newCapacity) || 6),
+      status: 'available',
+    }
+    onCreateRoom(room)
+    onPick(room)
+    setCreating(false); setNewName(''); setNewLocation(''); setNewCapacity('6')
+    setAddOpen(false)
+  }
   return (
     <div className="px-3 py-2 border-b border-[#EDEBE9]" ref={anchorRef}>
       <p className="text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide mb-1.5">Rooms</p>
@@ -671,7 +758,7 @@ function RoomSection({
           <Plus size={11} /> Add a room
         </button>
         {addOpen && (
-          <div className="absolute left-0 top-full mt-1 w-56 z-30 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
+          <div className="absolute left-0 top-full mt-1 w-64 z-30 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
             {availableRooms.length === 0 ? (
               <p className="px-3 py-2 text-xs text-[#A19F9D] italic">No more rooms available.</p>
             ) : (
@@ -692,6 +779,50 @@ function RoomSection({
                   </span>
                 </button>
               ))
+            )}
+            {onCreateRoom && (
+              <div className="border-t border-[#EDEBE9] mt-1 pt-1 px-2 pb-2">
+                {!creating ? (
+                  <button
+                    type="button"
+                    onClick={() => setCreating(true)}
+                    className="w-full text-left text-xs text-[#0078D4] hover:underline flex items-center gap-1 px-1 py-1"
+                  >
+                    <Plus size={11} /> Create new room
+                  </button>
+                ) : (
+                  <div className="space-y-1.5">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitCreate() } if (e.key === 'Escape') setCreating(false) }}
+                      placeholder="Room name"
+                      className="w-full text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]"
+                    />
+                    <input
+                      type="text"
+                      value={newLocation}
+                      onChange={(e) => setNewLocation(e.target.value)}
+                      placeholder="Building, Floor (optional)"
+                      className="w-full text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]"
+                    />
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] text-[#605E5C] flex-shrink-0">Capacity</label>
+                      <input type="number" min={1} value={newCapacity}
+                        onChange={(e) => setNewCapacity(e.target.value)}
+                        className="flex-1 text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]" />
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={submitCreate} disabled={!newName.trim()}
+                        className="text-xs bg-[#0078D4] text-white px-3 py-1 rounded hover:bg-[#106EBE] disabled:opacity-50">Create</button>
+                      <button type="button" onClick={() => { setCreating(false); setNewName(''); setNewLocation(''); setNewCapacity('6') }}
+                        className="text-xs text-[#605E5C] hover:text-[#323130] px-2 py-1">Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
