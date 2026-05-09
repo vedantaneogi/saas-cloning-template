@@ -427,13 +427,32 @@ async def get_availability(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get free/busy info for attendees in a time range."""
-    emails = [e.strip() for e in attendee_emails.split(",")]
+    """Get free/busy info for each attendee in a time range.
+
+    For every email we look up the matching User and return THEIR busy /
+    tentative / OOO events that overlap the requested window. External
+    emails (no user record in this clone) return empty slots — Outlook
+    treats them as "no information available". Previously this endpoint
+    queried `current_user.id` for every email, which silently returned the
+    requester's own schedule for every attendee — so the SA grid showed
+    the same fake free/busy regardless of who you invited.
+    """
+    emails = [e.strip().lower() for e in attendee_emails.split(",") if e.strip()]
+    if not emails:
+        return []
+    users_q = await db.execute(select(User).where(User.email.in_(emails)))
+    user_by_email: dict[str, User] = {u.email.lower(): u for u in users_q.scalars().all()}
+
     result = []
     for email in emails:
+        user = user_by_email.get(email)
+        if user is None:
+            # External attendee — no calendar in this app, so no slots.
+            result.append({"attendee": email, "slots": []})
+            continue
         busy_slots_result = await db.execute(
             select(Event).where(
-                Event.user_id == current_user.id,
+                Event.user_id == user.id,
                 Event.start_time < end,
                 Event.end_time > start,
                 Event.status.in_(["busy", "tentative", "out_of_office"]),

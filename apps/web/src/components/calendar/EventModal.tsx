@@ -513,7 +513,10 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
       open={open}
       onClose={onClose}
       title={event ? 'Edit event' : 'New event'}
-      size="xl"
+      // Scheduling assistant grid needs more width than the form view; the
+      // 'full' size on the Modal component goes to 90vw / 90vh which is the
+      // closest match to the Outlook web SA dialog footprint.
+      size={activeView === 'scheduling_assistant' ? 'full' : 'xl'}
     >
       {/* Outlook-style toolbar ribbon */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8] flex-shrink-0">

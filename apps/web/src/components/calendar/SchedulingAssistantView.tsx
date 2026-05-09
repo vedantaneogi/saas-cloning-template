@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, X as XIcon, Plus, Building2, Users as UsersIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { events } from '@/lib/api'
 import {
   MOCK_ROOMS,
   AVATAR_COLOR,
@@ -106,19 +108,70 @@ export function SchedulingAssistantView({
     return () => document.removeEventListener('mousedown', h)
   }, [responseOpen])
 
-  // Render attendee rows from the parent's invited list — split into
-  // Required / Optional via the SA-local optionalEmails Set. When no
-  // attendees are added yet both sections show their empty state; no
-  // demo data is rendered.
+  // Fetch real availability for invited attendees from /events/availability.
+  // The endpoint returns busy/tentative/OOO slots per email for the day's
+  // window; we then filter to the SA grid range (1 PM–5 PM) and render
+  // each attendee's actual schedule. External emails (no user record in
+  // this clone) come back with empty slots = treated as "available".
   const dk = dateKey(selectedDate)
-  const liveAttendees: MockAttendee[] = invitedAttendees.map((a) =>
-    makeAttendeeFromEmail(
+  const dayStart = useMemo(() => {
+    const d = new Date(selectedDate); d.setHours(0, 0, 0, 0); return d
+  }, [selectedDate])
+  const dayEnd = useMemo(() => {
+    const d = new Date(selectedDate); d.setHours(23, 59, 59, 999); return d
+  }, [selectedDate])
+  const emailsKey = invitedAttendees.map((a) => a.email).sort().join(',')
+  const { data: availabilityData } = useQuery({
+    queryKey: ['sa-availability', emailsKey, dk],
+    queryFn: () =>
+      events.getAvailability(
+        invitedAttendees.map((a) => a.email),
+        dayStart.toISOString(),
+        dayEnd.toISOString(),
+      ),
+    enabled: invitedAttendees.length > 0,
+  })
+
+  /** Map a real /availability response to an HH:MM block list, clamped
+   *  to the visible grid window. Only `busy` and `tentative` render as
+   *  hatch blocks; `out_of_office` would render as gray (kept as `busy`
+   *  here for simplicity since the SA legend treats them similarly). */
+  const realBlocksFor = (email: string): { start: string; end: string; status: 'busy' | 'tentative' }[] => {
+    const row = (availabilityData ?? []).find((r) => r.attendee.toLowerCase() === email.toLowerCase())
+    if (!row) return []
+    const out: { start: string; end: string; status: 'busy' | 'tentative' }[] = []
+    for (const s of row.slots) {
+      const sd = new Date(s.start)
+      const ed = new Date(s.end)
+      // Clamp to selectedDate's grid window
+      const gridStart = new Date(selectedDate); gridStart.setHours(SA_GRID_START_HOUR, 0, 0, 0)
+      const gridEnd = new Date(selectedDate); gridEnd.setHours(SA_GRID_END_HOUR, 0, 0, 0)
+      const startMs = Math.max(sd.getTime(), gridStart.getTime())
+      const endMs = Math.min(ed.getTime(), gridEnd.getTime())
+      if (endMs <= startMs) continue
+      const startD = new Date(startMs)
+      const endD = new Date(endMs)
+      const fmt = (d: Date) =>
+        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      const status: 'busy' | 'tentative' = s.status === 'tentative' ? 'tentative' : 'busy'
+      out.push({ start: fmt(startD), end: fmt(endD), status })
+    }
+    return out
+  }
+
+  // Build attendee rows. Color + initials still come from the email-hash
+  // helper (so the same person looks the same across days), but the
+  // availability blocks are now the real schedule.
+  const liveAttendees: MockAttendee[] = invitedAttendees.map((a) => {
+    const base = makeAttendeeFromEmail(
       a.email,
       a.name,
       optionalEmails.has(a.email) ? 'optional' : 'required',
       dk,
-    ),
-  )
+    )
+    const realBlocks = realBlocksFor(a.email)
+    return { ...base, availability: realBlocks }
+  })
   const required = liveAttendees.filter((a) => a.type === 'required')
   const optional = liveAttendees.filter((a) => a.type === 'optional')
   const pickedRooms: MockRoom[] = pickedRoomIds
@@ -338,9 +391,10 @@ export function SchedulingAssistantView({
           />
         </aside>
 
-        {/* Right pane: timeline */}
+        {/* Right pane: timeline. Wider min-width so all five hour columns
+            fit comfortably without horizontal scroll on a typical modal. */}
         <div className="flex-1 min-w-0 overflow-x-auto outlook-scrollbar">
-          <div className="relative" style={{ minWidth: 600 }}>
+          <div className="relative" style={{ minWidth: 880 }}>
             {/* Date header — reflects selectedDate */}
             <div className="px-4 py-2 border-b border-[#EDEBE9] bg-white sticky top-0 z-10">
               <p className="text-xs font-semibold text-[#323130]">{format(selectedDate, 'EEEE, MMM d, yyyy')}</p>
