@@ -238,4 +238,28 @@
   .prose-outlook table { border-collapse: collapse; margin: 0.6rem 0; }
   .prose-outlook td, .prose-outlook th { border: 1px solid var(--border-primary); padding: 4px 8px; }
   .prose-outlook a { color: var(--accent); text-decoration: underline; }
+
+  /* Scheduling Assistant — diagonal hatch fills for busy/tentative blocks
+     in the availability grid. Outlook draws these as repeating stripes
+     over the row background. */
+  .sa-hatch-busy {
+    background-color: rgba(177, 70, 194, 0.22);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(177, 70, 194, 0.7) 0,
+      rgba(177, 70, 194, 0.7) 2px,
+      transparent 2px,
+      transparent 6px
+    );
+  }
+  .sa-hatch-tentative {
+    background-color: rgba(91, 141, 239, 0.18);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(91, 141, 239, 0.7) 0,
+      rgba(91, 141, 239, 0.7) 2px,
+      transparent 2px,
+      transparent 6px
+    );
+  }
 }

@@ -14,7 +14,11 @@ import { Input } from '@/components/ui/Input'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft, ChevronDown, Calendar as CalendarIcon, Tag } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
+import { SchedulingAssistantView } from './SchedulingAssistantView'
+import { FindATimePane } from './FindATimePane'
+import { RoomFinderPopover } from './RoomFinderPopover'
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -426,9 +430,23 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
     setInvitedAttendees((prev) => prev.filter((a) => a.email !== email))
   }
 
-  // Room finder
+  // Room finder — popover anchored to the location input (focus opens,
+  // outside click or selection closes). roomQuery / ROOMS / filteredRooms
+  // remain declared for backwards compat with stragglers but the popover
+  // itself now uses RoomFinderPopover with the shared mock dataset.
   const [roomFinderOpen, setRoomFinderOpen] = useState(false)
   const [roomQuery, setRoomQuery] = useState('')
+  const locationWrapperRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!roomFinderOpen) return
+    const handler = (e: MouseEvent) => {
+      if (locationWrapperRef.current && !locationWrapperRef.current.contains(e.target as Node)) {
+        setRoomFinderOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [roomFinderOpen])
 
   const ROOMS = [
     { id: 'r1', name: 'Boardroom A', building: 'HQ – Floor 3', capacity: 20, features: ['Projector', 'Video conf'] },
@@ -449,11 +467,36 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
       )
     : ROOMS
 
-  // Scheduling assistant
+  // Scheduling assistant — view switcher between the form and the
+  // full-screen SA layout (per scheduleassistanttask.md spec). The legacy
+  // inline `schedulerOpen` state is kept around for the older free/busy
+  // sub-block until that's retired in a future pass.
+  const [activeView, setActiveView] = useState<'event' | 'scheduling_assistant'>('event')
+  const [findATimeOpen, setFindATimeOpen] = useState(true)
   const [schedulerOpen, setSchedulerOpen] = useState(false)
   const startVal = watch('start_time')
   const endVal = watch('end_time')
   const attendeeEmails = attendees.map((a) => a.email).filter(Boolean)
+  const showNotificationToast = useUIStore((s) => s.showNotification)
+
+  // Helper — push an "HH:MM" start (mock-day = May 8 2026) into the form's
+  // start_time / end_time. Used by both the SA OK button and the Find-a-time
+  // suggested cards. End is start + 30 minutes by default.
+  const applyMockSlot = (startHHMM: string, durationMinutes = 30) => {
+    const [h, m] = startHHMM.split(':').map(Number)
+    // We anchor mock slots to the *event's existing date* (so picking a
+    // suggested time on Tue updates Tue, not the spec's hard-coded May 8).
+    const base = startVal ? new Date(startVal) : new Date()
+    base.setHours(h, m, 0, 0)
+    const end = new Date(base.getTime() + durationMinutes * 60_000)
+    setValue('start_time', formatDateTimeLocal(base))
+    setValue('end_time', formatDateTimeLocal(end))
+  }
+
+  // Selected suggested-slot start (HH:MM). Only meaningful when the user
+  // has explicitly picked a card; otherwise the recommended one is auto-
+  // highlighted by FindATimePane.
+  const [selectedSuggestedStart, setSelectedSuggestedStart] = useState<string | null>(null)
 
   const { data: availabilityData, refetch: fetchAvailability, isFetching: availabilityLoading } = useQuery({
     queryKey: ['availability', attendeeEmails, startVal, endVal],
@@ -492,6 +535,22 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
             Series
           </button>
         </div>
+        {/* Scheduling assistant view-switcher — toggles the modal body
+            between the event form and the dedicated SA grid view. */}
+        <button
+          type="button"
+          onClick={() => setActiveView('scheduling_assistant')}
+          aria-label="Scheduling assistant"
+          aria-pressed={activeView === 'scheduling_assistant'}
+          className={cn(
+            'flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors',
+            activeView === 'scheduling_assistant'
+              ? 'border-[#0078D4] text-[#0078D4] bg-[#EBF3FB]'
+              : 'border-[#EDEBE9] text-[#605E5C] hover:bg-[#F3F2F1]',
+          )}
+        >
+          <CalendarSearch size={12} /> Scheduling assistant
+        </button>
         <select
           className="text-xs border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] bg-white focus:outline-none"
           defaultValue="busy"
@@ -811,6 +870,29 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
         </div>
       )}
 
+      {/* Scheduling Assistant view — replaces the form body when active.
+          OK confirms the chosen "HH:MM" slot back into the form's start /
+          end times. Cancel just flips back to the event form. */}
+      {activeView === 'scheduling_assistant' ? (
+        <SchedulingAssistantView
+          initialStart={
+            (() => {
+              if (!startVal) return '15:00'
+              const d = new Date(startVal)
+              return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+            })()
+          }
+          initialDurationMinutes={(() => {
+            if (!startVal || !endVal) return 30
+            return Math.max(15, Math.round((new Date(endVal).getTime() - new Date(startVal).getTime()) / 60_000))
+          })()}
+          onConfirm={(start, dur) => {
+            applyMockSlot(start, dur)
+            setActiveView('event')
+          }}
+          onCancel={() => setActiveView('event')}
+        />
+      ) : (
       <div className="flex flex-1 overflow-hidden">
       <form
         onSubmit={handleSubmit(handleSaveClick)}
@@ -1093,97 +1175,30 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
           <span className="w-5 text-[#605E5C]">
             <MapPin size={16} />
           </span>
-          <div className="flex-1 relative">
+          <div ref={locationWrapperRef} className="flex-1 relative">
             <input
               type="text"
               placeholder="Search for a location"
               aria-label="Location"
+              onFocus={() => setRoomFinderOpen(true)}
               className="w-full text-sm border-0 border-b border-[#8A8886] px-0 py-1.5 focus:outline-none focus:border-b-2 focus:border-[#0078D4] text-[#323130] bg-transparent placeholder:text-[#A19F9D]"
               {...register('location')}
             />
             <MapPin size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-[#A19F9D]" />
-          </div>
-        </div>
-
-        {/* Room finder */}
-        <div className="flex items-start gap-3">
-          <span className="w-5 text-[#605E5C] pt-1">
-            <Building2 size={16} />
-          </span>
-          <div className="flex-1">
-            <button
-              type="button"
-              aria-label="Find a room"
-              aria-expanded={roomFinderOpen}
-              onClick={() => setRoomFinderOpen((v) => !v)}
-              className={cn(
-                'text-sm px-2 py-1 rounded border transition-colors flex items-center gap-1.5',
-                roomFinderOpen
-                  ? 'border-[#0078D4] text-[#0078D4] bg-[#EBF3FB]'
-                  : 'border-[#D2D0CE] text-[#605E5C] hover:bg-[#F3F2F1]'
-              )}
-            >
-              <Building2 size={13} /> Find a room
-            </button>
-
+            {/* Suggested-rooms popover anchored below the location input
+                (Outlook focus-to-open). Available rooms fill the field;
+                busy rooms emit a toast and stay unselected. */}
             {roomFinderOpen && (
-              <div className="mt-2 border border-[#EDEBE9] rounded overflow-hidden">
-                {/* Search */}
-                <div className="flex items-center gap-2 px-2 py-1.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
-                  <Search size={12} className="text-[#A19F9D] flex-shrink-0" />
-                  <input
-                    type="text"
-                    value={roomQuery}
-                    onChange={(e) => setRoomQuery(e.target.value)}
-                    placeholder="Search rooms…"
-                    aria-label="Search rooms"
-                    className="flex-1 text-xs text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent"
-                  />
-                  {roomQuery && (
-                    <button type="button" onClick={() => setRoomQuery('')} className="text-[#A19F9D] hover:text-[#323130]">
-                      <XIcon size={11} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Room list */}
-                <div className="max-h-48 overflow-y-auto outlook-scrollbar">
-                  {filteredRooms.length === 0 ? (
-                    <p className="text-xs text-[#A19F9D] px-3 py-3">No rooms match your search.</p>
-                  ) : (
-                    filteredRooms.map((room) => (
-                      <button
-                        key={room.id}
-                        type="button"
-                        aria-label={`Select ${room.name}`}
-                        onClick={() => {
-                          setValue('location', `${room.name}, ${room.building}`)
-                          setRoomFinderOpen(false)
-                          setRoomQuery('')
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-[#F3F2F1] transition-colors border-b border-[#EDEBE9] last:border-0"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-[#323130] truncate">{room.name}</p>
-                            <p className="text-xs text-[#605E5C] truncate">{room.building}</p>
-                          </div>
-                          <div className="flex-shrink-0 text-right">
-                            <p className="text-xs text-[#605E5C]">Cap. {room.capacity}</p>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {room.features.map((f) => (
-                            <span key={f} className="text-xs bg-[#EDEBE9] text-[#605E5C] px-1.5 py-0.5 rounded">
-                              {f}
-                            </span>
-                          ))}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
+              <RoomFinderPopover
+                query={watch('location') ?? ''}
+                onSelect={(room) => {
+                  setValue('location', room.name)
+                  setRoomFinderOpen(false)
+                }}
+                onBusy={(room) =>
+                  showNotificationToast(`${room.name} is busy at the selected time.`)
+                }
+              />
             )}
           </div>
         </div>
@@ -1455,6 +1470,20 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
         {/* Actions moved to toolbar ribbon above */}
       </form>
 
+      {/* Find a time — right-rail with suggested 30-min slots; shown when
+          the user has added at least one attendee. Closing it falls back
+          to the existing mini-day sidebar. */}
+      {findATimeOpen && attendeeEmails.length > 0 && (
+        <FindATimePane
+          selectedSlotStart={selectedSuggestedStart}
+          onSelectSlot={(start) => {
+            setSelectedSuggestedStart(start)
+            applyMockSlot(start, 30)
+          }}
+          onClose={() => setFindATimeOpen(false)}
+        />
+      )}
+
       {/* Mini day view sidebar — matches Outlook event modal */}
       <div className="w-56 flex-shrink-0 border-l border-[#EDEBE9] bg-white overflow-y-auto outlook-scrollbar hidden lg:block">
         <div className="px-3 py-2 border-b border-[#EDEBE9]">
@@ -1498,6 +1527,7 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
         </div>
       </div>
       </div>
+      )}
     </Modal>
   )
 }
