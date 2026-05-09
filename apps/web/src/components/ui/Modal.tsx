@@ -8,7 +8,7 @@ interface ModalProps {
   open: boolean
   onClose: () => void
   title?: string
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'
   children: React.ReactNode
   className?: string
 }
@@ -18,6 +18,9 @@ const sizes = {
   md: 'max-w-lg',
   lg: 'max-w-2xl',
   xl: 'max-w-4xl',
+  // 2xl bumps to ~1152px — used by the EventModal so the form + Find-a-time
+  // right-rail aren't squeezed against the mini-day sidebar.
+  '2xl': 'max-w-6xl',
   full: 'max-w-[90vw] max-h-[90vh]',
 }
 
