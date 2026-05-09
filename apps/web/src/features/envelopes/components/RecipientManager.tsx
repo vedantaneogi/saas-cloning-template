@@ -33,6 +33,7 @@ interface RecipientManagerProps {
 const ROLES = [
   { value: "signer", label: "Needs to Sign" },
   { value: "approver", label: "Needs to Approve" },
+  { value: "in_person", label: "In-Person Signer" },
   { value: "cc", label: "Receives a Copy" },
   { value: "viewer", label: "Needs to View" },
 ];

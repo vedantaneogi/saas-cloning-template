@@ -25,6 +25,7 @@ interface RecipientListProps {
 const ROLE_LABELS: Record<string, string> = {
   signer:            "Needs to Sign",
   approver:          "Needs to Approve",
+  in_person:         "In-Person Signer",
   cc:                "Receives a Copy",
   viewer:            "Needs to View",
 };
