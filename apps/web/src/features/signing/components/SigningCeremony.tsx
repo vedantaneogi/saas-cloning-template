@@ -2277,8 +2277,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
       {!isPostCompletion && !isCcOrViewer && (
         <FieldNavigator
           currentFieldIndex={currentNavIndex}
-          totalFields={myFields.filter((f) => isFieldVisible(f)).length}
-          completedCount={myFields.filter((f) => isFieldVisible(f) && !!fieldValues[f.id]).length}
+          totalFields={myRequiredFields.length}
+          completedCount={requiredCompletedCount}
           hasStarted={hasStarted}
           isComplete={isComplete}
           isFinishing={completeMutation.isPending}

@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import type { PlacedField, FieldType, EditorRecipient } from "../model/types";
 import { FIELD_LABELS } from "../model/types";
 import { cn } from "@/lib/utils";
+import { CheckSquare, RadioButton, PenNib, CaretDown, Stamp, Paperclip, ArrowDown, FileText, PencilSimple, Note } from "@phosphor-icons/react";
 
 // ── Floating Field Toolbar ────────────────────────────────────────────────────
 
@@ -246,34 +247,27 @@ const RESIZE_HANDLES: ResizeHandle[] = [
   { cursor: "w-resize", position: "top-1/2 left-0 -translate-x-1/2 -translate-y-1/2", xDir: -1, yDir: 0 },
 ];
 
-// Field type icons as SVG
+import { User, EnvelopeSimple, CalendarBlank, TextT, NumberSquareOne, Hash } from "@phosphor-icons/react";
+
 function FieldTypeIcon({ type, color }: { type: FieldType; color: string }) {
-  const iconProps = { fill: color, width: "16", height: "16", viewBox: "0 0 24 24" };
+  const s = 16;
+  const w = "bold" as const;
   switch (type) {
-    case "signature":
-      return <svg {...iconProps}><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>;
-    case "initial":
-      return <svg {...iconProps}><path d="M13 5.08V3h-2v2.08C7.61 5.57 5 8.47 5 12s2.61 6.43 6 6.92V21h2v-2.08c3.39-.49 6-3.39 6-6.92s-2.61-6.43-6-6.92zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>;
-    case "date_signed":
-      return <svg {...iconProps}><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" /></svg>;
-    case "text":
-      return <svg {...iconProps}><path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z" /></svg>;
-    case "checkbox":
-      return <svg {...iconProps}><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" /></svg>;
-    case "dropdown":
-      return <svg {...iconProps}><path d="M7 10l5 5 5-5z" /><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" /></svg>;
-    case "radio":
-      return <svg {...iconProps}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3-8c0 1.66-1.34 3-3 3s-3-1.34-3-3 1.34-3 3-3 3 1.34 3 3z" /></svg>;
-    case "name":
-    case "company":
-    case "title":
-      return <svg {...iconProps}><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>;
-    case "email":
-      return <svg {...iconProps}><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" /></svg>;
-    case "attachment":
-      return <svg {...iconProps}><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z" /></svg>;
-    default:
-      return <svg {...iconProps}><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" /></svg>;
+    case "signature": return <PenNib size={s} weight={w} color={color} />;
+    case "initial": return <PenNib size={s} weight={w} color={color} />;
+    case "date_signed": return <CalendarBlank size={s} weight={w} color={color} />;
+    case "text": return <TextT size={s} weight={w} color={color} />;
+    case "checkbox": return <CheckSquare size={s} weight={w} color={color} />;
+    case "dropdown": return <CaretDown size={s} weight={w} color={color} />;
+    case "radio": return <RadioButton size={s} weight={w} color={color} />;
+    case "name": case "company": case "title": return <User size={s} weight={w} color={color} />;
+    case "email": return <EnvelopeSimple size={s} weight={w} color={color} />;
+    case "number": return <Hash size={s} weight={w} color={color} />;
+    case "attachment": return <Paperclip size={s} weight={w} color={color} />;
+    case "stamp": return <Stamp size={s} weight={w} color={color} />;
+    case "note": return <Note size={s} weight={w} color={color} />;
+    case "drawing": return <PencilSimple size={s} weight={w} color={color} />;
+    default: return <FileText size={s} weight={w} color={color} />;
   }
 }
 
@@ -504,33 +498,54 @@ export function FieldOverlay({
           />
         )}
 
-        {/* Field content */}
-        {field.value && PREFILLABLE_TYPES.has(field.type) ? (
-          <div className="flex items-center gap-1 px-1.5 pointer-events-none overflow-hidden w-full">
-            <span
-              className="text-xs truncate italic"
-              style={{ color: "#9CA3AF", fontSize: "11px" }}
-            >
-              {field.value}
-            </span>
-            {field.required && (
-              <span className="text-red-500 text-xs leading-none flex-shrink-0 ml-auto">*</span>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 px-1 pointer-events-none overflow-hidden w-full justify-center">
-            <FieldTypeIcon type={field.type} color={recipientColor} />
-            <span
-              className="text-xs font-semibold truncate"
-              style={{ color: recipientColor, fontSize: "11px" }}
-            >
-              {FIELD_LABELS[field.type]}
-            </span>
-            {field.required && (
-              <span className="text-red-500 text-xs leading-none flex-shrink-0">*</span>
-            )}
-          </div>
-        )}
+        {/* Field content — Phosphor icons, bold weight */}
+        <div className="flex items-center gap-1 px-1.5 pointer-events-none overflow-hidden w-full justify-center">
+          {field.type === "checkbox" ? (
+            <CheckSquare size={16} weight="bold" color={recipientColor} />
+          ) : field.type === "radio" ? (
+            <RadioButton size={16} weight="bold" color={recipientColor} />
+          ) : field.type === "signature" || field.type === "initial" ? (
+            <>
+              <span style={{ fontSize: "11px", fontWeight: 600, color: recipientColor }}>{field.type === "initial" ? "Initial" : "Sign"}</span>
+              <PenNib size={14} weight="bold" color={recipientColor} />
+            </>
+          ) : field.type === "dropdown" ? (
+            <>
+              <span style={{ fontSize: "11px", color: recipientColor }}>Select</span>
+              <CaretDown size={10} weight="bold" color={recipientColor} />
+            </>
+          ) : field.type === "stamp" ? (
+            <Stamp size={22} weight="bold" color={recipientColor} />
+          ) : field.type === "attachment" ? (
+            <>
+              <ArrowDown size={14} weight="bold" color={recipientColor} />
+              <Paperclip size={14} weight="bold" color={recipientColor} />
+            </>
+          ) : field.type === "note" ? (
+            <>
+              <Note size={12} weight="bold" color={recipientColor} />
+              <span style={{ fontSize: "11px", color: recipientColor }}>Note</span>
+            </>
+          ) : field.type === "drawing" ? (
+            <>
+              <PencilSimple size={14} weight="bold" color={recipientColor} />
+              <span style={{ fontSize: "11px", fontWeight: 500, color: recipientColor }}>Drawing</span>
+            </>
+          ) : (
+            <>
+              {field.value && PREFILLABLE_TYPES.has(field.type) ? (
+                <span className="truncate italic" style={{ color: "#9CA3AF", fontSize: "11px" }}>{field.value}</span>
+              ) : (
+                <span className="truncate" style={{ fontSize: "11px", fontWeight: 500, color: recipientColor }}>
+                  {field.label || FIELD_LABELS[field.type]}
+                </span>
+              )}
+            </>
+          )}
+          {field.required && (
+            <span className="text-red-500 text-xs leading-none flex-shrink-0">*</span>
+          )}
+        </div>
 
         {/* Recipient label at top */}
         <div

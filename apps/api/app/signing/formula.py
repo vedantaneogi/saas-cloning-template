@@ -74,11 +74,18 @@ def _apply_date_functions(expr: str, values: dict[str, str]) -> str:
     Substitute date function calls with their computed results (as day-counts or date strings),
     then return the modified expression for arithmetic evaluation.
     """
+    def _resolve_arg(arg: str) -> str:
+        """Resolve [Label] references in function arguments."""
+        a = arg.strip()
+        if a.startswith("[") and a.endswith("]"):
+            return values.get(a[1:-1], a.strip('"\''))
+        return a.strip('"\'')
+
     # AddDays([Field], N) or AddDays("2024-01-01", N)
     def _add_days(m: re.Match) -> str:
         date_arg = m.group(1).strip()
-        n_arg = m.group(2).strip()
-        raw_date = values.get(date_arg.strip("[]"), date_arg.strip('"\''))
+        n_arg = _resolve_arg(m.group(2))
+        raw_date = _resolve_arg(date_arg)
         d = _parse_date(raw_date)
         if d is None:
             return "0"
@@ -89,9 +96,8 @@ def _apply_date_functions(expr: str, values: dict[str, str]) -> str:
             return "0"
 
     def _add_months(m: re.Match) -> str:
-        date_arg = m.group(1).strip()
-        n_arg = m.group(2).strip()
-        raw_date = values.get(date_arg.strip("[]"), date_arg.strip('"\''))
+        n_arg = _resolve_arg(m.group(2))
+        raw_date = _resolve_arg(m.group(1))
         d = _parse_date(raw_date)
         if d is None:
             return "0"
@@ -107,9 +113,8 @@ def _apply_date_functions(expr: str, values: dict[str, str]) -> str:
             return "0"
 
     def _add_years(m: re.Match) -> str:
-        date_arg = m.group(1).strip()
-        n_arg = m.group(2).strip()
-        raw_date = values.get(date_arg.strip("[]"), date_arg.strip('"\''))
+        n_arg = _resolve_arg(m.group(2))
+        raw_date = _resolve_arg(m.group(1))
         d = _parse_date(raw_date)
         if d is None:
             return "0"
@@ -120,29 +125,25 @@ def _apply_date_functions(expr: str, values: dict[str, str]) -> str:
             return "0"
 
     def _date_diff(m: re.Match) -> str:
-        d1_arg = m.group(1).strip()
-        d2_arg = m.group(2).strip()
-        raw1 = values.get(d1_arg.strip("[]"), d1_arg.strip('"\''))
-        raw2 = values.get(d2_arg.strip("[]"), d2_arg.strip('"\''))
+        raw1 = _resolve_arg(m.group(1))
+        raw2 = _resolve_arg(m.group(2))
         d1, d2 = _parse_date(raw1), _parse_date(raw2)
         if d1 is None or d2 is None:
             return "0"
         return str((d1 - d2).days)
 
     def _day(m: re.Match) -> str:
-        date_arg = m.group(1).strip()
-        raw_date = values.get(date_arg.strip("[]"), date_arg.strip('"\''))
+        raw_date = _resolve_arg(m.group(1))
         d = _parse_date(raw_date)
         return str(d.day) if d else "0"
 
     def _days(m: re.Match) -> str:
-        date_arg = m.group(1).strip()
-        raw_date = values.get(date_arg.strip("[]"), date_arg.strip('"\''))
+        raw_date = _resolve_arg(m.group(1))
         d = _parse_date(raw_date)
         if d is None:
             return "0"
-        # Days since epoch (Jan 1 1970)
-        return str((d - date(1970, 1, 1)).days)
+        import calendar
+        return str(calendar.monthrange(d.year, d.month)[1])
 
     def _today(m: re.Match) -> str:
         return date.today().isoformat()

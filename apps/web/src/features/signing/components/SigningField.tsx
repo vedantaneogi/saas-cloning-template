@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { PlacedField } from "@/features/editor/model/types";
 import { cn } from "@/lib/utils";
 import { Check } from "@phosphor-icons/react";
@@ -36,17 +36,7 @@ export function SigningField({
 }: SigningFieldProps) {
   const isCompleted = !!value;
 
-  // Payment field — auto-fill with "Payment pending - $XX.XX" on first render
-  // so the field counts as completed without requiring the signer to click anything.
-  useEffect(() => {
-    if (field.type === "payment" && isForRecipient && !value) {
-      const amountDollars = field.paymentAmount != null
-        ? (field.paymentAmount / 100).toFixed(2)
-        : "0.00";
-      onValueChange(field.id, `Payment completed - $${amountDollars}`);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field.id, field.type]);
+  // (Payment auto-fill removed — signer must click the field and acknowledge via modal)
 
   const posStyle: React.CSSProperties = inlinePositioned
     ? { width: "100%", height: "100%" }
@@ -511,107 +501,100 @@ export function SigningField({
     );
   }
 
-  // PAYMENT field — stub (no real payment processing)
+  // PAYMENT field — shows amount, click opens payment modal
   if (field.type === "payment") {
     const currency = field.paymentCurrency ?? "USD";
     const amountDollars = field.paymentAmount != null
       ? (field.paymentAmount / 100).toFixed(2)
       : "0.00";
-    const description = field.paymentDescription ?? "";
-    const isPending = !!value;
+    const isPaid = !!value;
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
 
     return (
-      <div
-        className={`${posClass} flex flex-col rounded overflow-hidden`}
-        style={{
-          ...posStyle,
-          background: isPending ? "rgba(0,184,81,0.06)" : "white",
-          border: `2px solid ${isPending ? "#00B851" : borderColor}`,
-          zIndex: isCurrentField ? 15 : 10,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-        }}
-      >
-        {/* Card header bar */}
+      <>
         <div
-          className="flex items-center gap-1.5 px-2 py-1 flex-shrink-0"
-          style={{ background: isPending ? "#00B851" : borderColor }}
+          className={`${posClass} flex items-center justify-center rounded cursor-pointer transition-all`}
+          style={{
+            ...posStyle,
+            background: isPaid ? "rgba(0,184,81,0.08)" : bgColor,
+            border: `2px solid ${isPaid ? "#00B851" : borderColor}`,
+            zIndex: isCurrentField ? 15 : 10,
+          }}
+          onClick={() => { if (!isPaid) setShowPaymentModal(true); }}
         >
-          <svg viewBox="0 0 24 24" fill="white" width="10" height="10">
-            <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" />
-          </svg>
-          <span style={{ fontSize: "9px", fontWeight: 700, color: "white", letterSpacing: "0.04em" }}>
-            {isPending ? "PAYMENT ACKNOWLEDGED" : "PAYMENT REQUIRED"}
+          <span style={{ fontSize: "clamp(10px, 1.2vw, 14px)", fontWeight: 600, color: isPaid ? "#00B851" : "#1B0A3C" }}>
+            ${amountDollars} {currency}
           </span>
+          {isPaid && (
+            <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "#00B851" }}>
+              <Check size={12} weight="bold" color="white" />
+            </div>
+          )}
         </div>
 
-        {/* Card body */}
-        <div className="flex flex-col items-center justify-center flex-1 px-2 py-1 gap-0.5">
-          {/* Amount */}
-          <span style={{ fontSize: "clamp(11px, 1.4vw, 16px)", fontWeight: 700, color: "#1B0A3C", lineHeight: 1.1 }}>
-            {currency} ${amountDollars}
-          </span>
+        {/* Payment modal */}
+        {showPaymentModal && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center pt-[3vh]" style={{ fontFamily: "'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif" }}>
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowPaymentModal(false)} />
+            <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-sm mx-4">
+              <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid #E5E7EB" }}>
+                <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#1B0A3C", margin: 0 }}>Payment</h3>
+                <button onClick={() => setShowPaymentModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: "18px" }}>&times;</button>
+              </div>
+              <div className="px-5 py-4">
+                <div className="flex justify-between mb-4">
+                  <span style={{ fontSize: "14px", color: "#6B7280" }}>Pay Now</span>
+                  <span style={{ fontSize: "14px", fontWeight: 600, color: "#1B0A3C" }}>Total ${amountDollars} {currency}</span>
+                </div>
 
-          {/* Description */}
-          {description && (
-            <span
-              className="text-center truncate w-full"
-              style={{ fontSize: "8px", color: "rgba(19,0,50,0.55)", lineHeight: 1.2 }}
-            >
-              {description}
-            </span>
-          )}
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#6B7280", marginBottom: "8px" }}>Payment Method</div>
+                <div className="flex gap-2 mb-4">
+                  <div className="flex-1 flex flex-col items-center gap-1 py-3 rounded" style={{ border: "2px solid #1B0A3C", background: "white" }}>
+                    <svg viewBox="0 0 24 24" fill="#1B0A3C" width="20" height="20"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" /></svg>
+                    <span style={{ fontSize: "10px", fontWeight: 600, color: "#1B0A3C" }}>CREDIT / DEBIT</span>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center gap-1 py-3 rounded" style={{ border: "1px solid #E5E7EB", background: "white", opacity: 0.5 }}>
+                    <svg viewBox="0 0 24 24" fill="#9CA3AF" width="20" height="20"><path d="M4 10v7h3v-7H4zm6 0v7h3v-7h-3zM2 22h19v-3H2v3zm14-12v7h3v-7h-3zm-4.5-9L2 6v2h19V6l-9.5-5z" /></svg>
+                    <span style={{ fontSize: "10px", fontWeight: 600, color: "#9CA3AF" }}>ACH TRANSFER</span>
+                  </div>
+                </div>
 
-          {/* Notice — shown only when not yet pending */}
-          {!isPending && (
-            <span
-              className="text-center"
-              style={{ fontSize: "7.5px", color: "rgba(19,0,50,0.45)", lineHeight: 1.3, marginTop: "1px" }}
-            >
-              Payment will be collected after signing
-            </span>
-          )}
+                <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Debit/Credit Card</div>
+                <input disabled placeholder="XXXX XXXX XXXX XXXX" style={{ width: "100%", border: "1px solid #E5E7EB", borderRadius: "6px", padding: "10px 12px", fontSize: "14px", color: "#9CA3AF", marginBottom: "12px", background: "#F9FAFB" }} />
 
-          {/* Disabled "Pay" button — stub */}
-          <button
-            disabled
-            className="flex items-center justify-center gap-1 w-full rounded mt-1"
-            style={{
-              background: isPending ? "#00B851" : "rgba(19,0,50,0.12)",
-              color: isPending ? "white" : "rgba(19,0,50,0.35)",
-              border: "none",
-              padding: "3px 6px",
-              fontSize: "9px",
-              fontWeight: 700,
-              cursor: "not-allowed",
-              opacity: isPending ? 1 : 0.7,
-            }}
-          >
-            {isPending ? (
-              <>
-                <Check size={8} weight="bold" />
-                Acknowledged
-              </>
-            ) : (
-              <>
-                <svg viewBox="0 0 24 24" fill="currentColor" width="8" height="8">
-                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
-                </svg>
-                Pay ${amountDollars}
-              </>
-            )}
-          </button>
-        </div>
+                <div className="flex gap-3 mb-4">
+                  <div className="flex-1">
+                    <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Expiration Date</div>
+                    <div className="flex gap-2">
+                      <input disabled placeholder="MM" style={{ width: "50%", border: "1px solid #E5E7EB", borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#9CA3AF", background: "#F9FAFB" }} />
+                      <input disabled placeholder="YYYY" style={{ width: "50%", border: "1px solid #E5E7EB", borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#9CA3AF", background: "#F9FAFB" }} />
+                    </div>
+                  </div>
+                  <div style={{ width: "40%" }}>
+                    <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Security Code</div>
+                    <input disabled placeholder="CVV" style={{ width: "100%", border: "1px solid #E5E7EB", borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#9CA3AF", background: "#F9FAFB" }} />
+                  </div>
+                </div>
 
-        {/* Completed checkmark badge */}
-        {isPending && (
-          <div
-            className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
-            style={{ background: "#00B851" }}
-          >
-            <Check size={12} weight="bold" color="white" />
+                <p style={{ fontSize: "11px", color: "#9CA3AF", lineHeight: 1.4, marginBottom: "12px" }}>
+                  Payment processing is not configured for this envelope. Click below to acknowledge the payment obligation.
+                </p>
+
+                <button
+                  className="w-full py-3 rounded text-sm font-bold text-white"
+                  style={{ background: "#00B851", border: "none", cursor: "pointer" }}
+                  onClick={() => {
+                    onValueChange(field.id, `Payment completed - $${amountDollars}`);
+                    setShowPaymentModal(false);
+                  }}
+                >
+                  PAY & FINISH
+                </button>
+              </div>
+            </div>
           </div>
         )}
-      </div>
+      </>
     );
   }
 

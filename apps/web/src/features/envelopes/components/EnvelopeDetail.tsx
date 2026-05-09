@@ -451,6 +451,7 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
                         Download Certificate
                       </button>
                     )}
+                    {currentUser && envelope.user_id === currentUser.id && (
                     <button
                       onClick={() => {
                         setTemplateName(envelope.subject);
@@ -465,6 +466,7 @@ export function EnvelopeDetail({ envelope }: EnvelopeDetailProps) {
                       <BookmarkSimple size={14} weight="bold" />
                       Save as Template
                     </button>
+                    )}
                     <button
                       onClick={() => { setShowDeleteConfirm(true); setShowMoreMenu(false); }}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors"
