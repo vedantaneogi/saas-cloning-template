@@ -6,8 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { events, calendars, contacts, categories as categoriesApi } from '@/lib/api'
-import type { Event, Contact, EventAttendee as EventAttendeeT, Category } from '@/lib/api'
+import { events, calendars, contacts, categories as categoriesApi, rooms as roomsApi } from '@/lib/api'
+import type { Event, Contact, EventAttendee as EventAttendeeT, Category, Room as ApiRoom } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -437,10 +437,47 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
   // itself now uses RoomFinderPopover with the shared mock dataset.
   const [roomFinderOpen, setRoomFinderOpen] = useState(false)
   const [roomQuery, setRoomQuery] = useState('')
-  // User-created rooms (session-only) — added via the popover's "Create
-  // new room" form. Displayed alongside MOCK_ROOMS in both the popover
-  // and the SA add-room picker.
-  const [extraRooms, setExtraRooms] = useState<MockRoom[]>([])
+  // Rooms now live in the DB. Fetch the directory + add a create-mutation
+  // wired into the inline "Create new room" forms; both surfaces consume
+  // the same `roomDirectory` so a newly-created room appears immediately
+  // in both places and survives a refresh.
+  const { data: roomDirectory = [] } = useQuery({
+    queryKey: ['rooms'],
+    queryFn: () => roomsApi.list(),
+  })
+  // Cast ApiRoom → MockRoom shape (just IDs/strings differ — both `id`
+  // are strings in transit). The MockRoom type is what the SA + popover
+  // already consume.
+  const allRoomsAsMock: MockRoom[] = roomDirectory.map((r) => ({
+    id: r.id,
+    name: r.name,
+    location: r.location ?? '',
+    capacity: r.capacity,
+    status: r.status,
+  }))
+  const createRoomMutation = useMutation({
+    mutationFn: (data: { name: string; location?: string; capacity?: number }) => roomsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+    },
+  })
+  /** Persist a newly-created room. Returns the saved Room (with the
+   *  DB-assigned UUID) so the caller can immediately select it without
+   *  waiting for the rooms query to refetch. */
+  const handleCreateRoom = async (room: MockRoom): Promise<MockRoom> => {
+    const saved = await createRoomMutation.mutateAsync({
+      name: room.name,
+      location: room.location,
+      capacity: room.capacity,
+    })
+    return {
+      id: saved.id,
+      name: saved.name,
+      location: saved.location ?? '',
+      capacity: saved.capacity,
+      status: saved.status,
+    }
+  }
   // Rooms picked for this event — shared between the location-field
   // popover and the SA's Rooms section so picking in either place
   // reflects in both. The location field stores the room *name* (it's a
@@ -908,19 +945,19 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
           initialDate={startVal ? new Date(startVal) : undefined}
           invitedAttendees={invitedAttendees}
           organizer={currentUser ? { email: currentUser.email, name: currentUser.display_name ?? currentUser.email } : undefined}
-          extraRooms={extraRooms}
-          onCreateRoom={(room) => setExtraRooms((prev) => [...prev, room])}
+          rooms={allRoomsAsMock}
+          onCreateRoom={handleCreateRoom}
           pickedRoomIds={pickedRoomIds}
           onPickedRoomsChange={(ids) => {
             setPickedRoomIds(ids)
             // Reflect the latest pick in the location field too — only
             // overwrite if the field is empty or matches a known room
             // name (so we don't clobber a custom typed location).
-            const known = new Set([...MOCK_ROOMS, ...extraRooms].map((r) => r.name))
+            const known = new Set(allRoomsAsMock.map((r) => r.name))
             const current = watch('location') ?? ''
             if (!current || known.has(current)) {
               const last = ids[ids.length - 1]
-              const r = [...MOCK_ROOMS, ...extraRooms].find((x) => x.id === last)
+              const r = allRoomsAsMock.find((x) => x.id === last)
               if (r) setValue('location', r.name)
               else if (ids.length === 0) setValue('location', '')
             }
@@ -1242,7 +1279,7 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
             {roomFinderOpen && (
               <RoomFinderPopover
                 query={watch('location') ?? ''}
-                extraRooms={extraRooms}
+                rooms={allRoomsAsMock}
                 onSelect={(room) => {
                   setValue('location', room.name)
                   // Sync into the SA Rooms list so flipping to SA shows
@@ -1253,7 +1290,7 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
                 onBusy={(room) =>
                   showNotificationToast(`${room.name} is busy at the selected time.`)
                 }
-                onCreateRoom={(room) => setExtraRooms((prev) => [...prev, room])}
+                onCreateRoom={handleCreateRoom}
               />
             )}
           </div>

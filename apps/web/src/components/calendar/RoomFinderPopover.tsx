@@ -3,19 +3,20 @@
 import { useState } from 'react'
 import { Building2, Users as UsersIcon, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MOCK_ROOMS, type MockRoom } from './scheduling-mock'
+import { type MockRoom } from './scheduling-mock'
 
 interface RoomFinderPopoverProps {
   /** Anchor input value — used to filter rooms by name. */
   query: string
-  /** Extra user-created rooms to display alongside the seeded MOCK_ROOMS. */
-  extraRooms?: MockRoom[]
+  /** Full room directory from the parent (DB-backed). */
+  rooms: MockRoom[]
   /** Choose an available room (parent fills the location field). */
   onSelect: (room: MockRoom) => void
   /** Show toast / inline warning when user clicks a busy room. */
   onBusy: (room: MockRoom) => void
-  /** Persist a newly-created room (parent appends to `extraRooms`). */
-  onCreateRoom?: (room: MockRoom) => void
+  /** Persist a newly-created room. Returns the saved Room (with DB-assigned
+   *  UUID) so the popover can immediately select it. */
+  onCreateRoom?: (room: MockRoom) => Promise<MockRoom> | void
   /** Open the "Browse all rooms" panel (full list). */
   onBrowseAll?: () => void
 }
@@ -26,32 +27,37 @@ interface RoomFinderPopoverProps {
  * footer link. Available rooms select on click; busy rooms call onBusy
  * which the parent typically maps to a toast.
  */
-export function RoomFinderPopover({ query, extraRooms = [], onSelect, onBusy, onCreateRoom, onBrowseAll }: RoomFinderPopoverProps) {
+export function RoomFinderPopover({ query, rooms, onSelect, onBusy, onCreateRoom, onBrowseAll }: RoomFinderPopoverProps) {
   const [browseOpen, setBrowseOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [newLocation, setNewLocation] = useState('')
   const [newCapacity, setNewCapacity] = useState('6')
-  const allRooms = [...MOCK_ROOMS, ...extraRooms]
   const term = query.trim().toLowerCase()
   const filtered = term
-    ? allRooms.filter((r) => r.name.toLowerCase().includes(term) || r.location.toLowerCase().includes(term))
-    : allRooms
+    ? rooms.filter((r) => r.name.toLowerCase().includes(term) || r.location.toLowerCase().includes(term))
+    : rooms
 
-  const list = browseOpen ? allRooms : filtered
+  const list = browseOpen ? rooms : filtered
 
-  const submitCreate = () => {
+  const submitCreate = async () => {
     const name = newName.trim()
     if (!name) return
-    const room: MockRoom = {
-      id: `user-room-${Date.now()}`,
+    const draft: MockRoom = {
+      id: `pending-${Date.now()}`,
       name,
       location: newLocation.trim() || 'Custom room',
       capacity: Math.max(1, Number(newCapacity) || 6),
       status: 'available',
     }
-    onCreateRoom?.(room)
-    onSelect(room)
+    // Wait for the parent to persist + return the saved room (with the
+    // real UUID) so subsequent selection / SA picks reference it.
+    let final = draft
+    if (onCreateRoom) {
+      const maybe = await onCreateRoom(draft)
+      if (maybe) final = maybe
+    }
+    onSelect(final)
     setCreating(false)
     setNewName('')
     setNewLocation('')

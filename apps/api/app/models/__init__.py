@@ -10,6 +10,7 @@ from app.models.rule import Rule
 from app.models.signature import Signature
 from app.models.quick_step import QuickStep
 from app.models.group import Group, GroupMember
+from app.models.room import Room
 
 __all__ = [
     "User",
@@ -31,4 +32,5 @@ __all__ = [
     "QuickStep",
     "Group",
     "GroupMember",
+    "Room",
 ]

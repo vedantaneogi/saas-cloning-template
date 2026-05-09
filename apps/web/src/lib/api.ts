@@ -579,6 +579,24 @@ export const messages = {
 
 // ─── Folders ──────────────────────────────────────────────────────────────────
 
+// ─── Rooms ────────────────────────────────────────────────────────────────────
+
+export interface Room {
+  id: string
+  name: string
+  location: string | null
+  capacity: number
+  status: 'available' | 'busy'
+  created_at: string
+  updated_at: string
+}
+
+export const rooms = {
+  list: () => request<Room[]>('/rooms'),
+  create: (data: { name: string; location?: string; capacity?: number; status?: 'available' | 'busy' }) =>
+    request<Room>('/rooms', { method: 'POST', body: JSON.stringify(data) }),
+}
+
 export const folders = {
   list: () => request<Folder[]>('/folders'),
 

@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils'
 import { events, contacts } from '@/lib/api'
 import type { Contact } from '@/lib/api'
 import {
-  MOCK_ROOMS,
   AVATAR_COLOR,
   makeAttendeeFromEmail,
   timeToMinutes,
@@ -41,11 +40,11 @@ interface SchedulingAssistantViewProps {
   onAddInvitee?: (email: string, name?: string) => void
   /** Remove an invitee from the parent's list. */
   onRemoveInvitee?: (email: string) => void
-  /** User-created rooms (session-only) — shown alongside MOCK_ROOMS in the
-   *  Rooms add-picker. */
-  extraRooms?: MockRoom[]
-  /** Persist a newly-created room (e.g. quick-add inline). */
-  onCreateRoom?: (room: MockRoom) => void
+  /** Full room directory (DB-backed). */
+  rooms?: MockRoom[]
+  /** Persist a newly-created room. Returns the saved Room (with real id)
+   *  so the SA can auto-pick it. */
+  onCreateRoom?: (room: MockRoom) => Promise<MockRoom> | void
   /** Currently picked room IDs (lifted to parent so the location-field
    *  selection and SA's Rooms list stay in sync). */
   pickedRoomIds?: string[]
@@ -83,7 +82,7 @@ export function SchedulingAssistantView({
   initialDate,
   invitedAttendees = [],
   organizer,
-  extraRooms = [],
+  rooms: roomDirectory = [],
   onCreateRoom,
   pickedRoomIds: pickedRoomIdsProp,
   onPickedRoomsChange,
@@ -221,9 +220,8 @@ export function SchedulingAssistantView({
   })
   const required = liveAttendees.filter((a) => a.type === 'required')
   const optional = liveAttendees.filter((a) => a.type === 'optional')
-  const allKnownRooms = [...MOCK_ROOMS, ...extraRooms]
   const pickedRooms: MockRoom[] = pickedRoomIds
-    .map((id) => allKnownRooms.find((r) => r.id === id))
+    .map((id) => roomDirectory.find((r) => r.id === id))
     .filter((r): r is MockRoom => !!r)
 
   const selectedStartMin = timeToMinutes(selectedStart)
@@ -425,7 +423,7 @@ export function SchedulingAssistantView({
             addOpen={addRoomOpen}
             setAddOpen={setAddRoomOpen}
             anchorRef={addRoomRef}
-            availableRooms={[...MOCK_ROOMS, ...extraRooms].filter((r) => r.status === 'available' && !pickedRoomIds.includes(r.id))}
+            availableRooms={roomDirectory.filter((r) => r.status === 'available' && !pickedRoomIds.includes(r.id))}
             onCreateRoom={onCreateRoom}
             onPick={(r) => { setPickedRoomIds((prev) => [...prev, r.id]); setAddRoomOpen(false) }}
           />
@@ -718,24 +716,26 @@ function RoomSection({
   anchorRef: React.RefObject<HTMLDivElement | null>
   availableRooms: MockRoom[]
   onPick: (r: MockRoom) => void
-  onCreateRoom?: (room: MockRoom) => void
+  onCreateRoom?: (room: MockRoom) => Promise<MockRoom> | void
 }) {
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [newLocation, setNewLocation] = useState('')
   const [newCapacity, setNewCapacity] = useState('6')
-  const submitCreate = () => {
+  const submitCreate = async () => {
     const name = newName.trim()
     if (!name || !onCreateRoom) return
-    const room: MockRoom = {
-      id: `user-room-${Date.now()}`,
+    const draft: MockRoom = {
+      id: `pending-${Date.now()}`,
       name,
       location: newLocation.trim() || 'Custom room',
       capacity: Math.max(1, Number(newCapacity) || 6),
       status: 'available',
     }
-    onCreateRoom(room)
-    onPick(room)
+    let final = draft
+    const maybe = await onCreateRoom(draft)
+    if (maybe) final = maybe
+    onPick(final)
     setCreating(false); setNewName(''); setNewLocation(''); setNewCapacity('6')
     setAddOpen(false)
   }
