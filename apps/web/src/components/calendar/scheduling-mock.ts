@@ -92,10 +92,17 @@ export const MOCK_SUGGESTED_SLOTS: MockSuggestedSlot[] = [
   { id: 'slot-5', start: '16:30', end: '17:00', label: '4:30 PM - 5:00 PM', duration: '30 min', availableCount: 2 },
 ]
 
-/** Pixel grid: 1 PM → 5 PM = 4 hours = 240 minutes. */
-export const SA_GRID_START_HOUR = 13
-export const SA_GRID_END_HOUR = 17
+/** Full-day grid: 12 AM → 12 AM (24 hours). The SA view container is
+ *  horizontally scrollable, so users can scan the whole day; the working
+ *  hours band (8 AM–6 PM) is highlighted with a paler background. */
+export const SA_GRID_START_HOUR = 0
+export const SA_GRID_END_HOUR = 24
 export const SA_GRID_TOTAL_MINUTES = (SA_GRID_END_HOUR - SA_GRID_START_HOUR) * 60
+/** Working hours band — used to draw the lighter "available" tint behind
+ *  the rows; outside this range the row is a slightly darker non-working
+ *  background, matching the Outlook SA legend. */
+export const SA_WORKING_START_HOUR = 8
+export const SA_WORKING_END_HOUR = 18
 
 /** Convert an "HH:MM" string into minutes-since-grid-start. */
 export function timeToMinutes(hhmm: string): number {

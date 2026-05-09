@@ -14,9 +14,14 @@ import {
   SA_GRID_START_HOUR,
   SA_GRID_END_HOUR,
   SA_GRID_TOTAL_MINUTES,
+  SA_WORKING_START_HOUR,
+  SA_WORKING_END_HOUR,
   type MockAttendee,
   type MockRoom,
 } from './scheduling-mock'
+
+/** Pixel width per hour in the timeline. 24 × 70 = 1680px scrolling area. */
+const HOUR_PX = 70
 
 interface SchedulingAssistantViewProps {
   /** Initial start time in "HH:MM" format. */
@@ -391,10 +396,12 @@ export function SchedulingAssistantView({
           />
         </aside>
 
-        {/* Right pane: timeline. Wider min-width so all five hour columns
-            fit comfortably without horizontal scroll on a typical modal. */}
+        {/* Right pane: timeline. Full-day (12 AM – 12 AM) horizontally
+            scrollable. The container width grows with HOUR_PX so the
+            user can scan the whole day; working hours (8 AM–6 PM) get
+            a lighter background tint per the spec. */}
         <div className="flex-1 min-w-0 overflow-x-auto outlook-scrollbar">
-          <div className="relative" style={{ minWidth: 880 }}>
+          <div className="relative" style={{ minWidth: HOUR_PX * (SA_GRID_END_HOUR - SA_GRID_START_HOUR) }}>
             {/* Date header — reflects selectedDate */}
             <div className="px-4 py-2 border-b border-[#EDEBE9] bg-white sticky top-0 z-10">
               <p className="text-xs font-semibold text-[#323130]">{format(selectedDate, 'EEEE, MMM d, yyyy')}</p>
@@ -419,6 +426,16 @@ export function SchedulingAssistantView({
 
             {/* Grid rows + selected-slot overlay */}
             <div className="relative" onClick={handleGridClick}>
+              {/* Working-hours band — lighter tint behind rows during the
+                  configured working window so non-working hours read as
+                  grey by contrast (matches the Outlook SA legend). */}
+              <div
+                className="absolute top-0 bottom-0 bg-[#EAF7EA]/30 pointer-events-none"
+                style={{
+                  left: `${((SA_WORKING_START_HOUR - SA_GRID_START_HOUR) / (SA_GRID_END_HOUR - SA_GRID_START_HOUR)) * 100}%`,
+                  width: `${((SA_WORKING_END_HOUR - SA_WORKING_START_HOUR) / (SA_GRID_END_HOUR - SA_GRID_START_HOUR)) * 100}%`,
+                }}
+              />
               {/* Vertical hour gridlines */}
               <div className="absolute inset-0 pointer-events-none">
                 {Array.from({ length: SA_GRID_END_HOUR - SA_GRID_START_HOUR + 1 }, (_, i) => (
@@ -658,7 +675,7 @@ function RoomSection({
 function AttendeeRow({ row }: { row: MockAttendee | MockRoom }) {
   const availability = 'availability' in row ? row.availability : []
   return (
-    <div className="relative h-12 border-b border-[#EDEBE9] bg-[#EAF7EA]/40">
+    <div className="relative h-12 border-b border-[#EDEBE9]">
       {availability.map((slot, idx) => {
         const startMin = timeToMinutes(slot.start)
         const endMin = timeToMinutes(slot.end)
