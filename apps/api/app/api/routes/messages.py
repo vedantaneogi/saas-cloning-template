@@ -545,8 +545,17 @@ async def search_messages(
     total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
     total = total_result.scalar() or 0
 
+    # Eager-load attachments so the Files tab in the global search dropdown
+    # has something to render — Message.attachments is `lazy="noload"` to
+    # keep the inbox listing cheap, but search results need the rows so the
+    # client can group "files matching <query>" out of the same response.
     result = await db.execute(
-        select(Message).where(*filters).order_by(desc(Message.received_at)).distinct().limit(limit)
+        select(Message)
+        .where(*filters)
+        .order_by(desc(Message.received_at))
+        .options(selectinload(Message.attachments))
+        .distinct()
+        .limit(limit)
     )
     items = list(result.scalars().all())
 
