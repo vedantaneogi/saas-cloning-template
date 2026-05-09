@@ -226,6 +226,7 @@ export async function saveFields(envelopeId: string, fields: Field[]): Promise<F
 
     return {
       id,
+      frontend_id: rawId && !UUID_REGEX.test(rawId) ? rawId : undefined,
       type: f.type,
       document_id: documentId,
       recipient_id: recipientId,

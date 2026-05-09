@@ -942,8 +942,11 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
         return;
       }
     }
-    if (currentNavIndex < myFields.length - 1) {
-      const nextIdx = currentNavIndex + 1;
+    let nextIdx = currentNavIndex + 1;
+    while (nextIdx < myFields.length && !isFieldVisible(myFields[nextIdx])) {
+      nextIdx++;
+    }
+    if (nextIdx < myFields.length) {
       setCurrentNavIndex(nextIdx);
       scrollToField(myFields[nextIdx].id);
     }
@@ -1036,9 +1039,11 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
 
   const handleStart = useCallback(() => {
     setHasStarted(true);
-    if (myFields.length > 0) {
-      scrollToField(myFields[0].id);
-      setCurrentNavIndex(0);
+    // Find first visible field to navigate to
+    const firstVisibleIdx = myFields.findIndex((f) => isFieldVisible(f));
+    if (firstVisibleIdx >= 0) {
+      scrollToField(myFields[firstVisibleIdx].id);
+      setCurrentNavIndex(firstVisibleIdx);
     }
   }, [myFields, scrollToField]);
 
@@ -1096,17 +1101,26 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   const recipientRole = (recipientInfo?.role as string)?.toLowerCase() ?? "signer";
   const isCcOrViewer = recipientRole === "cc" || recipientRole === "viewer";
 
-  // Build per-document page info (moved up so handlePlaceField can use documents)
+  // Build global page map across ALL documents (same pattern as editor edit/page.tsx)
   const documents = envelope.documents ?? [];
+  let totalPageCount = 0;
+  const pageImageMap: Record<number, { docId: string; localPage: number }> = {};
+  for (const doc of documents) {
+    const docPages = doc.pageCount ?? 1;
+    for (let p = 1; p <= docPages; p++) {
+      totalPageCount++;
+      pageImageMap[totalPageCount] = { docId: doc.id, localPage: p };
+    }
+  }
+  const pageCount = Math.max(1, totalPageCount);
   const firstDocId = documents[0]?.id ?? null;
-  const pageCount = Math.max(1, documents[0]?.pageCount ?? 1);
 
   // Self-sign: place a field on the document
   const handlePlaceField = useCallback(async (pageNum: number, xPercent: number, yPercent: number, overrideType?: string, overrideLabel?: string) => {
     const fieldType = overrideType ?? selectedFieldType;
     const fieldLabel = overrideLabel ?? selectedFieldLabel;
     if (!fieldType) return;
-    const docId = documents[0]?.id;
+    const docId = pageImageMap[pageNum]?.docId ?? documents[0]?.id;
     if (!docId) return;
 
     const sizes: Record<string, { width: number; height: number }> = {
@@ -1174,7 +1188,7 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
   // Completed pages (pages that have all their required fields filled)
   const completedPages = new Set<number>();
   for (let p = 1; p <= pageCount; p++) {
-    const pageRequiredFields = myFields.filter((f) => f.page === p);
+    const pageRequiredFields = myFields.filter((f) => f.page === p && f.required && isFieldVisible(f));
     if (pageRequiredFields.length > 0 && pageRequiredFields.every((f) => !!fieldValues[f.id])) {
       completedPages.add(p);
     }
@@ -1540,9 +1554,9 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
                       }}
                     >
                       <div className="absolute inset-0" data-page-inner="true">
-                        {firstDocId ? (
+                        {pageImageMap[pageNum] ? (
                           <img
-                            src={`/api/signing/documents/${firstDocId}/pages/${pageNum}?token=${token}`}
+                            src={`/api/signing/documents/${pageImageMap[pageNum].docId}/pages/${pageImageMap[pageNum].localPage}?token=${token}`}
                             alt={`Page ${pageNum}`}
                             className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
                             draggable={false}
@@ -2263,8 +2277,8 @@ export function SigningCeremony({ token, envelope, recipientId, fields, accessCo
       {!isPostCompletion && !isCcOrViewer && (
         <FieldNavigator
           currentFieldIndex={currentNavIndex}
-          totalFields={myRequiredFields.length}
-          completedCount={requiredCompletedCount}
+          totalFields={myFields.filter((f) => isFieldVisible(f)).length}
+          completedCount={myFields.filter((f) => isFieldVisible(f) && !!fieldValues[f.id]).length}
           hasStarted={hasStarted}
           isComplete={isComplete}
           isFinishing={completeMutation.isPending}

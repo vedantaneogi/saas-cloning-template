@@ -176,6 +176,11 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
             status_code=status.HTTP_409_CONFLICT,
             detail="This recipient has already signed",
         )
+    if recipient.status == RecipientStatus.declined:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This recipient has declined signing",
+        )
     if recipient.status == RecipientStatus.pending:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -258,7 +263,7 @@ async def complete_signing(db: AsyncSession, token: str, ip_address: str | None,
             try:
                 from app.signing.formula import evaluate_formula
                 result = evaluate_formula(f.formula, label_to_value)
-                dp = f.decimal_places if f.decimal_places is not None else 2
+                dp = max(0, min(f.decimal_places or 2, 10))
                 try:
                     numeric = float(result)
                     f.value = f"{numeric:.{dp}f}"

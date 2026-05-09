@@ -397,9 +397,15 @@ const FORMULA_FUNCTIONS = [
   "DateDiff(",
   "Day(",
   "Days(",
+  "Today()",
+  "Now()",
   "Floor(",
   "Round(",
   "Abs(",
+  "min(",
+  "max(",
+  "sum(",
+  "average(",
   "if(",
 ];
 
@@ -487,7 +493,7 @@ function FormulaModal({ field, allFields, onClose, onSave }: FormulaModalProps) 
     const knownLabels = new Set(referenceable.map((r) => r.label?.toLowerCase()));
     const invalid = refs.filter((r) => !knownLabels.has(r.slice(1, -1).toLowerCase()));
     if (invalid.length > 0) return `Formula Error. Field${invalid.length > 1 ? "s" : ""} not found: ${invalid.join(", ")}`;
-    const cleaned = f.replace(/\[[^\]]+\]/g, "0").replace(/AddDays|AddMonths|AddYears|DateDiff|Day|Days|Floor|Round|Abs|if/gi, "").replace(/[0-9.+\-*/()%, >=<!]/g, "");
+    const cleaned = f.replace(/\[[^\]]+\]/g, "0").replace(/AddDays|AddMonths|AddYears|DateDiff|Day|Days|Today|Now|Floor|Round|Abs|min|max|sum|average|if/gi, "").replace(/[0-9.+\-*/()%, >=<!]/g, "");
     if (cleaned.trim()) return `Formula Error. Invalid characters: ${cleaned.trim()}`;
     return null;
   };
@@ -990,22 +996,20 @@ function FieldPropertiesPanel({ field, recipients, allFields, onBack, onUpdate, 
           </div>
         )}
 
-        {/* Data label for all types */}
-        {(isTextLike || isDateType || isDrawingOrSig) && (
-          <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
-            <label style={labelStyle}>Data label</label>
-            <input
-              type="text"
-              value={localLabel}
-              onChange={(e) => {
-                setLocalLabel(e.target.value);
-                debouncedUpdate({ label: e.target.value || undefined });
-              }}
-              placeholder={`e.g. ${FIELD_LABELS[field.type]} field`}
-              style={inputStyle}
-            />
-          </div>
-        )}
+        {/* Data label — shown for all field types */}
+        <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>
+          <label style={labelStyle}>Data label</label>
+          <input
+            type="text"
+            value={localLabel}
+            onChange={(e) => {
+              setLocalLabel(e.target.value);
+              debouncedUpdate({ label: e.target.value || undefined });
+            }}
+            placeholder={`e.g. ${FIELD_LABELS[field.type]} field`}
+            style={inputStyle}
+          />
+        </div>
 
         {/* Required toggle — shown for ALL field types */}
         <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid rgba(19,0,50,0.08)" }}>

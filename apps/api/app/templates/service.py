@@ -220,6 +220,11 @@ async def create_envelope_from_template(
             decimal_places=fc.get("decimal_places"),
             conditional_value=fc.get("conditional_value"),
             conditional_action=fc.get("conditional_action"),
+            options=fc.get("options"),
+            group_name=fc.get("group_name"),
+            payment_amount=fc.get("payment_amount"),
+            payment_currency=fc.get("payment_currency"),
+            payment_description=fc.get("payment_description"),
         )
         db.add(new_field)
         await db.flush()

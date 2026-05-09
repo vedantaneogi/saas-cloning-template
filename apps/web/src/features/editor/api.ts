@@ -70,7 +70,16 @@ export async function createField(
     required: (f.required as boolean) ?? true,
     label: f.label as string | undefined,
     value: f.value as string | undefined,
-    groupName: ((f as Record<string, unknown>).group_name ?? (f as Record<string, unknown>).groupName ?? undefined) as string | undefined,
+    groupName: (f.group_name ?? f.groupName) as string | undefined,
+    options: f.options as string[] | undefined,
+    formula: f.formula as string | undefined,
+    decimalPlaces: (f.decimal_places ?? f.decimalPlaces) as number | undefined,
+    conditionalOn: (f.conditional_on ?? f.conditionalOn) as string | undefined,
+    conditionalValue: (f.conditional_value ?? f.conditionalValue) as string | undefined,
+    conditionalAction: (f.conditional_action ?? f.conditionalAction) as "show" | "hide" | undefined,
+    paymentAmount: (f.payment_amount ?? f.paymentAmount) as number | undefined,
+    paymentCurrency: (f.payment_currency ?? f.paymentCurrency) as string | undefined,
+    paymentDescription: (f.payment_description ?? f.paymentDescription) as string | undefined,
   };
 }
 

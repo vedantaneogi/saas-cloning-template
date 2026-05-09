@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.envelopes.models import (
     EnvelopeStatus,
@@ -41,6 +41,7 @@ class FieldBulkItem(BaseModel):
     """A single field in a bulk-save payload (PUT /envelopes/{id}/fields)."""
 
     id: Optional[uuid.UUID] = None  # present for updates, absent for creates
+    frontend_id: Optional[str] = None  # temp client ID for conditional_on remapping
     document_id: uuid.UUID
     recipient_id: uuid.UUID
     type: FieldType
@@ -125,7 +126,7 @@ class RecipientCreate(BaseModel):
     name: str = ""
     email: str = ""
     role: RecipientRole = RecipientRole.signer
-    routing_order: int = 1
+    routing_order: int = Field(default=1, ge=1, le=100)
     access_code: Optional[str] = None
     private_message: Optional[str] = None
     template_role_label: Optional[str] = None
@@ -136,7 +137,7 @@ class RecipientUpdate(BaseModel):
     template_role_label: Optional[str] = None
     email: Optional[str] = None
     role: Optional[RecipientRole] = None
-    routing_order: Optional[int] = None
+    routing_order: Optional[int] = Field(default=None, ge=1, le=100)
     access_code: Optional[str] = None
     private_message: Optional[str] = None
 

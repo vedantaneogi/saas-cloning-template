@@ -56,6 +56,14 @@ interface RawSigningSession {
     label?: string;
     formula?: string;
     decimal_places?: number;
+    conditional_on?: string;
+    conditional_value?: string;
+    conditional_action?: string;
+    options?: string[];
+    group_name?: string;
+    payment_amount?: number;
+    payment_currency?: string;
+    payment_description?: string;
   }>;
   documents: Array<{
     id: string;

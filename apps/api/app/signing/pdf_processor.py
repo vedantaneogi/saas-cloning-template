@@ -591,12 +591,96 @@ def apply_fields_to_pdf(file_path: str, fields: list[dict[str, Any]]) -> bytes:
                 )
             elif field_type == "checkbox":
                 if value.lower() in ("true", "1", "yes", "checked"):
-                    # Draw checkmark
-                    page.draw_rect(rect, color=(0, 0, 0), width=1)
-                    p1 = fitz.Point(x + w * 0.2, y + h * 0.5)
-                    p2 = fitz.Point(x + w * 0.45, y + h * 0.75)
-                    p3 = fitz.Point(x + w * 0.8, y + h * 0.25)
-                    page.draw_polyline([p1, p2, p3], color=(0, 0.6, 0), width=2)
+                    size = min(w, h, 14)
+                    cx, cy = x + w / 2, y + h / 2
+                    cb_rect = fitz.Rect(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
+                    page.draw_rect(cb_rect, color=(0, 0, 0), width=0.8)
+                    p1 = fitz.Point(cb_rect.x0 + size * 0.2, cb_rect.y0 + size * 0.55)
+                    p2 = fitz.Point(cb_rect.x0 + size * 0.4, cb_rect.y0 + size * 0.78)
+                    p3 = fitz.Point(cb_rect.x0 + size * 0.8, cb_rect.y0 + size * 0.22)
+                    page.draw_polyline([p1, p2, p3], color=(0, 0.5, 0), width=1.5)
+            elif field_type == "payment":
+                page.insert_textbox(
+                    rect,
+                    value,
+                    fontsize=9,
+                    color=(0, 0.4, 0),
+                    align=0,
+                )
+            elif field_type == "attachment":
+                import os
+                from app.core.config import get_settings
+                upload_dir = get_settings().upload_dir
+                file_path = os.path.join(upload_dir, value) if value else ""
+                inserted = False
+                real_path = os.path.realpath(file_path) if file_path else ""
+                real_upload = os.path.realpath(upload_dir)
+                if file_path and not os.path.isabs(value) and ".." not in value and real_path.startswith(real_upload) and os.path.isfile(real_path):
+                    ext = os.path.splitext(file_path)[1].lower()
+                    if ext in (".png", ".jpg", ".jpeg", ".gif"):
+                        try:
+                            from PIL import Image as PILImage
+                            with PILImage.open(file_path) as img:
+                                iw, ih = img.size
+                            ratio = iw / ih
+                            fw, fh = rect.width, rect.height
+                            if fw / fh > ratio:
+                                new_w = fh * ratio
+                                img_rect = fitz.Rect(rect.x0, rect.y0, rect.x0 + new_w, rect.y1)
+                            else:
+                                new_h = fw / ratio
+                                img_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + new_h)
+                            page.insert_image(img_rect, filename=file_path)
+                            inserted = True
+                        except Exception:
+                            pass
+                if not inserted:
+                    display = value.split("/")[-1] if "/" in value else value
+                    page.insert_textbox(
+                        rect,
+                        f"[Attached: {display}]",
+                        fontsize=8,
+                        color=(0.3, 0.3, 0.3),
+                        align=0,
+                    )
+            elif field_type == "radio":
+                if value.lower() in ("selected", "true", "1"):
+                    size = min(w, h, 14)
+                    cx, cy = x + w / 2, y + h / 2
+                    page.draw_circle(fitz.Point(cx, cy), size / 2, color=(0, 0, 0), width=0.8)
+                    page.draw_circle(fitz.Point(cx, cy), size / 3, color=(0, 0, 0), fill=(0, 0, 0))
+            elif field_type == "formula":
+                page.insert_textbox(
+                    rect,
+                    value,
+                    fontsize=10,
+                    color=(0.2, 0.2, 0.5),
+                    align=0,
+                )
+            elif field_type in ("drawing",):
+                if value and value.startswith("data:image"):
+                    try:
+                        header, encoded = value.split(",", 1)
+                        img_bytes = base64.b64decode(encoded)
+                        page.insert_image(rect, stream=img_bytes, keep_proportion=True)
+                    except Exception:
+                        pass
+            elif field_type in ("approve", "stamp"):
+                page.insert_textbox(
+                    rect,
+                    value.upper(),
+                    fontsize=9,
+                    color=(0, 0.5, 0),
+                    align=1,
+                )
+            elif field_type == "decline":
+                page.insert_textbox(
+                    rect,
+                    value.upper(),
+                    fontsize=9,
+                    color=(0.8, 0, 0),
+                    align=1,
+                )
             else:
                 page.insert_textbox(
                     rect,

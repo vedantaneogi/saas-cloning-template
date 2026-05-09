@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 from typing import Optional
 
@@ -16,17 +17,17 @@ def _signing_email_html(
     private_message: Optional[str] = None,
 ) -> str:
     intro = "This is a reminder to review and sign" if is_reminder else "has requested your signature on"
-    greeting = f"Dear {recipient_name}," if recipient_name else "Hello,"
+    greeting = f"Dear {html.escape(recipient_name)}," if recipient_name else "Hello,"
     msg_block = (
         f'<p style="margin:0 0 16px;color:#555;font-size:14px;line-height:1.6;">'
-        f'<em>"{message}"</em></p>'
+        f'<em>"{html.escape(message)}"</em></p>'
         if message
         else ""
     )
     private_msg_block = (
         f'<div style="margin:0 0 20px;padding:12px 16px;background:#f5f0ff;border-left:3px solid #4c00ff;border-radius:4px;">'
-        f'<p style="margin:0 0 4px;font-size:11px;font-weight:600;color:#4c00ff;text-transform:uppercase;letter-spacing:0.5px;">Personal note from {sender_name}</p>'
-        f'<p style="margin:0;color:#333;font-size:14px;line-height:1.5;">{private_message}</p>'
+        f'<p style="margin:0 0 4px;font-size:11px;font-weight:600;color:#4c00ff;text-transform:uppercase;letter-spacing:0.5px;">Personal note from {html.escape(sender_name)}</p>'
+        f'<p style="margin:0;color:#333;font-size:14px;line-height:1.5;">{html.escape(private_message)}</p>'
         f'</div>'
         if private_message
         else ""
@@ -42,7 +43,14 @@ def _signing_email_html(
         <!-- Header -->
         <tr>
           <td style="background:#130032;padding:24px 32px;">
-            <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+            <table cellpadding="0" cellspacing="0" border="0"><tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIj4KICA8cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHJ4PSIzIiBmaWxsPSIjM0IxRkEzIi8+CiAgPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI2IiBoZWlnaHQ9IjI2IiByeD0iMyIgZmlsbD0iI0U4MzQyQSIvPgo8L3N2Zz4=" alt="DocuSign Clone" width="28" height="28" style="display:block;" />
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+              </td>
+            </tr></table>
           </td>
         </tr>
 
@@ -51,8 +59,8 @@ def _signing_email_html(
           <td style="padding:32px;">
             <p style="margin:0 0 20px;color:#130032;font-size:15px;">{greeting}</p>
             <p style="margin:0 0 20px;color:#333;font-size:15px;line-height:1.6;">
-              <strong>{sender_name}</strong> ({sender_email}) {intro}
-              <strong>"{subject}"</strong>.
+              <strong>{html.escape(sender_name)}</strong> ({html.escape(sender_email)}) {intro}
+              <strong>"{html.escape(subject)}"</strong>.
             </p>
             {msg_block}
             {private_msg_block}
@@ -158,7 +166,7 @@ def _completion_email_html(
     download_url: str,
     is_cc: bool = False,
 ) -> str:
-    greeting = f"Dear {owner_name}," if owner_name else "Hello,"
+    greeting = f"Dear {html.escape(owner_name)}," if owner_name else "Hello,"
     if is_cc:
         body_text = "A document you were copied on has been completed. You can view it at the link below."
         cta_label = "View Signed Document"
@@ -176,7 +184,14 @@ def _completion_email_html(
         <!-- Header -->
         <tr>
           <td style="background:#130032;padding:24px 32px;">
-            <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+            <table cellpadding="0" cellspacing="0" border="0"><tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIj4KICA8cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHJ4PSIzIiBmaWxsPSIjM0IxRkEzIi8+CiAgPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI2IiBoZWlnaHQ9IjI2IiByeD0iMyIgZmlsbD0iI0U4MzQyQSIvPgo8L3N2Zz4=" alt="DocuSign Clone" width="28" height="28" style="display:block;" />
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+              </td>
+            </tr></table>
           </td>
         </tr>
 
@@ -185,7 +200,7 @@ def _completion_email_html(
           <td style="padding:32px;">
             <p style="margin:0 0 20px;color:#130032;font-size:15px;">{greeting}</p>
             <p style="margin:0 0 20px;color:#333;font-size:15px;line-height:1.6;">
-              <strong>"{envelope_subject}"</strong> has been completed.
+              <strong>"{html.escape(envelope_subject)}"</strong> has been completed.
             </p>
             <p style="margin:0 0 28px;color:#555;font-size:14px;line-height:1.6;">
               {body_text}
@@ -234,7 +249,7 @@ def _declined_email_html(
     decliner_email: str,
     reason: Optional[str],
 ) -> str:
-    greeting = f"Dear {owner_name}," if owner_name else "Hello,"
+    greeting = f"Dear {html.escape(owner_name)}," if owner_name else "Hello,"
     reason_text = reason or "No reason provided"
     return f"""<!DOCTYPE html>
 <html>
@@ -247,7 +262,14 @@ def _declined_email_html(
         <!-- Header -->
         <tr>
           <td style="background:#130032;padding:24px 32px;">
-            <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+            <table cellpadding="0" cellspacing="0" border="0"><tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIj4KICA8cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHJ4PSIzIiBmaWxsPSIjM0IxRkEzIi8+CiAgPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI2IiBoZWlnaHQ9IjI2IiByeD0iMyIgZmlsbD0iI0U4MzQyQSIvPgo8L3N2Zz4=" alt="DocuSign Clone" width="28" height="28" style="display:block;" />
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+              </td>
+            </tr></table>
           </td>
         </tr>
 
@@ -256,13 +278,13 @@ def _declined_email_html(
           <td style="padding:32px;">
             <p style="margin:0 0 20px;color:#130032;font-size:15px;">{greeting}</p>
             <p style="margin:0 0 20px;color:#333;font-size:15px;line-height:1.6;">
-              The envelope <strong>"{envelope_subject}"</strong> has been declined.
+              The envelope <strong>"{html.escape(envelope_subject)}"</strong> has been declined.
             </p>
             <p style="margin:0 0 8px;color:#555;font-size:14px;line-height:1.6;">
-              <strong>Declined by:</strong> {decliner_name} ({decliner_email})
+              <strong>Declined by:</strong> {html.escape(decliner_name)} ({html.escape(decliner_email)})
             </p>
             <p style="margin:0 0 28px;color:#555;font-size:14px;line-height:1.6;">
-              <strong>Reason:</strong> {reason_text}
+              <strong>Reason:</strong> {html.escape(reason_text)}
             </p>
           </td>
         </tr>
@@ -291,10 +313,10 @@ def _cc_email_html(
     envelope_message: Optional[str],
     view_url: str,
 ) -> str:
-    greeting = f"Dear {cc_name}," if cc_name else "Hello,"
+    greeting = f"Dear {html.escape(cc_name)}," if cc_name else "Hello,"
     msg_block = (
         f'<p style="margin:0 0 16px;color:#555;font-size:14px;line-height:1.6;">'
-        f'<em>"{envelope_message}"</em></p>'
+        f'<em>"{html.escape(envelope_message)}"</em></p>'
         if envelope_message
         else ""
     )
@@ -309,7 +331,14 @@ def _cc_email_html(
         <!-- Header -->
         <tr>
           <td style="background:#130032;padding:24px 32px;">
-            <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+            <table cellpadding="0" cellspacing="0" border="0"><tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIj4KICA8cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHJ4PSIzIiBmaWxsPSIjM0IxRkEzIi8+CiAgPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI2IiBoZWlnaHQ9IjI2IiByeD0iMyIgZmlsbD0iI0U4MzQyQSIvPgo8L3N2Zz4=" alt="DocuSign Clone" width="28" height="28" style="display:block;" />
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+              </td>
+            </tr></table>
           </td>
         </tr>
 
@@ -318,10 +347,10 @@ def _cc_email_html(
           <td style="padding:32px;">
             <p style="margin:0 0 20px;color:#130032;font-size:15px;">{greeting}</p>
             <p style="margin:0 0 20px;color:#333;font-size:15px;line-height:1.6;">
-              <strong>{sender_name}</strong> ({sender_email}) has sent an agreement and copied you.
+              <strong>{html.escape(sender_name)}</strong> ({html.escape(sender_email)}) has sent an agreement and copied you.
             </p>
             <p style="margin:0 0 20px;color:#333;font-size:15px;line-height:1.6;">
-              Document: <strong>"{envelope_subject}"</strong>
+              Document: <strong>"{html.escape(envelope_subject)}"</strong>
             </p>
             {msg_block}
             <p style="margin:0 0 28px;color:#555;font-size:14px;">
@@ -465,12 +494,19 @@ async def send_voided_notification(
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <div style="background: #1B0A3C; padding: 20px 30px;">
-        <span style="color: white; font-size: 18px; font-weight: bold;">DocuSign Clone</span>
+        <table cellpadding="0" cellspacing="0" border="0"><tr>
+          <td style="padding-right:10px;vertical-align:middle;">
+            <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIj4KICA8cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHJ4PSIzIiBmaWxsPSIjM0IxRkEzIi8+CiAgPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI2IiBoZWlnaHQ9IjI2IiByeD0iMyIgZmlsbD0iI0U4MzQyQSIvPgo8L3N2Zz4=" alt="DocuSign Clone" width="28" height="28" style="display:block;" />
+          </td>
+          <td style="vertical-align:middle;">
+            <span style="color: white; font-size: 18px; font-weight: bold;">DocuSign Clone</span>
+          </td>
+        </tr></table>
       </div>
       <div style="padding: 30px;">
-        <p>Dear {owner_name or 'User'},</p>
-        <p>The envelope <strong>"{envelope_subject}"</strong> has been voided.</p>
-        <p><strong>Reason:</strong> {reason}</p>
+        <p>Dear {html.escape(owner_name) if owner_name else 'User'},</p>
+        <p>The envelope <strong>"{html.escape(envelope_subject)}"</strong> has been voided.</p>
+        <p><strong>Reason:</strong> {html.escape(reason)}</p>
         <p style="color: #888; font-size: 12px; margin-top: 24px;">This is an automated message from DocuSign Clone. Do not reply to this email.</p>
       </div>
     </div>
@@ -512,7 +548,14 @@ async def send_password_reset_email(email: str, name: str, reset_token: str) -> 
       <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
         <tr>
           <td style="background:#130032;padding:24px 32px;">
-            <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+            <table cellpadding="0" cellspacing="0" border="0"><tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIj4KICA8cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHJ4PSIzIiBmaWxsPSIjM0IxRkEzIi8+CiAgPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI2IiBoZWlnaHQ9IjI2IiByeD0iMyIgZmlsbD0iI0U4MzQyQSIvPgo8L3N2Zz4=" alt="DocuSign Clone" width="28" height="28" style="display:block;" />
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">DocuSign Clone</span>
+              </td>
+            </tr></table>
           </td>
         </tr>
         <tr>

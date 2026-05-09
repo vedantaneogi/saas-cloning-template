@@ -132,9 +132,13 @@ async def list_envelopes(
         auth_failed = True
         status_filter = None
     elif envelope_filter == "sent":
-        # "Sent" folder — all envelopes authored by current user that are in
-        # progress or have been declined/voided.
         statuses = [EnvelopeStatus.sent, EnvelopeStatus.delivered, EnvelopeStatus.declined, EnvelopeStatus.voided]
+        status_filter = None
+    elif envelope_filter == "completed":
+        statuses = [EnvelopeStatus.completed]
+        status_filter = None
+    elif envelope_filter == "drafts":
+        statuses = [EnvelopeStatus.draft]
         status_filter = None
 
     items, total = await svc.list_envelopes(
@@ -599,6 +603,16 @@ async def save_envelope_as_template(
                 fc["conditional_on"] = str(f.conditional_on)
                 fc["conditional_value"] = f.conditional_value
                 fc["conditional_action"] = f.conditional_action
+            if f.options:
+                fc["options"] = f.options
+            if f.group_name:
+                fc["group_name"] = f.group_name
+            if f.payment_amount is not None:
+                fc["payment_amount"] = f.payment_amount
+            if f.payment_currency:
+                fc["payment_currency"] = f.payment_currency
+            if f.payment_description:
+                fc["payment_description"] = f.payment_description
             fields_config.append(fc)
 
     template_name = data.name or envelope.subject
@@ -947,6 +961,8 @@ async def update_field(
     envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot modify fields on a non-draft envelope")
     return await svc.update_field(db, field, data)
 
 
@@ -965,6 +981,8 @@ async def delete_field(
     envelope = await svc.get_envelope(db, doc.envelope_id, current_user.id)
     if not envelope:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if envelope.status != EnvelopeStatus.draft:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot modify fields on a non-draft envelope")
     await svc.delete_field(db, field)
 
 
@@ -1134,7 +1152,8 @@ async def download_signed_envelope(
             if doc_fields:
                 try:
                     pdf_parts.append(apply_fields_to_pdf(effective_pdf_path, doc_fields))
-                except Exception:
+                except Exception as exc:
+                    logger.error("Failed to apply fields to PDF %s: %s", effective_pdf_path, exc)
                     with open(effective_pdf_path, "rb") as fh:
                         pdf_parts.append(fh.read())
             else:

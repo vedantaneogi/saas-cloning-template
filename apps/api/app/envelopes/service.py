@@ -455,11 +455,17 @@ async def resend_envelope(db: AsyncSession, envelope: Envelope) -> Envelope:
     resent_recipients = []
     resent_recipient_objs = []
     for recipient in envelope.recipients:
-        if recipient.status in (RecipientStatus.sent, RecipientStatus.delivered):
+        if recipient.status in (RecipientStatus.sent, RecipientStatus.delivered, RecipientStatus.pending):
             recipient.status = RecipientStatus.sent
             recipient.signing_token = str(uuid.uuid4())
             resent_recipients.append(recipient.email)
             resent_recipient_objs.append(recipient)
+    if not resent_recipient_objs:
+        from fastapi import HTTPException, status as http_status
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="All recipients have already signed or declined — nothing to resend",
+        )
     # Log audit event
     audit = AuditEvent(
         envelope_id=envelope.id,
@@ -720,6 +726,22 @@ async def save_fields_for_envelope(
     for field_id, field in existing_by_id.items():
         if field_id not in incoming_ids:
             await db.delete(field)
+
+    await db.flush()
+
+    # Build temp-ID → real-UUID map for conditional_on remapping
+    id_map: dict[str, str] = {}
+    for i, item in enumerate(field_items):
+        frontend_id = getattr(item, "frontend_id", None)
+        if frontend_id and i < len(result_fields):
+            id_map[frontend_id] = str(result_fields[i].id)
+        if item.id:
+            id_map[str(item.id)] = str(result_fields[i].id)
+
+    # Remap conditional_on from temp IDs to real UUIDs
+    for f in result_fields:
+        if f.conditional_on and f.conditional_on in id_map:
+            f.conditional_on = id_map[f.conditional_on]
 
     await db.commit()
 

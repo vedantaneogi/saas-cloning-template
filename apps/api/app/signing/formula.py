@@ -3,8 +3,11 @@
 Supports:
   - Field references in square brackets: [FieldLabel]
   - Basic arithmetic: +, -, *, /
+  - Math functions: Floor(n), Round(n, places), Abs(n), min(a,b,...), max(a,b,...),
+                    sum(a,b,...), average(a,b,...)
   - Date functions: AddDays(date, n), AddMonths(date, n), AddYears(date, n),
-                    DateDiff(date1, date2), Day(date), Days(date)
+                    DateDiff(date1, date2), Day(date), Days(date), Today(), Now()
+  - Conditional: if(condition, true_value, false_value)
 """
 
 from __future__ import annotations
@@ -57,7 +60,7 @@ def _safe_eval_arithmetic(expr: str) -> float:
         ast.Expression, ast.BinOp, ast.UnaryOp,
         ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow, ast.FloorDiv,
         ast.USub, ast.UAdd,
-        ast.Constant, ast.Num,  # ast.Num for Python < 3.8 compat
+        ast.Constant,
     )
     for node in ast.walk(tree):
         if not isinstance(node, _SAFE_NODES):
@@ -141,31 +144,86 @@ def _apply_date_functions(expr: str, values: dict[str, str]) -> str:
         # Days since epoch (Jan 1 1970)
         return str((d - date(1970, 1, 1)).days)
 
+    def _today(m: re.Match) -> str:
+        return date.today().isoformat()
+
+    def _now(m: re.Match) -> str:
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Zero-arg date functions — must be substituted BEFORE AddDays/etc so they see the date string
+    expr = re.sub(r'Today\s*\(\s*\)', _today, expr, flags=re.IGNORECASE)
+    expr = re.sub(r'Now\s*\(\s*\)', _now, expr, flags=re.IGNORECASE)
+    # Argument pattern: either [Label] or a quoted string or a number or a date-like string (YYYY-MM-DD)
+    _arg = r'(\[[^\]]+\]|"[^"]*"|\'[^\']*\'|[\d][\d.:\-]+[\d]|[\d.+-]+)'
+    expr = re.sub(rf'AddDays\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_days, expr)
+    expr = re.sub(rf'AddMonths\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_months, expr)
+    expr = re.sub(rf'AddYears\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_years, expr)
+    expr = re.sub(rf'DateDiff\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _date_diff, expr)
+    expr = re.sub(rf'Day\s*\(\s*{_arg}\s*\)', _day, expr)
+    expr = re.sub(rf'Days\s*\(\s*{_arg}\s*\)', _days, expr)
+    return expr
+
+
+def _apply_math_functions(expr: str) -> str:
+    """Apply math functions (Floor, Round, Abs, min, max, sum, average, if) after field substitution."""
+
     def _floor(m: re.Match) -> str:
-        val_arg = m.group(1).strip()
         try:
             import math
-            return str(math.floor(float(val_arg)))
+            return str(math.floor(float(m.group(1).strip())))
         except (ValueError, TypeError):
             return "0"
 
     def _round(m: re.Match) -> str:
-        val_arg = m.group(1).strip()
-        places_arg = m.group(2).strip()
         try:
-            return str(round(float(val_arg), int(float(places_arg))))
+            return str(round(float(m.group(1).strip()), int(float(m.group(2).strip()))))
         except (ValueError, TypeError):
             return "0"
 
     def _abs(m: re.Match) -> str:
-        val_arg = m.group(1).strip()
         try:
-            return str(abs(float(val_arg)))
+            return str(abs(float(m.group(1).strip())))
         except (ValueError, TypeError):
             return "0"
 
+    def _min_func(m: re.Match) -> str:
+        nums = []
+        for part in re.split(r'\s*,\s*', m.group(1).strip()):
+            try:
+                nums.append(float(part.strip()))
+            except (ValueError, TypeError):
+                pass
+        return str(min(nums)) if nums else "0"
+
+    def _max_func(m: re.Match) -> str:
+        nums = []
+        for part in re.split(r'\s*,\s*', m.group(1).strip()):
+            try:
+                nums.append(float(part.strip()))
+            except (ValueError, TypeError):
+                pass
+        return str(max(nums)) if nums else "0"
+
+    def _sum_func(m: re.Match) -> str:
+        total = 0.0
+        for part in re.split(r'\s*,\s*', m.group(1).strip()):
+            try:
+                total += float(part.strip())
+            except (ValueError, TypeError):
+                pass
+        return str(total)
+
+    def _average_func(m: re.Match) -> str:
+        nums = []
+        for part in re.split(r'\s*,\s*', m.group(1).strip()):
+            try:
+                nums.append(float(part.strip()))
+            except (ValueError, TypeError):
+                pass
+        return str(sum(nums) / len(nums)) if nums else "0"
+
     def _eval_comparison(cond_str: str) -> bool:
-        """Evaluate a comparison like '100 > 50' or '3.5 == 3.5'."""
         for op, fn in [(">=", lambda a, b: a >= b), ("<=", lambda a, b: a <= b),
                         ("!=", lambda a, b: a != b), ("==", lambda a, b: a == b),
                         (">", lambda a, b: a > b), ("<", lambda a, b: a < b)]:
@@ -181,24 +239,19 @@ def _apply_date_functions(expr: str, values: dict[str, str]) -> str:
             return False
 
     def _if_func(m: re.Match) -> str:
-        cond_arg = m.group(1).strip()
-        true_arg = m.group(2).strip()
-        false_arg = m.group(3).strip()
-        return true_arg if _eval_comparison(cond_arg) else false_arg
+        return m.group(2).strip() if _eval_comparison(m.group(1).strip()) else m.group(3).strip()
 
-    # Argument pattern: either [Label] or a quoted string or a number or a comparison expression
-    _arg = r'(\[[^\]]+\]|"[^"]*"|\'[^\']*\'|[\d.+-]+)'
+    _arg = r'([\d.+-]+)'
     _if_arg = r'([^,]+)'
-    expr = re.sub(rf'AddDays\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_days, expr)
-    expr = re.sub(rf'AddMonths\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_months, expr)
-    expr = re.sub(rf'AddYears\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_years, expr)
-    expr = re.sub(rf'DateDiff\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _date_diff, expr)
-    expr = re.sub(rf'Day\s*\(\s*{_arg}\s*\)', _day, expr)
-    expr = re.sub(rf'Days\s*\(\s*{_arg}\s*\)', _days, expr)
-    expr = re.sub(rf'Floor\s*\(\s*{_arg}\s*\)', _floor, expr)
-    expr = re.sub(rf'Round\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _round, expr)
-    expr = re.sub(rf'Abs\s*\(\s*{_arg}\s*\)', _abs, expr)
-    expr = re.sub(rf'if\s*\(\s*{_if_arg}\s*,\s*{_if_arg}\s*,\s*{_if_arg}\s*\)', _if_func, expr)
+    _varargs = r'([\d.+-]+(?:\s*,\s*[\d.+-]+)*)'
+    expr = re.sub(rf'Floor\s*\(\s*{_arg}\s*\)', _floor, expr, flags=re.IGNORECASE)
+    expr = re.sub(rf'Round\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _round, expr, flags=re.IGNORECASE)
+    expr = re.sub(rf'Abs\s*\(\s*{_arg}\s*\)', _abs, expr, flags=re.IGNORECASE)
+    expr = re.sub(rf'min\s*\(\s*{_varargs}\s*\)', _min_func, expr, flags=re.IGNORECASE)
+    expr = re.sub(rf'max\s*\(\s*{_varargs}\s*\)', _max_func, expr, flags=re.IGNORECASE)
+    expr = re.sub(rf'sum\s*\(\s*{_varargs}\s*\)', _sum_func, expr, flags=re.IGNORECASE)
+    expr = re.sub(rf'average\s*\(\s*{_varargs}\s*\)', _average_func, expr, flags=re.IGNORECASE)
+    expr = re.sub(rf'if\s*\(\s*{_if_arg}\s*,\s*{_if_arg}\s*,\s*{_if_arg}\s*\)', _if_func, expr, flags=re.IGNORECASE)
     return expr
 
 
@@ -219,5 +272,13 @@ def evaluate_formula(formula: str, field_values: dict[str, str]) -> Union[float,
     # 2. Replace remaining [Label] references with numeric values
     expr = _substitute_fields(expr, field_values)
 
-    # 3. Evaluate pure arithmetic
-    return _safe_eval_arithmetic(expr)
+    # 3. Apply math functions that operate on numeric values (after field substitution)
+    expr = _apply_math_functions(expr)
+
+    # 4. If the result is a date/datetime string, return it directly
+    clean = expr.strip()
+    if re.match(r'^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$', clean):
+        return clean
+
+    # 5. Evaluate pure arithmetic
+    return _safe_eval_arithmetic(clean)
