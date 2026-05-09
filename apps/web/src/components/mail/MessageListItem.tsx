@@ -11,7 +11,6 @@ import { cn, formatMessageDate, stripHtml, truncate } from '@/lib/utils'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { messages, folders, categories, tasks } from '@/lib/api'
 import { useUIStore, draftFromReply } from '@/store/ui'
-import { useAuthStore } from '@/store/auth'
 import { useRouter } from 'next/navigation'
 
 interface MessageListItemProps {
@@ -163,16 +162,12 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   const isUnread = !message.is_read
   const dateStr = message.received_at ?? message.created_at
 
-  // Boomerang reminder detection — self-to-self mail in Inbox that links
-  // back to a sent message. Per the screenshot the row gets a yellow
-  // tint + yellow follow-up flag so it visually stands out from regular
-  // unread inbox mail.
-  const currentUserEmail = (useAuthStore((s) => s.currentUser?.email) ?? '').toLowerCase()
+  // Boomerang reminder detection — fingerprint the exact notice body
+  // we drop in the user's inbox. Earlier this used `from === currentUser
+  // + in_reply_to_id`, which incorrectly matched every reply/forward in
+  // the Sent folder (turning all your sent replies yellow).
   const isBoomerangReminder = !!(
-    currentUserEmail &&
-    message.from_address &&
-    message.from_address.toLowerCase() === currentUserEmail &&
-    message.in_reply_to_id
+    message.body_text && message.body_text.startsWith('Message moved to top of Inbox by Boomerang')
   )
 
   const markReadMutation = useMutation({
