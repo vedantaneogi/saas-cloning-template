@@ -11,6 +11,7 @@ import { cn, formatMessageDate, stripHtml, truncate } from '@/lib/utils'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { messages, folders, categories, tasks } from '@/lib/api'
 import { useUIStore, draftFromReply } from '@/store/ui'
+import { useAuthStore } from '@/store/auth'
 import { useRouter } from 'next/navigation'
 
 interface MessageListItemProps {
@@ -161,6 +162,18 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   const isSelected = selectedMessageId === message.id
   const isUnread = !message.is_read
   const dateStr = message.received_at ?? message.created_at
+
+  // Boomerang reminder detection — self-to-self mail in Inbox that links
+  // back to a sent message. Per the screenshot the row gets a yellow
+  // tint + yellow follow-up flag so it visually stands out from regular
+  // unread inbox mail.
+  const currentUserEmail = (useAuthStore((s) => s.currentUser?.email) ?? '').toLowerCase()
+  const isBoomerangReminder = !!(
+    currentUserEmail &&
+    message.from_address &&
+    message.from_address.toLowerCase() === currentUserEmail &&
+    message.in_reply_to_id
+  )
 
   const markReadMutation = useMutation({
     mutationFn: (isRead: boolean) => messages.update(message.id, { is_read: isRead }),
@@ -314,8 +327,12 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
         'relative flex gap-2 px-3 py-2 cursor-pointer border-b border-[#EDEBE9] transition-colors group',
         isSelected
           ? 'bg-[#EBF3FB] border-l-[3px] border-l-[#0078D4]'
-          : 'hover:bg-[#F3F2F1] border-l-[3px] border-l-transparent',
-        isUnread && !isSelected && 'bg-white'
+          : isBoomerangReminder
+            // Yellow follow-up tint matching followup.png — distinct from
+            // regular unread mail.
+            ? 'bg-[#FFF8E1] hover:bg-[#FFF1C2] border-l-[3px] border-l-[#FFB900]'
+            : 'hover:bg-[#F3F2F1] border-l-[3px] border-l-transparent',
+        isUnread && !isSelected && !isBoomerangReminder && 'bg-white'
       )}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
@@ -392,17 +409,24 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
           </span>
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {/* Always-visible icons: attachment + reply type. Boomerang
-                rows deliberately render as normal Inbox rows per senior's
-                spec — the red is_flagged flag on the row + the body
-                notice are what distinguish them; no extra icon. */}
+                rows get a yellow follow-up flag (matches followup.png).
+                The body notice + pinned-to-top + yellow tint complete the
+                distinction. */}
             {message.has_attachments && (
               <Paperclip size={12} className="text-[#605E5C]" />
             )}
-            {message.in_reply_to_id && (
+            {message.in_reply_to_id && !isBoomerangReminder && (
               <Reply size={12} className="text-[#605E5C]" />
             )}
             {message.encrypt_mode && message.encrypt_mode !== 'none' && (
               <Lock size={12} className="text-[#0078D4]" aria-label="Encrypted" />
+            )}
+            {isBoomerangReminder && (
+              <Flag
+                size={12}
+                className="text-[#FFB900] fill-[#FFB900]"
+                aria-label="Boomerang follow-up"
+              />
             )}
             {/* Pending boomerang — only show when reminder is set AND
                 hasn't fired yet. Once fired the surface is the new
