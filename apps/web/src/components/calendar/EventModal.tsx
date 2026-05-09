@@ -483,6 +483,20 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
   const attendeeEmails = (organizerEmail ? [organizerEmail, ...invitedEmails] : invitedEmails)
   const showNotificationToast = useUIStore((s) => s.showNotification)
 
+  // Mini-day sidebar availability — fetch existing busy slots for the
+  // organizer + invitees on the date currently shown in the form. Drives
+  // the right-most pane so the user can see their own (and attendees')
+  // existing meetings while picking the time, like Outlook does.
+  const miniDayDate = startVal ? new Date(startVal) : new Date()
+  const miniDayKey = format(miniDayDate, 'yyyy-MM-dd')
+  const miniDayStart = (() => { const d = new Date(miniDayDate); d.setHours(0, 0, 0, 0); return d })()
+  const miniDayEnd = (() => { const d = new Date(miniDayDate); d.setHours(23, 59, 59, 999); return d })()
+  const { data: miniDayBusy } = useQuery({
+    queryKey: ['miniday-availability', attendeeEmails.join(','), miniDayKey],
+    queryFn: () => events.getAvailability(attendeeEmails, miniDayStart.toISOString(), miniDayEnd.toISOString()),
+    enabled: attendeeEmails.length > 0,
+  })
+
   // Helper — push an "HH:MM" start (mock-day = May 8 2026) into the form's
   // start_time / end_time. Used by both the SA OK button and the Find-a-time
   // suggested cards. End is start + 30 minutes by default.
@@ -1380,7 +1394,10 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
         />
       )}
 
-      {/* Mini day view sidebar — matches Outlook event modal */}
+      {/* Mini day view sidebar — matches Outlook event modal. Now shows
+          existing busy blocks for the organizer + every invitee on the
+          currently-selected day, so the user can see their own (and
+          attendees') conflicts while picking a time. */}
       <div className="w-56 flex-shrink-0 border-l border-[#EDEBE9] bg-white overflow-y-auto outlook-scrollbar hidden lg:block">
         <div className="px-3 py-2 border-b border-[#EDEBE9]">
           <p className="text-xs font-medium text-[#605E5C]">
@@ -1388,7 +1405,40 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
           </p>
         </div>
         <div className="relative">
-          {Array.from({ length: 12 }, (_, i) => i + 8).map((hour) => {
+          {(() => {
+            // Build a flat list of (email, start, end, status) for every
+            // busy slot on the day. Used to render coloured blocks in the
+            // mini-day view. Owner email determines the colour.
+            const ownerColor = (email: string): string => {
+              if (email.toLowerCase() === organizerEmail) return '#FFB900' // amber for organizer
+              // Deterministic per-email tint for invitees.
+              let h = 0
+              for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) >>> 0
+              const palette = ['#E3008C', '#8764B8', '#107C10', '#FF8C00', '#0078D4']
+              return palette[h % palette.length]
+            }
+            const busyByHour: Record<number, { email: string; start: Date; end: Date; color: string; title: string }[]> = {}
+            for (const row of (miniDayBusy ?? [])) {
+              for (const s of row.slots) {
+                const sd = new Date(s.start)
+                const ed = new Date(s.end)
+                // Only consider slots on the visible day.
+                if (sd.toDateString() !== miniDayDate.toDateString()) continue
+                const startHour = Math.max(8, sd.getHours())
+                const endHour = Math.min(20, ed.getHours() + (ed.getMinutes() > 0 ? 1 : 0))
+                for (let h = startHour; h < endHour; h++) {
+                  if (!busyByHour[h]) busyByHour[h] = []
+                  busyByHour[h].push({
+                    email: row.attendee,
+                    start: sd,
+                    end: ed,
+                    color: ownerColor(row.attendee),
+                    title: `${row.attendee} — Busy ${format(sd, 'h:mm a')}–${format(ed, 'h:mm a')}`,
+                  })
+                }
+              }
+            }
+            return Array.from({ length: 12 }, (_, i) => i + 8).map((hour) => {
             const eventStart = startVal ? new Date(startVal) : null
             const eventEnd = endVal ? new Date(endVal) : null
             const isInEvent = eventStart && eventEnd &&
@@ -1422,6 +1472,33 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
                   {hour <= 12 ? `${hour} ${hour < 12 ? 'AM' : 'PM'}` : `${hour - 12} PM`}
                 </span>
                 <div className="flex-1 relative">
+                  {/* Existing busy blocks (organizer + invitees) — drawn
+                      first so the current event's blue block draws on top. */}
+                  {(busyByHour[hour] ?? []).map((b, idx) => {
+                    // Vertical placement within this hour cell.
+                    const startMin = b.start.getHours() === hour ? b.start.getMinutes() : 0
+                    const endMin = b.end.getHours() === hour
+                      ? (b.end.getMinutes() === 0 ? 60 : b.end.getMinutes())
+                      : 60
+                    return (
+                      <div
+                        key={`${b.email}-${idx}`}
+                        className="absolute left-0.5 right-0.5 rounded-sm opacity-80"
+                        style={{
+                          top: `${(startMin / 60) * 100}%`,
+                          height: `${((endMin - startMin) / 60) * 100}%`,
+                          backgroundColor: b.color,
+                        }}
+                        title={b.title}
+                      >
+                        {hour === b.start.getHours() && (
+                          <span className="text-[9px] text-white px-1 truncate block leading-tight pt-0.5">
+                            {b.email.split('@')[0]}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
                   {isInEvent && (
                     <div
                       className="absolute inset-0 bg-[#0078D4] rounded-sm mx-0.5"
@@ -1441,7 +1518,8 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
                 </div>
               </button>
             )
-          })}
+            })
+          })()}
         </div>
       </div>
       </div>
