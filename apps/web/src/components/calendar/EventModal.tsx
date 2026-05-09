@@ -468,12 +468,9 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
     : ROOMS
 
   // Scheduling assistant — view switcher between the form and the
-  // full-screen SA layout (per scheduleassistanttask.md spec). The legacy
-  // inline `schedulerOpen` state is kept around for the older free/busy
-  // sub-block until that's retired in a future pass.
+  // full-screen SA layout (per scheduleassistanttask.md spec).
   const [activeView, setActiveView] = useState<'event' | 'scheduling_assistant'>('event')
   const [findATimeOpen, setFindATimeOpen] = useState(true)
-  const [schedulerOpen, setSchedulerOpen] = useState(false)
   const startVal = watch('start_time')
   const endVal = watch('end_time')
   const attendeeEmails = attendees.map((a) => a.email).filter(Boolean)
@@ -497,16 +494,6 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
   // has explicitly picked a card; otherwise the recommended one is auto-
   // highlighted by FindATimePane.
   const [selectedSuggestedStart, setSelectedSuggestedStart] = useState<string | null>(null)
-
-  const { data: availabilityData, refetch: fetchAvailability, isFetching: availabilityLoading } = useQuery({
-    queryKey: ['availability', attendeeEmails, startVal, endVal],
-    queryFn: () => events.getAvailability(
-      attendeeEmails,
-      startVal ? new Date(startVal).toISOString() : new Date().toISOString(),
-      endVal ? new Date(endVal).toISOString() : new Date().toISOString(),
-    ),
-    enabled: false,
-  })
 
   return (
     <Modal
@@ -1358,128 +1345,6 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
             <input type="hidden" {...register('description')} />
           </div>
         </div>
-
-        {/* Scheduling assistant */}
-        {attendeeEmails.length > 0 && (
-          <div className="border border-[#EDEBE9] rounded">
-            <button
-              type="button"
-              aria-label="Scheduling assistant"
-              aria-expanded={schedulerOpen}
-              onClick={() => {
-                setSchedulerOpen((v) => !v)
-                if (!schedulerOpen) fetchAvailability()
-              }}
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[#0078D4] hover:bg-[#F3F2F1] transition-colors rounded"
-            >
-              <CalendarSearch size={14} />
-              Scheduling assistant
-              {schedulerOpen ? <span className="ml-auto text-[#605E5C] text-xs">▲</span> : <span className="ml-auto text-[#605E5C] text-xs">▼</span>}
-            </button>
-            {schedulerOpen && (
-              <div className="border-t border-[#EDEBE9] px-3 py-3 space-y-3">
-                {availabilityLoading ? (
-                  <p className="text-xs text-[#605E5C] animate-pulse">Checking availability…</p>
-                ) : availabilityData ? (
-                  <>
-                    {/* Free/busy grid — one row per attendee, one cell per hour */}
-                    {(() => {
-                      const rangeStart = startVal ? new Date(startVal) : new Date()
-                      const rangeEnd = endVal ? new Date(endVal) : new Date(rangeStart.getTime() + 3600_000)
-                      const totalMs = rangeEnd.getTime() - rangeStart.getTime()
-                      const totalHours = Math.max(1, Math.ceil(totalMs / 3600_000))
-                      const hours = Array.from({ length: Math.min(totalHours, 24) }, (_, i) => i)
-
-                      const isBusy = (attendeeRow: { attendee: string; slots: Array<{ start: string; end: string; status: string }> }, hourOffset: number) => {
-                        const slotStart = new Date(rangeStart.getTime() + hourOffset * 3600_000)
-                        const slotEnd = new Date(slotStart.getTime() + 3600_000)
-                        return attendeeRow.slots.some((s) => {
-                          const bs = new Date(s.start), be = new Date(s.end)
-                          return bs < slotEnd && be > slotStart
-                        })
-                      }
-
-                      // Find suggested free slots: hours where all attendees are free
-                      const suggestedHours = hours.filter((h) =>
-                        availabilityData.every((row) => !isBusy(row, h))
-                      ).slice(0, 3)
-
-                      return (
-                        <>
-                          <div>
-                            <p className="text-xs font-semibold text-[#323130] mb-1.5">
-                              Free/busy grid
-                            </p>
-                            {/* Hour labels */}
-                            <div className="flex items-center gap-0 mb-1 ml-32">
-                              {hours.map((h) => (
-                                <div key={h} className="flex-1 text-center text-[9px] text-[#A19F9D]">
-                                  {format(new Date(rangeStart.getTime() + h * 3600_000), 'h')}
-                                </div>
-                              ))}
-                            </div>
-                            {availabilityData.map((row) => (
-                              <div key={row.attendee} className="flex items-center gap-0 mb-0.5">
-                                <span className="w-32 flex-shrink-0 text-xs text-[#323130] truncate pr-1">
-                                  {row.attendee.split('@')[0]}
-                                </span>
-                                {hours.map((h) => (
-                                  <div
-                                    key={h}
-                                    title={`${row.attendee} – ${format(new Date(rangeStart.getTime() + h * 3600_000), 'h:mm a')}: ${isBusy(row, h) ? 'Busy' : 'Free'}`}
-                                    className={cn(
-                                      'flex-1 h-4 border border-white',
-                                      isBusy(row, h) ? 'bg-[#D13438]' : 'bg-[#107C10]/30'
-                                    )}
-                                  />
-                                ))}
-                              </div>
-                            ))}
-                            <div className="flex items-center gap-3 mt-1.5">
-                              <span className="flex items-center gap-1 text-[10px] text-[#605E5C]">
-                                <span className="w-3 h-3 bg-[#107C10]/30 inline-block rounded-sm" /> Free
-                              </span>
-                              <span className="flex items-center gap-1 text-[10px] text-[#605E5C]">
-                                <span className="w-3 h-3 bg-[#D13438] inline-block rounded-sm" /> Busy
-                              </span>
-                            </div>
-                          </div>
-
-                          {suggestedHours.length > 0 && (
-                            <div>
-                              <p className="text-xs font-semibold text-[#323130] mb-1.5">Suggested times</p>
-                              <div className="flex flex-wrap gap-2">
-                                {suggestedHours.map((h) => {
-                                  const slotStart = new Date(rangeStart.getTime() + h * 3600_000)
-                                  const slotEnd = new Date(slotStart.getTime() + 3600_000)
-                                  return (
-                                    <button
-                                      key={h}
-                                      type="button"
-                                      onClick={() => {
-                                        setValue('start_time', formatDateTimeLocal(slotStart))
-                                        setValue('end_time', formatDateTimeLocal(slotEnd))
-                                      }}
-                                      className="text-xs bg-[#EBF3FB] hover:bg-[#C7E0F4] text-[#0078D4] px-2 py-1 rounded transition-colors"
-                                    >
-                                      {format(slotStart, 'EEE h:mm a')} – {format(slotEnd, 'h:mm a')}
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </>
-                ) : (
-                  <p className="text-xs text-[#605E5C]">Click &quot;Scheduling assistant&quot; to check availability.</p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Actions moved to toolbar ribbon above */}
       </form>
