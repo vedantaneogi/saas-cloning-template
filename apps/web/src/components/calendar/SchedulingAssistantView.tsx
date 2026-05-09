@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight, X as XIcon, Plus, Building2, Users as UsersI
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import {
-  MOCK_ATTENDEES,
   MOCK_ROOMS,
   AVATAR_COLOR,
   makeAttendeeFromEmail,
@@ -74,12 +73,9 @@ export function SchedulingAssistantView({
   // Optional-attendee toggle (SA-internal — the parent's invitee list is a
   // single bucket; we just visually split which ones are "optional" here).
   const [optionalEmails, setOptionalEmails] = useState<Set<string>>(new Set())
-  // Demo attendees the user dismissed (only relevant in the empty state
-  // when invitedAttendees is []).
-  const [demoRemoved, setDemoRemoved] = useState<Set<string>>(new Set())
-  // Rooms picked here. Independent from the form's location field — the
-  // SA grid is just a preview surface.
-  const [pickedRoomIds, setPickedRoomIds] = useState<string[]>(['room-1', 'room-2'])
+  // Rooms picked here. Empty by default — user adds via the Rooms picker.
+  // Independent from the form's location field; SA grid is preview-only.
+  const [pickedRoomIds, setPickedRoomIds] = useState<string[]>([])
 
   // Inline + Add editors
   const [addReqOpen, setAddReqOpen] = useState(false)
@@ -110,20 +106,19 @@ export function SchedulingAssistantView({
     return () => document.removeEventListener('mousedown', h)
   }, [responseOpen])
 
-  // Resolve attendee rows. When real invitees exist, those drive the list
-  // (and the optionalEmails set splits them into Required vs Optional).
-  // Otherwise show the spec demo, minus anything the user has dismissed.
+  // Render attendee rows from the parent's invited list — split into
+  // Required / Optional via the SA-local optionalEmails Set. When no
+  // attendees are added yet both sections show their empty state; no
+  // demo data is rendered.
   const dk = dateKey(selectedDate)
-  const liveAttendees: MockAttendee[] = invitedAttendees.length > 0
-    ? invitedAttendees.map((a) =>
-        makeAttendeeFromEmail(
-          a.email,
-          a.name,
-          optionalEmails.has(a.email) ? 'optional' : 'required',
-          dk,
-        ),
-      )
-    : MOCK_ATTENDEES.filter((a) => !demoRemoved.has(a.id))
+  const liveAttendees: MockAttendee[] = invitedAttendees.map((a) =>
+    makeAttendeeFromEmail(
+      a.email,
+      a.name,
+      optionalEmails.has(a.email) ? 'optional' : 'required',
+      dk,
+    ),
+  )
   const required = liveAttendees.filter((a) => a.type === 'required')
   const optional = liveAttendees.filter((a) => a.type === 'optional')
   const pickedRooms: MockRoom[] = pickedRoomIds
@@ -147,17 +142,12 @@ export function SchedulingAssistantView({
   }
 
   const removeAttendee = (a: MockAttendee) => {
-    if (invitedAttendees.length > 0 && onRemoveInvitee) {
-      onRemoveInvitee(a.email)
-      // Also clear from optional set so it's not stuck.
-      setOptionalEmails((prev) => {
-        const next = new Set(prev)
-        next.delete(a.email)
-        return next
-      })
-    } else {
-      setDemoRemoved((prev) => new Set(prev).add(a.id))
-    }
+    onRemoveInvitee?.(a.email)
+    setOptionalEmails((prev) => {
+      const next = new Set(prev)
+      next.delete(a.email)
+      return next
+    })
   }
 
   const submitAddInvitee = (email: string, asOptional: boolean) => {
@@ -319,6 +309,7 @@ export function SchedulingAssistantView({
               setAddReqOpen(false)
             }}
             addLabel="Add required attendee"
+            emptyLabel="None added"
           />
           <Section
             title="Optional attendees"
