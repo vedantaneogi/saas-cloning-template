@@ -46,6 +46,11 @@ interface EditorStore {
   encryptMode: EncryptMode
   setEncryptMode: (v: EncryptMode) => void
 
+  // Follow-up reminder (Boomerang) — ISO datetime when to surface a
+  // reminder if no reply received. Null = no reminder.
+  boomerangAt: string | null
+  setBoomerangAt: (v: string | null) => void
+
   signatures: Signature[]
   setSignatures: (sigs: Signature[]) => void
   selectedSignatureId: string | null
@@ -75,6 +80,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   encryptMode: 'none',
   setEncryptMode: (v) => set({ encryptMode: v }),
+
+  boomerangAt: null,
+  setBoomerangAt: (v) => set({ boomerangAt: v }),
 
   signatures: [],
   setSignatures: (sigs) => set({ signatures: sigs }),

@@ -175,6 +175,17 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   // Encrypt mode lives entirely in the editor store — no local mirror needed
   // (it's only consumed by DLP eval + the send payload below).
   const encryptMode = useEditorStore((s) => s.encryptMode)
+  // Boomerang follow-up reminder — same store-only pattern as encryptMode.
+  // Null = no reminder. ComposeModal resets it to null on mount/unmount so
+  // a previous compose session doesn't leak into the next one.
+  const boomerangAt = useEditorStore((s) => s.boomerangAt)
+  const setStoreBoomerangAt = useEditorStore((s) => s.setBoomerangAt)
+  useEffect(() => {
+    if (!inline) return
+    setStoreBoomerangAt(null)
+    return () => { setStoreBoomerangAt(null) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inline])
   // Reset encrypt + push initial sensitivity to the ribbon when this composer
   // mounts so previous compose sessions don't leak state.
   useEffect(() => {
@@ -225,6 +236,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
         importance,
         sensitivity,
         encrypt_mode: encryptMode,
+        boomerang_at: boomerangAt,
         in_reply_to_id: composerDraft.replyToMessageId,
         reply_type: (composerDraft.replyType ?? 'none') as 'none' | 'reply' | 'reply_all' | 'forward',
         ...(scheduled ? { scheduled_send_at: new Date(scheduled).toISOString() } : {}),

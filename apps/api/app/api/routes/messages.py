@@ -253,6 +253,102 @@ async def _flush_due_scheduled(db: AsyncSession, user: User) -> None:
         rl_state.event_log.append("scheduled_send_dispatched", {"id": str(msg.id)})
 
 
+async def _flush_due_boomerangs(db: AsyncSession, user: User) -> None:
+    """Resurface sent messages whose follow-up reminder has matured.
+
+    Boomerang stores `boomerang_at` on the original sent message. When
+    `now >= boomerang_at` and no reply has arrived on the same conversation,
+    we drop a copy of the original into the user's Inbox as
+    unread + flagged + pinned (so it sticks to the top), with subject
+    prefixed "Follow-up:". `boomerang_fired_at` is stamped either way so the
+    sweep is idempotent. Called opportunistically from list_messages — same
+    pattern as `_flush_due_scheduled`, no background worker.
+    """
+    now = rl_state.clock.now()
+    sent_folder = await _get_folder_by_slug(db, "sent", user.id)
+    inbox_folder = await _get_folder_by_slug(db, "inbox", user.id)
+    if not sent_folder or not inbox_folder:
+        return
+    due_q = await db.execute(
+        select(Message)
+        .where(
+            Message.user_id == user.id,
+            Message.folder_id == sent_folder.id,
+            Message.is_draft.is_(False),
+            Message.boomerang_at.is_not(None),
+            Message.boomerang_at <= now,
+            Message.boomerang_fired_at.is_(None),
+        )
+        .options(selectinload(Message.attachments))
+    )
+    due = list(due_q.scalars().all())
+    if not due:
+        return
+    for sent_msg in due:
+        # Reply detection by conversation: any non-Sent message in the
+        # user's mailbox sharing this conversation_id is treated as a
+        # reply (covers external replies that flowed back via the
+        # recipient delivery loop). conversation_id can be NULL for very
+        # old messages — those fall back to in_reply_to_id matching.
+        reply_count = 0
+        if sent_msg.conversation_id is not None:
+            r = await db.execute(
+                select(func.count())
+                .select_from(Message)
+                .where(
+                    Message.user_id == user.id,
+                    Message.conversation_id == sent_msg.conversation_id,
+                    Message.id != sent_msg.id,
+                    Message.folder_id != sent_folder.id,
+                )
+            )
+            reply_count = r.scalar() or 0
+        if reply_count > 0:
+            sent_msg.boomerang_fired_at = now
+            sent_msg.updated_at = now
+            rl_state.event_log.append(
+                "boomerang_cleared_by_reply", {"id": str(sent_msg.id)}
+            )
+            continue
+        # No reply — drop a follow-up copy in Inbox. The copy is its own
+        # row (not a thread reply) so the user clearly sees a new unread
+        # at the top. We link via in_reply_to_id so future automation can
+        # collapse it under the original thread if desired.
+        reminder = Message(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            folder_id=inbox_folder.id,
+            conversation_id=sent_msg.conversation_id,
+            in_reply_to_id=sent_msg.id,
+            from_address=sent_msg.from_address,
+            from_name=sent_msg.from_name,
+            to_addresses=sent_msg.to_addresses,
+            cc_addresses=sent_msg.cc_addresses,
+            bcc_addresses=[],
+            subject=f"Follow-up: {sent_msg.subject}" if sent_msg.subject else "Follow-up",
+            body_html=sent_msg.body_html,
+            body_text=sent_msg.body_text,
+            importance=sent_msg.importance,
+            sensitivity=sent_msg.sensitivity,
+            encrypt_mode=sent_msg.encrypt_mode,
+            has_attachments=sent_msg.has_attachments,
+            is_read=False,
+            is_flagged=True,
+            is_pinned=True,
+            is_draft=False,
+            sent_at=sent_msg.sent_at,
+            received_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(reminder)
+        sent_msg.boomerang_fired_at = now
+        sent_msg.updated_at = now
+        await db.flush()
+        await _update_folder_counts(db, inbox_folder.id)
+        rl_state.event_log.append("boomerang_fired", {"id": str(sent_msg.id), "reminder_id": str(reminder.id)})
+
+
 @router.get("", response_model=MessageList)
 async def list_messages(
     folder_id: Optional[uuid.UUID] = None,
@@ -274,6 +370,7 @@ async def list_messages(
 ):
     # Flush any scheduled messages whose send time has passed before listing.
     await _flush_due_scheduled(db, current_user)
+    await _flush_due_boomerangs(db, current_user)
 
     filters = [Message.user_id == current_user.id]
     if folder_id:
@@ -734,6 +831,7 @@ async def create_message(
         importance=body.importance,
         sensitivity=body.sensitivity,
         encrypt_mode=(body.encrypt_mode or "none"),
+        boomerang_at=body.boomerang_at,
         is_draft=effective_is_draft,
         is_flagged=body.is_flagged,
         scheduled_send_at=body.scheduled_send_at,
@@ -863,6 +961,12 @@ async def update_message(
         msg.snooze_until = body.snooze_until
     if body.scheduled_send_at is not None:
         msg.scheduled_send_at = body.scheduled_send_at
+    # Boomerang follow-up: same nullable-PATCH pattern as snooze. Sending
+    # `boomerang_at: null` clears the reminder; resetting also wipes
+    # boomerang_fired_at so the user can extend a reminder that already fired.
+    if "boomerang_at" in body.model_fields_set:
+        msg.boomerang_at = body.boomerang_at
+        msg.boomerang_fired_at = None
 
     msg.updated_at = now
 

@@ -70,6 +70,12 @@ class Message(Base):
     )
     snooze_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_send_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Boomerang follow-up: at boomerang_at, if no reply has arrived in the
+    # user's mailbox on this conversation, the engine resurfaces the message
+    # in their Inbox as unread+flagged+pinned. boomerang_fired_at records the
+    # sweep that handled it so we don't re-fire. Both null = no reminder set.
+    boomerang_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    boomerang_fired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

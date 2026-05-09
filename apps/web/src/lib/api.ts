@@ -122,6 +122,8 @@ export interface Message {
   event_id: string | null
   snooze_until: string | null
   scheduled_send_at: string | null
+  boomerang_at: string | null
+  boomerang_fired_at: string | null
   sent_at: string | null
   received_at: string | null
   created_at: string

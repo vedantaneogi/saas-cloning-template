@@ -401,6 +401,27 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             {message.encrypt_mode && message.encrypt_mode !== 'none' && (
               <Lock size={12} className="text-[#0078D4]" aria-label="Encrypted" />
             )}
+            {/* Pending boomerang — only show when reminder is set AND
+                hasn't fired yet. Once fired the surface is the new
+                inbox copy itself, so this pill on the original sent row
+                disappears. */}
+            {message.boomerang_at && !message.boomerang_fired_at && (() => {
+              const ms = new Date(message.boomerang_at).getTime() - Date.now()
+              if (ms <= 0) return null
+              const mins = Math.round(ms / 60000)
+              const hrs = Math.round(mins / 60)
+              const days = Math.round(hrs / 24)
+              const summary = mins < 60 ? `${mins}m` : hrs < 24 ? `${hrs}h` : `${days}d`
+              return (
+                <span
+                  className="inline-flex items-center gap-0.5 text-[10px] text-[#0078D4] bg-[#EBF3FB] px-1 rounded-sm"
+                  title={`Follow-up reminder in ${summary}`}
+                >
+                  <Clock size={10} />
+                  {summary}
+                </span>
+              )
+            })()}
             <span className="text-xs text-[#605E5C] whitespace-nowrap">
               {formatMessageDate(dateStr)}
             </span>

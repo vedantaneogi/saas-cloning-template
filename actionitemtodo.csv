@@ -1,0 +1,89 @@
+Outlook,,,
+Overview,"Email + calendar + contacts + tasks. Universal substrate for office work. Tasks span triage, scheduling, composition, rule maintenance — and most cross-app workflows pass through Outlook.",,
+,,,
+Core Entities,,,
+Entity,Description,,
+Message,"Email: from, to, cc, bcc, subject, body, attachments, flags, categories, importance, read state, folder, conversation thread.",,
+Folder,"Inbox, Sent, Drafts, Archive, Junk, Deleted, plus user folders; nested.",,
+Conversation,Thread of related messages.,,
+Contact,Person record; people directory.,,
+Calendar,Owned or shared; events (meetings).,,
+Event,"Start/end, attendees, location, body, recurrence, reminders, response status.",,
+Task / To Do,Todo items (Microsoft To Do integration).,,
+Rule,Automation: condition → action on incoming/outgoing mail.,,
+Category,Colored label applied to messages and events.,,
+Signature,Saved signature blocks.,,
+,,,
+Features,,,
+Category,Feature,Priority,Description
+Mail layout,Three-pane: folders / messages / reading,P0,Standard mail UI.
+,Folder navigation + CRUD + nesting,P0,Folder management.
+,Conversation grouping toggle,P0,Threaded vs flat.
+,Read / unread states + mark all read,P0,Read tracking.
+Mail actions,Reply / reply all / forward,P0,Standard responses.
+,Delete / archive / move,P0,Triage.
+,Flag / mark unread / pin / snooze,P0,Inbox tools.
+Mail search,Search bar with filters,P0,"From, subject, date, has attachment, folder."
+Compose,To/cc/bcc with autocomplete,P0,From contacts.
+,"Subject, rich body, attachments, embedded images",P0,Composer body.
+,Signature insertion,P0,Insert saved signature.
+,Drafts auto-saved,P0,Persistence.
+,Send / Save / Discard,P0,Action buttons.
+Attachments,Open / save / save to OneDrive / download,P0,Attachment handling.
+Calendar,Day / Week / Work Week / Month views,P0,View modes.
+,"Create event with attendees, location, time, body, reminder",P0,Event composer.
+,Recurrence editor,P0,Daily / weekly / monthly nth weekday / end.
+,Edit / delete (single vs series),P0,Scope-aware edits.
+,Accept / tentative / decline / propose new time,P0,Invite responses.
+,Today + date jump,P0,Navigation.
+Contacts,Contact list + search,P0,People directory.
+,Create / edit contact,P0,"Name, email, phone, company, address, notes."
+,Contact card popover,P0,From any email.
+Tasks,Create task from message,P0,Flag for follow-up.
+,Flagged items as task list,P0,Due dates.
+Settings & accounts,Switch account / mailbox,P0,Multi-account.
+,Out-of-office,P0,Schedule + internal/external messages.
+,Signature management,P0,Multiple signatures.
+Rules / automation,Create rule (when X → action),P1,"Move, mark read, forward, delete, flag."
+,Run rules on existing folder,P1,Apply retroactively.
+,Rule order and priority,P1,Conflict resolution.
+Categories & flags,Define categories,P1,Color + name.
+,Apply to messages and events,P1,Cross-domain tagging.
+,Filter by category,P1,View slicing.
+Sweep / clean up,"Sweep (keep latest, move all from sender)",P1,Bulk cleanup.
+,Clean up redundant in thread,P1,Conversation trim.
+Scheduling assistant,Attendees availability grid,P1,Find time.
+,Find a time helper,P1,Suggested slots.
+,Room finder,P1,Bookable rooms.
+Shared / delegated,Add another person's calendar,P1,Overlay.
+,Delegate mailbox/calendar,P1,Permission level.
+Groups,M365 group inbox / calendar / files,P1,Group surfaces.
+,Join / leave,P1,Membership.
+Inbox modes,Focused vs Other,P1,ML-sorted.
+Schedule send / snooze,Schedule send for later,P1,Delayed delivery.
+,Snooze message until time,P1,Resurface later.
+Pinning,Pin important messages,P1,Top of inbox.
+Mentions,@ in body,P1,Flag attention; mentions filter.
+Encryption,Sensitivity labels (confidential / encrypt),P1,DLP.
+,DLP warnings,P1,Pre-send checks.
+Calendar sharing,Publish calendar (availability or full),P1,External link.
+To Do integration,"Lists, sublists, due, reminders, recurrence",P1,Full task UI.
+Quick steps,One-click multi-action macros,P1,"E.g., 'Reply and delete'."
+Add-ins,"Sidebar add-ins (Zoom, Salesforce, Asana stubs)",P1,Third-party.
+Follow-ups,"If no reply in N days, surface",P1,Boomerang-like.
+,,,
+Agent Task Surfaces,,,
+Difficulty,Task,,
+Easy,Find the most recent email from 'Acme' with an attachment and save the attachment to a new folder 'Vendor Docs'.,,
+Medium,"Process inbox triage: archive newsletters, flag anything from your manager as high importance, schedule a 30m meeting with anyone who asked 'do you have time to chat?' using the scheduling assistant.",,
+Hard,"Set up a vacation: out-of-office for next week, rule forwarding urgent emails to a coworker, decline all non-recurring meetings during the period with a polite note, reschedule any 1:1s to the following week.",,
+,,,
+Failure Modes & State Hazards,,,
+#,Hazard,,
+1,Recipient autocomplete picks wrong person with similar name.,,
+2,Reply-all to a large distribution list.,,
+3,Send-without-attachment when 'attached' is in body.,,
+4,Rule loops or shadows another rule.,,
+5,Recurring meeting series edit applied to wrong scope.,,
+6,Time zone mishandling for cross-region meetings.,,
+7,Mailbox quota near full.,,

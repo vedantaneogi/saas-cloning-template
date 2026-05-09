@@ -11,7 +11,7 @@ import {
   Menu, Reply, ReplyAll, Forward, Trash2, Archive, MailOpen, Zap,
   ChevronDown, ChevronRight, Flag, FolderInput, Printer, MoreHorizontal,
   PanelRight, PanelBottom, PanelLeftClose, MessageSquare,
-  RotateCcw, HelpCircle, BookOpen, ExternalLink,
+  RotateCcw, RotateCw, HelpCircle, BookOpen, ExternalLink,
   CalendarPlus, CalendarDays, CalendarRange, Share2,
   UserPlus, Pencil, Star, Plus, CheckSquare, Users,
   Pin, Clock, Tag,
@@ -546,6 +546,7 @@ function ComposeMessageRibbon() {
       <ImportanceRibbonBtns />
       <SensitivityRibbonBtn />
       <EncryptRibbonBtn />
+      <ComposeBoomerangBtn />
     </div>
   )
 }
@@ -813,6 +814,134 @@ function EncryptRibbonBtn() {
       )}
     </>
   )
+}
+
+// Boomerang follow-up reminder. Mirrors Outlook + the Boomerang add-on:
+// "remind me if there is no reply" with quick presets + a custom date.
+// Stores the chosen ISO timestamp in editor store; ComposeModal sends it
+// on the create payload, server schedules the resurface via the
+// _flush_due_boomerangs sweep.
+export function BoomerangRibbonBtn({
+  value, onChange, label = 'Follow up',
+}: {
+  value: string | null
+  onChange: (v: string | null) => void
+  label?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customAt, setCustomAt] = useState('')
+  const btnRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setCustomOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const PRESETS = [
+    { label: '1 hour', getTime: () => { const d = new Date(); d.setHours(d.getHours() + 1); return d.toISOString() } },
+    { label: 'Tomorrow morning', getTime: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); return d.toISOString() } },
+    { label: '2 days', getTime: () => { const d = new Date(); d.setDate(d.getDate() + 2); return d.toISOString() } },
+    { label: '1 week', getTime: () => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString() } },
+  ]
+  const active = !!value
+  const summary = value ? formatBoomerangSummary(value) : null
+
+  return (
+    <>
+      <div ref={btnRef}>
+        <RibbonBtn label={label} active={active} onClick={() => {
+          if (btnRef.current) {
+            const r = btnRef.current.getBoundingClientRect()
+            setPos({ top: r.bottom + 4, left: r.left })
+          }
+          setOpen((v) => !v)
+        }}>
+          <RotateCw size={15} className={active ? 'text-[#0078D4]' : ''} />
+          <span className="flex items-center gap-0.5">{label} <ChevronDown size={8} /></span>
+        </RibbonBtn>
+      </div>
+      {open && (
+        <div ref={menuRef} className="fixed z-[200] w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in" style={{ top: pos.top, left: pos.left }}>
+          <p className="px-3 py-1 text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide">Remind me if there is no reply</p>
+          {active && (
+            <p className="px-3 pt-0 pb-1 text-[11px] text-[#0078D4]">Currently set: {summary}</p>
+          )}
+          {PRESETS.map((p) => (
+            <button key={p.label} type="button"
+              onClick={() => { onChange(p.getTime()); setOpen(false); setCustomOpen(false) }}
+              className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
+              <Clock size={14} className="text-[#605E5C] flex-shrink-0" />
+              <span className="flex-1 text-sm text-[#323130]">{p.label}</span>
+            </button>
+          ))}
+          <div className="h-px bg-[#EDEBE9] my-1" />
+          {!customOpen ? (
+            <button type="button" onClick={() => setCustomOpen(true)}
+              className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2">
+              <Clock size={14} className="text-[#605E5C] flex-shrink-0" />
+              <span className="flex-1 text-sm text-[#323130]">Pick a date…</span>
+            </button>
+          ) : (
+            <div className="px-3 py-2 space-y-2">
+              <input
+                type="datetime-local"
+                value={customAt}
+                onChange={(e) => setCustomAt(e.target.value)}
+                className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
+              />
+              <div className="flex gap-2">
+                <button type="button" disabled={!customAt}
+                  onClick={() => { onChange(new Date(customAt).toISOString()); setOpen(false); setCustomOpen(false); setCustomAt('') }}
+                  className="text-xs bg-[#0078D4] text-white px-3 py-1 rounded hover:bg-[#106EBE] disabled:opacity-50">Set</button>
+                <button type="button" onClick={() => { setCustomOpen(false); setCustomAt('') }}
+                  className="text-xs text-[#605E5C] px-2 py-1 hover:bg-[#EDEBE9] rounded">Cancel</button>
+              </div>
+            </div>
+          )}
+          {active && (
+            <>
+              <div className="h-px bg-[#EDEBE9] my-1" />
+              <button type="button" onClick={() => { onChange(null); setOpen(false); setCustomOpen(false) }}
+                className="w-full text-left px-3 py-1.5 text-sm text-[#D13438] hover:bg-[#FDE7E9]">Remove follow-up</button>
+            </>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+// Compose-side wrapper that reads/writes the editor store. The Sent-folder
+// ribbon button uses the same primitive but wires onChange to a PATCH
+// against /messages/{id} instead.
+function ComposeBoomerangBtn() {
+  const value = useEditorStore((s) => s.boomerangAt)
+  const setValue = useEditorStore((s) => s.setBoomerangAt)
+  return <BoomerangRibbonBtn value={value} onChange={setValue} />
+}
+
+function formatBoomerangSummary(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const ms = d.getTime() - now.getTime()
+  if (ms <= 0) return 'now'
+  const mins = Math.round(ms / 60000)
+  if (mins < 60) return `in ${mins}m`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `in ${hrs}h`
+  const days = Math.round(hrs / 24)
+  return `in ${days}d`
 }
 
 function MoreFormattingBtn({ editor }: { editor: ReturnType<typeof useEditorStore.getState>['editor'] }) {
@@ -1251,6 +1380,19 @@ function HomeRibbon() {
     },
   })
 
+  // Follow-up reminder (Boomerang). Server resurfaces the message in the
+  // sender's Inbox at boomerang_at if no reply has arrived. PATCH carries
+  // null to clear an existing reminder.
+  const boomerangMutation = useMutation({
+    mutationFn: (boomerangAt: string | null) =>
+      messages.update(selectedMessageId!, { boomerang_at: boomerangAt } as never),
+    onSuccess: (_, boomerangAt) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
+      showNotification(boomerangAt ? 'Follow-up reminder set' : 'Follow-up cleared')
+    },
+  })
+
   const selectedFolderSlug = useMailStore((s) => s.selectedFolderSlug)
   const isSentFolder = selectedFolderSlug === 'sent'
 
@@ -1374,6 +1516,16 @@ function HomeRibbon() {
             })()}
           </div>
 
+          {/* Follow-up — only in Sent folder, mirrors Boomerang's "set
+              after sending" path. Reuses BoomerangRibbonBtn primitive
+              (same dropdown UI as the compose-side button) but wires
+              onChange to a PATCH /messages/{id} mutation. */}
+          {isSentFolder && (
+            <BoomerangRibbonBtn
+              value={(message as { boomerang_at?: string | null } | undefined)?.boomerang_at ?? null}
+              onChange={(v) => boomerangMutation.mutate(v)}
+            />
+          )}
           {!isSentFolder && (
             <div ref={snoozeToolbarRef}>
               <RibbonBtn large label="Snooze" active={!!message?.snooze_until} onClick={() => setSnoozeToolbarOpen((v) => !v)}>
