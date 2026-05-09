@@ -457,26 +457,58 @@ async def get_availability(
         or_clauses = [EventAttendee.email == email]
         if user is not None:
             or_clauses.append(Event.user_id == user.id)
-        result_q = await db.execute(
+
+        # Step 1: non-recurring events overlapping the window.
+        non_recur_q = await db.execute(
             select(Event)
             .outerjoin(EventAttendee, EventAttendee.event_id == Event.id)
             .where(
                 or_(*or_clauses),
+                Event.is_recurring.is_(False),
                 Event.start_time < end,
                 Event.end_time > start,
                 Event.status.in_(["busy", "tentative", "out_of_office"]),
             )
             .distinct()
         )
-        busy_events = result_q.scalars().all()
-        slots = [
-            {
+        slots: list[dict] = []
+        for e in non_recur_q.scalars().all():
+            slots.append({
                 "start": e.start_time.isoformat(),
                 "end": e.end_time.isoformat(),
                 "status": e.status,
-            }
-            for e in busy_events
-        ]
+            })
+
+        # Step 2: recurring parents the email is owner / attendee of —
+        # parent.start_time is whenever the series began (could be way
+        # before the window), so we expand each into instances and keep
+        # whatever falls inside [start, end]. Without this, the
+        # "Weekly Team Standup" series doesn't count toward today's
+        # busy schedule because the parent is dated weeks ago.
+        recur_q = await db.execute(
+            select(Event)
+            .outerjoin(EventAttendee, EventAttendee.event_id == Event.id)
+            .where(
+                or_(*or_clauses),
+                Event.is_recurring.is_(True),
+                Event.status.in_(["busy", "tentative", "out_of_office"]),
+            )
+            .distinct()
+        )
+        for parent in recur_q.scalars().all():
+            try:
+                instances = _expand_recurring_event(parent, start, end)
+            except Exception:
+                instances = []
+            for inst in instances:
+                # _expand_recurring_event returns EventOut instances; their
+                # start/end are already datetimes within [start, end].
+                slots.append({
+                    "start": inst.start_time.isoformat(),
+                    "end": inst.end_time.isoformat(),
+                    "status": parent.status,
+                })
+
         result.append({"attendee": email, "slots": slots})
     return result
 
