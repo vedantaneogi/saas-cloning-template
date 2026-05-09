@@ -473,7 +473,14 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
   const [findATimeOpen, setFindATimeOpen] = useState(true)
   const startVal = watch('start_time')
   const endVal = watch('end_time')
-  const attendeeEmails = attendees.map((a) => a.email).filter(Boolean)
+  // attendeeEmails feeds the Find-a-time pane and the SA availability fetch.
+  // Earlier this was derived from `attendees` (the *loaded* RSVP list — empty
+  // for new events), which silently ignored everyone the user had typed
+  // into the autocomplete. Now we use `invitedAttendees` (the live list) +
+  // the organizer themselves, so changing invitees actually re-fetches.
+  const organizerEmail = (currentUser?.email ?? '').toLowerCase()
+  const invitedEmails = invitedAttendees.map((a) => a.email).filter(Boolean)
+  const attendeeEmails = (organizerEmail ? [organizerEmail, ...invitedEmails] : invitedEmails)
   const showNotificationToast = useUIStore((s) => s.showNotification)
 
   // Helper — push an "HH:MM" start (mock-day = May 8 2026) into the form's
@@ -875,6 +882,7 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
           })()}
           initialDate={startVal ? new Date(startVal) : undefined}
           invitedAttendees={invitedAttendees}
+          organizer={currentUser ? { email: currentUser.email, name: currentUser.display_name ?? currentUser.email } : undefined}
           onAddInvitee={(email, name) => {
             if (invitedAttendees.find((a) => a.email === email)) return
             setInvitedAttendees((prev) => [...prev, { email, name: name?.trim() || email }])

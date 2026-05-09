@@ -446,19 +446,29 @@ async def get_availability(
     result = []
     for email in emails:
         user = user_by_email.get(email)
-        if user is None:
-            # External attendee — no calendar in this app, so no slots.
-            result.append({"attendee": email, "slots": []})
-            continue
-        busy_slots_result = await db.execute(
-            select(Event).where(
-                Event.user_id == user.id,
+        # An email is "busy" at a slot if EITHER:
+        #   1. They own an event on their own calendar in that window, OR
+        #   2. They appear as an EventAttendee on someone else's event in
+        #      that window.
+        # The second case is what makes the SA show real availability —
+        # in this clone the seed creates events on the organizer's
+        # calendar and fans out attendees, so most invitee-side conflicts
+        # only show up via the EventAttendee join.
+        or_clauses = [EventAttendee.email == email]
+        if user is not None:
+            or_clauses.append(Event.user_id == user.id)
+        result_q = await db.execute(
+            select(Event)
+            .outerjoin(EventAttendee, EventAttendee.event_id == Event.id)
+            .where(
+                or_(*or_clauses),
                 Event.start_time < end,
                 Event.end_time > start,
                 Event.status.in_(["busy", "tentative", "out_of_office"]),
             )
+            .distinct()
         )
-        busy_events = busy_slots_result.scalars().all()
+        busy_events = result_q.scalars().all()
         slots = [
             {
                 "start": e.start_time.isoformat(),

@@ -32,6 +32,10 @@ interface SchedulingAssistantViewProps {
   initialDate?: Date
   /** Real invitees from the parent form. */
   invitedAttendees?: { email: string; name?: string }[]
+  /** Organizer (current user) — rendered as the first required row so the
+   *  creator's own busy time is visible alongside everyone they invited.
+   *  In Outlook the organizer is implicitly part of the meeting. */
+  organizer?: { email: string; name: string }
   /** Add an invitee (called when the inline + Add input submits). */
   onAddInvitee?: (email: string, name?: string) => void
   /** Remove an invitee from the parent's list. */
@@ -67,6 +71,7 @@ export function SchedulingAssistantView({
   initialDurationMinutes = 30,
   initialDate,
   invitedAttendees = [],
+  organizer,
   onAddInvitee,
   onRemoveInvitee,
   onConfirm,
@@ -125,16 +130,34 @@ export function SchedulingAssistantView({
   const dayEnd = useMemo(() => {
     const d = new Date(selectedDate); d.setHours(23, 59, 59, 999); return d
   }, [selectedDate])
-  const emailsKey = invitedAttendees.map((a) => a.email).sort().join(',')
+  // Combined list: organizer + invitees (deduped by email). The organizer
+  // is always rendered first in Required so the creator's busy time is
+  // visible alongside everyone they invited.
+  const allInvitees: { email: string; name?: string; isOrganizer?: boolean }[] = (() => {
+    const out: { email: string; name?: string; isOrganizer?: boolean }[] = []
+    const seen = new Set<string>()
+    if (organizer) {
+      out.push({ email: organizer.email, name: organizer.name, isOrganizer: true })
+      seen.add(organizer.email.toLowerCase())
+    }
+    for (const a of invitedAttendees) {
+      const lower = (a.email || '').toLowerCase()
+      if (!lower || seen.has(lower)) continue
+      out.push(a)
+      seen.add(lower)
+    }
+    return out
+  })()
+  const emailsKey = allInvitees.map((a) => a.email).sort().join(',')
   const { data: availabilityData } = useQuery({
     queryKey: ['sa-availability', emailsKey, dk],
     queryFn: () =>
       events.getAvailability(
-        invitedAttendees.map((a) => a.email),
+        allInvitees.map((a) => a.email),
         dayStart.toISOString(),
         dayEnd.toISOString(),
       ),
-    enabled: invitedAttendees.length > 0,
+    enabled: allInvitees.length > 0,
   })
 
   /** Map a real /availability response to an HH:MM block list, clamped
@@ -166,16 +189,15 @@ export function SchedulingAssistantView({
 
   // Build attendee rows. Color + initials still come from the email-hash
   // helper (so the same person looks the same across days), but the
-  // availability blocks are now the real schedule.
-  const liveAttendees: MockAttendee[] = invitedAttendees.map((a) => {
-    const base = makeAttendeeFromEmail(
-      a.email,
-      a.name,
-      optionalEmails.has(a.email) ? 'optional' : 'required',
-      dk,
-    )
+  // availability blocks are now the real schedule. The organizer is always
+  // required (you can't make yourself optional), invitees can be flipped
+  // via optionalEmails.
+  const liveAttendees: MockAttendee[] = allInvitees.map((a) => {
+    const isOpt = !a.isOrganizer && optionalEmails.has(a.email)
+    const base = makeAttendeeFromEmail(a.email, a.name, isOpt ? 'optional' : 'required', dk)
     const realBlocks = realBlocksFor(a.email)
-    return { ...base, availability: realBlocks }
+    const displayName = a.isOrganizer ? `${base.name} (organizer)` : base.name
+    return { ...base, name: displayName, availability: realBlocks }
   })
   const required = liveAttendees.filter((a) => a.type === 'required')
   const optional = liveAttendees.filter((a) => a.type === 'optional')
@@ -357,6 +379,7 @@ export function SchedulingAssistantView({
             title="Required attendees"
             attendees={required}
             onRemove={removeAttendee}
+            nonRemovableEmail={organizer?.email}
             addOpen={addReqOpen}
             setAddOpen={setAddReqOpen}
             addEmail={addReqEmail}
@@ -499,6 +522,7 @@ function Section({
   title,
   attendees,
   onRemove,
+  nonRemovableEmail,
   addOpen,
   setAddOpen,
   addEmail,
@@ -510,6 +534,7 @@ function Section({
   title: string
   attendees: MockAttendee[]
   onRemove: (a: MockAttendee) => void
+  nonRemovableEmail?: string
   addOpen: boolean
   setAddOpen: (v: boolean) => void
   addEmail: string
@@ -518,6 +543,7 @@ function Section({
   addLabel: string
   emptyLabel?: string
 }) {
+  const lockedEmail = (nonRemovableEmail || '').toLowerCase()
   return (
     <div className="px-3 py-2 border-b border-[#EDEBE9]">
       <p className="text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide mb-1.5">{title}</p>
@@ -536,14 +562,16 @@ function Section({
             <p className="text-xs text-[#323130] truncate">{a.name}</p>
             <p className="text-[10px] text-[#605E5C] capitalize">{a.status}</p>
           </div>
-          <button
-            type="button"
-            aria-label={`Remove ${a.name}`}
-            onClick={() => onRemove(a)}
-            className="opacity-0 group-hover:opacity-100 text-[#605E5C] hover:text-[#D13438]"
-          >
-            <XIcon size={12} />
-          </button>
+          {a.email.toLowerCase() !== lockedEmail && (
+            <button
+              type="button"
+              aria-label={`Remove ${a.name}`}
+              onClick={() => onRemove(a)}
+              className="opacity-0 group-hover:opacity-100 text-[#605E5C] hover:text-[#D13438]"
+            >
+              <XIcon size={12} />
+            </button>
+          )}
         </div>
       ))}
 
