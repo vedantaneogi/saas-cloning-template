@@ -76,30 +76,52 @@ function MailResults({ q, from, to, cc, subject, keywords, hasAttachment, readSt
   )
 }
 
-function FilesResults({ q }: { q?: string }) {
-  // Attachments live inside messages; surface them by searching has_attachment messages
+function FilesResults({ q, from, to, cc, subject, keywords, readStatus, dateFrom, dateTo, folderId }: {
+  q?: string; from?: string; to?: string; cc?: string; subject?: string; keywords?: string;
+  readStatus?: string; dateFrom?: string; dateTo?: string; folderId?: string
+}) {
+  // Files tab forces has_attachment=true regardless of the URL param — the
+  // tab's whole purpose is "show attachments" and prior versions only fired
+  // the query when a text `q` was present, leaving the tab empty when the
+  // user navigated in via filters (e.g. /mail/search?has_attachment=true&type=files).
+  // Now any filter (or no filter at all) hits the search endpoint with
+  // has_attachment=true and we surface every attachment from the result set.
   const { data, isLoading } = useQuery({
-    queryKey: ['files-search', q],
-    queryFn: () => messages.search({ q: q || undefined, has_attachment: true }),
-    enabled: !!q,
+    queryKey: ['files-search', q, from, to, cc, subject, keywords, readStatus, dateFrom, dateTo, folderId],
+    queryFn: () =>
+      messages.search({
+        q: q || undefined,
+        from: from || undefined,
+        to: to || undefined,
+        cc: cc || undefined,
+        subject: subject || undefined,
+        keywords: keywords || undefined,
+        has_attachment: true,
+        is_read: readStatus === 'read' ? true : readStatus === 'unread' ? false : undefined,
+        date_from: dateFrom ? `${dateFrom}T00:00:00` : undefined,
+        date_to: dateTo ? `${dateTo}T23:59:59` : undefined,
+        folder_id: folderId || undefined,
+      }),
   })
 
   const items = (data?.items ?? []).flatMap((m) =>
     (m.attachments ?? []).map((a) => ({ message: m, attachment: a }))
   )
-  // If a query is given, narrow to filenames matching it
+  // When a free-text query is given, also narrow to filenames matching it
+  // (the server matched on subject/body/from, the client narrows on filename
+  // so "report.pdf" search returns just the report attachments, not every
+  // attachment on a "report" subject).
   const filtered = q
     ? items.filter(({ attachment }) => attachment.filename.toLowerCase().includes(q.toLowerCase()))
     : items
 
-  if (!q) return <EmptyState icon={Search} title="Search files" description="Find attachments across your mailbox." />
   if (isLoading) return <SpinnerOverlay />
   if (filtered.length === 0) return <EmptyState icon={Search} title="No files" description="No attachments matched." />
 
   return (
     <>
       <p className="text-xs text-[#605E5C] px-3 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8]">
-        {filtered.length} file(s) for &ldquo;{q}&rdquo;
+        {filtered.length} file(s){q ? <> for &ldquo;{q}&rdquo;</> : null}
       </p>
       <ul className="divide-y divide-[#EDEBE9]">
         {filtered.map(({ message, attachment }) => (
@@ -118,15 +140,19 @@ function FilesResults({ q }: { q?: string }) {
   )
 }
 
-function PeopleResults({ q }: { q?: string }) {
+function PeopleResults({ q, from }: { q?: string; from?: string }) {
+  // Always fire — when there's no query string we still want to show
+  // contacts (matches the global-toolbar dropdown's behaviour and means a
+  // bare "?type=people" URL surfaces the address book instead of an empty
+  // state). When the user typed a `from:` filter we use that as the term
+  // too, so /mail/search?from=alice&type=people behaves intuitively.
   const { data, isLoading } = useQuery({
-    queryKey: ['people-search', q],
+    queryKey: ['people-search'],
     queryFn: () => contacts.list(),
-    enabled: !!q,
   })
+  const term = (q || from || '').toLowerCase()
   const items = (data?.items ?? []).filter((c) => {
-    if (!q) return false
-    const term = q.toLowerCase()
+    if (!term) return true
     return (
       c.display_name?.toLowerCase().includes(term) ||
       c.email?.toLowerCase().includes(term) ||
@@ -135,7 +161,6 @@ function PeopleResults({ q }: { q?: string }) {
     )
   })
 
-  if (!q) return <EmptyState icon={Search} title="Search people" description="Find contacts by name, email, or company." />
   if (isLoading) return <SpinnerOverlay />
   if (items.length === 0) return <EmptyState icon={Search} title="No people" description="No contacts matched." />
 
@@ -239,9 +264,11 @@ function SearchResults() {
         {(type === 'all' || type === 'mail') && (
           <MailResults q={q} from={from} to={to} cc={cc} subject={subject} keywords={keywords} hasAttachment={hasAttachment} readStatus={readStatus} dateFrom={dateFrom} dateTo={dateTo} folderId={folderId} />
         )}
-        {type === 'files' && <FilesResults q={q || undefined} />}
+        {type === 'files' && (
+          <FilesResults q={q || undefined} from={from} to={to} cc={cc} subject={subject} keywords={keywords} readStatus={readStatus} dateFrom={dateFrom} dateTo={dateTo} folderId={folderId} />
+        )}
         {type === 'teams' && <TeamsResults q={q || undefined} />}
-        {type === 'people' && <PeopleResults q={q || undefined} />}
+        {type === 'people' && <PeopleResults q={q || undefined} from={from} />}
       </div>
     </div>
   )
