@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { useQuery } from '@tanstack/react-query'
 import { FolderTree } from '@/components/mail/FolderTree'
@@ -13,6 +13,11 @@ import { settings } from '@/lib/api'
 export default function MailFolderPage() {
   const params = useParams()
   const folder = params?.folder as string
+  const searchParams = useSearchParams()
+  // ?msg_id=<uuid> is used by deep-links (e.g. the Boomerang notice's
+  // "view this conversation" link) to open a specific message after the
+  // folder loads. We'll auto-select it once the folder is set.
+  const deepLinkMsgId = searchParams?.get('msg_id') ?? null
   const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
 
@@ -29,10 +34,16 @@ export default function MailFolderPage() {
   useEffect(() => {
     if (folder) {
       setSelectedFolderSlug(folder)
-      setSelectedMessageId(null)
+      // Honor ?msg_id deep-link (Boomerang notice → "view this conversation").
+      // If present, open that message instead of clearing the selection.
+      if (deepLinkMsgId) {
+        setSelectedMessageId(deepLinkMsgId)
+      } else {
+        setSelectedMessageId(null)
+      }
       clearSelection()
     }
-  }, [folder, setSelectedFolderSlug, setSelectedMessageId, clearSelection])
+  }, [folder, deepLinkMsgId, setSelectedFolderSlug, setSelectedMessageId, clearSelection])
 
   const resizeHandleH = (
     <PanelResizeHandle className="w-1 bg-[#EDEBE9] hover:bg-[#0078D4] transition-colors cursor-col-resize" />
