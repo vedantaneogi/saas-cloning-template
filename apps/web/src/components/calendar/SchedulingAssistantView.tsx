@@ -702,6 +702,7 @@ function RoomSection({
 
 function AttendeeRow({ row }: { row: MockAttendee | MockRoom }) {
   const availability = 'availability' in row ? row.availability : []
+  const ownerName = 'name' in row ? row.name : (row as MockRoom).name
   return (
     <div className="relative h-12 border-b border-[#EDEBE9]">
       {availability.map((slot, idx) => {
@@ -709,6 +710,7 @@ function AttendeeRow({ row }: { row: MockAttendee | MockRoom }) {
         const endMin = timeToMinutes(slot.end)
         const left = (startMin / SA_GRID_TOTAL_MINUTES) * 100
         const width = ((endMin - startMin) / SA_GRID_TOTAL_MINUTES) * 100
+        const statusLabel = slot.status === 'busy' ? 'Busy' : 'Tentative'
         return (
           <div
             key={idx}
@@ -717,7 +719,7 @@ function AttendeeRow({ row }: { row: MockAttendee | MockRoom }) {
               slot.status === 'busy' ? 'sa-hatch-busy' : 'sa-hatch-tentative',
             )}
             style={{ left: `${left}%`, width: `${width}%` }}
-            title={`${slot.start} – ${slot.end}: ${slot.status}`}
+            title={`${ownerName} — ${statusLabel} ${slot.start}–${slot.end}`}
           />
         )
       })}

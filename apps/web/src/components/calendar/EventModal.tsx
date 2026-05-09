@@ -1360,14 +1360,21 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
       {/* Find a time — right-rail with suggested 30-min slots; shown when
           the user has added at least one attendee. Closing it falls back
           to the existing mini-day sidebar. */}
-      {findATimeOpen && attendeeEmails.length > 0 && (
+      {findATimeOpen && invitedEmails.length > 0 && (
         <FindATimePane
           selectedSlotStart={selectedSuggestedStart}
           attendeeEmails={attendeeEmails}
           date={startVal ? new Date(startVal) : new Date()}
-          onSelectSlot={(start) => {
+          onSelectSlot={(start, _end, slotDate) => {
             setSelectedSuggestedStart(start)
-            applyMockSlot(start, 30)
+            // Push the chosen date+time into the form so the calendar
+            // grid + the SA grid + the date input all reflect it.
+            const target = slotDate ?? (startVal ? new Date(startVal) : new Date())
+            const [h, m] = start.split(':').map(Number)
+            const startD = new Date(target); startD.setHours(h, m, 0, 0)
+            const endD = new Date(startD.getTime() + 30 * 60_000)
+            setValue('start_time', formatDateTimeLocal(startD))
+            setValue('end_time', formatDateTimeLocal(endD))
           }}
           onClose={() => setFindATimeOpen(false)}
         />
