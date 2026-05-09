@@ -886,9 +886,22 @@ export function EventModal({ open, onClose, initialDate, event, initialAttendees
             if (!startVal || !endVal) return 30
             return Math.max(15, Math.round((new Date(endVal).getTime() - new Date(startVal).getTime()) / 60_000))
           })()}
+          initialDate={startVal ? new Date(startVal) : undefined}
           invitedAttendees={invitedAttendees}
-          onConfirm={(start, dur) => {
-            applyMockSlot(start, dur)
+          onAddInvitee={(email, name) => {
+            if (invitedAttendees.find((a) => a.email === email)) return
+            setInvitedAttendees((prev) => [...prev, { email, name: name?.trim() || email }])
+          }}
+          onRemoveInvitee={removeInvitee}
+          onConfirm={(date, start, dur) => {
+            // Push the SA-chosen date into both start_time and end_time so
+            // changing the SA day actually moves the event off May 8.
+            const [h, m] = start.split(':').map(Number)
+            const startDate = new Date(date)
+            startDate.setHours(h, m, 0, 0)
+            const endDate = new Date(startDate.getTime() + dur * 60_000)
+            setValue('start_time', formatDateTimeLocal(startDate))
+            setValue('end_time', formatDateTimeLocal(endDate))
             setActiveView('event')
           }}
           onCancel={() => setActiveView('event')}

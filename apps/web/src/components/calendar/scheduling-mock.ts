@@ -130,16 +130,21 @@ function deriveInitials(name: string | undefined, email: string): string {
   return source.slice(0, 2).toUpperCase()
 }
 
-/** Build a MockAttendee from a real invitee. Color + availability are
- *  deterministic on email so the SA grid is stable across re-renders.
- *  Generates 1–3 busy/tentative blocks within 1 PM–5 PM. */
+/** Build a MockAttendee from a real invitee. Color is deterministic on
+ *  email; availability also folds in `dateKey` (yyyy-MM-dd) so changing
+ *  the SA date redraws plausibly different schedules per person. The
+ *  layout stays stable on the same date though — same email + date =
+ *  same blocks. Generates 1–3 busy/tentative blocks within 1 PM–5 PM. */
 export function makeAttendeeFromEmail(
   email: string,
   name?: string,
   type: 'required' | 'optional' = 'required',
+  dateKey?: string,
 ): MockAttendee {
-  const h = djb2(email)
-  const color = COLOR_KEYS[h % COLOR_KEYS.length]
+  const h = djb2(email + (dateKey ?? ''))
+  // Color is keyed on email alone so the same person always shows the
+  // same avatar tint regardless of which date is active.
+  const color = COLOR_KEYS[djb2(email) % COLOR_KEYS.length]
   // Deterministic 1–2 busy + 0–1 tentative blocks, snapped to 5-min ticks.
   const blocks: { start: string; end: string; status: 'busy' | 'tentative' }[] = []
   // First busy block — somewhere in 1–3 PM

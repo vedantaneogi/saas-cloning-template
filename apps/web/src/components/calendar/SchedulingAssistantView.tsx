@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronLeft, ChevronRight, X as XIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, X as XIcon, Plus, Building2, Users as UsersIcon } from 'lucide-react'
+import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import {
   MOCK_ATTENDEES,
@@ -21,54 +22,117 @@ interface SchedulingAssistantViewProps {
   initialStart?: string
   /** Initial duration in minutes. */
   initialDurationMinutes?: number
-  /** Real invitees from the parent form. When non-empty, these replace the
-   *  spec's static MOCK_ATTENDEES so the grid reflects the people the user
-   *  actually invited (with deterministic mock busy/tentative blocks per
-   *  email). When empty we fall back to the spec demo so the empty-state
-   *  is still recognisably Outlook-like. */
+  /** Initial date for the grid; falls back to today. */
+  initialDate?: Date
+  /** Real invitees from the parent form. */
   invitedAttendees?: { email: string; name?: string }[]
-  /** Confirm — emits the chosen "HH:MM" start + minutes-duration. */
-  onConfirm: (startHHMM: string, durationMinutes: number) => void
+  /** Add an invitee (called when the inline + Add input submits). */
+  onAddInvitee?: (email: string, name?: string) => void
+  /** Remove an invitee from the parent's list. */
+  onRemoveInvitee?: (email: string) => void
+  /** Confirm — emits the chosen date + "HH:MM" start + minutes-duration. */
+  onConfirm: (date: Date, startHHMM: string, durationMinutes: number) => void
   /** Cancel — discard selection and return to event form. */
   onCancel: () => void
 }
 
+/** "yyyy-MM-dd" key used to vary mock availability per date. */
+function dateKey(d: Date): string {
+  return format(d, 'yyyy-MM-dd')
+}
+
+function addDays(d: Date, n: number): Date {
+  const next = new Date(d)
+  next.setDate(next.getDate() + n)
+  return next
+}
+
 /**
- * Outlook Web Scheduling Assistant clone — tabbed view that replaces the
- * Event form body when active. Uses deterministic mock attendees, rooms,
- * and availability per senior's spec.
+ * Outlook Web Scheduling Assistant clone.
  *
- * Layout:
- *   [tab row: Event / Scheduling assistant / Response options]
- *   [control row: Today / prev / next / date / start–end / TZ / All day]
- *   [main body]
- *     ├── left pane: Required + Optional + Rooms (collapsible, with avatars)
- *     └── right pane: time grid + busy/tentative blocks + selected-slot block
- *   [legend row]
- *   [bottom right: OK / Cancel]
+ * Now fully interactive (per senior follow-up): real date/time controls,
+ * removable demo attendees, working + Add buttons for required / optional /
+ * room, and a Response options flyout. The grid still uses deterministic
+ * mock availability — the dateKey hash means changing the date redraws
+ * plausibly different schedules without any backend.
  */
 export function SchedulingAssistantView({
   initialStart = '15:00',
   initialDurationMinutes = 30,
-  invitedAttendees,
+  initialDate,
+  invitedAttendees = [],
+  onAddInvitee,
+  onRemoveInvitee,
   onConfirm,
   onCancel,
 }: SchedulingAssistantViewProps) {
+  // Date / time
   const [selectedStart, setSelectedStart] = useState(initialStart)
-  const [duration] = useState(initialDurationMinutes)
+  const [selectedDuration, setSelectedDuration] = useState(initialDurationMinutes)
+  const [selectedDate, setSelectedDate] = useState<Date>(initialDate ?? new Date())
 
-  // If the parent invited real people, render them with deterministic mock
-  // availability. Otherwise show the spec's three demo attendees so the
-  // empty state still demonstrates the layout.
-  const liveAttendees: MockAttendee[] = (invitedAttendees && invitedAttendees.length > 0)
-    ? invitedAttendees.map((a) => makeAttendeeFromEmail(a.email, a.name, 'required'))
-    : MOCK_ATTENDEES
+  // Optional-attendee toggle (SA-internal — the parent's invitee list is a
+  // single bucket; we just visually split which ones are "optional" here).
+  const [optionalEmails, setOptionalEmails] = useState<Set<string>>(new Set())
+  // Demo attendees the user dismissed (only relevant in the empty state
+  // when invitedAttendees is []).
+  const [demoRemoved, setDemoRemoved] = useState<Set<string>>(new Set())
+  // Rooms picked here. Independent from the form's location field — the
+  // SA grid is just a preview surface.
+  const [pickedRoomIds, setPickedRoomIds] = useState<string[]>(['room-1', 'room-2'])
+
+  // Inline + Add editors
+  const [addReqOpen, setAddReqOpen] = useState(false)
+  const [addOptOpen, setAddOptOpen] = useState(false)
+  const [addReqEmail, setAddReqEmail] = useState('')
+  const [addOptEmail, setAddOptEmail] = useState('')
+  const [addRoomOpen, setAddRoomOpen] = useState(false)
+  const addRoomRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!addRoomOpen) return
+    const h = (e: MouseEvent) => {
+      if (addRoomRef.current && !addRoomRef.current.contains(e.target as Node)) setAddRoomOpen(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [addRoomOpen])
+
+  // Response options flyout
+  const [responseOpen, setResponseOpen] = useState(false)
+  const responseRef = useRef<HTMLDivElement>(null)
+  const [respFlags, setRespFlags] = useState({ request: true, forward: true, hide: false })
+  useEffect(() => {
+    if (!responseOpen) return
+    const h = (e: MouseEvent) => {
+      if (responseRef.current && !responseRef.current.contains(e.target as Node)) setResponseOpen(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [responseOpen])
+
+  // Resolve attendee rows. When real invitees exist, those drive the list
+  // (and the optionalEmails set splits them into Required vs Optional).
+  // Otherwise show the spec demo, minus anything the user has dismissed.
+  const dk = dateKey(selectedDate)
+  const liveAttendees: MockAttendee[] = invitedAttendees.length > 0
+    ? invitedAttendees.map((a) =>
+        makeAttendeeFromEmail(
+          a.email,
+          a.name,
+          optionalEmails.has(a.email) ? 'optional' : 'required',
+          dk,
+        ),
+      )
+    : MOCK_ATTENDEES.filter((a) => !demoRemoved.has(a.id))
   const required = liveAttendees.filter((a) => a.type === 'required')
   const optional = liveAttendees.filter((a) => a.type === 'optional')
+  const pickedRooms: MockRoom[] = pickedRoomIds
+    .map((id) => MOCK_ROOMS.find((r) => r.id === id))
+    .filter((r): r is MockRoom => !!r)
 
   const selectedStartMin = timeToMinutes(selectedStart)
   const selectedLeftPct = (selectedStartMin / SA_GRID_TOTAL_MINUTES) * 100
-  const selectedWidthPct = (duration / SA_GRID_TOTAL_MINUTES) * 100
+  const selectedWidthPct = (selectedDuration / SA_GRID_TOTAL_MINUTES) * 100
 
   // Click anywhere on the grid → snap to nearest 30-min slot.
   const handleGridClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -80,6 +144,29 @@ export function SchedulingAssistantView({
     const minute = minutes % 60
     if (hour < SA_GRID_START_HOUR || hour >= SA_GRID_END_HOUR) return
     setSelectedStart(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
+  }
+
+  const removeAttendee = (a: MockAttendee) => {
+    if (invitedAttendees.length > 0 && onRemoveInvitee) {
+      onRemoveInvitee(a.email)
+      // Also clear from optional set so it's not stuck.
+      setOptionalEmails((prev) => {
+        const next = new Set(prev)
+        next.delete(a.email)
+        return next
+      })
+    } else {
+      setDemoRemoved((prev) => new Set(prev).add(a.id))
+    }
+  }
+
+  const submitAddInvitee = (email: string, asOptional: boolean) => {
+    const trimmed = email.trim()
+    if (!trimmed || !trimmed.includes('@')) return
+    onAddInvitee?.(trimmed)
+    if (asOptional) {
+      setOptionalEmails((prev) => new Set(prev).add(trimmed))
+    }
   }
 
   return (
@@ -100,31 +187,77 @@ export function SchedulingAssistantView({
         >
           Scheduling assistant
         </button>
-        <button
-          type="button"
-          className="px-3 py-2 text-xs text-[#605E5C] hover:bg-[#F3F2F1] rounded-t"
-        >
-          Response options
-        </button>
+        <div ref={responseRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setResponseOpen((v) => !v)}
+            aria-expanded={responseOpen}
+            className={cn(
+              'px-3 py-2 text-xs rounded-t flex items-center gap-1',
+              responseOpen
+                ? 'text-[#0078D4] bg-[#EBF3FB] font-medium'
+                : 'text-[#605E5C] hover:bg-[#F3F2F1]',
+            )}
+          >
+            Response options <ChevronLeft size={10} className="rotate-[270deg]" />
+          </button>
+          {responseOpen && (
+            <div className="absolute left-0 top-full mt-1 z-30 w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
+              <p className="px-3 py-1.5 text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide border-b border-[#EDEBE9]">
+                Response options
+              </p>
+              {(
+                [
+                  { k: 'request', label: 'Request responses', desc: 'Track who accepted, declined, or proposed.' },
+                  { k: 'forward', label: 'Allow forwarding', desc: 'Recipients can forward this invite.' },
+                  { k: 'hide', label: 'Hide attendee list', desc: "Don't reveal other attendees to invitees." },
+                ] as const
+              ).map((row) => (
+                <label key={row.k} className="flex items-start gap-2 px-3 py-2 hover:bg-[#F3F2F1] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={respFlags[row.k]}
+                    onChange={(e) => setRespFlags((prev) => ({ ...prev, [row.k]: e.target.checked }))}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <p className="text-sm text-[#323130]">{row.label}</p>
+                    <p className="text-[11px] text-[#605E5C]">{row.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Control row */}
       <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8] flex-shrink-0 text-xs">
-        <button type="button" className="px-2.5 py-1 border border-[#D2D0CE] rounded text-[#323130] hover:bg-[#F3F2F1]">
+        <button type="button" onClick={() => setSelectedDate(new Date())} className="px-2.5 py-1 border border-[#D2D0CE] rounded text-[#323130] hover:bg-[#F3F2F1]">
           Today
         </button>
-        <button type="button" aria-label="Previous day" className="p-1 rounded text-[#605E5C] hover:bg-[#F3F2F1]">
+        <button type="button" onClick={() => setSelectedDate((d) => addDays(d, -1))} aria-label="Previous day" className="p-1 rounded text-[#605E5C] hover:bg-[#F3F2F1]">
           <ChevronLeft size={14} />
         </button>
-        <button type="button" aria-label="Next day" className="p-1 rounded text-[#605E5C] hover:bg-[#F3F2F1]">
+        <button type="button" onClick={() => setSelectedDate((d) => addDays(d, 1))} aria-label="Next day" className="p-1 rounded text-[#605E5C] hover:bg-[#F3F2F1]">
           <ChevronRight size={14} />
         </button>
-        <select className="border border-[#D2D0CE] rounded px-2 py-1 bg-white">
-          <option>Fri, May 8, 2026</option>
-        </select>
+        <input
+          type="date"
+          value={dateKey(selectedDate)}
+          onChange={(e) => {
+            const v = e.target.value
+            if (!v) return
+            const [y, m, d] = v.split('-').map(Number)
+            setSelectedDate(new Date(y, m - 1, d))
+          }}
+          aria-label="Date"
+          className="border border-[#D2D0CE] rounded px-2 py-1 bg-white"
+        />
         <select
           value={selectedStart}
           onChange={(e) => setSelectedStart(e.target.value)}
+          aria-label="Start time"
           className="border border-[#D2D0CE] rounded px-2 py-1 bg-white"
         >
           {Array.from({ length: ((SA_GRID_END_HOUR - SA_GRID_START_HOUR) * 60) / 30 }, (_, i) => {
@@ -141,14 +274,24 @@ export function SchedulingAssistantView({
           })}
         </select>
         <span className="text-[#605E5C]">to</span>
-        <span className="border border-[#D2D0CE] rounded px-2 py-1 bg-white text-[#323130] min-w-[88px] inline-block text-center">
-          {(() => {
-            const endMin = selectedStartMin + duration
+        <select
+          value={selectedDuration}
+          onChange={(e) => setSelectedDuration(Number(e.target.value))}
+          aria-label="End time / duration"
+          className="border border-[#D2D0CE] rounded px-2 py-1 bg-white text-[#323130]"
+        >
+          {[15, 30, 45, 60, 90, 120].map((mins) => {
+            const endMin = selectedStartMin + mins
             const h = SA_GRID_START_HOUR + Math.floor(endMin / 60)
             const m = endMin % 60
-            return `${h > 12 ? h - 12 : h}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
-          })()}
-        </span>
+            const display = `${h > 12 ? h - 12 : h}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'} (${mins}m)`
+            return (
+              <option key={mins} value={mins}>
+                {display}
+              </option>
+            )
+          })}
+        </select>
         <select className="border border-[#D2D0CE] rounded px-2 py-1 bg-white">
           <option>(UTC-5:00) Eastern Time (US &amp; Canada)</option>
         </select>
@@ -162,17 +305,54 @@ export function SchedulingAssistantView({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left pane */}
         <aside className="w-64 flex-shrink-0 border-r border-[#EDEBE9] overflow-y-auto outlook-scrollbar">
-          <Section title="Required attendees" addLabel="Add required attendee" attendees={required} />
-          <Section title="Optional attendees" addLabel="Add optional attendee" attendees={optional} />
-          <RoomSection rooms={MOCK_ROOMS.filter((r) => r.status === 'available').slice(0, 2)} />
+          <Section
+            title="Required attendees"
+            attendees={required}
+            onRemove={removeAttendee}
+            addOpen={addReqOpen}
+            setAddOpen={setAddReqOpen}
+            addEmail={addReqEmail}
+            setAddEmail={setAddReqEmail}
+            onSubmitAdd={() => {
+              submitAddInvitee(addReqEmail, false)
+              setAddReqEmail('')
+              setAddReqOpen(false)
+            }}
+            addLabel="Add required attendee"
+          />
+          <Section
+            title="Optional attendees"
+            attendees={optional}
+            onRemove={removeAttendee}
+            addOpen={addOptOpen}
+            setAddOpen={setAddOptOpen}
+            addEmail={addOptEmail}
+            setAddEmail={setAddOptEmail}
+            onSubmitAdd={() => {
+              submitAddInvitee(addOptEmail, true)
+              setAddOptEmail('')
+              setAddOptOpen(false)
+            }}
+            addLabel="Add optional attendee"
+            emptyLabel="None added"
+          />
+          <RoomSection
+            rooms={pickedRooms}
+            onRemove={(roomId) => setPickedRoomIds((prev) => prev.filter((id) => id !== roomId))}
+            addOpen={addRoomOpen}
+            setAddOpen={setAddRoomOpen}
+            anchorRef={addRoomRef}
+            availableRooms={MOCK_ROOMS.filter((r) => r.status === 'available' && !pickedRoomIds.includes(r.id))}
+            onPick={(r) => { setPickedRoomIds((prev) => [...prev, r.id]); setAddRoomOpen(false) }}
+          />
         </aside>
 
         {/* Right pane: timeline */}
         <div className="flex-1 min-w-0 overflow-x-auto outlook-scrollbar">
           <div className="relative" style={{ minWidth: 600 }}>
-            {/* Date header */}
+            {/* Date header — reflects selectedDate */}
             <div className="px-4 py-2 border-b border-[#EDEBE9] bg-white sticky top-0 z-10">
-              <p className="text-xs font-semibold text-[#323130]">Friday, May 8, 2026</p>
+              <p className="text-xs font-semibold text-[#323130]">{format(selectedDate, 'EEEE, MMM d, yyyy')}</p>
             </div>
 
             {/* Hour labels */}
@@ -206,7 +386,7 @@ export function SchedulingAssistantView({
               </div>
 
               {/* Per-row availability */}
-              {[...required, ...optional, ...MOCK_ROOMS.filter((r) => r.status === 'available').slice(0, 2)].map((row) => (
+              {[...required, ...optional, ...pickedRooms].map((row) => (
                 <AttendeeRow key={'id' in row ? row.id : (row as MockAttendee).id} row={row} />
               ))}
 
@@ -215,7 +395,6 @@ export function SchedulingAssistantView({
                 className="absolute top-0 bottom-0 pointer-events-none border-2 border-[#0078D4] bg-[#0078D4]/10 z-20"
                 style={{ left: `${selectedLeftPct}%`, width: `${selectedWidthPct}%` }}
               >
-                {/* Drag handles top + bottom */}
                 <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border-2 border-[#0078D4]" />
                 <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border-2 border-[#0078D4]" />
               </div>
@@ -237,7 +416,7 @@ export function SchedulingAssistantView({
       <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9] bg-white flex-shrink-0">
         <button
           type="button"
-          onClick={() => onConfirm(selectedStart, duration)}
+          onClick={() => onConfirm(selectedDate, selectedStart, selectedDuration)}
           className="bg-[#0078D4] hover:bg-[#106EBE] text-white text-xs font-medium px-4 py-1.5 rounded transition-colors"
         >
           OK
@@ -254,10 +433,35 @@ export function SchedulingAssistantView({
   )
 }
 
-function Section({ title, addLabel, attendees }: { title: string; addLabel: string; attendees: MockAttendee[] }) {
+function Section({
+  title,
+  attendees,
+  onRemove,
+  addOpen,
+  setAddOpen,
+  addEmail,
+  setAddEmail,
+  onSubmitAdd,
+  addLabel,
+  emptyLabel,
+}: {
+  title: string
+  attendees: MockAttendee[]
+  onRemove: (a: MockAttendee) => void
+  addOpen: boolean
+  setAddOpen: (v: boolean) => void
+  addEmail: string
+  setAddEmail: (v: string) => void
+  onSubmitAdd: () => void
+  addLabel: string
+  emptyLabel?: string
+}) {
   return (
     <div className="px-3 py-2 border-b border-[#EDEBE9]">
       <p className="text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide mb-1.5">{title}</p>
+      {attendees.length === 0 && emptyLabel && (
+        <p className="text-[11px] text-[#A19F9D] italic mb-1.5">{emptyLabel}</p>
+      )}
       {attendees.map((a) => (
         <div key={a.id} className="flex items-center gap-2 py-1 group">
           <span
@@ -270,37 +474,143 @@ function Section({ title, addLabel, attendees }: { title: string; addLabel: stri
             <p className="text-xs text-[#323130] truncate">{a.name}</p>
             <p className="text-[10px] text-[#605E5C] capitalize">{a.status}</p>
           </div>
-          <button type="button" aria-label={`Remove ${a.name}`} className="opacity-0 group-hover:opacity-100 text-[#605E5C] hover:text-[#D13438]">
+          <button
+            type="button"
+            aria-label={`Remove ${a.name}`}
+            onClick={() => onRemove(a)}
+            className="opacity-0 group-hover:opacity-100 text-[#605E5C] hover:text-[#D13438]"
+          >
             <XIcon size={12} />
           </button>
         </div>
       ))}
-      <button type="button" className="text-xs text-[#0078D4] hover:underline mt-1">
-        + {addLabel}
-      </button>
+
+      {addOpen ? (
+        <div className="mt-1.5 flex items-center gap-1">
+          <input
+            type="email"
+            autoFocus
+            value={addEmail}
+            onChange={(e) => setAddEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                onSubmitAdd()
+              }
+              if (e.key === 'Escape') setAddOpen(false)
+            }}
+            placeholder="email@example.com"
+            className="flex-1 text-xs border border-[#D2D0CE] rounded px-2 py-1 focus:outline-none focus:border-[#0078D4]"
+          />
+          <button
+            type="button"
+            onClick={onSubmitAdd}
+            className="text-xs bg-[#0078D4] text-white px-2 py-1 rounded hover:bg-[#106EBE]"
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => setAddOpen(false)}
+            aria-label="Cancel add"
+            className="text-[#605E5C] hover:text-[#323130] p-1"
+          >
+            <XIcon size={11} />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="text-xs text-[#0078D4] hover:underline mt-1 inline-flex items-center gap-1"
+        >
+          <Plus size={11} /> {addLabel}
+        </button>
+      )}
     </div>
   )
 }
 
-function RoomSection({ rooms }: { rooms: MockRoom[] }) {
+function RoomSection({
+  rooms,
+  onRemove,
+  addOpen,
+  setAddOpen,
+  anchorRef,
+  availableRooms,
+  onPick,
+}: {
+  rooms: MockRoom[]
+  onRemove: (roomId: string) => void
+  addOpen: boolean
+  setAddOpen: (v: boolean) => void
+  anchorRef: React.RefObject<HTMLDivElement | null>
+  availableRooms: MockRoom[]
+  onPick: (r: MockRoom) => void
+}) {
   return (
-    <div className="px-3 py-2 border-b border-[#EDEBE9]">
+    <div className="px-3 py-2 border-b border-[#EDEBE9]" ref={anchorRef}>
       <p className="text-[10px] font-semibold text-[#605E5C] uppercase tracking-wide mb-1.5">Rooms</p>
+      {rooms.length === 0 && <p className="text-[11px] text-[#A19F9D] italic mb-1.5">None added</p>}
       {rooms.map((r) => (
-        <div key={r.id} className="py-1">
-          <p className="text-xs text-[#323130] truncate">{r.name}</p>
-          <p className="text-[10px] text-[#107C10]">Available</p>
+        <div key={r.id} className="flex items-center gap-2 py-1 group">
+          <Building2 size={14} className="text-[#107C10] flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-[#323130] truncate">{r.name}</p>
+            <p className="text-[10px] text-[#107C10]">Available</p>
+          </div>
+          <span className="text-[10px] text-[#605E5C] flex items-center gap-0.5">
+            <UsersIcon size={9} /> {r.capacity}
+          </span>
+          <button
+            type="button"
+            aria-label={`Remove ${r.name}`}
+            onClick={() => onRemove(r.id)}
+            className="opacity-0 group-hover:opacity-100 text-[#605E5C] hover:text-[#D13438]"
+          >
+            <XIcon size={12} />
+          </button>
         </div>
       ))}
-      <button type="button" className="text-xs text-[#0078D4] hover:underline mt-1">
-        + Add a room
-      </button>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setAddOpen(!addOpen)}
+          className="text-xs text-[#0078D4] hover:underline mt-1 inline-flex items-center gap-1"
+        >
+          <Plus size={11} /> Add a room
+        </button>
+        {addOpen && (
+          <div className="absolute left-0 top-full mt-1 w-56 z-30 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
+            {availableRooms.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-[#A19F9D] italic">No more rooms available.</p>
+            ) : (
+              availableRooms.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => onPick(r)}
+                  className="w-full text-left px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2"
+                >
+                  <Building2 size={14} className="text-[#107C10] flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-[#323130] truncate">{r.name}</p>
+                    <p className="text-[10px] text-[#605E5C] truncate">{r.location}</p>
+                  </div>
+                  <span className="text-[10px] text-[#605E5C] flex items-center gap-0.5">
+                    <UsersIcon size={9} /> {r.capacity}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
 function AttendeeRow({ row }: { row: MockAttendee | MockRoom }) {
-  // Rooms have no `availability` blocks; treat as fully free.
   const availability = 'availability' in row ? row.availability : []
   return (
     <div className="relative h-12 border-b border-[#EDEBE9] bg-[#EAF7EA]/40">
