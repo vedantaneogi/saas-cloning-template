@@ -863,12 +863,23 @@ export function BoomerangRibbonBtn({
         <RibbonBtn label={label} active={active} onClick={() => {
           if (btnRef.current) {
             const r = btnRef.current.getBoundingClientRect()
-            setPos({ top: r.bottom + 4, left: r.left })
+            // Popover is `w-64` (256px). If opening at the button's left
+            // edge would push past the viewport's right edge, anchor it
+            // to the button's right edge instead so the menu stays
+            // visible — fixes the "Follow up gets cut off on small
+            // screens" issue.
+            const POPOVER_WIDTH = 256
+            const left = r.left + POPOVER_WIDTH > window.innerWidth
+              ? Math.max(8, r.right - POPOVER_WIDTH)
+              : r.left
+            setPos({ top: r.bottom + 4, left })
           }
           setOpen((v) => !v)
         }}>
-          <RotateCw size={15} className={active ? 'text-[#0078D4]' : ''} />
-          <span className="flex items-center gap-0.5">{label} <ChevronDown size={8} /></span>
+          <RotateCw size={14} className={active ? 'text-[#0078D4]' : ''} />
+          <span className="flex items-center gap-0.5 whitespace-nowrap text-[10px] leading-tight">
+            {label}<ChevronDown size={8} />
+          </span>
         </RibbonBtn>
       </div>
       {open && (

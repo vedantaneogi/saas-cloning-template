@@ -310,33 +310,57 @@ async def _flush_due_boomerangs(db: AsyncSession, user: User) -> None:
                 "boomerang_cleared_by_reply", {"id": str(sent_msg.id)}
             )
             continue
-        # No reply — drop a follow-up copy in Inbox. The copy is its own
-        # row (not a thread reply) so the user clearly sees a new unread
-        # at the top. We link via in_reply_to_id so future automation can
-        # collapse it under the original thread if desired.
+        # No reply — drop a Boomerang-style notice in Inbox. Per senior
+        # follow-up: the resurfaced row is a self-to-self message (from
+        # the user, to the user — no external recipients, no SMTP send).
+        # Subject is "RE: {original}" so it visually threads with the
+        # original conversation. Body is the Boomerang notice + a
+        # "view this conversation" link. is_flagged + is_pinned put it
+        # at the top of Inbox with a red follow-up flag.
+        original_subject = sent_msg.subject or ""
+        reminder_subject = (
+            f"RE: {original_subject}" if original_subject else "Follow-up reminder"
+        )
+        view_url = f"/mail/sent?msg_id={sent_msg.id}"
+        notice_html = (
+            "<p>Message moved to top of Inbox by Boomerang because there "
+            f"was no reply <a href=\"{view_url}\">(view this conversation)</a>.</p>"
+            "<p style=\"color:#605E5C;font-size:12px;margin-top:12px;\">"
+            "Don't want this notification in the future? Go to Settings and "
+            "uncheck the checkbox for <em>At the top of Inbox</em>. Please note "
+            "that your Boomeranged messages would no longer return to the "
+            "top of your inbox.</p>"
+        )
+        notice_text = (
+            "Message moved to top of Inbox by Boomerang because there was no "
+            f"reply (view this conversation: {view_url}).\n\n"
+            "Don't want this notification in the future? Go to Settings and "
+            "uncheck \"At the top of Inbox\"."
+        )
+        self_to = [{"email": user.email, "name": user.display_name or user.email}]
         reminder = Message(
             id=uuid.uuid4(),
             user_id=user.id,
             folder_id=inbox_folder.id,
             conversation_id=sent_msg.conversation_id,
             in_reply_to_id=sent_msg.id,
-            from_address=sent_msg.from_address,
-            from_name=sent_msg.from_name,
-            to_addresses=sent_msg.to_addresses,
-            cc_addresses=sent_msg.cc_addresses,
+            from_address=user.email,            # self-to-self — clearly internal
+            from_name=user.display_name or user.email,
+            to_addresses=self_to,
+            cc_addresses=[],
             bcc_addresses=[],
-            subject=f"Follow-up: {sent_msg.subject}" if sent_msg.subject else "Follow-up",
-            body_html=sent_msg.body_html,
-            body_text=sent_msg.body_text,
-            importance=sent_msg.importance,
-            sensitivity=sent_msg.sensitivity,
-            encrypt_mode=sent_msg.encrypt_mode,
-            has_attachments=sent_msg.has_attachments,
+            subject=reminder_subject,
+            body_html=notice_html,
+            body_text=notice_text,
+            importance="normal",
+            sensitivity="normal",
+            encrypt_mode="none",
+            has_attachments=False,
             is_read=False,
-            is_flagged=True,
-            is_pinned=True,
+            is_flagged=True,                    # red follow-up flag on the row
+            is_pinned=True,                     # forces it to the top of Inbox
             is_draft=False,
-            sent_at=sent_msg.sent_at,
+            sent_at=now,
             received_at=now,
             created_at=now,
             updated_at=now,
