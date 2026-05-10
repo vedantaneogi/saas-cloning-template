@@ -121,35 +121,41 @@ try:
     print('4 threaded conversations + 2 standalone emails created successfully')
 
     # ── Upload test attachments ──────────────────────────────────
+    # Use the real fixtures shipped in apps/api/seeds/samples/ so the
+    # in-app preview renders correctly (pdf / image / xlsx / pptx /
+    # docx / csv). Earlier this wrote tiny dummy bytes and the previews
+    # broke — senior asked to swap to real files.
     print('Uploading test attachments...')
-    import tempfile, os
+    import os
+    SAMPLES_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'apps', 'api', 'seeds', 'samples')
     tf_token = tf
+
+    def upload(msg_id, sample_filename, attach_filename, ctype):
+        sample_path = os.path.join(SAMPLES_DIR, sample_filename)
+        if not os.path.isfile(sample_path):
+            print(f'  ! sample missing: {sample_path}')
+            return
+        with open(sample_path, 'rb') as f:
+            requests.post(f'{API}/messages/{msg_id}/attachments',
+                headers={'Authorization': f'Bearer {tf_token}'},
+                files={'file': (attach_filename, f, ctype)})
 
     # Find the attachment emails in Frank's inbox
     msgs = requests.get(f'{API}/messages?folder_slug=inbox&limit=20&focused=true', headers={'Authorization': f'Bearer {tf_token}'}).json()
     for msg in msgs.get('items', []):
         if msg['subject'] == 'Q2 Sales Report - Please Review' and not msg['has_attachments']:
-            tmpf = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
-            tmpf.write(b'Demo spreadsheet content for Q2 sales report')
-            tmpf.close()
-            with open(tmpf.name, 'rb') as f:
-                requests.post(f'{API}/messages/{msg["id"]}/attachments',
-                    headers={'Authorization': f'Bearer {tf_token}'},
-                    files={'file': ('Q2-Sales-Report.xlsx', f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
-            os.unlink(tmpf.name)
+            # Real xlsx — same workbook content, named for the Q2 thread.
+            upload(msg['id'], 'Q4-Sales-Report.xlsx', 'Q2-Sales-Report.xlsx',
+                   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             print(f'  Attached Q2-Sales-Report.xlsx to "{msg["subject"][:30]}"')
 
         if msg['subject'] == 'Brand Guidelines + Logo Files' and not msg['has_attachments']:
-            for fname, ctype in [('Brand-Guidelines-2026.pdf', 'application/pdf'), ('Logo-Primary.png', 'image/png'), ('Logo-Secondary.svg', 'image/svg+xml')]:
-                tmpf = tempfile.NamedTemporaryFile(delete=False, suffix='.tmp')
-                tmpf.write(f'Demo content for {fname}'.encode())
-                tmpf.close()
-                with open(tmpf.name, 'rb') as f:
-                    requests.post(f'{API}/messages/{msg["id"]}/attachments',
-                        headers={'Authorization': f'Bearer {tf_token}'},
-                        files={'file': (fname, f, ctype)})
-                os.unlink(tmpf.name)
-            print(f'  Attached 3 files to "{msg["subject"][:30]}"')
+            # Real pdf + png; SVG dropped per senior's preview list (pdf /
+            # image / pptx / docs / excel) — the previous svg dummy was
+            # 35 bytes and didn't render.
+            upload(msg['id'], 'Project-Brief.pdf', 'Brand-Guidelines-2026.pdf', 'application/pdf')
+            upload(msg['id'], 'Logo.png', 'Logo-Primary.png', 'image/png')
+            print(f'  Attached pdf + png to "{msg["subject"][:30]}"')
 
     print('Post-seed complete!')
 except Exception as e:

@@ -250,6 +250,14 @@ deployment/environments/**/.env.*
 # ------------------------------------------------------------------------------
 !**/.gitkeep
 
+# Seed sample files — the *.pdf / *.pptx / *.docx ignores above would
+# otherwise drop them, but they're real fixtures the deploy seed loads
+# into the in-memory attachment store so previews render.
+!apps/api/seeds/samples/*.pdf
+!apps/api/seeds/samples/*.pptx
+!apps/api/seeds/samples/*.docx
+!apps/api/seeds/samples/*.csv
+
 # ------------------------------------------------------------------------------
 # Local / private files — never commit
 # ------------------------------------------------------------------------------
