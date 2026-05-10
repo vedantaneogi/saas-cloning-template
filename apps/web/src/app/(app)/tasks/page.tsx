@@ -6,8 +6,42 @@ import { tasks } from '@/lib/api'
 import type { Task, TaskStep } from '@/lib/api'
 import { TaskSidebar } from '@/components/tasks/TaskSidebar'
 import { TaskListView } from '@/components/tasks/TaskListView'
-import { Sun, Calendar, Bell, Trash2, Circle, CheckCircle2, Star, Plus } from 'lucide-react'
+import { Sun, Calendar, Bell, Trash2, Circle, CheckCircle2, Star, Plus, RotateCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+function SubtaskCreator({ parentTask }: { parentTask: Task }) {
+  const queryClient = useQueryClient()
+  const [title, setTitle] = useState('')
+  const createMutation = useMutation({
+    mutationFn: (t: string) =>
+      tasks.create({
+        title: t,
+        list_id: parentTask.list_id ?? undefined,
+        parent_task_id: parentTask.id,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      setTitle('')
+    },
+  })
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 border-t border-[#EDEBE9]/60">
+      <Plus size={14} className="text-[#0078D4] flex-shrink-0" />
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && title.trim()) createMutation.mutate(title.trim())
+          if (e.key === 'Escape') setTitle('')
+        }}
+        onBlur={() => { if (title.trim()) createMutation.mutate(title.trim()) }}
+        placeholder="Add subtask"
+        aria-label="Add a subtask"
+        className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent"
+      />
+    </div>
+  )
+}
 
 function TaskDetailPanel({ task, onClose, onDeleted }: { task: Task; onClose: () => void; onDeleted: () => void }) {
   const queryClient = useQueryClient()
@@ -16,17 +50,24 @@ function TaskDetailPanel({ task, onClose, onDeleted }: { task: Task; onClose: ()
   const [dueDate, setDueDate] = useState(task.due_date ? task.due_date.slice(0, 10) : '')
   const [reminderAt, setReminderAt] = useState(task.reminder_at ? task.reminder_at.slice(0, 16) : '')
   const [steps, setSteps] = useState<TaskStep[]>(task.steps ?? [])
+  const [recurrenceFreq, setRecurrenceFreq] = useState<string>(
+    task.recurrence_rule?.frequency ?? ''
+  )
   const [newStep, setNewStep] = useState('')
   const newStepRef = useRef<HTMLInputElement>(null)
 
-  // Re-sync when a different task is selected
+  // Re-sync when a different task is selected. Recurrence syncs on id change
+  // only — local state owns the value while the user is on this task so the
+  // dropdown doesn't snap back to the old prop after a mutation refetch.
   useEffect(() => {
     setTitle(task.title)
     setBody(task.body ?? '')
     setDueDate(task.due_date ? task.due_date.slice(0, 10) : '')
     setReminderAt(task.reminder_at ? task.reminder_at.slice(0, 16) : '')
     setSteps(task.steps ?? [])
-  }, [task.id, task.title, task.body, task.due_date, task.reminder_at, task.steps])
+    setRecurrenceFreq(task.recurrence_rule?.frequency ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id])
 
   const updateMutation = useMutation({
     mutationFn: (patch: Partial<Task>) => tasks.update(task.id, patch),
@@ -210,6 +251,9 @@ function TaskDetailPanel({ task, onClose, onDeleted }: { task: Task; onClose: ()
               className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent"
             />
           </div>
+
+          {/* Add subtask — creates a real child Task underneath this one. */}
+          <SubtaskCreator parentTask={task} />
         </div>
 
         {/* Due date */}
@@ -239,6 +283,40 @@ function TaskDetailPanel({ task, onClose, onDeleted }: { task: Task; onClose: ()
               aria-label="Reminder"
               className="text-sm text-[#323130] border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#0078D4] w-full"
             />
+          </div>
+        </div>
+
+        {/* Repeat */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-[#EDEBE9]">
+          <RotateCw size={16} className="text-[#605E5C] flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-xs text-[#605E5C] mb-1">Repeat</p>
+            <select
+              value={recurrenceFreq}
+              onChange={(e) => {
+                const freq = e.target.value
+                setRecurrenceFreq(freq)
+                if (!freq) {
+                  updateMutation.mutate({ recurrence_rule: null } as never)
+                } else {
+                  updateMutation.mutate({
+                    recurrence_rule: {
+                      frequency: freq as 'daily' | 'weekly' | 'monthly' | 'yearly',
+                      interval: 1,
+                      end_type: 'never',
+                    },
+                  } as never)
+                }
+              }}
+              aria-label="Repeat"
+              className="text-sm text-[#323130] border border-[#EDEBE9] rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#0078D4] w-full bg-white"
+            >
+              <option value="">Never</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
           </div>
         </div>
 

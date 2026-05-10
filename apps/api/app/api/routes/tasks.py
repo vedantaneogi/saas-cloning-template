@@ -98,6 +98,8 @@ async def create_task(
         reminder_at=body.reminder_at,
         importance=body.importance,
         source_message_id=body.source_message_id,
+        parent_task_id=body.parent_task_id,
+        recurrence_rule=body.recurrence_rule,
         sort_order=body.sort_order,
         created_at=now,
         updated_at=now,
@@ -132,9 +134,41 @@ async def update_task(
         task.list_id = body.list_id
     if body.sort_order is not None:
         task.sort_order = body.sort_order
+    if "parent_task_id" in body.model_fields_set:
+        task.parent_task_id = body.parent_task_id
+    if "recurrence_rule" in body.model_fields_set:
+        task.recurrence_rule = body.recurrence_rule
     if body.is_completed is not None:
         task.is_completed = body.is_completed
         task.completed_at = now if body.is_completed else None
+        # Recurring task auto-spawn: when a recurring task is completed,
+        # create the next occurrence so the user always has the running
+        # series queued up. Mirrors To Do.
+        if body.is_completed and task.recurrence_rule and task.due_date:
+            from datetime import timedelta
+            freq = (task.recurrence_rule.get("frequency") or "weekly").lower()
+            interval = int(task.recurrence_rule.get("interval") or 1)
+            step = {
+                "daily": timedelta(days=interval),
+                "weekly": timedelta(weeks=interval),
+                "monthly": timedelta(days=30 * interval),
+                "yearly": timedelta(days=365 * interval),
+            }.get(freq, timedelta(weeks=interval))
+            next_due = task.due_date + step
+            db.add(Task(
+                id=uuid.uuid4(),
+                user_id=current_user.id,
+                list_id=task.list_id,
+                title=task.title,
+                body=task.body,
+                importance=task.importance,
+                due_date=next_due,
+                parent_task_id=task.parent_task_id,
+                recurrence_rule=task.recurrence_rule,
+                sort_order=task.sort_order,
+                created_at=now,
+                updated_at=now,
+            ))
     if body.steps is not None:
         task.steps = [s.model_dump() for s in body.steps]
 

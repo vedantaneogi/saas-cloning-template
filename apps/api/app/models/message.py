@@ -42,6 +42,22 @@ class Message(Base):
     sensitivity: Mapped[str] = mapped_column(
         Enum("normal", "personal", "private", "confidential", name="sensitivity_enum"), default="normal"
     )
+    # Encrypt mode (Outlook "Set permission on this item"). When != 'none' the
+    # message is treated as encrypted by the reading pane and the sent-folder
+    # row gets a lock pill. Independent of `sensitivity` because Outlook lets
+    # the user pick e.g. "General" + "Encrypt-Only" together.
+    encrypt_mode: Mapped[str] = mapped_column(
+        Enum(
+            "none",
+            "company_confidential",
+            "company_confidential_view_only",
+            "do_not_forward",
+            "encrypt_only",
+            name="encrypt_mode_enum",
+        ),
+        default="none",
+        server_default="none",
+    )
     has_attachments: Mapped[bool] = mapped_column(Boolean, default=False)
     in_reply_to_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
@@ -49,8 +65,17 @@ class Message(Base):
     reply_type: Mapped[str] = mapped_column(
         Enum("none", "reply", "reply_all", "forward", name="reply_type_enum"), default="none"
     )
+    event_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("events.id", ondelete="SET NULL"), nullable=True
+    )
     snooze_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_send_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Boomerang follow-up: at boomerang_at, if no reply has arrived in the
+    # user's mailbox on this conversation, the engine resurfaces the message
+    # in their Inbox as unread+flagged+pinned. boomerang_fired_at records the
+    # sweep that handled it so we don't re-fire. Both null = no reminder set.
+    boomerang_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    boomerang_fired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

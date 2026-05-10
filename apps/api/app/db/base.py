@@ -15,3 +15,4 @@ from app.models.task import TaskList, Task  # noqa: F401
 from app.models.rule import Rule  # noqa: F401
 from app.models.signature import Signature  # noqa: F401
 from app.models.quick_step import QuickStep  # noqa: F401
+from app.models.delegate import CalendarDelegate  # noqa: F401

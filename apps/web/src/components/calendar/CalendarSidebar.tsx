@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, isSameMonth } from 'date-fns'
-import { ChevronLeft, ChevronRight, EyeOff, Share2, X, Check, Globe, Copy, UserPlus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, EyeOff, Share2, X, Check, Globe, Copy, UserPlus, Trash2, Plus, Pencil } from 'lucide-react'
 import { calendars } from '@/lib/api'
 import type { Calendar } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -90,6 +90,12 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
   const [copied, setCopied] = useState(false)
   const [subscribeEmail, setSubscribeEmail] = useState('')
   const [subscribeError, setSubscribeError] = useState('')
+  const [newCalendarOpen, setNewCalendarOpen] = useState(false)
+  const [newCalName, setNewCalName] = useState('')
+  const [newCalColor, setNewCalColor] = useState('#0078D4')
+  const [editCal, setEditCal] = useState<Calendar | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState('#0078D4')
 
   const { data: calendarList = [] } = useQuery({
     queryKey: ['calendars'],
@@ -101,6 +107,27 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
       calendars.update(cal.id, { is_visible: !cal.is_visible }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calendars'] }),
   })
+
+  // When the publish dialog opens (or the user changes scope), ensure the
+  // calendar has a real publish_token. The legacy /cal/pub/{id} URL is just
+  // a fallback — the new render page expects a token.
+  const publishMutation = useMutation({
+    mutationFn: ({ id, enable, scope }: { id: string; enable: boolean; scope: 'free_busy' | 'full' }) =>
+      calendars.publish(id, enable, scope),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calendars'] }),
+  })
+
+  useEffect(() => {
+    if (!publishDialog) return
+    const cal = publishDialog.cal
+    const wantedScope = publishDialog.detail === 'full' ? 'full' : 'free_busy'
+    // Only fire if either the token is missing OR the chosen scope differs
+    // from what's stored — keeps server writes minimal.
+    if (!cal.publish_token || cal.publish_scope !== wantedScope) {
+      publishMutation.mutate({ id: cal.id, enable: true, scope: wantedScope })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publishDialog?.cal.id, publishDialog?.detail])
 
   const shareMutation = useMutation({
     mutationFn: ({ cal, permission }: { cal: Calendar; permission: string }) =>
@@ -116,10 +143,59 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calendars'] }),
   })
 
-  const subscribeMutation = useMutation({
-    mutationFn: (email: string) => calendars.subscribe(email),
+  // Create a custom calendar (name + color). Available in the event composer
+  // calendar dropdown after creation.
+  const createCalendarMutation = useMutation({
+    mutationFn: (data: { name: string; color: string }) => calendars.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      setNewCalendarOpen(false)
+      setNewCalName('')
+      setNewCalColor('#0078D4')
+    },
+  })
+
+  // Edit calendar — rename / recolor in place. Visibility has its own toggle
+  // so we don't surface it here.
+  const editCalendarMutation = useMutation({
+    mutationFn: ({ id, name, color }: { id: string; name: string; color: string }) =>
+      calendars.update(id, { name, color }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      setEditCal(null)
+    },
+  })
+
+  const deleteCalendarMutation = useMutation({
+    mutationFn: (id: string) => calendars.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      setEditCal(null)
+    },
+  })
+
+  const openEdit = (cal: Calendar) => {
+    setEditCal(cal)
+    setEditName(cal.name)
+    setEditColor(cal.color)
+  }
+
+  const subscribeMutation = useMutation({
+    mutationFn: (email: string) => calendars.subscribe(email),
+    onSuccess: (newCal) => {
+      // Optimistic-style update — append the freshly-created subscription
+      // calendar to the cache straight away so the sidebar shows it without
+      // waiting for the refetch round-trip. Invalidate after to reconcile.
+      queryClient.setQueryData<Calendar[]>(['calendars'], (old) => {
+        if (!old) return old
+        if (old.some((c) => c.id === newCal.id)) return old
+        return [...old, newCal]
+      })
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
       setSubscribeEmail('')
       setSubscribeError('')
     },
@@ -128,7 +204,10 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
 
   const unsubscribeMutation = useMutation({
     mutationFn: (id: string) => calendars.unsubscribe(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calendars'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendars'] })
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+    },
   })
 
   const myCalendars = calendarList.filter((c) => !c.shared_by_user_id)
@@ -139,6 +218,17 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
       <MiniCalendar selectedDate={selectedDate} onDateSelect={onDateSelect} />
 
       <div className="h-px bg-[#EDEBE9] mx-3" />
+
+      {/* Add calendar — opens a small dialog to create a real calendar
+          (name + color). The user can then pick this calendar when
+          composing an event so events get color-coded by purpose. */}
+      <button
+        type="button"
+        onClick={() => setNewCalendarOpen(true)}
+        className="mx-3 mt-3 flex items-center gap-2 text-sm text-[#0078D4] hover:bg-[#EDEBE9] rounded px-2 py-1.5 transition-colors"
+      >
+        <Plus size={14} /> <span className="font-medium">Add calendar</span>
+      </button>
 
       {/* Calendar list */}
       <div className="flex-1 overflow-y-auto outlook-scrollbar p-3 space-y-4">
@@ -166,6 +256,15 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
                     />
                     <span className="flex-1 text-left truncate">{cal.name}</span>
                     {!cal.is_visible && <EyeOff size={12} className="text-[#A19F9D] flex-shrink-0" />}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Edit ${cal.name}`}
+                    title="Edit calendar"
+                    onClick={() => openEdit(cal)}
+                    className="p-0.5 rounded transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 text-[#605E5C] hover:text-[#0078D4]"
+                  >
+                    <Pencil size={12} />
                   </button>
                   <button
                     type="button"
@@ -270,7 +369,13 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
 
       {/* Publish dialog overlay */}
       {publishDialog && (() => {
-        const pubUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://app.example.com'}/cal/pub/${publishDialog.cal.id}?detail=${publishDialog.detail}`
+        // Read the latest calendar from React Query so the URL reflects the
+        // freshly-generated publish_token after the mutation runs (the
+        // captured snapshot in publishDialog.cal stays stale).
+        const liveCal = calendarList.find((c) => c.id === publishDialog.cal.id) ?? publishDialog.cal
+        const pubUrl = liveCal.publish_token
+          ? `${typeof window !== 'undefined' ? window.location.origin : 'https://app.example.com'}/calendar/public/${liveCal.publish_token}`
+          : 'Generating link…'
         return (
           <div
             role="dialog"
@@ -397,6 +502,201 @@ export function CalendarSidebar({ selectedDate, onDateSelect }: CalendarSidebarP
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New calendar dialog */}
+      {newCalendarOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="New calendar"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setNewCalendarOpen(false) }}
+        >
+          <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+          <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-sm flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
+              <h2 className="text-base font-semibold text-[#323130]">New calendar</h2>
+              <button
+                type="button"
+                onClick={() => setNewCalendarOpen(false)}
+                aria-label="Close"
+                className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="px-4 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="newcal-name">
+                  Name
+                </label>
+                <input
+                  id="newcal-name"
+                  type="text"
+                  value={newCalName}
+                  onChange={(e) => setNewCalName(e.target.value)}
+                  placeholder="e.g. Project X"
+                  autoFocus
+                  className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                />
+              </div>
+              <div>
+                <p className="block text-xs font-medium text-[#605E5C] mb-1.5">Color</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    '#0078D4', '#107C10', '#FF8C00', '#D13438',
+                    '#8764B8', '#FFB900', '#5C2E91', '#00B7C3',
+                    '#E81123', '#A1A1A1',
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setNewCalColor(c)}
+                      aria-label={`Color ${c}`}
+                      aria-pressed={newCalColor === c}
+                      className={cn(
+                        'w-7 h-7 rounded-full border-2 transition-transform',
+                        newCalColor === c ? 'border-[#323130] scale-110' : 'border-transparent hover:scale-105'
+                      )}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#EDEBE9]">
+              <button
+                type="button"
+                onClick={() => setNewCalendarOpen(false)}
+                className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  newCalName.trim() &&
+                  createCalendarMutation.mutate({ name: newCalName.trim(), color: newCalColor })
+                }
+                disabled={!newCalName.trim() || createCalendarMutation.isPending}
+                className={cn(
+                  'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
+                  (!newCalName.trim() || createCalendarMutation.isPending) && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {createCalendarMutation.isPending ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit calendar dialog — rename / recolor / delete (non-default only) */}
+      {editCal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Edit ${editCal.name}`}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditCal(null) }}
+        >
+          <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+          <div className="relative bg-white rounded shadow-outlook-lg w-full max-w-sm flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEBE9]">
+              <h2 className="text-base font-semibold text-[#323130]">Edit calendar</h2>
+              <button
+                type="button"
+                onClick={() => setEditCal(null)}
+                aria-label="Close"
+                className="p-1 rounded hover:bg-[#F3F2F1] text-[#605E5C]"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="px-4 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-[#605E5C] mb-1" htmlFor="editcal-name">
+                  Name
+                </label>
+                <input
+                  id="editcal-name"
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  autoFocus
+                  className="w-full text-sm border border-[#8A8886] rounded px-2 py-1.5 focus:outline-none focus:border-[#0078D4]"
+                />
+              </div>
+              <div>
+                <p className="block text-xs font-medium text-[#605E5C] mb-1.5">Color</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    '#0078D4', '#107C10', '#FF8C00', '#D13438',
+                    '#8764B8', '#FFB900', '#5C2E91', '#00B7C3',
+                    '#E81123', '#A1A1A1',
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditColor(c)}
+                      aria-label={`Color ${c}`}
+                      aria-pressed={editColor === c}
+                      className={cn(
+                        'w-7 h-7 rounded-full border-2 transition-transform',
+                        editColor === c ? 'border-[#323130] scale-110' : 'border-transparent hover:scale-105'
+                      )}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+              {editCal.is_default && (
+                <p className="text-[11px] text-[#605E5C] italic">
+                  This is your default calendar — it can be renamed and recolored, but not deleted.
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 px-4 py-3 border-t border-[#EDEBE9]">
+              <button
+                type="button"
+                onClick={() =>
+                  editName.trim() && editCal &&
+                  editCalendarMutation.mutate({ id: editCal.id, name: editName.trim(), color: editColor })
+                }
+                disabled={!editName.trim() || editCalendarMutation.isPending}
+                className={cn(
+                  'text-sm bg-[#0078D4] hover:bg-[#106EBE] text-white px-4 py-1.5 rounded',
+                  (!editName.trim() || editCalendarMutation.isPending) && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {editCalendarMutation.isPending ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditCal(null)}
+                className="text-sm border border-[#8A8886] text-[#323130] px-4 py-1.5 rounded hover:bg-[#F3F2F1]"
+              >
+                Cancel
+              </button>
+              {!editCal.is_default && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editCal && confirm(`Delete the calendar "${editCal.name}"? Events on it will be removed.`)) {
+                      deleteCalendarMutation.mutate(editCal.id)
+                    }
+                  }}
+                  disabled={deleteCalendarMutation.isPending}
+                  className="ml-auto text-sm flex items-center gap-1.5 text-[#D13438] hover:bg-[#FDE7E9] px-3 py-1.5 rounded"
+                >
+                  <Trash2 size={13} />
+                  {deleteCalendarMutation.isPending ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
             </div>
           </div>
         </div>

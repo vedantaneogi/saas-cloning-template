@@ -6,11 +6,13 @@ from app.api.routes import (
     categories,
     contacts,
     conversations,
+    dlp,
     events,
     folders,
     groups,
     messages,
     quick_steps,
+    rooms,
     rules,
     settings,
     signatures,
@@ -35,3 +37,5 @@ api_router.include_router(rules.router)
 api_router.include_router(signatures.router)
 api_router.include_router(categories.router)
 api_router.include_router(settings.router)
+api_router.include_router(dlp.router)
+api_router.include_router(rooms.router)

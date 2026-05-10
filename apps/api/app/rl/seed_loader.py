@@ -31,9 +31,10 @@ SYSTEM_FOLDERS = [
     {"name": "Inbox", "slug": "inbox", "icon": "inbox", "sort_order": 0},
     {"name": "Drafts", "slug": "drafts", "icon": "file-text", "sort_order": 1},
     {"name": "Sent Items", "slug": "sent", "icon": "send", "sort_order": 2},
-    {"name": "Archive", "slug": "archive", "icon": "archive", "sort_order": 3},
-    {"name": "Junk Email", "slug": "junk", "icon": "alert-triangle", "sort_order": 4},
-    {"name": "Deleted Items", "slug": "deleted", "icon": "trash-2", "sort_order": 5},
+    {"name": "Scheduled", "slug": "scheduled", "icon": "clock", "sort_order": 3},
+    {"name": "Archive", "slug": "archive", "icon": "archive", "sort_order": 4},
+    {"name": "Junk Email", "slug": "junk", "icon": "alert-triangle", "sort_order": 5},
+    {"name": "Deleted Items", "slug": "deleted", "icon": "trash-2", "sort_order": 6},
 ]
 
 DEFAULT_CATEGORIES = [
@@ -426,15 +427,28 @@ async def load_seed(session: AsyncSession, payload: SeedPayload) -> dict[str, in
     # ------------------------------------------------------------------
     # 8. Attachments
     # ------------------------------------------------------------------
+    # Lazy import keeps seed_loader free of route-layer deps in test contexts.
+    from pathlib import Path
+    from app.api.routes.messages import _attachment_store
+    samples_dir = Path(__file__).resolve().parents[2] / "seeds" / "samples"
+
     for sa in app.attachments:
         aid = _uuid(sa.id) if sa.id else uuid.uuid4()
         msg_id = message_map.get(sa.message_id) or _uuid(sa.message_id)
+        # If sample_file is set, load real bytes from disk so previews render.
+        size_bytes = sa.size_bytes
+        if sa.sample_file:
+            sample_path = samples_dir / sa.sample_file
+            if sample_path.is_file():
+                content = sample_path.read_bytes()
+                _attachment_store[str(aid)] = content
+                size_bytes = len(content)
         att = Attachment(
             id=aid,
             message_id=msg_id,
             filename=sa.filename,
             content_type=sa.content_type,
-            size_bytes=sa.size_bytes,
+            size_bytes=size_bytes,
             storage_path=sa.storage_path,
             is_inline=sa.is_inline,
             created_at=now,

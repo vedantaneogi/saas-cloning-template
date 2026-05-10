@@ -34,7 +34,17 @@ async function request<T>(
     let message = `HTTP ${res.status}`
     try {
       const body = await res.json()
-      message = body?.detail ?? body?.message ?? message
+      // FastAPI returns detail as either a string or our standard
+      // {error: {code, message}} envelope. Pluck the human-readable bit
+      // so toasts don't show "[object Object]".
+      const d = body?.detail
+      if (typeof d === 'string') {
+        message = d
+      } else if (d?.error?.message) {
+        message = d.error.message
+      } else if (typeof body?.message === 'string') {
+        message = body.message
+      }
     } catch {
       // ignore
     }
@@ -105,11 +115,15 @@ export interface Message {
   is_draft: boolean
   importance: 'low' | 'normal' | 'high'
   sensitivity: 'normal' | 'personal' | 'private' | 'confidential'
+  encrypt_mode: 'none' | 'company_confidential' | 'company_confidential_view_only' | 'do_not_forward' | 'encrypt_only'
   has_attachments: boolean
   in_reply_to_id: string | null
   reply_type: 'none' | 'reply' | 'reply_all' | 'forward'
+  event_id: string | null
   snooze_until: string | null
   scheduled_send_at: string | null
+  boomerang_at: string | null
+  boomerang_fired_at: string | null
   sent_at: string | null
   received_at: string | null
   created_at: string
@@ -164,8 +178,16 @@ export interface Calendar {
   shared_by_user_id: string | null
   permission_level: 'none' | 'free_busy' | 'read' | 'write' | 'delegate'
   is_visible: boolean
+  publish_token: string | null
+  publish_scope: 'free_busy' | 'full'
   created_at: string
   updated_at: string
+}
+
+export interface CalendarPublishResponse {
+  publish_token: string | null
+  publish_scope: 'free_busy' | 'full'
+  public_url: string | null
 }
 
 export interface RecurrenceRule {
@@ -211,10 +233,34 @@ export interface EventAttendee {
   proposed_new_time: { start_time: string; end_time: string } | null
 }
 
+export interface EventDetail {
+  event: Event
+  attendees: EventAttendee[]
+  categories?: Category[]
+}
+
+export interface EventAttendeeIn {
+  email: string
+  display_name?: string | null
+  is_required?: boolean
+  is_organizer?: boolean
+}
+
+export type EventInput = Partial<Omit<Event, 'attendees'>> & { attendees?: EventAttendeeIn[] }
+
 export interface TaskStep {
   id: string
   title: string
   is_completed: boolean
+}
+
+export interface TaskRecurrenceRule {
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  interval?: number
+  days_of_week?: number[]
+  end_type?: 'never' | 'on_date' | 'after_occurrences'
+  end_date?: string
+  occurrences?: number
 }
 
 export interface Task {
@@ -230,6 +276,8 @@ export interface Task {
   importance: 'low' | 'normal' | 'high'
   steps: TaskStep[]
   source_message_id: string | null
+  parent_task_id: string | null
+  recurrence_rule: TaskRecurrenceRule | null
   sort_order: number
   created_at: string
   updated_at: string
@@ -245,22 +293,47 @@ export interface TaskList {
   created_at: string
 }
 
+export type RuleConditionField =
+  | 'from'
+  | 'to'
+  | 'subject'
+  | 'body'
+  | 'subject_or_body'
+  | 'has_attachment'
+  | 'importance'
+  | 'sensitivity'
+  | 'sender_address'
+  | 'recipient_address'
+  | 'message_header'
+  | 'flag'
+  | 'im_on_to'
+  | 'im_on_to_or_cc'
+  | 'im_not_on_to'
+  | 'im_only_recipient'
+
 export interface RuleCondition {
-  field: 'from' | 'to' | 'subject' | 'body' | 'has_attachment' | 'importance'
+  field: RuleConditionField
   operator: 'contains' | 'equals' | 'starts_with' | 'ends_with'
   value: string
 }
 
+export type RuleActionType =
+  | 'move_to_folder'
+  | 'copy_to_folder'
+  | 'mark_as_read'
+  | 'flag'
+  | 'forward_to'
+  | 'forward_as_attachment'
+  | 'redirect_to'
+  | 'delete'
+  | 'set_category'
+  | 'set_importance'
+  | 'set_sensitivity'
+
 export interface RuleAction {
-  type:
-    | 'move_to_folder'
-    | 'mark_as_read'
-    | 'flag'
-    | 'forward_to'
-    | 'delete'
-    | 'set_category'
-    | 'set_importance'
-  params: Record<string, string>
+  type: RuleActionType
+  // Loose record so callers can stash folder_id, email, level, category_ids, etc.
+  params: Record<string, string | string[] | undefined>
 }
 
 export interface Rule {
@@ -271,6 +344,7 @@ export interface Rule {
   priority: number
   conditions: RuleCondition[]
   actions: RuleAction[]
+  exceptions: RuleCondition[]
   stop_processing: boolean
   apply_to: 'incoming' | 'outgoing' | 'both'
   created_at: string
@@ -309,8 +383,8 @@ export interface OOFSettings {
   enabled: boolean
   start: string | null
   end: string | null
-  message_internal: string | null
-  message_external: string | null
+  internal_message: string | null
+  external_message: string | null
 }
 
 export interface AppSettings {
@@ -366,16 +440,23 @@ export const messages = {
     is_read?: boolean
     is_flagged?: boolean
     focused?: boolean
+    snoozed?: boolean
+    mentions_only?: boolean
+    category_ids?: string[]
     conversation_grouping?: boolean
     from_addr?: string
   }) => {
     const qs = new URLSearchParams()
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined) {
-        // Map per_page to limit (backend expects 'limit')
-        const key = k === 'per_page' ? 'limit' : k
-        qs.set(key, String(v))
+      if (v === undefined) return
+      // Map per_page to limit (backend expects 'limit')
+      const key = k === 'per_page' ? 'limit' : k
+      // Repeated query params for arrays (FastAPI Query(default=[])).
+      if (Array.isArray(v)) {
+        v.forEach((entry) => qs.append(key, String(entry)))
+        return
       }
+      qs.set(key, String(v))
     })
     return request<PaginatedResponse<Message>>(`/messages?${qs}`)
   },
@@ -498,6 +579,24 @@ export const messages = {
 
 // ─── Folders ──────────────────────────────────────────────────────────────────
 
+// ─── Rooms ────────────────────────────────────────────────────────────────────
+
+export interface Room {
+  id: string
+  name: string
+  location: string | null
+  capacity: number
+  status: 'available' | 'busy'
+  created_at: string
+  updated_at: string
+}
+
+export const rooms = {
+  list: () => request<Room[]>('/rooms'),
+  create: (data: { name: string; location?: string; capacity?: number; status?: 'available' | 'busy' }) =>
+    request<Room>('/rooms', { method: 'POST', body: JSON.stringify(data) }),
+}
+
 export const folders = {
   list: () => request<Folder[]>('/folders'),
 
@@ -617,6 +716,43 @@ export const calendars = {
 
   unsubscribe: (id: string) =>
     request<void>(`/calendars/${id}`, { method: 'DELETE' }),
+
+  publish: (id: string, enable: boolean, scope?: 'free_busy' | 'full') =>
+    request<CalendarPublishResponse>(`/calendars/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({ enable, ...(scope ? { scope } : {}) }),
+    }),
+
+  listDelegates: () =>
+    request<CalendarDelegateOut[]>('/calendars/delegates'),
+
+  addDelegate: (
+    email: string,
+    level?: 'free_busy' | 'reviewer' | 'editor',
+    mailLevel?: 'none' | 'read' | 'send_on_behalf' | 'send_as',
+  ) =>
+    request<CalendarDelegateOut>('/calendars/delegates', {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        ...(level ? { level } : {}),
+        ...(mailLevel ? { mail_level: mailLevel } : {}),
+      }),
+    }),
+
+  removeDelegate: (id: string) =>
+    request<void>(`/calendars/delegates/${id}`, { method: 'DELETE' }),
+}
+
+export interface CalendarDelegateOut {
+  id: string
+  owner_user_id: string
+  delegate_user_id: string
+  delegate_email: string | null
+  delegate_name: string | null
+  level: 'free_busy' | 'reviewer' | 'editor'
+  mail_level: 'none' | 'read' | 'send_on_behalf' | 'send_as'
+  created_at: string
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -629,25 +765,24 @@ export const events = {
     page?: number
     per_page?: number
   }) => {
-    const qs = new URLSearchParams(
-      Object.fromEntries(
-        Object.entries(params)
-          .filter(([, v]) => v !== undefined)
-          .map(([k, v]) => [k, String(v)])
-      )
-    )
+    const qs = new URLSearchParams()
+    if (params.calendar_id) qs.set('calendar_id', params.calendar_id)
+    if (params.start) qs.set('start_after', params.start)
+    if (params.end) qs.set('start_before', params.end)
+    if (params.page !== undefined) qs.set('page', String(params.page))
+    if (params.per_page !== undefined) qs.set('per_page', String(params.per_page))
     return request<PaginatedResponse<Event>>(`/events?${qs}`).then((r) => r.items)
   },
 
-  get: (id: string) => request<Event>(`/events/${id}`),
+  get: (id: string) => request<EventDetail>(`/events/${id}`),
 
-  create: (data: Partial<Event>) =>
+  create: (data: EventInput) =>
     request<Event>('/events', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  update: (id: string, data: Partial<Event>, scope?: 'single' | 'following' | 'series', occurrenceStart?: string) => {
+  update: (id: string, data: EventInput, scope?: 'single' | 'following' | 'series', occurrenceStart?: string) => {
     const qs = new URLSearchParams()
     if (scope) qs.set('scope', scope)
     if (occurrenceStart) qs.set('occurrence_start', occurrenceStart)
@@ -787,8 +922,8 @@ export const rules = {
 
   reorder: (ordered_ids: string[]) =>
     request<void>('/rules/reorder', {
-      method: 'POST',
-      body: JSON.stringify({ ordered_ids }),
+      method: 'PATCH',
+      body: JSON.stringify({ rule_ids: ordered_ids }),
     }),
 }
 
@@ -836,6 +971,12 @@ export const categories = {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
+export interface MailboxQuota {
+  used_bytes: number
+  limit_bytes: number
+  percent: number
+}
+
 export const settings = {
   get: () => request<AppSettings>('/settings'),
 
@@ -844,6 +985,8 @@ export const settings = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+
+  getQuota: () => request<MailboxQuota>('/settings/quota'),
 
   getOOF: () => request<OOFSettings>('/settings/oof'),
 
@@ -899,8 +1042,20 @@ export interface Group {
   color: string
   member_count: number
   is_member: boolean
+  is_owner: boolean
+  is_favorite: boolean
   created_at: string
   updated_at: string
+}
+
+export interface GroupMember {
+  id: string
+  group_id: string
+  user_id: string
+  role: 'owner' | 'member'
+  joined_at: string
+  email?: string | null
+  display_name?: string | null
 }
 
 export const groups = {
@@ -912,12 +1067,60 @@ export const groups = {
   update: (id: string, data: Partial<Group>) =>
     request<Group>(`/groups/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
+  delete: (id: string) =>
+    request<void>(`/groups/${id}`, { method: 'DELETE' }),
+
+  toggleFavorite: (id: string) =>
+    request<Group>(`/groups/${id}/favorite`, { method: 'POST' }),
+
   join: (id: string) =>
-    request<{ id: string; group_id: string; user_id: string; role: string; joined_at: string }>(
-      `/groups/${id}/join`, { method: 'POST' }
-    ),
+    request<GroupMember>(`/groups/${id}/join`, { method: 'POST' }),
 
   leave: (id: string) => request<void>(`/groups/${id}/leave`, { method: 'DELETE' }),
+
+  members: (id: string) => request<GroupMember[]>(`/groups/${id}/members`),
+
+  addMember: (id: string, email: string) =>
+    request<GroupMember>(`/groups/${id}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  removeMember: (id: string, userId: string) =>
+    request<void>(`/groups/${id}/members/${userId}`, { method: 'DELETE' }),
+}
+
+// ─── DLP ──────────────────────────────────────────────────────────────────────
+
+export interface DlpPolicyTip {
+  rule_id: string
+  severity: 'info' | 'warning' | 'high' | 'critical'
+  action: 'allow' | 'warn' | 'block' | 'encrypt'
+  message: string
+}
+
+export interface DlpResult {
+  status: 'allow' | 'warn' | 'block' | 'encrypt'
+  matched_rules: string[]
+  policy_tips: DlpPolicyTip[]
+}
+
+export interface DlpEvaluateRequest {
+  to?: { email: string; name?: string }[]
+  cc?: { email: string; name?: string }[]
+  bcc?: { email: string; name?: string }[]
+  subject?: string
+  body?: string
+  attachments?: { name: string; text_preview?: string }[]
+  sensitivity_label?: 'public' | 'internal' | 'confidential' | 'encrypt'
+}
+
+export const dlp = {
+  evaluate: (data: DlpEvaluateRequest) =>
+    request<DlpResult>('/dlp/evaluate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 }
 
 // ─── RL Environment ───────────────────────────────────────────────────────────

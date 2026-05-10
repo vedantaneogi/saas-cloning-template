@@ -6,7 +6,7 @@ import { categories } from '@/lib/api'
 import type { Category } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Plus, Trash2, Edit2, Check, Star } from 'lucide-react'
+import { Plus, Trash2, Edit2, Check, Star, Tag } from 'lucide-react'
 
 const PRESET_COLORS = [
   '#0078D4', '#106EBE', '#005A9E',
@@ -224,9 +224,10 @@ function CategoryRow({
 
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[#EDEBE9] hover:bg-[#F3F2F1] transition-colors">
-      <span
-        className="w-4 h-4 rounded-full flex-shrink-0"
-        style={{ backgroundColor: category.color }}
+      <Tag
+        size={16}
+        className="flex-shrink-0"
+        style={{ color: category.color, fill: category.color }}
         aria-label={`Color: ${category.color}`}
       />
       <span className="flex-1 text-sm text-[#323130]">{category.name}</span>

@@ -28,6 +28,7 @@ interface CalendarGridProps {
   onEventClick?: (event: Event) => void
   onSlotClick?: (date: Date, hour?: number) => void
   onDayClick?: (date: Date) => void
+  onDayNavigate?: (date: Date) => void
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -40,12 +41,22 @@ function isCalendarShared(calendars: Calendar[], calendarId: string): boolean {
   return calendars.find((c) => c.id === calendarId)?.is_shared ?? false
 }
 
+// Prefer the category color when an event has one — that's the visual signal
+// the user just set. Fall back to the calendar's own color.
+function getEventColor(calendars: Calendar[], event: Event): string {
+  if (event.categories && event.categories.length > 0 && event.categories[0].color) {
+    return event.categories[0].color
+  }
+  return getCalendarColor(calendars, event.calendar_id)
+}
+
 function MonthView({
   currentDate,
   events,
   calendars: calList,
   onEventClick,
   onDayClick,
+  onDayNavigate,
 }: Omit<CalendarGridProps, 'view'>) {
   const monthStart = startOfMonth(currentDate)
   const monthEnd = endOfMonth(currentDate)
@@ -95,16 +106,19 @@ function MonthView({
                     onClick={() => onDayClick?.(day)}
                   >
                     <div className="flex items-center justify-center mb-1">
-                      <span
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onDayNavigate?.(day) }}
+                        aria-label={`Open ${format(day, 'EEEE, MMMM d')} day view`}
                         className={cn(
-                          'w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium',
-                          isToday(day) && 'bg-[#0078D4] text-white',
+                          'w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium hover:bg-[#EDEBE9] transition-colors',
+                          isToday(day) && 'bg-[#0078D4] text-white hover:bg-[#106EBE]',
                           !isToday(day) && inMonth && 'text-[#323130]',
                           !isToday(day) && !inMonth && 'text-[#A19F9D]'
                         )}
                       >
                         {format(day, 'd')}
-                      </span>
+                      </button>
                     </div>
                     <div className="space-y-0.5">
                       {dayEvents.slice(0, 3).map((event) => (
@@ -112,14 +126,14 @@ function MonthView({
                           key={event.id}
                           event={event}
                           compact
-                          color={getCalendarColor(calList, event.calendar_id)}
+                          color={getEventColor(calList, event)}
                           isShared={isCalendarShared(calList, event.calendar_id)}
                           onClick={onEventClick}
                         />
                       ))}
                       {dayEvents.length > 3 && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); onDayClick?.(day) }}
+                          onClick={(e) => { e.stopPropagation(); onDayNavigate?.(day) }}
                           className="text-[10px] text-[#0078D4] hover:underline pl-1"
                         >
                           +{dayEvents.length - 3} more
@@ -216,7 +230,7 @@ function WeekView({
                     <EventCard
                       key={event.id}
                       event={event}
-                      color={getCalendarColor(calList, event.calendar_id)}
+                      color={getEventColor(calList, event)}
                       isShared={isCalendarShared(calList, event.calendar_id)}
                       onClick={onEventClick}
                     />
@@ -285,7 +299,7 @@ function DayView({
                   <EventCard
                     key={event.id}
                     event={event}
-                    color={getCalendarColor(calList, event.calendar_id)}
+                    color={getEventColor(calList, event)}
                     isShared={isCalendarShared(calList, event.calendar_id)}
                     onClick={onEventClick}
                   />

@@ -117,16 +117,27 @@ export function SettingsModal() {
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className="bg-white rounded-lg shadow-outlook-lg w-[900px] max-w-[92vw] h-[620px] max-h-[85vh] flex flex-col overflow-hidden animate-fade-in"
+        className="bg-white rounded-lg shadow-outlook-lg w-[960px] max-w-[94vw] h-[640px] max-h-[88vh] flex flex-col overflow-hidden animate-fade-in"
       >
+        {/* Header — title + close. Lives outside the 3-column body so the
+            X doesn't collide with section toolbars (e.g. the "+ New rule"
+            button on the Rules page). */}
+        <div className="flex items-center justify-between px-5 py-2.5 border-b border-[#EDEBE9] flex-shrink-0">
+          <h1 className="text-sm font-semibold text-[#323130]">Settings</h1>
+          <button
+            onClick={closeSettings}
+            aria-label="Close settings"
+            className="w-8 h-8 flex items-center justify-center text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
         {/* Body — 3 columns */}
         <div className="flex flex-1 overflow-hidden">
           {/* Left column — section icons */}
           <nav className="w-[72px] flex-shrink-0 border-r border-[#EDEBE9] flex flex-col bg-[#FAF9F8]">
-            <div className="px-3 py-4 flex-shrink-0">
-              <h1 className="text-sm font-semibold text-[#323130]">Settings</h1>
-            </div>
-            <div className="px-2 pb-2 flex-shrink-0">
+            <div className="px-2 pt-3 pb-2 flex-shrink-0">
               <div className="flex items-center gap-1 border border-[#EDEBE9] rounded px-1.5 py-1 bg-white focus-within:border-[#0078D4]">
                 <Search size={11} className="text-[#A19F9D] flex-shrink-0" />
                 <input
@@ -195,15 +206,7 @@ export function SettingsModal() {
           </nav>
 
           {/* Right column — content */}
-          <div className="flex-1 overflow-y-auto outlook-scrollbar relative">
-            {/* Close button */}
-            <button
-              onClick={closeSettings}
-              aria-label="Close settings"
-              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center text-[#605E5C] hover:bg-[#F3F2F1] rounded transition-colors z-10"
-            >
-              <X size={18} />
-            </button>
+          <div className="flex-1 overflow-y-auto outlook-scrollbar">
             <SectionContent section={settingsSection} />
           </div>
         </div>

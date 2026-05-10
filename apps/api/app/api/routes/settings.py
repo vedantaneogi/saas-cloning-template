@@ -214,3 +214,54 @@ async def remove_delegate(
     delegates = _user_delegates.get(uid, [])
     _user_delegates[uid] = [d for d in delegates if d["id"] != delegate_id]
     rl_state.event_log.append("delegate_removed", {"user_id": uid, "delegate_id": delegate_id})
+
+
+# ─── Mailbox quota ────────────────────────────────────────────────────────────
+
+class QuotaOut(BaseModel):
+    used_bytes: int
+    limit_bytes: int
+    percent: float
+
+
+# Hardcoded for the demo — Outlook personal accounts are typically 15-50GB.
+# 50 MB is small enough that a few hundred seeded messages will trip the
+# warning threshold so the banner is actually visible.
+_QUOTA_LIMIT_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+@router.get("/quota", response_model=QuotaOut)
+async def get_quota(
+    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sum the byte size of every message in the user's mailbox plus
+    attachments. Cheap enough for the demo (no streaming) and avoids
+    persisting a per-user counter we'd otherwise have to keep in sync."""
+    from sqlalchemy import func, select
+    from app.models.message import Message, Attachment
+
+    body_total_q = await db.execute(
+        select(
+            func.coalesce(
+                func.sum(
+                    func.coalesce(func.length(Message.body_html), 0)
+                    + func.coalesce(func.length(Message.body_text), 0)
+                    + func.coalesce(func.length(Message.subject), 0)
+                ),
+                0,
+            )
+        ).where(Message.user_id == current_user.id)
+    )
+    body_bytes = int(body_total_q.scalar() or 0)
+
+    att_total_q = await db.execute(
+        select(func.coalesce(func.sum(Attachment.size_bytes), 0))
+        .join(Message, Message.id == Attachment.message_id)
+        .where(Message.user_id == current_user.id)
+    )
+    attachment_bytes = int(att_total_q.scalar() or 0)
+
+    used = body_bytes + attachment_bytes
+    pct = round((used / _QUOTA_LIMIT_BYTES) * 100, 1) if _QUOTA_LIMIT_BYTES else 0
+    return QuotaOut(used_bytes=used, limit_bytes=_QUOTA_LIMIT_BYTES, percent=pct)

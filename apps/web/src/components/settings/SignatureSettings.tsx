@@ -7,6 +7,7 @@ import type { Signature } from '@/lib/api'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
 import { Plus, Trash2, Edit2, MoreHorizontal } from 'lucide-react'
 
 export function SignatureSettings() {
@@ -107,35 +108,29 @@ export function SignatureSettings() {
       <div className="space-y-3 my-6 border-t border-[#EDEBE9] pt-4">
         <div className="flex items-center gap-4">
           <span className="text-sm text-[#323130] w-56 flex-shrink-0">Default for new messages</span>
-          <select
+          <Select
             value={defaultNewSig?.id ?? ''}
-            onChange={(e) => {
-              const id = e.target.value
-              if (id) setDefaultMutation.mutate({ id, field: 'new' })
-            }}
-            className="text-sm border border-[#8A8886] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] bg-white flex-1"
-          >
-            <option value="">(No signature)</option>
-            {sigs.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+            onChange={(v) => v && setDefaultMutation.mutate({ id: v, field: 'new' })}
+            options={[
+              { value: '', label: '(No signature)' },
+              ...sigs.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+            ariaLabel="Default signature for new messages"
+            className="flex-1"
+          />
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-[#323130] w-56 flex-shrink-0">Default for replies and forwards</span>
-          <select
+          <Select
             value={defaultReplySig?.id ?? ''}
-            onChange={(e) => {
-              const id = e.target.value
-              if (id) setDefaultMutation.mutate({ id, field: 'reply' })
-            }}
-            className="text-sm border border-[#8A8886] rounded px-2 py-1.5 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] bg-white flex-1"
-          >
-            <option value="">(No signature)</option>
-            {sigs.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+            onChange={(v) => v && setDefaultMutation.mutate({ id: v, field: 'reply' })}
+            options={[
+              { value: '', label: '(No signature)' },
+              ...sigs.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+            ariaLabel="Default signature for replies"
+            className="flex-1"
+          />
         </div>
       </div>
 

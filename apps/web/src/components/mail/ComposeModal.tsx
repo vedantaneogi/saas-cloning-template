@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { messages, signatures } from '@/lib/api'
+import { messages, signatures, dlp } from '@/lib/api'
+import type { DlpResult } from '@/lib/api'
 import { useUIStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
 import { useEditorStore } from '@/store/editor'
@@ -29,6 +30,8 @@ import {
   Link,
   Smile,
   PencilLine,
+  Trash2,
+  Lock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -55,6 +58,7 @@ interface ComposeModalProps {
 
 export function ComposeModal({ open, onClose, inline = false }: ComposeModalProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const composerDraft = useUIStore((s) => s.composerDraft)
   const setComposerDraft = useUIStore((s) => s.setComposerDraft)
   const showNotification = useUIStore((s) => s.showNotification)
@@ -77,6 +81,13 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   const [sensitivity, setSensitivity] = useState<'normal' | 'personal' | 'private' | 'confidential'>('normal')
   const [sensitivityWarningPending, setSensitivityWarningPending] = useState<false | 'send' | { scheduled: string }>(false)
   const [dlpViolations, setDlpViolations] = useState<string[]>([])
+  // Live DLP — re-evaluated by debounced effect below.
+  const [dlpLive, setDlpLive] = useState<DlpResult | null>(null)
+  // Attachment-intent: pending = the user mentioned "attached" but staged
+  // no files; once dismissed (clicked "Send anyway") we don't re-prompt
+  // for the same compose session.
+  const [attachmentIntentPending, setAttachmentIntentPending] = useState<false | 'send' | { scheduled: string }>(false)
+  const [attachmentIntentDismissed, setAttachmentIntentDismissed] = useState(false)
   const [scheduledSendAt, setScheduledSendAt] = useState<string>('')
   const [composeTab, setComposeTab] = useState<ComposeTab>('Message')
   const [showInsertLink, setShowInsertLink] = useState(false)
@@ -117,6 +128,8 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   const setOnAttach = useEditorStore((s) => s.setOnAttach)
   const setOnDiscard = useEditorStore((s) => s.setOnDiscard)
   const setStoreImportance = useEditorStore((s) => s.setImportance)
+  const setStoreSensitivity = useEditorStore((s) => s.setSensitivity)
+  const setStoreEncryptMode = useEditorStore((s) => s.setEncryptMode)
   const setStoreSignatures = useEditorStore((s) => s.setSignatures)
   const setStoreSelectedSigId = useEditorStore((s) => s.setSelectedSignatureId)
   const setOnInsertSignature = useEditorStore((s) => s.setOnInsertSignature)
@@ -159,6 +172,42 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeImportance])
 
+  // Encrypt mode lives entirely in the editor store — no local mirror needed
+  // (it's only consumed by DLP eval + the send payload below).
+  const encryptMode = useEditorStore((s) => s.encryptMode)
+  // Boomerang follow-up reminder — same store-only pattern as encryptMode.
+  // Null = no reminder. ComposeModal resets it to null on mount/unmount so
+  // a previous compose session doesn't leak into the next one.
+  const boomerangAt = useEditorStore((s) => s.boomerangAt)
+  const setStoreBoomerangAt = useEditorStore((s) => s.setBoomerangAt)
+  useEffect(() => {
+    if (!inline) return
+    setStoreBoomerangAt(null)
+    return () => { setStoreBoomerangAt(null) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inline])
+  // Reset encrypt + push initial sensitivity to the ribbon when this composer
+  // mounts so previous compose sessions don't leak state.
+  useEffect(() => {
+    if (!inline) return
+    setStoreSensitivity(sensitivity)
+    setStoreEncryptMode('none')
+    return () => { setStoreEncryptMode('none') }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inline])
+
+  // Mirror sensitivity from local → store (so the ribbon's chip can react).
+  useEffect(() => {
+    if (inline) setStoreSensitivity(sensitivity)
+  }, [inline, sensitivity, setStoreSensitivity])
+
+  // Mirror sensitivity from store → local (when ribbon picker changes it).
+  const storeSensitivity = useEditorStore((s) => s.sensitivity)
+  useEffect(() => {
+    if (inline && storeSensitivity !== sensitivity) setSensitivity(storeSensitivity)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeSensitivity])
+
   const { register, handleSubmit, watch } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { subject: composerDraft.subject },
@@ -186,6 +235,8 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
         is_draft: draft,
         importance,
         sensitivity,
+        encrypt_mode: encryptMode,
+        boomerang_at: boomerangAt,
         in_reply_to_id: composerDraft.replyToMessageId,
         reply_type: (composerDraft.replyType ?? 'none') as 'none' | 'reply' | 'reply_all' | 'forward',
         ...(scheduled ? { scheduled_send_at: new Date(scheduled).toISOString() } : {}),
@@ -201,11 +252,21 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
       queryClient.invalidateQueries({ queryKey: ['folders'] })
       if (scheduled) {
         showNotification('Message scheduled')
+        // Park the user in the Scheduled folder so they can find / edit /
+        // cancel the queued message — landing on Sent (the immediate-send
+        // behaviour) was misleading because the message hasn't shipped yet.
+        if (pathname?.startsWith('/mail')) {
+          router.push('/mail/scheduled')
+        }
       } else if (draft) {
         showNotification('Draft saved')
       } else {
         showNotification('Message sent')
-        router.push('/mail/sent')
+        // Stay put on /groups (and any other surface that owns its own
+        // inbox view); only kick the user to Sent from the mail flow.
+        if (pathname?.startsWith('/mail')) {
+          router.push('/mail/sent')
+        }
       }
       onClose()
     },
@@ -283,11 +344,13 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject, bodyHtml, to])
 
+  // Outlook-style labels (screenshots 1+2). Internal values stay
+  // normal/personal/private/confidential to keep the API contract.
   const SENSITIVITY_OPTIONS = [
-    { value: 'normal', label: 'Normal', description: 'No restrictions' },
-    { value: 'personal', label: 'Personal', description: 'Personal message' },
-    { value: 'private', label: 'Private', description: 'Do not forward' },
-    { value: 'confidential', label: 'Confidential', description: 'Handle with care' },
+    { value: 'personal', label: 'Public', description: 'No restrictions' },
+    { value: 'normal', label: 'General', description: 'Default for internal mail' },
+    { value: 'private', label: 'Confidential', description: 'Recipients should handle with care' },
+    { value: 'confidential', label: 'Highly Confidential', description: 'Strict handling — encryption recommended' },
   ] as const
 
   const SENSITIVITY_COLORS: Record<string, string> = {
@@ -298,6 +361,57 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   }
 
   const requiresWarning = sensitivity === 'private' || sensitivity === 'confidential'
+
+  // Live DLP — debounced 500ms after the user stops typing / changing
+  // recipients. Backend rules also re-check on send so a malicious client
+  // can't bypass.
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        // labelMap maps the four internal sensitivity values to DLP labels.
+        // The relabel (Outlook General/Public/Confidential/Highly Confidential)
+        // is display-only — internal values still mean the same thing here.
+        const labelMap: Record<string, 'public' | 'internal' | 'confidential' | 'encrypt'> = {
+          personal: 'public',           // "Public"
+          normal: 'internal',           // "General" (default internal)
+          private: 'confidential',      // "Confidential"
+          confidential: 'confidential', // "Highly Confidential"
+        }
+        // Encrypt button (Encrypt-Only / Do Not Forward) overrides the
+        // sensitivity label so the engine's ENCRYPT_LABEL_SET rule fires
+        // and the banner switches to the blue "Message will be encrypted"
+        // notice. The internal sensitivity value is still sent on the
+        // create_message payload so audit trails see both.
+        const dlpLabel = encryptMode !== 'none'
+          ? 'encrypt'
+          : (labelMap[sensitivity] ?? 'public')
+        const result = await dlp.evaluate({
+          to: to.map((t) => {
+            const m = t.match(/^(.+)\s<(.+)>$/)
+            return m ? { email: m[2], name: m[1].trim() } : { email: t }
+          }),
+          cc: cc.map((t) => {
+            const m = t.match(/^(.+)\s<(.+)>$/)
+            return m ? { email: m[2], name: m[1].trim() } : { email: t }
+          }),
+          bcc: bcc.map((t) => {
+            const m = t.match(/^(.+)\s<(.+)>$/)
+            return m ? { email: m[2], name: m[1].trim() } : { email: t }
+          }),
+          subject,
+          body: bodyHtml,
+          attachments: attachedFiles.map((f) => ({ name: f.name })),
+          sensitivity_label: dlpLabel,
+        })
+        setDlpLive(result)
+      } catch {
+        // Soft-fail — never let a DLP error block the editor; the send-time
+        // re-check is the source of truth.
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [to, cc, bcc, subject, bodyHtml, sensitivity, encryptMode, attachedFiles.length])
 
   const scanForSensitiveContent = (text: string): string[] => {
     const warnings: string[] = []
@@ -322,6 +436,41 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   }
 
   const handleSend = (scheduled?: string) => {
+    // Guard against empty recipients — applies to immediate AND scheduled
+    // sends. Schedule path used to skip this and silently dispatch a message
+    // with nobody on it.
+    if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
+      showNotification('Add at least one recipient before sending')
+      return
+    }
+
+    // DLP block — server enforces too, but bail early so the user gets a
+    // clear message rather than a generic 403.
+    if (dlpLive?.status === 'block') {
+      const lines = dlpLive.policy_tips
+        .filter((t) => t.action === 'block')
+        .map((t) => t.message)
+      showNotification(lines.join(' • ') || 'DLP policy blocks this message.')
+      return
+    }
+
+    // "Did you forget the attachment?" — body or subject hints at one but
+    // none is staged. Failure-Mode #3 from the CSV. The check is skipped
+    // once the user explicitly OKs the warning (attachmentIntentDismissed).
+    if (!attachmentIntentDismissed && attachedFiles.length === 0) {
+      const probe = `${subject} ${bodyHtml}`
+        .replace(/<[^>]+>/g, ' ')
+        .toLowerCase()
+      // Word-boundary regex so "attach" / "attaching" / "attached" / etc all
+      // hit, including "resume" and "cv" which strongly imply a file is meant
+      // to be enclosed.
+      const trigger = /\b(attach(ed|ment|ments|ing|s)?|enclos(ed|ing)|please find|see attached|herewith|resume|cv|spreadsheet|deck|slides|pdf|docx?|xlsx?)\b/i
+      if (trigger.test(probe)) {
+        setAttachmentIntentPending(scheduled ? { scheduled } : 'send')
+        return
+      }
+    }
+
     // DLP content scanning — runs on every send
     const contentWarnings = scanForSensitiveContent(bodyHtml + ' ' + subject)
     const violations: string[] = [...contentWarnings]
@@ -386,64 +535,280 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     )
   }
 
+  // Pre-send guard dialogs — sensitivity / DLP and attachment-intent. Shared
+  // between the inline and popup compose so the inline path also gets them.
+  const sensitivityDialog = sensitivityWarningPending !== false ? (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="sensitivity-warning-title"
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 rounded-t"
+    >
+      <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
+        <div className="flex items-start gap-3 mb-3">
+          <ShieldAlert size={20} style={{ color: SENSITIVITY_COLORS[sensitivity] }} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 id="sensitivity-warning-title" className="text-sm font-semibold text-[#323130]">
+              Send {sensitivity} message?
+            </h3>
+            <p className="text-xs text-[#605E5C] mt-1">
+              {sensitivity === 'confidential'
+                ? 'This message is marked Confidential. Recipients should handle it with strict discretion.'
+                : 'This message is marked Private. Please ensure recipients are authorised before sending.'}
+            </p>
+          </div>
+        </div>
+        {dlpViolations.length > 0 && (
+          <div className="mb-3 bg-[#FFF4CE] border border-[#F7C948] rounded px-3 py-2">
+            <p className="text-xs font-semibold text-[#7A5900] mb-1">DLP policy warnings</p>
+            <ul className="space-y-0.5">
+              {dlpViolations.map((v, i) => (
+                <li key={i} className="text-xs text-[#7A5900] flex items-start gap-1">
+                  <span className="flex-shrink-0 mt-0.5">⚠</span> {v}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setSensitivityWarningPending(false)}
+            className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const pending = sensitivityWarningPending
+              setSensitivityWarningPending(false)
+              if (pending === 'send') {
+                sendMutation.mutate({ draft: false })
+              } else if (typeof pending === 'object') {
+                sendMutation.mutate({ draft: false, scheduled: pending.scheduled })
+              }
+            }}
+            className="text-sm font-medium text-white px-3 py-1.5 rounded transition-colors"
+            style={{ backgroundColor: SENSITIVITY_COLORS[sensitivity] }}
+          >
+            Send anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  const attachmentIntentDialog = attachmentIntentPending !== false ? (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="attachment-intent-title"
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 rounded-t"
+    >
+      <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
+        <h3 id="attachment-intent-title" className="text-sm font-semibold text-[#323130] mb-1">
+          Did you forget to attach a file?
+        </h3>
+        <p className="text-xs text-[#605E5C] mb-4">
+          Your message mentions an attachment but no files are attached.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setAttachmentIntentPending(false)}
+            className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
+          >
+            Add attachment
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const pending = attachmentIntentPending
+              setAttachmentIntentPending(false)
+              setAttachmentIntentDismissed(true)
+              if (pending === 'send') handleSend()
+              else if (typeof pending === 'object') handleSend(pending.scheduled)
+            }}
+            className="text-sm font-medium text-white bg-[#0078D4] hover:bg-[#106EBE] px-3 py-1.5 rounded transition-colors"
+          >
+            Send anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
   // Inline mode — renders inside the reading pane with no modal wrapper
   if (inline) {
     return (
-      <div className="flex flex-col h-full bg-white" aria-label="Compose message">
-        {/* Recipients */}
-        <div className="px-4 pt-3 space-y-1 border-b border-[#EDEBE9] pb-2 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            {/* Send button inline with To */}
-            <div className="flex items-center flex-shrink-0">
+      <div className="flex flex-col h-full bg-white relative" aria-label="Compose message">
+        {/* Send bar — sits flush at the top of the pane like Outlook's compose,
+            with a heavier Send button + chevron for Schedule send. */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-3 border-b border-[#EDEBE9] flex-shrink-0">
+          <div className="flex items-center flex-shrink-0">
+            <button
+              type="button"
+              onClick={handleSubmit(() => handleSend())}
+              disabled={sendMutation.isPending}
+              className="flex items-center gap-2 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-sm font-semibold pl-3 pr-3 h-8 rounded-l transition-colors"
+            >
+              <Send size={14} /> Send
+            </button>
+            <div className="relative" ref={scheduleMenuRef}>
+              <button type="button" onClick={() => setScheduleMenuOpen((v) => !v)}
+                aria-label="Schedule send"
+                className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-8 px-1.5 rounded-r border-l border-white/30 transition-colors">
+                <ChevronDown size={12} />
+              </button>
+              {scheduleMenuOpen && (
+                <div className="absolute left-0 top-full mt-0.5 z-50 w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3">
+                  <p className="text-xs font-medium text-[#605E5C] mb-2">Schedule send</p>
+                  <input type="datetime-local" value={scheduledSendAt} onChange={(e) => setScheduledSendAt(e.target.value)}
+                    className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
+                  <button type="button" disabled={!scheduledSendAt || (to.length === 0 && cc.length === 0 && bcc.length === 0)} onClick={() => { handleSend(scheduledSendAt); setScheduleMenuOpen(false) }}
+                    className="w-full text-xs bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded">Schedule</button>
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Right-side header utilities — sensitivity tag + Discard (trash)
+              icon on the far right, matching Outlook's compose toolbar. */}
+          <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+            {sensitivity !== 'normal' && (
+              <span
+                className="text-[11px] px-2 py-0.5 rounded border"
+                style={{
+                  color: SENSITIVITY_COLORS[sensitivity],
+                  borderColor: SENSITIVITY_COLORS[sensitivity],
+                  backgroundColor: 'white',
+                }}
+              >
+                {sensitivity === 'confidential' ? 'Confidential' : sensitivity === 'private' ? 'Private' : 'Personal'}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm('Discard this message?')) onClose()
+              }}
+              aria-label="Discard message"
+              title="Discard"
+              className="p-1.5 rounded text-[#605E5C] hover:bg-[#FDE7E9] hover:text-[#D13438] transition-colors"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Encryption notice — shown when the user picked an Encrypt option
+            (Encrypt-Only / Do Not Forward / company-Confidential preset).
+            Mirrors Outlook's "This message is encrypted" pill above To. */}
+        {encryptMode !== 'none' && (() => {
+          const ENCRYPT_LABELS: Record<Exclude<typeof encryptMode, 'none'>, string> = {
+            company_confidential: 'Acme Corp - Confidential',
+            company_confidential_view_only: 'Acme Corp - Confidential View Only',
+            do_not_forward: 'Do Not Forward',
+            encrypt_only: 'Encrypt',
+          }
+          return (
+            <div
+              role="status"
+              className="mx-4 mt-2 mb-1 rounded border border-[#0078D4] bg-[#EBF3FB] text-[#323130] flex items-center gap-2 px-3 py-2 text-xs"
+            >
+              <Lock size={14} className="flex-shrink-0 text-[#0078D4]" />
+              <span className="flex-1 min-w-0 truncate">
+                <span className="font-semibold">{ENCRYPT_LABELS[encryptMode]}:</span> This message is encrypted. Recipients can&apos;t remove encryption.
+              </span>
               <button
                 type="button"
-                onClick={handleSubmit(() => handleSend())}
-                disabled={sendMutation.isPending}
-                className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors"
+                onClick={() => useEditorStore.getState().setEncryptMode('none')}
+                className="text-[#0078D4] hover:underline whitespace-nowrap"
               >
-                <Send size={12} /> Send
+                Remove encryption
               </button>
-              <div className="relative" ref={scheduleMenuRef}>
-                <button type="button" onClick={() => setScheduleMenuOpen((v) => !v)}
-                  className="flex items-center bg-[#0078D4] hover:bg-[#106EBE] text-white h-7 px-1 rounded-r border-l border-white/30 transition-colors">
-                  <ChevronDown size={10} />
-                </button>
-                {scheduleMenuOpen && (
-                  <div className="absolute left-0 top-full mt-0.5 z-50 w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3">
-                    <p className="text-xs font-medium text-[#605E5C] mb-2">Schedule send</p>
-                    <input type="datetime-local" value={scheduledSendAt} onChange={(e) => setScheduledSendAt(e.target.value)}
-                      className="w-full text-xs border border-[#EDEBE9] rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-[#0078D4]" />
-                    <button type="button" disabled={!scheduledSendAt} onClick={() => { handleSend(scheduledSendAt); setScheduleMenuOpen(false) }}
-                      className="w-full text-xs bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded">Schedule</button>
-                  </div>
-                )}
-              </div>
             </div>
+          )
+        })()}
+
+        {/* DLP policy-tip banner — shows the most-severe matched rule above
+            the To field while composing. Block status uses red, encrypt uses
+            blue, warn uses yellow. When more than one rule fires we swap to
+            "Multiple restricted items detected" so the user knows it's not
+            a single hit (still no expand / +N indicator per senior). */}
+        {dlpLive && dlpLive.status !== 'allow' && dlpLive.policy_tips.length > 0 && (() => {
+          const borderColor =
+            dlpLive.status === 'block' ? '#D13438'
+            : dlpLive.status === 'encrypt' ? '#0078D4'
+            : '#C19C00'
+          const multi = dlpLive.policy_tips.length > 1
+          const bannerText =
+            dlpLive.status === 'block'
+              ? (multi ? 'DLP BLOCK: Multiple restricted items detected' : 'DLP BLOCK: Restricted data detected')
+            : dlpLive.status === 'encrypt'
+              ? 'DLP NOTICE: Message will be encrypted'
+            : (multi ? 'DLP WARNING: Multiple restricted items detected' : 'DLP WARNING: Restricted data detected')
+          return (
+            <div
+              role="status"
+              className="mx-4 mt-2 mb-1 rounded border-2 bg-white text-[#323130] flex items-center gap-2 px-3 py-2 text-xs"
+              style={{ borderColor }}
+            >
+              <Lock size={14} className="flex-shrink-0 text-[#605E5C]" />
+              <span className="flex-1 min-w-0 truncate">
+                <span className="font-semibold">Policy tip:</span> {bannerText}
+              </span>
+              <a
+                href="https://learn.microsoft.com/en-us/microsoft-365/compliance/dlp-policy-tips-reference"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#0078D4] hover:underline whitespace-nowrap"
+              >
+                Learn more
+              </a>
+            </div>
+          )
+        })()}
+
+        {/* Recipients — each field on its own row with a button-style label prefix
+            ("To"/"Cc"/"Bcc"), Bcc toggle on the right of the To row. Mirrors the
+            Outlook compose markup. The bottom underline lives inside RecipientField
+            so it sits flush against the chips, like Outlook's compose. */}
+        <div className="flex flex-col flex-shrink-0">
+          <div className="flex items-start gap-2 px-4 pt-1.5">
             <div className="flex-1 min-w-0">
-              <RecipientField label="To" id="inline-to" value={to} onChange={setTo} placeholder="Recipients" />
+              <RecipientField label="To" id="inline-to" value={to} onChange={setTo} placeholder="" />
             </div>
-            {(!showCc || !showBcc) && (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {!showCc && <button type="button" onClick={() => setShowCc(true)} className="text-xs text-[#0078D4] hover:underline">Cc</button>}
-                {!showBcc && <button type="button" onClick={() => setShowBcc(true)} className="text-xs text-[#0078D4] hover:underline">Bcc</button>}
-              </div>
+            {!showBcc && (
+              <button
+                type="button"
+                onClick={() => setShowBcc(true)}
+                // Same persistent outlined chip as the To/Cc labels.
+                className="text-sm text-[#323130] bg-white border border-[#D2D0CE] hover:bg-[#F3F2F1] hover:border-[#A19F9D] rounded px-3 py-1 flex-shrink-0 mt-1"
+              >
+                Bcc
+              </button>
             )}
           </div>
 
-          {showCc && (
-            <RecipientField label="Cc" id="inline-cc" value={cc} onChange={setCc} />
-          )}
+          {/* Cc — always visible to match Outlook's default compose */}
+          <div className="px-4 pt-1.5">
+            <RecipientField label="Cc" id="inline-cc" value={cc} onChange={setCc} placeholder="" />
+          </div>
+
           {showBcc && (
-            <RecipientField label="Bcc" id="inline-bcc" value={bcc} onChange={setBcc} />
+            <div className="px-4 pt-1.5">
+              <RecipientField label="Bcc" id="inline-bcc" value={bcc} onChange={setBcc} placeholder="" />
+            </div>
           )}
 
-          {/* Subject */}
-          <div className="flex items-center gap-2 border-b border-[#EDEBE9] pb-1">
-            <label className="text-sm text-[#605E5C] w-8 text-right flex-shrink-0">Subj</label>
+          {/* Subject — own row with its own underline so the field reads as distinct. */}
+          <div className="flex items-center gap-2 px-4 pt-1.5 pb-1.5 border-b border-[#E1DFDD] mx-0">
             <input
               type="text"
               placeholder="Add a subject"
-              className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none py-0.5"
+              aria-label="Subject"
+              className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none py-1"
               {...register('subject')}
             />
             {importance === 'high' && (
@@ -486,6 +851,10 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
         {/* Hidden file input for ribbon attach button */}
         <input ref={fileInputRef} type="file" multiple className="hidden"
           onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) setAttachedFiles((prev) => [...prev, ...files]); e.target.value = '' }} />
+
+        {/* Pre-send guard dialogs — also shown in popup mode below. */}
+        {sensitivityDialog}
+        {attachmentIntentDialog}
       </div>
     )
   }
@@ -1053,68 +1422,9 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
         </div>
       </form>
 
-      {/* Pre-send sensitivity warning dialog */}
-      {sensitivityWarningPending !== false && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="sensitivity-warning-title"
-          className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 rounded-t"
-        >
-          <div className="bg-white rounded shadow-outlook-lg mx-4 p-5 max-w-xs w-full">
-            <div className="flex items-start gap-3 mb-3">
-              <ShieldAlert size={20} style={{ color: SENSITIVITY_COLORS[sensitivity] }} className="flex-shrink-0 mt-0.5" />
-              <div>
-                <h3 id="sensitivity-warning-title" className="text-sm font-semibold text-[#323130]">
-                  Send {sensitivity} message?
-                </h3>
-                <p className="text-xs text-[#605E5C] mt-1">
-                  {sensitivity === 'confidential'
-                    ? 'This message is marked Confidential. Recipients should handle it with strict discretion.'
-                    : 'This message is marked Private. Please ensure recipients are authorised before sending.'}
-                </p>
-              </div>
-            </div>
-            {dlpViolations.length > 0 && (
-              <div className="mb-3 bg-[#FFF4CE] border border-[#F7C948] rounded px-3 py-2">
-                <p className="text-xs font-semibold text-[#7A5900] mb-1">DLP policy warnings</p>
-                <ul className="space-y-0.5">
-                  {dlpViolations.map((v, i) => (
-                    <li key={i} className="text-xs text-[#7A5900] flex items-start gap-1">
-                      <span className="flex-shrink-0 mt-0.5">⚠</span> {v}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setSensitivityWarningPending(false)}
-                className="text-sm text-[#605E5C] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const pending = sensitivityWarningPending
-                  setSensitivityWarningPending(false)
-                  if (pending === 'send') {
-                    sendMutation.mutate({ draft: false })
-                  } else if (typeof pending === 'object') {
-                    sendMutation.mutate({ draft: false, scheduled: pending.scheduled })
-                  }
-                }}
-                className="text-sm font-medium text-white px-3 py-1.5 rounded transition-colors"
-                style={{ backgroundColor: SENSITIVITY_COLORS[sensitivity] }}
-              >
-                Send anyway
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Pre-send guard dialogs — same JSX as the inline path. */}
+      {sensitivityDialog}
+      {attachmentIntentDialog}
     </div>
   )
 }

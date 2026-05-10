@@ -212,4 +212,54 @@
   .dark .prose a { color: var(--accent); }
   .dark .prose strong { color: var(--text-primary); }
   .dark .prose h1, .dark .prose h2, .dark .prose h3, .dark .prose h4 { color: var(--text-primary); }
+
+  /* Excel preview — render xlsx HTML output as a tight Outlook-style grid */
+  .excel-preview-table table { border-collapse: collapse; min-width: 100%; }
+  .excel-preview-table td, .excel-preview-table th {
+    border: 1px solid var(--border-primary);
+    padding: 4px 8px;
+    white-space: nowrap;
+    background: var(--bg-primary);
+    font-weight: normal;
+    text-align: left;
+  }
+  .excel-preview-table tr:first-child td,
+  .excel-preview-table th { background: var(--bg-tertiary); font-weight: 600; }
+
+  /* Word preview (mammoth output) */
+  .prose-outlook { line-height: 1.55; }
+  .prose-outlook h1 { font-size: 1.5rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+  .prose-outlook h2 { font-size: 1.25rem; font-weight: 600; margin: 0.9rem 0 0.4rem; }
+  .prose-outlook h3 { font-size: 1.1rem; font-weight: 600; margin: 0.8rem 0 0.3rem; }
+  .prose-outlook p { margin: 0.5rem 0; }
+  .prose-outlook ul, .prose-outlook ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+  .prose-outlook ul { list-style: disc; }
+  .prose-outlook ol { list-style: decimal; }
+  .prose-outlook table { border-collapse: collapse; margin: 0.6rem 0; }
+  .prose-outlook td, .prose-outlook th { border: 1px solid var(--border-primary); padding: 4px 8px; }
+  .prose-outlook a { color: var(--accent); text-decoration: underline; }
+
+  /* Scheduling Assistant — diagonal hatch fills for busy/tentative blocks
+     in the availability grid. Outlook draws these as repeating stripes
+     over the row background. */
+  .sa-hatch-busy {
+    background-color: rgba(177, 70, 194, 0.22);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(177, 70, 194, 0.7) 0,
+      rgba(177, 70, 194, 0.7) 2px,
+      transparent 2px,
+      transparent 6px
+    );
+  }
+  .sa-hatch-tentative {
+    background-color: rgba(91, 141, 239, 0.18);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(91, 141, 239, 0.7) 0,
+      rgba(91, 141, 239, 0.7) 2px,
+      transparent 2px,
+      transparent 6px
+    );
+  }
 }

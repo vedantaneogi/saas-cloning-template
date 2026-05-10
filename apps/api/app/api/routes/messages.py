@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -72,6 +73,33 @@ async def _deliver_to_recipients(
     all_recipients = list(to_addresses or []) + list(cc_addresses or []) + list(bcc_addresses or [])
     now = rl_state.clock.now()
 
+    # Group fan-out: any recipient whose address matches a Group.email gets
+    # expanded to that group's members, so a message to "team-a@company.com"
+    # actually lands in every member's inbox. The original to/cc keeps the
+    # group address visible so Reply / Reply All still target the group.
+    from app.models.group import Group, GroupMember
+    rec_emails_lower = {
+        (r.get("email", "") if isinstance(r, dict) else "").lower()
+        for r in all_recipients
+    }
+    rec_emails_lower.discard("")
+    if rec_emails_lower:
+        group_q = await db.execute(
+            select(Group).where(Group.email.in_(rec_emails_lower))
+        )
+        for g in group_q.scalars().all():
+            members_q = await db.execute(
+                select(User)
+                .join(GroupMember, GroupMember.user_id == User.id)
+                .where(GroupMember.group_id == g.id)
+            )
+            for m in members_q.scalars().all():
+                # Deduplicate against existing recipients (case-insensitive).
+                if m.email.lower() in rec_emails_lower:
+                    continue
+                rec_emails_lower.add(m.email.lower())
+                all_recipients.append({"email": m.email, "name": m.display_name})
+
     # Internal DB delivery for users in our system
     for recipient in all_recipients:
         rec_email = recipient.get("email", "") if isinstance(recipient, dict) else ""
@@ -101,6 +129,7 @@ async def _deliver_to_recipients(
             body_text=sent_msg.body_text,
             importance=sent_msg.importance,
             sensitivity=sent_msg.sensitivity,
+            encrypt_mode=sent_msg.encrypt_mode,
             has_attachments=sent_msg.has_attachments,
             is_read=False,
             is_draft=False,
@@ -110,6 +139,32 @@ async def _deliver_to_recipients(
             updated_at=now,
         )
         db.add(delivered)
+        await db.flush()
+        # Auto-run the recipient's enabled inbound rules against the freshly
+        # delivered copy. Rules can move the message to a folder, mark it
+        # read, flag, set importance, etc. — same behaviour as Outlook's
+        # server-side inbox rules. Imported lazily to avoid circular imports.
+        from app.api.routes.rules import _message_matches_condition, _apply_rule_to_message
+        from app.models.rule import Rule
+        rules_q = await db.execute(
+            select(Rule)
+            .where(
+                Rule.user_id == rec_user.id,
+                Rule.is_enabled.is_(True),
+                Rule.apply_to.in_(("incoming", "both")),
+            )
+            .order_by(Rule.priority)
+        )
+        for r in rules_q.scalars().all():
+            conds = r.conditions or []
+            excs = getattr(r, "exceptions", None) or []
+            if not all(_message_matches_condition(delivered, c, rec_email) for c in conds):
+                continue
+            if excs and any(_message_matches_condition(delivered, e, rec_email) for e in excs):
+                continue
+            await _apply_rule_to_message(db, r, delivered, rec_user.id)
+            if r.stop_processing:
+                break
         await db.flush()
         await _update_folder_counts(db, rec_inbox.id)
         rl_state.event_log.append("message_delivered", {
@@ -153,6 +208,171 @@ async def _update_folder_counts(db: AsyncSession, folder_id: uuid.UUID):
         folder.unread_count = unread_result.scalar() or 0
 
 
+async def _flush_due_scheduled(db: AsyncSession, user: User) -> None:
+    """Dispatch any of the user's scheduled messages whose send time has passed.
+
+    Schedule-send stores the message as is_draft=True with scheduled_send_at
+    populated. This helper finds those that are due, flips them to "sent",
+    moves them into the Sent folder, runs OOF + delivery, and clears the
+    scheduled flag. Called opportunistically from list_messages so we don't
+    need a background worker.
+    """
+    now = rl_state.clock.now()
+    # Skip messages the user has soft-deleted before dispatch — moving the
+    # scheduled item to Deleted Items is the user's "cancel" affordance.
+    deleted_folder = await _get_folder_by_slug(db, "deleted", user.id)
+    where_clauses = [
+        Message.user_id == user.id,
+        Message.is_draft.is_(True),
+        Message.scheduled_send_at.is_not(None),
+        Message.scheduled_send_at <= now,
+    ]
+    if deleted_folder:
+        where_clauses.append(Message.folder_id != deleted_folder.id)
+    due_q = await db.execute(select(Message).where(*where_clauses))
+    due = list(due_q.scalars().all())
+    if not due:
+        return
+    sent_folder = await _get_folder_by_slug(db, "sent", user.id)
+    for msg in due:
+        prev_folder_id = msg.folder_id
+        if sent_folder:
+            msg.folder_id = sent_folder.id
+        msg.is_draft = False
+        msg.sent_at = now
+        msg.received_at = now
+        msg.updated_at = now
+        msg.scheduled_send_at = None
+        await db.flush()
+        if sent_folder and sent_folder.id != prev_folder_id:
+            await _update_folder_counts(db, prev_folder_id)
+            await _update_folder_counts(db, sent_folder.id)
+        await _deliver_to_recipients(
+            db, msg, msg.to_addresses, msg.cc_addresses, msg.bcc_addresses, user
+        )
+        rl_state.event_log.append("scheduled_send_dispatched", {"id": str(msg.id)})
+
+
+async def _flush_due_boomerangs(db: AsyncSession, user: User) -> None:
+    """Resurface sent messages whose follow-up reminder has matured.
+
+    Boomerang stores `boomerang_at` on the original sent message. When
+    `now >= boomerang_at` and no reply has arrived on the same conversation,
+    we drop a copy of the original into the user's Inbox as
+    unread + flagged + pinned (so it sticks to the top), with subject
+    prefixed "Follow-up:". `boomerang_fired_at` is stamped either way so the
+    sweep is idempotent. Called opportunistically from list_messages — same
+    pattern as `_flush_due_scheduled`, no background worker.
+    """
+    now = rl_state.clock.now()
+    sent_folder = await _get_folder_by_slug(db, "sent", user.id)
+    inbox_folder = await _get_folder_by_slug(db, "inbox", user.id)
+    if not sent_folder or not inbox_folder:
+        return
+    due_q = await db.execute(
+        select(Message)
+        .where(
+            Message.user_id == user.id,
+            Message.folder_id == sent_folder.id,
+            Message.is_draft.is_(False),
+            Message.boomerang_at.is_not(None),
+            Message.boomerang_at <= now,
+            Message.boomerang_fired_at.is_(None),
+        )
+        .options(selectinload(Message.attachments))
+    )
+    due = list(due_q.scalars().all())
+    if not due:
+        return
+    for sent_msg in due:
+        # Reply detection by conversation: any non-Sent message in the
+        # user's mailbox sharing this conversation_id is treated as a
+        # reply (covers external replies that flowed back via the
+        # recipient delivery loop). conversation_id can be NULL for very
+        # old messages — those fall back to in_reply_to_id matching.
+        reply_count = 0
+        if sent_msg.conversation_id is not None:
+            r = await db.execute(
+                select(func.count())
+                .select_from(Message)
+                .where(
+                    Message.user_id == user.id,
+                    Message.conversation_id == sent_msg.conversation_id,
+                    Message.id != sent_msg.id,
+                    Message.folder_id != sent_folder.id,
+                )
+            )
+            reply_count = r.scalar() or 0
+        if reply_count > 0:
+            sent_msg.boomerang_fired_at = now
+            sent_msg.updated_at = now
+            rl_state.event_log.append(
+                "boomerang_cleared_by_reply", {"id": str(sent_msg.id)}
+            )
+            continue
+        # No reply — drop a Boomerang-style notice in Inbox. Per senior
+        # follow-up: the resurfaced row is a self-to-self message (from
+        # the user, to the user — no external recipients, no SMTP send).
+        # Subject is "RE: {original}" so it visually threads with the
+        # original conversation. Body is the Boomerang notice + a
+        # "view this conversation" link. is_flagged + is_pinned put it
+        # at the top of Inbox with a red follow-up flag.
+        original_subject = sent_msg.subject or ""
+        reminder_subject = (
+            f"RE: {original_subject}" if original_subject else "Follow-up reminder"
+        )
+        view_url = f"/mail/sent?msg_id={sent_msg.id}"
+        notice_html = (
+            "<p>Message moved to top of Inbox by Boomerang because there "
+            f"was no reply <a href=\"{view_url}\">(view this conversation)</a>.</p>"
+            "<p style=\"color:#605E5C;font-size:12px;margin-top:12px;\">"
+            "Don't want this notification in the future? Go to Settings and "
+            "uncheck the checkbox for <em>At the top of Inbox</em>. Please note "
+            "that your Boomeranged messages would no longer return to the "
+            "top of your inbox.</p>"
+        )
+        notice_text = (
+            "Message moved to top of Inbox by Boomerang because there was no "
+            f"reply (view this conversation: {view_url}).\n\n"
+            "Don't want this notification in the future? Go to Settings and "
+            "uncheck \"At the top of Inbox\"."
+        )
+        self_to = [{"email": user.email, "name": user.display_name or user.email}]
+        reminder = Message(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            folder_id=inbox_folder.id,
+            conversation_id=sent_msg.conversation_id,
+            in_reply_to_id=sent_msg.id,
+            from_address=user.email,            # self-to-self — clearly internal
+            from_name=user.display_name or user.email,
+            to_addresses=self_to,
+            cc_addresses=[],
+            bcc_addresses=[],
+            subject=reminder_subject,
+            body_html=notice_html,
+            body_text=notice_text,
+            importance="normal",
+            sensitivity="normal",
+            encrypt_mode="none",
+            has_attachments=False,
+            is_read=False,
+            is_flagged=True,                    # red follow-up flag on the row
+            is_pinned=True,                     # forces it to the top of Inbox
+            is_draft=False,
+            sent_at=now,
+            received_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(reminder)
+        sent_msg.boomerang_fired_at = now
+        sent_msg.updated_at = now
+        await db.flush()
+        await _update_folder_counts(db, inbox_folder.id)
+        rl_state.event_log.append("boomerang_fired", {"id": str(sent_msg.id), "reminder_id": str(reminder.id)})
+
+
 @router.get("", response_model=MessageList)
 async def list_messages(
     folder_id: Optional[uuid.UUID] = None,
@@ -163,12 +383,19 @@ async def list_messages(
     search: Optional[str] = None,
     from_addr: Optional[str] = None,
     focused: Optional[bool] = None,
+    snoozed: Optional[bool] = None,
+    mentions_only: Optional[bool] = None,
+    category_ids: list[uuid.UUID] = Query(default=[]),
     sort: str = "received_at:desc",
     cursor: Optional[str] = None,
     limit: int = Query(default=50, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Flush any scheduled messages whose send time has passed before listing.
+    await _flush_due_scheduled(db, current_user)
+    await _flush_due_boomerangs(db, current_user)
+
     filters = [Message.user_id == current_user.id]
     if folder_id:
         filters.append(Message.folder_id == folder_id)
@@ -182,6 +409,14 @@ async def list_messages(
         filters.append(Message.importance == importance)
     if from_addr:
         filters.append(Message.from_address.ilike(f"%{from_addr}%"))
+    if category_ids:
+        # Filter to messages tagged with any of the requested categories.
+        cat_subq = (
+            select(MessageCategory.message_id)
+            .where(MessageCategory.category_id.in_(category_ids))
+            .scalar_subquery()
+        )
+        filters.append(Message.id.in_(cat_subq))
 
     # Focused inbox: messages from known contacts or with high importance are "focused"
     if focused is not None:
@@ -192,23 +427,27 @@ async def list_messages(
             .scalar_subquery()
         )
         if focused:
-            # Focused = from a known contact OR high importance OR flagged OR a reply to user's sent message
+            # Focused = known contact / high importance / flagged / reply / **calendar** —
+            # invites + RSVP notifications always belong in Focused, never Other.
             filters.append(
                 or_(
                     Message.from_address.in_(contact_emails_subq),
                     Message.importance == "high",
                     Message.is_flagged.is_(True),
                     Message.in_reply_to_id.is_not(None),
+                    Message.event_id.is_not(None),
                 )
             )
         else:
-            # Other = NOT focused (from unknown senders, normal importance, not flagged, not a reply)
+            # Other = the inverse of the focused predicate (calendar messages are
+            # explicitly excluded so they never leak into Other).
             filters.append(
                 ~or_(
                     Message.from_address.in_(contact_emails_subq),
                     Message.importance == "high",
                     Message.is_flagged.is_(True),
                     Message.in_reply_to_id.is_not(None),
+                    Message.event_id.is_not(None),
                 )
             )
     if search:
@@ -222,9 +461,23 @@ async def list_messages(
             )
         )
 
-    # Exclude snoozed messages (snooze_until is in the future)
+    # Snooze handling. Default behaviour hides snoozed messages from any folder so
+    # they don't clutter the inbox; the dedicated "Snoozed" view passes snoozed=true
+    # and we invert the predicate so only currently-snoozed rows come back.
     now = rl_state.clock.now()
-    filters.append(or_(Message.snooze_until.is_(None), Message.snooze_until <= now))
+    if snoozed:
+        filters.append(Message.snooze_until.is_not(None))
+        filters.append(Message.snooze_until > now)
+    else:
+        filters.append(or_(Message.snooze_until.is_(None), Message.snooze_until <= now))
+
+    # Mentions filter — match TipTap @mention spans pinned to the current
+    # user's email. The mention extension renders
+    #   <span data-type="mention" data-id="{email}">@Name</span>
+    # so an ILIKE on the address attribute is the simplest reliable check.
+    if mentions_only:
+        me = current_user.email.replace('"', '').replace("'", "")
+        filters.append(cast(Message.body_html, String).ilike(f'%data-id="{me}"%'))
 
     # Cursor-based pagination: cursor is the last message id
     if cursor:
@@ -237,7 +490,8 @@ async def list_messages(
         except ValueError:
             pass
 
-    # Build sort
+    # Build sort. Pinned messages always float to the top regardless of secondary sort —
+    # mirrors Outlook's "Pin to top" behaviour.
     sort_field, sort_dir = (sort.split(":") + ["desc"])[:2]
     sort_col = getattr(Message, sort_field, Message.received_at)
     order = desc(sort_col) if sort_dir == "desc" else sort_col
@@ -248,7 +502,10 @@ async def list_messages(
     result = await db.execute(
         select(Message)
         .options(selectinload(Message.attachments))
-        .where(*filters).order_by(order).distinct().limit(limit + 1)
+        .where(*filters)
+        .order_by(desc(Message.is_pinned), order)
+        .distinct()
+        .limit(limit + 1)
     )
     messages = result.scalars().all()
 
@@ -398,12 +655,28 @@ async def search_messages(
         filters.append(Message.received_at <= date_to)
     if folder_id:
         filters.append(Message.folder_id == folder_id)
+    else:
+        # Default scope mirrors Outlook search: exclude the trash so a soft-
+        # deleted message disappears from the result list. Callers that want
+        # the trash explicitly can pass folder_id=<deleted folder>.
+        deleted_folder = await _get_folder_by_slug(db, "deleted", current_user.id)
+        if deleted_folder:
+            filters.append(Message.folder_id != deleted_folder.id)
 
     total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
     total = total_result.scalar() or 0
 
+    # Eager-load attachments so the Files tab in the global search dropdown
+    # has something to render — Message.attachments is `lazy="noload"` to
+    # keep the inbox listing cheap, but search results need the rows so the
+    # client can group "files matching <query>" out of the same response.
     result = await db.execute(
-        select(Message).where(*filters).order_by(desc(Message.received_at)).distinct().limit(limit)
+        select(Message)
+        .where(*filters)
+        .order_by(desc(Message.received_at))
+        .options(selectinload(Message.attachments))
+        .distinct()
+        .limit(limit)
     )
     items = list(result.scalars().all())
 
@@ -446,9 +719,64 @@ async def create_message(
 ):
     now = rl_state.clock.now()
 
-    # Resolve folder
+    # Server-side DLP enforcement — runs only on real sends (drafts are
+    # exempt so the user can save in-progress work without tripping rules).
+    # Frontend already runs the same engine for the live policy tip + a
+    # warn dialog, but a malicious client can bypass that, so we re-check
+    # here before persisting + delivering.
+    if not body.is_draft:
+        from app.api.routes.dlp import (
+            evaluate_dlp,
+            DlpEvaluateRequest,
+            AddressIn,
+            AttachmentIn,
+        )
+        dlp_req = DlpEvaluateRequest(
+            to=[AddressIn(email=a.get("email", ""), name=a.get("name"))
+                for a in (body.to_addresses or []) if isinstance(a, dict)],
+            cc=[AddressIn(email=a.get("email", ""), name=a.get("name"))
+                for a in (body.cc_addresses or []) if isinstance(a, dict)],
+            bcc=[AddressIn(email=a.get("email", ""), name=a.get("name"))
+                for a in (body.bcc_addresses or []) if isinstance(a, dict)],
+            subject=body.subject or "",
+            body=body.body_html or body.body_text or "",
+            attachments=[AttachmentIn(name="")],  # filenames hydrated post-create
+            # Encrypt-mode picks (e.g. "Encrypt-Only", "Do Not Forward")
+            # override the sensitivity label so the engine's
+            # ENCRYPT_LABEL_SET rule fires server-side too — keeps the
+            # frontend live banner and the send-time gate in agreement.
+            sensitivity_label=(
+                "encrypt"
+                if (body.encrypt_mode and body.encrypt_mode != "none")
+                else (body.sensitivity or "public")
+            ),
+        )
+        dlp_result = evaluate_dlp(dlp_req, current_user.email)
+        if dlp_result.status == "block":
+            messages_summary = "; ".join(t.message for t in dlp_result.policy_tips)
+            _err(
+                "dlp_blocked",
+                f"Message blocked by DLP policy: {messages_summary}",
+                403,
+            )
+
+    # Resolve folder. Schedule-send rides the drafts path even when the user
+    # hit "Send" — the message sits in Drafts (not Sent) until dispatch so the
+    # user can find/cancel it and so list filters that exclude drafts don't
+    # leak the unsent copy into Sent.
+    is_scheduled_send = bool(
+        body.scheduled_send_at and body.scheduled_send_at > now and not body.is_draft
+    )
     if body.folder_id:
         folder_id = body.folder_id
+    elif is_scheduled_send:
+        # Park in the Scheduled folder so the user can find / edit / cancel
+        # before dispatch. Falls back to Drafts if Scheduled doesn't exist
+        # (legacy users seeded before the folder was added).
+        folder = await _get_folder_by_slug(db, "scheduled", current_user.id)
+        if not folder:
+            folder = await _get_folder_by_slug(db, "drafts", current_user.id)
+        folder_id = folder.id if folder else None
     elif body.is_draft:
         folder = await _get_folder_by_slug(db, "drafts", current_user.id)
         folder_id = folder.id if folder else None
@@ -459,28 +787,80 @@ async def create_message(
     if not folder_id:
         _err("folder_required", "Could not resolve folder", 400)
 
+    # @ mention handling: parse mention spans out of body_html and auto-Cc anyone
+    # who isn't already a recipient. Mirrors Outlook — typing @alice in the body
+    # adds her to the To/Cc bar so she gets the message in her inbox. The TipTap
+    # Mention extension renders <span data-type="mention" data-id="email">@Name</span>.
+    augmented_cc = list(body.cc_addresses or [])
+    if body.body_html and not body.is_draft:
+        existing_emails = {
+            (a.get("email") or "").lower()
+            for a in (body.to_addresses or []) + augmented_cc + (body.bcc_addresses or [])
+            if isinstance(a, dict)
+        }
+        existing_emails.add(current_user.email.lower())
+        # Match either order of attributes — TipTap doesn't guarantee a fixed sequence.
+        mention_re = re.compile(
+            r'<span\b[^>]*\bdata-type=["\']mention["\'][^>]*\bdata-id=["\']([^"\']+)["\']'
+            r'|<span\b[^>]*\bdata-id=["\']([^"\']+)["\'][^>]*\bdata-type=["\']mention["\']',
+            re.IGNORECASE,
+        )
+        for match in mention_re.finditer(body.body_html):
+            email = (match.group(1) or match.group(2) or "").strip().lower()
+            if not email or "@" not in email or email in existing_emails:
+                continue
+            existing_emails.add(email)
+            mentioned_user = await db.execute(select(User).where(User.email == email))
+            mu = mentioned_user.scalar_one_or_none()
+            augmented_cc.append({"email": email, "name": (mu.display_name if mu else email)})
+
+    # Ensure every sent message lives inside a conversation so the recipient's
+    # eventual reply lands on the same thread as the sender's original copy.
+    # (Drafts skip — they have no recipients yet.)
+    conv_id = body.conversation_id
+    if not conv_id and not body.is_draft:
+        from app.models.conversation import Conversation
+        conv = Conversation(
+            id=uuid.uuid4(),
+            user_id=current_user.id,
+            subject=body.subject or "",
+            last_message_at=now,
+            message_count=1,
+            has_attachments=False,
+        )
+        db.add(conv)
+        await db.flush()
+        conv_id = conv.id
+
+    # Schedule-send: future scheduled_send_at means the message is parked as a
+    # draft (in Drafts) until _flush_due_scheduled dispatches it.
+    is_scheduled = is_scheduled_send
+    effective_is_draft = body.is_draft or is_scheduled
+
     msg = Message(
         id=uuid.uuid4(),
         user_id=current_user.id,
         folder_id=folder_id,
-        conversation_id=body.conversation_id,
+        conversation_id=conv_id,
         in_reply_to_id=body.in_reply_to_id,
         reply_type=body.reply_type,
         from_address=current_user.email,
         from_name=current_user.display_name,
         to_addresses=body.to_addresses,
-        cc_addresses=body.cc_addresses,
+        cc_addresses=augmented_cc,
         bcc_addresses=body.bcc_addresses,
         subject=body.subject,
         body_html=body.body_html,
         body_text=body.body_text,
         importance=body.importance,
         sensitivity=body.sensitivity,
-        is_draft=body.is_draft,
+        encrypt_mode=(body.encrypt_mode or "none"),
+        boomerang_at=body.boomerang_at,
+        is_draft=effective_is_draft,
         is_flagged=body.is_flagged,
         scheduled_send_at=body.scheduled_send_at,
-        sent_at=None if body.is_draft else now,
-        received_at=None if body.is_draft else now,
+        sent_at=None if effective_is_draft else now,
+        received_at=None if effective_is_draft else now,
         created_at=now,
         updated_at=now,
     )
@@ -488,11 +868,21 @@ async def create_message(
     await db.flush()
     await _update_folder_counts(db, folder_id)
 
-    rl_state.event_log.append("message_created", {"id": str(msg.id), "is_draft": msg.is_draft})
+    rl_state.event_log.append("message_created", {
+        "id": str(msg.id),
+        "is_draft": msg.is_draft,
+        "scheduled": is_scheduled,
+    })
 
-    # OOF auto-reply: when sending (not draft), check if any recipient has OOF enabled
+    # If the message is scheduled (future), bail out before OOF + delivery —
+    # the flush helper dispatches it later.
+    if is_scheduled:
+        return MessageOut.model_validate(msg)
+
+    # OOF auto-reply: when sending (not draft), check if any recipient has OOF enabled.
+    # Uses augmented_cc so anyone added via an @ mention also triggers OOF when relevant.
     if not body.is_draft:
-        all_recipients = list(body.to_addresses or []) + list(body.cc_addresses or [])
+        all_recipients = list(body.to_addresses or []) + list(augmented_cc)
         for recipient in all_recipients:
             rec_email = recipient.get("email", "") if isinstance(recipient, dict) else ""
             if not rec_email:
@@ -510,9 +900,17 @@ async def create_message(
                 continue
             if oof_user.out_of_office_end and now > oof_user.out_of_office_end:
                 continue
+            # Pick internal vs external message based on whether the sender
+            # shares a domain with the OOF user — Outlook's split between
+            # "Inside my organization" and "Outside my organization" replies.
+            sender_domain = (current_user.email.split("@")[-1] or "").lower()
+            recv_domain = (oof_user.email.split("@")[-1] or "").lower()
+            same_org = sender_domain and sender_domain == recv_domain
             oof_body = (
-                oof_user.out_of_office_message_external
+                (oof_user.out_of_office_message_internal if same_org
+                 else oof_user.out_of_office_message_external)
                 or oof_user.out_of_office_message_internal
+                or oof_user.out_of_office_message_external
                 or "I am currently out of office."
             )
             inbox_folder = await _get_folder_by_slug(db, "inbox", current_user.id)
@@ -541,9 +939,10 @@ async def create_message(
             await _update_folder_counts(db, inbox_folder.id)
             rl_state.event_log.append("oof_auto_reply", {"from": rec_email, "to": current_user.email})
 
-    # Deliver message to each recipient's inbox
+    # Deliver message to each recipient's inbox. Use augmented_cc so anyone the
+    # sender @-mentioned in the body actually receives the email.
     if not body.is_draft:
-        await _deliver_to_recipients(db, msg, body.to_addresses, body.cc_addresses, body.bcc_addresses, current_user)
+        await _deliver_to_recipients(db, msg, body.to_addresses, augmented_cc, body.bcc_addresses, current_user)
 
     return MessageOut.model_validate(msg)
 
@@ -579,10 +978,19 @@ async def update_message(
         msg.body_html = body.body_html
     if body.body_text is not None:
         msg.body_text = body.body_text
-    if body.snooze_until is not None:
+    # Use model_fields_set so an explicit `snooze_until: null` from the client
+    # clears the column (Outlook's "Unsnooze" path) without affecting other PATCHes
+    # that simply omit the field.
+    if "snooze_until" in body.model_fields_set:
         msg.snooze_until = body.snooze_until
     if body.scheduled_send_at is not None:
         msg.scheduled_send_at = body.scheduled_send_at
+    # Boomerang follow-up: same nullable-PATCH pattern as snooze. Sending
+    # `boomerang_at: null` clears the reminder; resetting also wipes
+    # boomerang_fired_at so the user can extend a reminder that already fired.
+    if "boomerang_at" in body.model_fields_set:
+        msg.boomerang_at = body.boomerang_at
+        msg.boomerang_fired_at = None
 
     msg.updated_at = now
 
@@ -905,6 +1313,7 @@ async def copy_message(
         body_text=msg.body_text,
         importance=msg.importance,
         sensitivity=msg.sensitivity,
+        encrypt_mode=msg.encrypt_mode,
         has_attachments=msg.has_attachments,
         is_read=msg.is_read,
         is_flagged=msg.is_flagged,
@@ -1082,7 +1491,9 @@ async def sweep_keep_latest(
 
     kept = msgs[0]  # most recent — keep as-is
     deleted_count = 0
+    affected_folder_ids: set[uuid.UUID] = set()
     for msg in msgs[1:]:
+        affected_folder_ids.add(msg.folder_id)
         if deleted_folder:
             msg.folder_id = deleted_folder.id
         else:
@@ -1090,6 +1501,12 @@ async def sweep_keep_latest(
         deleted_count += 1
 
     await db.flush()
+    # Refresh folder counts on every source folder + the deleted folder so
+    # the sidebar totals don't go stale.
+    if deleted_folder:
+        affected_folder_ids.add(deleted_folder.id)
+    for fid in affected_folder_ids:
+        await _update_folder_counts(db, fid)
     rl_state.event_log.append("sweep_keep_latest", {
         "sender": body.sender_email,
         "kept": str(kept.id),
@@ -1125,10 +1542,16 @@ async def sweep_move_all(
     result = await db.execute(q)
     msgs = result.scalars().all()
 
+    affected_source_ids: set[uuid.UUID] = set()
     for msg in msgs:
+        if msg.folder_id != body.target_folder_id:
+            affected_source_ids.add(msg.folder_id)
         msg.folder_id = body.target_folder_id
 
     await db.flush()
+    for fid in affected_source_ids:
+        await _update_folder_counts(db, fid)
+    await _update_folder_counts(db, body.target_folder_id)
     rl_state.event_log.append("sweep_move_all", {
         "sender": body.sender_email,
         "target_folder_id": str(body.target_folder_id),

@@ -145,7 +145,7 @@ export function TopToolbar() {
   const [addError, setAddError] = useState('')
   const [addPending, setAddPending] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
-  const [searchTab, setSearchTab] = useState<'All' | 'Mail' | 'Files' | 'People'>('All')
+  const [searchTab, setSearchTab] = useState<'All' | 'Mail' | 'Files' | 'Teams' | 'People'>('All')
   const [showSearchFilters, setShowSearchFilters] = useState(false)
   const [searchFolderScope, setSearchFolderScope] = useState('all')
   const [filterFrom, setFilterFrom] = useState('')
@@ -173,6 +173,58 @@ export function TopToolbar() {
     queryFn: () => contacts.list(),
   })
   const contactList = contactData?.items ?? []
+
+  // Live search results (mail) — fires on focus regardless of query length so each tab has content
+  const liveQuery = search.trim()
+  const liveEnabled = searchFocused && (searchTab === 'All' || searchTab === 'Mail' || searchTab === 'Files')
+  const { data: liveMail } = useQuery({
+    queryKey: ['top-search-mail', liveQuery, searchTab],
+    queryFn: () =>
+      liveQuery.length >= 2
+        ? messages.search({
+            q: liveQuery,
+            has_attachment: searchTab === 'Files' ? true : undefined,
+          })
+        : messages.list({
+            folder_slug: 'inbox',
+            is_read: searchTab === 'Files' ? undefined : undefined,
+            per_page: searchTab === 'Files' ? 30 : 8,
+          }),
+    enabled: liveEnabled,
+  })
+  const liveMessages = (liveMail?.items ?? []).slice(0, 5)
+  // Files: attachments from matched (or recent) messages.
+  const liveFiles = (searchTab === 'All' || searchTab === 'Files')
+    ? (liveMail?.items ?? []).flatMap((m) =>
+        (m.attachments ?? []).map((a) => ({ message: m, attachment: a }))
+      ).slice(0, searchTab === 'Files' ? 20 : 5)
+    : []
+  // People: contact list filtered by query, or full list when no query.
+  const livePeople = (searchTab === 'All' || searchTab === 'People')
+    ? (liveQuery
+        ? contactList.filter((c) => {
+            const term = liveQuery.toLowerCase()
+            return (
+              c.display_name?.toLowerCase().includes(term) ||
+              c.email?.toLowerCase().includes(term) ||
+              c.company?.toLowerCase().includes(term)
+            )
+          })
+        : contactList
+      ).slice(0, searchTab === 'People' ? 20 : 5)
+    : []
+  const TEAMS_SEED = [
+    { id: 't1', name: 'Project Alpha', last: 'Alice: pushed the latest deck' },
+    { id: 't2', name: 'Engineering · General', last: 'Bob: anyone seeing flaky CI?' },
+    { id: 't3', name: 'Design · Reviews', last: 'David: feedback on iconography' },
+    { id: 't4', name: 'Carol Williams', last: 'Carol: thanks for the proposal' },
+  ]
+  const liveTeams = (searchTab === 'All' || searchTab === 'Teams')
+    ? (liveQuery
+        ? TEAMS_SEED.filter((t) => t.name.toLowerCase().includes(liveQuery.toLowerCase()) || t.last.toLowerCase().includes(liveQuery.toLowerCase()))
+        : TEAMS_SEED
+      ).slice(0, searchTab === 'Teams' ? 10 : 3)
+    : []
 
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     if (typeof window === 'undefined') return []
@@ -225,9 +277,7 @@ export function TopToolbar() {
     if (q) {
       addRecentSearch(q)
       setSearchQuery(q)
-      setSearchFocused(false)
-      router.push(`/mail/search?q=${encodeURIComponent(q)}`)
-      searchInputRef.current?.blur()
+      // Keep dropdown open with results — Outlook style. No navigation.
     }
   }
 
@@ -474,12 +524,15 @@ export function TopToolbar() {
             {/* Search suggestions dropdown */}
             {searchFocused && (
               <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-[#EDEBE9] rounded-b shadow-outlook-lg animate-fade-in">
-                {/* Tabs: All / Mail / Files / People */}
+                {/* Tabs: All / Mail / Files / Teams / People — filter dropdown content in place */}
                 <div className="flex border-b border-[#EDEBE9]">
-                  {(['All', 'Mail', 'Files', 'People'] as const).map((tab) => (
+                  {(['All', 'Mail', 'Files', 'Teams', 'People'] as const).map((tab) => (
                     <button
                       key={tab}
-                      onClick={() => setSearchTab(tab)}
+                      onMouseDown={(e) => {
+                        e.preventDefault() // keep input focused
+                        setSearchTab(tab)
+                      }}
                       className={cn(
                         'px-4 py-2 text-sm transition-colors relative',
                         searchTab === tab
@@ -492,9 +545,143 @@ export function TopToolbar() {
                   ))}
                 </div>
 
-                <div className="max-h-64 overflow-y-auto outlook-scrollbar">
-                  {/* Recent searches */}
-                  {recentSearches.length > 0 && (
+                <div className="max-h-[65vh] overflow-y-auto outlook-scrollbar">
+                  {/* Live results — render whenever a tab is active. Without a query we surface
+                       recent items of that type (recent inbox / recent files / contacts / teams),
+                       matching Outlook's behavior of always showing tab content. */}
+                  {searchTab !== 'All' || liveQuery.length >= 2 ? (
+                    <>
+                      {(searchTab === 'All' || searchTab === 'Mail') && liveMessages.length > 0 && (
+                        <div className="py-1 border-b border-[#EDEBE9]">
+                          {searchTab === 'All' && (
+                            <p className="px-3 py-1 text-[10px] uppercase font-semibold tracking-wide text-[#605E5C]">Mail</p>
+                          )}
+                          {liveMessages.map((m) => (
+                            <button
+                              key={m.id}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                addRecentSearch(liveQuery)
+                                router.push(`/mail/inbox?msg=${m.id}`)
+                                setSearchFocused(false)
+                              }}
+                              className="w-full flex items-start gap-2.5 px-3 py-2 hover:bg-[#F3F2F1] transition-colors text-left"
+                            >
+                              <Avatar name={m.from_name || m.from_address} size="sm" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <p className="text-sm font-medium text-[#323130] truncate">{m.from_name || m.from_address}</p>
+                                  <span className="text-xs text-[#605E5C] flex-shrink-0">{formatMessageDate(m.received_at ?? m.created_at)}</span>
+                                </div>
+                                <p className="text-xs text-[#323130] truncate">{m.subject || '(no subject)'}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {(searchTab === 'All' || searchTab === 'Files') && liveFiles.length > 0 && (
+                        <div className="py-1 border-b border-[#EDEBE9]">
+                          {searchTab === 'All' && (
+                            <p className="px-3 py-1 text-[10px] uppercase font-semibold tracking-wide text-[#605E5C]">Files</p>
+                          )}
+                          {liveFiles.map(({ message, attachment }) => (
+                            <button
+                              key={attachment.id}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                router.push(`/mail/inbox?msg=${message.id}`)
+                                setSearchFocused(false)
+                              }}
+                              className="w-full flex items-start gap-2.5 px-3 py-2 hover:bg-[#F3F2F1] transition-colors text-left"
+                            >
+                              <span className="w-7 h-7 rounded bg-[#F3F2F1] flex items-center justify-center text-xs flex-shrink-0">📎</span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-[#323130] truncate">{attachment.filename}</p>
+                                <p className="text-xs text-[#605E5C] truncate">From {message.from_name || message.from_address}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {(searchTab === 'All' || searchTab === 'Teams') && liveTeams.length > 0 && (
+                        <div className="py-1 border-b border-[#EDEBE9]">
+                          {searchTab === 'All' && (
+                            <p className="px-3 py-1 text-[10px] uppercase font-semibold tracking-wide text-[#605E5C]">Teams</p>
+                          )}
+                          {liveTeams.map((t) => (
+                            <div key={t.id} className="flex items-start gap-2.5 px-3 py-2 hover:bg-[#F3F2F1] transition-colors">
+                              <span className="w-7 h-7 rounded bg-[#6264A7] text-white flex items-center justify-center text-xs flex-shrink-0 font-semibold">T</span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-[#323130] truncate">{t.name}</p>
+                                <p className="text-xs text-[#605E5C] truncate">{t.last}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {(searchTab === 'All' || searchTab === 'People') && livePeople.length > 0 && (
+                        <div className="py-1 border-b border-[#EDEBE9]">
+                          {searchTab === 'All' && (
+                            <p className="px-3 py-1 text-[10px] uppercase font-semibold tracking-wide text-[#605E5C]">People</p>
+                          )}
+                          {livePeople.map((c) => (
+                            <button
+                              key={c.id}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                router.push(`/contacts?id=${c.id}`)
+                                setSearchFocused(false)
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-[#F3F2F1] transition-colors text-left"
+                            >
+                              <Avatar name={c.display_name || c.email} size="sm" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-[#323130] truncate">{c.display_name || c.email}</p>
+                                <p className="text-xs text-[#605E5C] truncate">{c.email}{c.company ? ` · ${c.company}` : ''}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Per-tab empty state — only when on a specific tab with no results */}
+                      {searchTab === 'Mail' && liveMessages.length === 0 && (
+                        <div className="px-3 py-6 text-center text-sm text-[#605E5C]">{liveQuery ? `No mail matches "${liveQuery}"` : 'No mail in inbox'}</div>
+                      )}
+                      {searchTab === 'Files' && liveFiles.length === 0 && (
+                        <div className="px-3 py-6 text-center text-sm text-[#605E5C]">{liveQuery ? `No files match "${liveQuery}"` : 'No files in your mailbox'}</div>
+                      )}
+                      {searchTab === 'Teams' && liveTeams.length === 0 && (
+                        <div className="px-3 py-6 text-center text-sm text-[#605E5C]">{liveQuery ? `No Teams chats match "${liveQuery}"` : 'No Teams chats yet'}</div>
+                      )}
+                      {searchTab === 'People' && livePeople.length === 0 && (
+                        <div className="px-3 py-6 text-center text-sm text-[#605E5C]">{liveQuery ? `No people match "${liveQuery}"` : 'No contacts yet'}</div>
+                      )}
+
+                      {/* See all results — only meaningful when there's a query */}
+                      {liveQuery.length >= 2 && (
+                        <button
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            addRecentSearch(liveQuery)
+                            router.push(`/mail/search?type=${searchTab.toLowerCase()}&q=${encodeURIComponent(liveQuery)}`)
+                            setSearchFocused(false)
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs text-[#0078D4] hover:bg-[#F3F2F1] transition-colors"
+                        >
+                          See all results for &ldquo;{liveQuery}&rdquo; →
+                        </button>
+                      )}
+                    </>
+                  ) : null}
+
+                  {/* Recent searches — only on All tab when nothing typed.
+                      Other tabs render their own category content above and must NOT
+                      leak unrelated suggestions below the tab header. */}
+                  {searchTab === 'All' && liveQuery.length < 2 && recentSearches.length > 0 && (
                     <div className="py-1">
                       {recentSearches.map((q) => (
                         <button
@@ -515,8 +702,9 @@ export function TopToolbar() {
                     </div>
                   )}
 
-                  {/* Contact suggestions */}
-                  {contactList.length > 0 && (
+                  {/* Contact suggestions — only on All tab when nothing typed
+                      (People tab renders its own scrollable list of livePeople above). */}
+                  {searchTab === 'All' && liveQuery.length < 2 && contactList.length > 0 && (
                     <div className="py-1 border-t border-[#EDEBE9]">
                       {contactList
                         .filter((c) => !search || c.display_name?.toLowerCase().includes(search.toLowerCase()) || c.email?.toLowerCase().includes(search.toLowerCase()))
@@ -545,7 +733,7 @@ export function TopToolbar() {
                     </div>
                   )}
 
-                  {recentSearches.length === 0 && contactList.length === 0 && (
+                  {searchTab === 'All' && liveQuery.length < 2 && recentSearches.length === 0 && contactList.length === 0 && (
                     <div className="px-3 py-4 text-sm text-[#A19F9D] text-center">
                       Start typing to search
                     </div>

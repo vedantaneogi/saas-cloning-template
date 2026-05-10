@@ -1,16 +1,19 @@
 import calendar as _cal
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.calendar import Event, EventAttendee
+from app.models.calendar import Calendar, Event, EventAttendee, EventCategory
+from app.models.category import Category
+from app.models.folder import Folder
+from app.models.message import Message
 from app.models.user import User
 from app.rl.state import rl_state
 from app.schemas.calendar import (
@@ -21,8 +24,34 @@ from app.schemas.calendar import (
     ProposeTimeRequest,
     RespondRequest,
 )
+from app.schemas.message import CategoryOut
 
 router = APIRouter(prefix="/events", tags=["Events"])
+
+
+_ICAL_DAY_TO_INT = {
+    "SU": 0, "MO": 1, "TU": 2, "WE": 3, "TH": 4, "FR": 5, "SA": 6,
+}
+
+
+def _normalize_days_of_week(raw: Any) -> set[int]:
+    """Accept ints (0..6, ical Sun=0) or iCal day codes (MO/TU/...) — return ints."""
+    if not raw:
+        return set()
+    out: set[int] = set()
+    for item in raw:
+        if isinstance(item, int):
+            out.add(item % 7)
+        elif isinstance(item, str):
+            code = item.strip().upper()[:2]
+            if code in _ICAL_DAY_TO_INT:
+                out.add(_ICAL_DAY_TO_INT[code])
+            else:
+                try:
+                    out.add(int(item) % 7)
+                except (ValueError, TypeError):
+                    pass
+    return out
 
 
 def _expand_recurring_event(
@@ -33,19 +62,38 @@ def _expand_recurring_event(
 ) -> list[EventOut]:
     """Generate virtual EventOut instances for a recurring event within [start_after, start_before]."""
     rule = event.recurrence_rule or {}
-    frequency: str = rule.get("frequency", "daily")
+    # Normalize frequency (seed uses 'WEEKLY', UI sends 'weekly' — accept both)
+    frequency: str = str(rule.get("frequency", "daily")).lower()
     interval: int = max(1, int(rule.get("interval", 1)))
     end_date_str: Any = rule.get("end_date")
     count_limit: Any = rule.get("count")
-    days_of_week: set[int] = set(rule.get("days_of_week") or [])  # 0=Sun … 6=Sat
+    # Normalize days_of_week: accept ints or iCal codes (MO/TU/WE/TH/FR/SA/SU)
+    days_of_week: set[int] = _normalize_days_of_week(rule.get("days_of_week"))  # 0=Sun … 6=Sat
 
     duration = event.end_time - event.start_time
     current = event.start_time
     occurrences: list[EventOut] = []
     total = 0
 
+    # Normalize timezone awareness so comparisons don't blow up.
+    # event.start_time is TZ-aware (TIMESTAMPTZ); URL query params arrive naive.
+    if current.tzinfo is not None:
+        if start_after.tzinfo is None:
+            start_after = start_after.replace(tzinfo=timezone.utc)
+        if start_before.tzinfo is None:
+            start_before = start_before.replace(tzinfo=timezone.utc)
+    else:
+        if start_after.tzinfo is not None:
+            start_after = start_after.replace(tzinfo=None)
+        if start_before.tzinfo is not None:
+            start_before = start_before.replace(tzinfo=None)
+
     # For weekly+specific days we step 1 day at a time
     step_daily = frequency == "weekly" and len(days_of_week) > 0
+
+    # Bail if frequency is unrecognized — prevents infinite loop
+    if frequency not in {"daily", "weekly", "monthly", "yearly"}:
+        return []
 
     exceptions: set[str] = {str(e) for e in (rule.get("exceptions") or [])}
 
@@ -147,6 +195,38 @@ class EventList(BaseModel):
 class EventDetail(BaseModel):
     event: EventOut
     attendees: list[EventAttendeeOut]
+    categories: list[CategoryOut] = []
+
+
+async def _filter_valid_category_ids(
+    db: AsyncSession, user_id: uuid.UUID, requested: list[uuid.UUID]
+) -> list[uuid.UUID]:
+    """Drop any category_ids that aren't real categories owned by the user.
+
+    Stale UUIDs (deleted categories, or IDs from another user's seed) used to
+    raise a FK violation 500. Silent-drop is safer — the caller still gets a
+    valid update on the rest of the payload.
+    """
+    if not requested:
+        return []
+    cleaned: list[uuid.UUID] = []
+    for raw in requested:
+        try:
+            cid = raw if isinstance(raw, uuid.UUID) else uuid.UUID(str(raw))
+        except (ValueError, AttributeError):
+            continue
+        cleaned.append(cid)
+    if not cleaned:
+        return []
+    valid_q = await db.execute(
+        select(Category.id).where(
+            Category.id.in_(cleaned),
+            Category.user_id == user_id,
+        )
+    )
+    valid_ids = set(valid_q.scalars().all())
+    # Preserve request order for deterministic updates.
+    return [cid for cid in cleaned if cid in valid_ids]
 
 
 async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID, user_id: uuid.UUID) -> Event:
@@ -162,6 +242,183 @@ async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID, user_id: uuid
     return ev
 
 
+async def _get_event_for_view(db: AsyncSession, event_id: uuid.UUID, user: User) -> Event:
+    """Return event if the user owns it OR is listed as an attendee. Used for RSVP/view paths."""
+    result = await db.execute(select(Event).where(Event.id == event_id))
+    ev = result.scalar_one_or_none()
+    if not ev:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_found", "message": "Event not found"}},
+        )
+    if ev.user_id == user.id:
+        return ev
+    att = await db.execute(
+        select(EventAttendee).where(
+            EventAttendee.event_id == event_id,
+            EventAttendee.email == user.email,
+        )
+    )
+    if att.scalar_one_or_none():
+        return ev
+    raise HTTPException(
+        status_code=404,
+        detail={"error": {"code": "not_found", "message": "Event not found"}},
+    )
+
+
+def _format_event_when(ev: Event) -> str:
+    if ev.all_day:
+        return ev.start_time.strftime("%a, %b %d, %Y") + " (all day)"
+    return f"{ev.start_time.strftime('%a, %b %d, %Y %I:%M %p')} – {ev.end_time.strftime('%I:%M %p')}"
+
+
+def _build_invite_html(ev: Event, organizer: User, updated: bool) -> str:
+    when = _format_event_when(ev)
+    where = ev.location or "—"
+    desc = ev.description or ""
+    label = "Updated invitation" if updated else "You're invited"
+    desc_block = (
+        f"<p style='margin-top:12px;font-size:13px;color:#323130;'>{desc}</p>" if desc else ""
+    )
+    return (
+        f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
+        f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>{label}</p>"
+        f"<h2 style='margin:0 0 12px 0;font-size:18px;'>{ev.title}</h2>"
+        f"<table style='font-size:13px;line-height:1.5;'>"
+        f"<tr><td style='color:#605E5C;padding-right:8px;'>When</td><td>{when}</td></tr>"
+        f"<tr><td style='color:#605E5C;padding-right:8px;'>Where</td><td>{where}</td></tr>"
+        f"<tr><td style='color:#605E5C;padding-right:8px;'>Organizer</td><td>{organizer.display_name} &lt;{organizer.email}&gt;</td></tr>"
+        f"</table>"
+        f"{desc_block}"
+        f"<p style='margin-top:16px;font-size:12px;color:#605E5C;'>Use the buttons above to respond.</p>"
+        f"</div>"
+    )
+
+
+async def _send_calendar_invite(
+    db: AsyncSession, ev: Event, attendee_emails: list[str], organizer: User, updated: bool = False
+) -> None:
+    """Deliver an in-app invite message to each attendee who has a user account."""
+    if not attendee_emails:
+        return
+    now = rl_state.clock.now()
+    when = _format_event_when(ev)
+    subject_prefix = "Updated:" if updated else "Invitation:"
+    subject = f"{subject_prefix} {ev.title} ({when})"
+    body_html = _build_invite_html(ev, organizer, updated)
+    body_text = f"{subject}\n\nWhen: {when}\nWhere: {ev.location or '-'}\nOrganizer: {organizer.email}\n\n{ev.description or ''}"
+
+    for email in attendee_emails:
+        if not email or email == organizer.email:
+            continue
+        rec_user_result = await db.execute(select(User).where(User.email == email))
+        rec_user = rec_user_result.scalar_one_or_none()
+        if not rec_user:
+            continue
+        inbox_result = await db.execute(
+            select(Folder).where(Folder.user_id == rec_user.id, Folder.slug == "inbox")
+        )
+        inbox = inbox_result.scalar_one_or_none()
+        if not inbox:
+            continue
+        msg = Message(
+            id=uuid.uuid4(),
+            user_id=rec_user.id,
+            folder_id=inbox.id,
+            from_address=organizer.email,
+            from_name=organizer.display_name,
+            to_addresses=[{"email": email, "name": rec_user.display_name}],
+            cc_addresses=[],
+            bcc_addresses=[],
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            is_read=False,
+            is_draft=False,
+            event_id=ev.id,
+            sent_at=now,
+            received_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(msg)
+    await db.flush()
+
+
+async def _notify_organizer_response(
+    db: AsyncSession, ev: Event, responder: User, response: Optional[str], proposal: Optional[dict]
+) -> None:
+    """Send an in-app status message to the organizer when an attendee responds or proposes a time."""
+    if responder.id == ev.user_id:
+        return
+    organizer_result = await db.execute(select(User).where(User.id == ev.user_id))
+    organizer = organizer_result.scalar_one_or_none()
+    if not organizer:
+        return
+    inbox_result = await db.execute(
+        select(Folder).where(Folder.user_id == organizer.id, Folder.slug == "inbox")
+    )
+    inbox = inbox_result.scalar_one_or_none()
+    if not inbox:
+        return
+
+    now = rl_state.clock.now()
+    when = _format_event_when(ev)
+    if proposal:
+        try:
+            ps = datetime.fromisoformat(str(proposal["start_time"]).replace("Z", "+00:00"))
+            pe = datetime.fromisoformat(str(proposal["end_time"]).replace("Z", "+00:00"))
+            proposed_when = f"{ps.strftime('%a, %b %d, %Y %I:%M %p')} – {pe.strftime('%I:%M %p')}"
+        except Exception:
+            proposed_when = f"{proposal.get('start_time', '')} – {proposal.get('end_time', '')}"
+        subject = f"New time proposed: {ev.title}"
+        body_text = f"{responder.display_name} proposed a new time for '{ev.title}'.\n\nProposed: {proposed_when}\nOriginal: {when}"
+        body_html = (
+            f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
+            f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>New time proposed</p>"
+            f"<p style='margin:0 0 12px 0;font-size:14px;'><strong>{responder.display_name}</strong> proposed a new time for <strong>{ev.title}</strong>.</p>"
+            f"<table style='font-size:13px;line-height:1.5;'>"
+            f"<tr><td style='color:#605E5C;padding-right:8px;'>Proposed</td><td>{proposed_when}</td></tr>"
+            f"<tr><td style='color:#605E5C;padding-right:8px;'>Original</td><td>{when}</td></tr>"
+            f"</table></div>"
+        )
+    else:
+        verb_map = {"accepted": "Accepted", "tentative": "Tentatively accepted", "declined": "Declined"}
+        verb = verb_map.get(response or "", "Responded to")
+        subject = f"{verb}: {ev.title}"
+        body_text = f"{responder.display_name} {verb.lower()} the invitation to '{ev.title}' ({when})."
+        body_html = (
+            f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
+            f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>RSVP update</p>"
+            f"<p style='margin:0 0 12px 0;font-size:14px;'><strong>{responder.display_name}</strong> {verb.lower()} the invitation to <strong>{ev.title}</strong>.</p>"
+            f"<p style='font-size:13px;color:#605E5C;'>When: {when}</p></div>"
+        )
+
+    msg = Message(
+        id=uuid.uuid4(),
+        user_id=organizer.id,
+        folder_id=inbox.id,
+        from_address=responder.email,
+        from_name=responder.display_name,
+        to_addresses=[{"email": organizer.email, "name": organizer.display_name}],
+        cc_addresses=[],
+        bcc_addresses=[],
+        subject=subject,
+        body_html=body_html,
+        body_text=body_text,
+        is_read=False,
+        is_draft=False,
+        event_id=ev.id,
+        sent_at=now,
+        received_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(msg)
+    await db.flush()
+
+
 @router.get("/availability")
 async def get_availability(
     attendee_emails: str = Query(..., description="Comma-separated emails"),
@@ -170,27 +427,88 @@ async def get_availability(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get free/busy info for attendees in a time range."""
-    emails = [e.strip() for e in attendee_emails.split(",")]
+    """Get free/busy info for each attendee in a time range.
+
+    For every email we look up the matching User and return THEIR busy /
+    tentative / OOO events that overlap the requested window. External
+    emails (no user record in this clone) return empty slots — Outlook
+    treats them as "no information available". Previously this endpoint
+    queried `current_user.id` for every email, which silently returned the
+    requester's own schedule for every attendee — so the SA grid showed
+    the same fake free/busy regardless of who you invited.
+    """
+    emails = [e.strip().lower() for e in attendee_emails.split(",") if e.strip()]
+    if not emails:
+        return []
+    users_q = await db.execute(select(User).where(User.email.in_(emails)))
+    user_by_email: dict[str, User] = {u.email.lower(): u for u in users_q.scalars().all()}
+
     result = []
     for email in emails:
-        busy_slots_result = await db.execute(
-            select(Event).where(
-                Event.user_id == current_user.id,
+        user = user_by_email.get(email)
+        # An email is "busy" at a slot if EITHER:
+        #   1. They own an event on their own calendar in that window, OR
+        #   2. They appear as an EventAttendee on someone else's event in
+        #      that window.
+        # The second case is what makes the SA show real availability —
+        # in this clone the seed creates events on the organizer's
+        # calendar and fans out attendees, so most invitee-side conflicts
+        # only show up via the EventAttendee join.
+        or_clauses = [EventAttendee.email == email]
+        if user is not None:
+            or_clauses.append(Event.user_id == user.id)
+
+        # Step 1: non-recurring events overlapping the window.
+        non_recur_q = await db.execute(
+            select(Event)
+            .outerjoin(EventAttendee, EventAttendee.event_id == Event.id)
+            .where(
+                or_(*or_clauses),
+                Event.is_recurring.is_(False),
                 Event.start_time < end,
                 Event.end_time > start,
                 Event.status.in_(["busy", "tentative", "out_of_office"]),
             )
+            .distinct()
         )
-        busy_events = busy_slots_result.scalars().all()
-        slots = [
-            {
+        slots: list[dict] = []
+        for e in non_recur_q.scalars().all():
+            slots.append({
                 "start": e.start_time.isoformat(),
                 "end": e.end_time.isoformat(),
                 "status": e.status,
-            }
-            for e in busy_events
-        ]
+            })
+
+        # Step 2: recurring parents the email is owner / attendee of —
+        # parent.start_time is whenever the series began (could be way
+        # before the window), so we expand each into instances and keep
+        # whatever falls inside [start, end]. Without this, the
+        # "Weekly Team Standup" series doesn't count toward today's
+        # busy schedule because the parent is dated weeks ago.
+        recur_q = await db.execute(
+            select(Event)
+            .outerjoin(EventAttendee, EventAttendee.event_id == Event.id)
+            .where(
+                or_(*or_clauses),
+                Event.is_recurring.is_(True),
+                Event.status.in_(["busy", "tentative", "out_of_office"]),
+            )
+            .distinct()
+        )
+        for parent in recur_q.scalars().all():
+            try:
+                instances = _expand_recurring_event(parent, start, end)
+            except Exception:
+                instances = []
+            for inst in instances:
+                # _expand_recurring_event returns EventOut instances; their
+                # start/end are already datetimes within [start, end].
+                slots.append({
+                    "start": inst.start_time.isoformat(),
+                    "end": inst.end_time.isoformat(),
+                    "status": parent.status,
+                })
+
         result.append({"attendee": email, "slots": slots})
     return result
 
@@ -204,8 +522,77 @@ async def list_events(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Build the set of addresses we treat as "this user". The user themselves
+    # plus every group they're a member of — so events invited to a group
+    # show up in each member's calendar (mirrors the group fan-out for mail).
+    from app.models.group import Group, GroupMember
+    group_email_q = await db.execute(
+        select(Group.email)
+        .join(GroupMember, GroupMember.group_id == Group.id)
+        .where(GroupMember.user_id == current_user.id)
+    )
+    visible_emails = {current_user.email, *group_email_q.scalars().all()}
+
+    # Events the user is invited to (directly or via a group), excluding
+    # declined invites — Outlook hides those.
+    invited_event_ids_subq = (
+        select(EventAttendee.event_id)
+        .where(
+            EventAttendee.email.in_(visible_emails),
+            EventAttendee.response_status != "declined",
+        )
+        .scalar_subquery()
+    )
+
+    # Calendar overlay: any user the current user has subscribed to (via the
+    # /calendars/subscribe flow) OR who has delegated calendar access to the
+    # current user shows up as another calendar on the grid. We map their
+    # events back through a Calendar row so the frontend's per-calendar color
+    # logic stays unchanged.
+    sub_q = await db.execute(
+        select(Calendar.shared_by_user_id, Calendar.id, Calendar.permission_level)
+        .where(
+            Calendar.user_id == current_user.id,
+            Calendar.shared_by_user_id.is_not(None),
+        )
+    )
+    subscribed_owners: dict[uuid.UUID, uuid.UUID] = {}  # owner_user_id -> sub_cal_id
+    overlay_levels: dict[uuid.UUID, str] = {}  # owner_user_id -> permission level
+    for owner_id, sub_cal_id, perm in sub_q.all():
+        if owner_id is not None:
+            subscribed_owners[owner_id] = sub_cal_id
+            overlay_levels[owner_id] = perm or "read"
+
+    # Delegated grants — owners who explicitly gave the current user access.
+    # Even without a subscription row, the events should show up under a
+    # synthetic overlay using the user's default calendar id as a fallback.
+    from app.models.delegate import CalendarDelegate
+    deleg_q = await db.execute(
+        select(CalendarDelegate.owner_user_id)
+        .where(CalendarDelegate.delegate_user_id == current_user.id)
+    )
+    own_default_q = await db.execute(
+        select(Calendar.id).where(
+            Calendar.user_id == current_user.id,
+            Calendar.is_default.is_(True),
+        )
+    )
+    own_default_id = own_default_q.scalar_one_or_none()
+    for owner_id in deleg_q.scalars().all():
+        if owner_id and owner_id not in subscribed_owners and own_default_id:
+            subscribed_owners[owner_id] = own_default_id
+
+    ownership_clauses = [
+        Event.user_id == current_user.id,
+        Event.id.in_(invited_event_ids_subq),
+    ]
+    if subscribed_owners:
+        # SQLAlchemy needs a real list, not dict_keys, for the IN expansion.
+        ownership_clauses.append(Event.user_id.in_(list(subscribed_owners.keys())))
+    ownership_filter = or_(*ownership_clauses)
+
     # 1. Fetch non-recurring events in the date range
-    filters = [Event.user_id == current_user.id, Event.is_recurring.is_(False)]
+    filters = [ownership_filter, Event.is_recurring.is_(False)]
     if calendar_id:
         filters.append(Event.calendar_id == calendar_id)
     if start_after:
@@ -216,11 +603,25 @@ async def list_events(
     result = await db.execute(
         select(Event).where(*filters).order_by(Event.start_time)
     )
-    non_recurring: list[EventOut] = [EventOut.model_validate(e) for e in result.scalars().all()]
+    non_recurring: list[EventOut] = []
+    for e in result.scalars().all():
+        out = EventOut.model_validate(e)
+        # Re-route overlay events to their subscription calendar so the grid
+        # picks up that calendar's color/name and the user can hide the
+        # overlay by toggling the subscription's visibility.
+        if e.user_id != current_user.id and e.user_id in subscribed_owners:
+            out.calendar_id = subscribed_owners[e.user_id]
+            # Free-busy delegate: redact title + location/description so the
+            # subscriber only sees occupied time blocks.
+            if overlay_levels.get(e.user_id) == "free_busy":
+                out.title = "Busy"
+                out.location = None
+                out.description = None
+        non_recurring.append(out)
 
     # 2. Fetch recurring parent events (may start before the requested window)
     rec_filters = [
-        Event.user_id == current_user.id,
+        ownership_filter,
         Event.is_recurring.is_(True),
         Event.recurrence_parent_id.is_(None),
     ]
@@ -237,15 +638,58 @@ async def list_events(
     expanded: list[EventOut] = []
     for parent in recurring_parents:
         if start_after and start_before:
-            expanded.extend(_expand_recurring_event(parent, start_after, start_before))
+            instances = _expand_recurring_event(parent, start_after, start_before)
         else:
-            expanded.append(EventOut.model_validate(parent))
+            instances = [EventOut.model_validate(parent)]
+        # Apply the same overlay calendar_id remap + free_busy redaction.
+        if parent.user_id != current_user.id and parent.user_id in subscribed_owners:
+            redact = overlay_levels.get(parent.user_id) == "free_busy"
+            for inst in instances:
+                inst.calendar_id = subscribed_owners[parent.user_id]
+                if redact:
+                    inst.title = "Busy"
+                    inst.location = None
+                    inst.description = None
+        expanded.extend(instances)
 
     # 4. Merge, sort, paginate
     all_items = non_recurring + expanded
     all_items.sort(key=lambda e: e.start_time)
     total = len(all_items)
     page_items = all_items[:limit]
+
+    # 5. Hydrate categories so the grid can color-code by category. We look up
+    # by source-id (parent for virtual recurring instances, own id otherwise)
+    # and copy onto each EventOut. One query covers everything.
+    source_ids: set[uuid.UUID] = set()
+    for ev in page_items:
+        source_ids.add(ev.recurrence_parent_id or ev.id)
+    if source_ids:
+        cat_q = await db.execute(
+            select(EventCategory.event_id, Category)
+            .join(Category, Category.id == EventCategory.category_id)
+            .where(EventCategory.event_id.in_(source_ids))
+        )
+        cat_map: dict[uuid.UUID, list[CategoryOut]] = {}
+        for event_id, cat in cat_q.all():
+            cat_map.setdefault(event_id, []).append(CategoryOut.model_validate(cat))
+        for ev in page_items:
+            key = ev.recurrence_parent_id or ev.id
+            ev.categories = cat_map.get(key, [])
+
+    # 6. Hydrate attendees. The Groups page filters its Events tab by
+    # attendee.email — without this hydration the field is empty in EventOut
+    # so the filter never matches.
+    if source_ids:
+        att_q = await db.execute(
+            select(EventAttendee).where(EventAttendee.event_id.in_(source_ids))
+        )
+        att_map: dict[uuid.UUID, list[EventAttendeeOut]] = {}
+        for a in att_q.scalars().all():
+            att_map.setdefault(a.event_id, []).append(EventAttendeeOut.model_validate(a))
+        for ev in page_items:
+            key = ev.recurrence_parent_id or ev.id
+            ev.attendees = att_map.get(key, [])
 
     return EventList(
         items=page_items,
@@ -260,14 +704,42 @@ async def get_event(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ev = await _get_event_or_404(db, event_id, current_user.id)
+    ev = await _get_event_for_view(db, event_id, current_user)
     attendees_result = await db.execute(
         select(EventAttendee).where(EventAttendee.event_id == event_id)
     )
-    attendees = attendees_result.scalars().all()
+    attendees = list(attendees_result.scalars().all())
+
+    # Backfill: events created before the organizer-attendee fix don't have a row
+    # for the owner. Synthesize one on the fly so invitees can always see who
+    # scheduled the meeting. Read-only — not persisted.
+    has_organizer = any(a.is_organizer for a in attendees)
+    if not has_organizer:
+        owner_result = await db.execute(select(User).where(User.id == ev.user_id))
+        owner_user = owner_result.scalar_one_or_none()
+        if owner_user:
+            attendees.insert(0, EventAttendee(
+                id=uuid.uuid5(uuid.NAMESPACE_URL, f"{ev.id}/organizer"),
+                event_id=ev.id,
+                email=owner_user.email,
+                display_name=owner_user.display_name,
+                is_organizer=True,
+                is_required=True,
+                response_status="accepted",
+            ))
+
+    # Categories applied to this event
+    cat_result = await db.execute(
+        select(Category)
+        .join(EventCategory, EventCategory.category_id == Category.id)
+        .where(EventCategory.event_id == event_id)
+    )
+    cats = [CategoryOut.model_validate(c) for c in cat_result.scalars().all()]
+
     return EventDetail(
         event=EventOut.model_validate(ev),
         attendees=[EventAttendeeOut.model_validate(a) for a in attendees],
+        categories=cats,
     )
 
 
@@ -301,6 +773,12 @@ async def create_event(
     db.add(ev)
     await db.flush()
 
+    invitee_emails: list[str] = []
+    organizer_in_body = any(
+        att.is_organizer or att.email.lower() == current_user.email.lower()
+        for att in body.attendees
+    )
+    seen_emails: set[str] = set()
     for att in body.attendees:
         attendee = EventAttendee(
             id=uuid.uuid4(),
@@ -311,8 +789,65 @@ async def create_event(
             is_required=att.is_required,
         )
         db.add(attendee)
+        seen_emails.add(att.email.lower())
+        if not att.is_organizer:
+            invitee_emails.append(att.email)
+
+    # Ensure the organizer always has an attendee row so invitees can see who scheduled the event.
+    if not organizer_in_body:
+        db.add(EventAttendee(
+            id=uuid.uuid4(),
+            event_id=ev.id,
+            email=current_user.email,
+            display_name=current_user.display_name,
+            is_organizer=True,
+            is_required=True,
+            response_status="accepted",
+        ))
+        seen_emails.add(current_user.email.lower())
+
+    # Group fan-out: any attendee whose email matches a Group.email is expanded
+    # to that group's members, so each member gets a personal RSVP row and the
+    # event surfaces on their calendar. The original group attendee row stays
+    # for identification (Events tab filter still matches).
+    from app.models.group import Group, GroupMember
+    group_emails = [att.email.lower() for att in body.attendees]
+    if group_emails:
+        groups_q = await db.execute(
+            select(Group).where(Group.email.in_(group_emails))
+        )
+        for g in groups_q.scalars().all():
+            members_q = await db.execute(
+                select(User)
+                .join(GroupMember, GroupMember.user_id == User.id)
+                .where(GroupMember.group_id == g.id)
+            )
+            for m in members_q.scalars().all():
+                if m.email.lower() in seen_emails:
+                    continue
+                seen_emails.add(m.email.lower())
+                # Group membership = implicit acceptance — members don't need
+                # to RSVP for events scheduled by their own team.
+                db.add(EventAttendee(
+                    id=uuid.uuid4(),
+                    event_id=ev.id,
+                    email=m.email,
+                    display_name=m.display_name,
+                    is_organizer=False,
+                    is_required=True,
+                    response_status="accepted",
+                ))
+                if m.email.lower() != current_user.email.lower():
+                    invitee_emails.append(m.email)
+
+    # Categories: replace EventCategory rows from the body. None = no change.
+    if body.category_ids is not None:
+        valid_cids = await _filter_valid_category_ids(db, current_user.id, body.category_ids)
+        for cid in valid_cids:
+            db.add(EventCategory(event_id=ev.id, category_id=cid))
 
     await db.flush()
+    await _send_calendar_invite(db, ev, invitee_emails, current_user, updated=False)
     rl_state.event_log.append("event_created", {"id": str(ev.id), "title": ev.title})
     return EventOut.model_validate(ev)
 
@@ -328,6 +863,12 @@ async def update_event(
 ):
     ev = await _get_event_or_404(db, event_id, current_user.id)
     now = rl_state.clock.now()
+
+    # Snapshot fields we use to detect material changes (for "Updated:" emails).
+    prev_start = ev.start_time
+    prev_end = ev.end_time
+    prev_location = ev.location
+    prev_title = ev.title
 
     # scope=single: add occurrence to exceptions on parent, create override row
     if scope == "single" and occurrence_start is not None and ev.is_recurring:
@@ -396,10 +937,24 @@ async def update_event(
     if body.sensitivity is not None:
         ev.sensitivity = body.sensitivity
 
-    # Replace attendees if provided
+    # Replace attendees if provided. Track which emails are newly added vs already invited
+    # so we send "Invitation:" to new ones and "Updated:" to previously invited.
+    new_emails: list[str] = []
+    existing_emails: list[str] = []
     if body.attendees is not None:
+        prev_result = await db.execute(
+            select(EventAttendee.email).where(
+                EventAttendee.event_id == ev.id,
+                EventAttendee.is_organizer.is_(False),
+            )
+        )
+        prev_email_set = {row for row in prev_result.scalars().all()}
         await db.execute(
             EventAttendee.__table__.delete().where(EventAttendee.event_id == ev.id)
+        )
+        organizer_in_body = any(
+            att.is_organizer or att.email.lower() == current_user.email.lower()
+            for att in body.attendees
         )
         for att in body.attendees:
             db.add(EventAttendee(
@@ -410,9 +965,76 @@ async def update_event(
                 is_organizer=att.is_organizer,
                 is_required=att.is_required,
             ))
+            if not att.is_organizer:
+                if att.email in prev_email_set:
+                    existing_emails.append(att.email)
+                else:
+                    new_emails.append(att.email)
+        # Re-insert the organizer row that the wholesale delete above wiped out.
+        if not organizer_in_body:
+            db.add(EventAttendee(
+                id=uuid.uuid4(),
+                event_id=ev.id,
+                email=current_user.email,
+                display_name=current_user.display_name,
+                is_organizer=True,
+                is_required=True,
+                response_status="accepted",
+            ))
+
+    # Replace EventCategory rows when the body explicitly provides a list.
+    # (None means "don't touch", empty list means "clear all".) Drop any IDs
+    # that aren't valid categories for this user before insert — otherwise a
+    # stale UUID from a deleted category nukes the whole PATCH with FK 500.
+    if body.category_ids is not None:
+        await db.execute(
+            EventCategory.__table__.delete().where(EventCategory.event_id == ev.id)
+        )
+        valid_cids = await _filter_valid_category_ids(db, current_user.id, body.category_ids)
+        for cid in valid_cids:
+            db.add(EventCategory(event_id=ev.id, category_id=cid))
 
     ev.updated_at = now
     await db.flush()
+
+    # If a material field changed (time / title / location), notify every current
+    # attendee with an "Updated:" email — covers the case where the organizer accepts
+    # a proposed time without touching the attendee list. Clear stale proposals once
+    # the new time is committed.
+    material_changed = (
+        ev.start_time != prev_start
+        or ev.end_time != prev_end
+        or ev.location != prev_location
+        or ev.title != prev_title
+    )
+    if material_changed:
+        att_result = await db.execute(
+            select(EventAttendee).where(
+                EventAttendee.event_id == ev.id,
+                EventAttendee.is_organizer.is_(False),
+            )
+        )
+        all_attendee_rows = att_result.scalars().all()
+        all_attendee_emails = [a.email for a in all_attendee_rows]
+        # Skip attendees we've already emailed via the new/existing-email branches above.
+        already_emailed = set(new_emails) | set(existing_emails)
+        material_emails = [e for e in all_attendee_emails if e not in already_emailed]
+        if material_emails:
+            await _send_calendar_invite(db, ev, material_emails, current_user, updated=True)
+        # Time has changed → outstanding proposed_new_time values are no longer relevant.
+        # Anyone who proposed a time and now sees the meeting moved is treated as
+        # implicitly accepted (their proposal was honored/superseded by the organizer).
+        if ev.start_time != prev_start or ev.end_time != prev_end:
+            for a in all_attendee_rows:
+                if a.proposed_new_time is not None:
+                    a.proposed_new_time = None
+                    a.response_status = "accepted"
+            await db.flush()
+
+    if new_emails:
+        await _send_calendar_invite(db, ev, new_emails, current_user, updated=False)
+    if existing_emails:
+        await _send_calendar_invite(db, ev, existing_emails, current_user, updated=True)
     rl_state.event_log.append("event_updated", {"id": str(ev.id)})
     return EventOut.model_validate(ev)
 
@@ -454,7 +1076,7 @@ async def respond_to_event(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_event_or_404(db, event_id, current_user.id)
+    ev = await _get_event_for_view(db, event_id, current_user)
 
     result = await db.execute(
         select(EventAttendee).where(
@@ -474,6 +1096,7 @@ async def respond_to_event(
             response_status=body.response,
         ))
     await db.flush()
+    await _notify_organizer_response(db, ev, current_user, body.response, None)
     rl_state.event_log.append("event_responded", {"event_id": str(event_id), "response": body.response})
     return {"status": "ok", "response": body.response}
 
@@ -485,7 +1108,7 @@ async def propose_new_time(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_event_or_404(db, event_id, current_user.id)
+    ev = await _get_event_for_view(db, event_id, current_user)
 
     result = await db.execute(
         select(EventAttendee).where(
@@ -506,5 +1129,6 @@ async def propose_new_time(
             proposed_new_time=proposal,
         ))
     await db.flush()
+    await _notify_organizer_response(db, ev, current_user, None, proposal)
     rl_state.event_log.append("time_proposed", {"event_id": str(event_id), "proposal": proposal})
     return {"status": "ok", "proposed": proposal}

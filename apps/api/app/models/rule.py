@@ -18,6 +18,7 @@ class Rule(Base):
     priority: Mapped[int] = mapped_column(Integer, default=0)
     conditions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     actions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    exceptions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     stop_processing: Mapped[bool] = mapped_column(Boolean, default=False)
     apply_to: Mapped[str] = mapped_column(
         Enum("incoming", "outgoing", "both", name="rule_apply_enum"), default="incoming"

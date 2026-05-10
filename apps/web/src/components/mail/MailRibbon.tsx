@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
 import { useUIStore, draftFromReply } from '@/store/ui'
-import { messages, folders, quickSteps } from '@/lib/api'
+import { messages, folders, quickSteps, categories as categoriesApi } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import {
   Reply,
@@ -16,9 +16,14 @@ import {
   ChevronDown,
   Flag,
   FolderInput,
+  Tag,
+  CheckCheck,
+  Plus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { useRouter } from 'next/navigation'
 
 function RibbonBtn({
   onClick,
@@ -59,15 +64,23 @@ function RibbonSep() {
 }
 
 export function MailRibbon() {
+  const router = useRouter()
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
+  const selectedFolderSlug = useMailStore((s) => s.selectedFolderSlug)
+  const selectedFolderId = useMailStore((s) => s.selectedFolderId)
   const openComposer = useUIStore((s) => s.openComposer)
   const showNotification = useUIStore((s) => s.showNotification)
   const queryClient = useQueryClient()
   const [qsOpen, setQsOpen] = useState(false)
+  const [qsPos, setQsPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
   const [moveOpen, setMoveOpen] = useState(false)
+  const [movePos, setMovePos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const [catOpen, setCatOpen] = useState(false)
+  const [catPos, setCatPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
   const qsRef = useRef<HTMLDivElement>(null)
   const moveRef = useRef<HTMLDivElement>(null)
+  const catRef = useRef<HTMLDivElement>(null)
 
   const message = selectedMessageId
     ? queryClient.getQueryData<Message>(['message', selectedMessageId])
@@ -83,8 +96,20 @@ export function MailRibbon() {
     queryFn: () => folders.list(),
   })
 
+  const { data: categoryList = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.list(),
+  })
+
   useEffect(() => {
     if (!qsOpen) return
+    // Pin the dropdown to the button via getBoundingClientRect so it escapes
+    // the ribbon's overflow clipping. The ribbon is `overflow-x-auto`, which
+    // implicitly clips overflow-y too — `absolute` children get cut off.
+    if (qsRef.current) {
+      const rect = qsRef.current.getBoundingClientRect()
+      setQsPos({ top: rect.bottom + 2, left: rect.left })
+    }
     const handler = (e: MouseEvent) => {
       if (qsRef.current && !qsRef.current.contains(e.target as Node)) setQsOpen(false)
     }
@@ -94,12 +119,29 @@ export function MailRibbon() {
 
   useEffect(() => {
     if (!moveOpen) return
+    if (moveRef.current) {
+      const r = moveRef.current.getBoundingClientRect()
+      setMovePos({ top: r.bottom + 2, left: r.left })
+    }
     const handler = (e: MouseEvent) => {
       if (moveRef.current && !moveRef.current.contains(e.target as Node)) setMoveOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [moveOpen])
+
+  useEffect(() => {
+    if (!catOpen) return
+    if (catRef.current) {
+      const r = catRef.current.getBoundingClientRect()
+      setCatPos({ top: r.bottom + 2, left: r.left })
+    }
+    const handler = (e: MouseEvent) => {
+      if (catRef.current && !catRef.current.contains(e.target as Node)) setCatOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [catOpen])
 
   const deleteMutation = useMutation({
     mutationFn: () => messages.delete(selectedMessageId!),
@@ -150,8 +192,26 @@ export function MailRibbon() {
     },
   })
 
+  // Quick-step run path. The backend handles mark_read / flag / move /
+  // delete server-side, but reply/reply_all/forward have to surface as a
+  // compose pane on the client — so we scan the action list first, open
+  // the editor with the appropriate draft, then fire the server run for
+  // the rest of the macro (delete, mark-read, etc.).
   const runQsMutation = useMutation({
-    mutationFn: (qsId: string) => quickSteps.run(qsId, selectedMessageId!),
+    mutationFn: async (qsId: string) => {
+      const qs = quickStepList.find((q) => q.id === qsId)
+      if (qs && message) {
+        const replyAction = qs.actions.find(
+          (a) => a.type === 'reply' || a.type === 'reply_all' || a.type === 'forward',
+        )
+        if (replyAction) {
+          openComposer(
+            draftFromReply(message, replyAction.type as 'reply' | 'reply_all' | 'forward'),
+          )
+        }
+      }
+      return quickSteps.run(qsId, selectedMessageId!)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['folders'] })
@@ -159,6 +219,42 @@ export function MailRibbon() {
       showNotification('Quick step applied')
     },
   })
+
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      const folderId = selectedFolderId ?? folderList.find((f) => f.slug === selectedFolderSlug)?.id
+      const res = await messages.list({
+        folder_slug: folderId ? undefined : selectedFolderSlug,
+        folder_id: folderId,
+        is_read: false,
+        per_page: 500,
+      })
+      const ids = res.items.map((m) => m.id)
+      if (ids.length === 0) return { affected: 0 }
+      return messages.bulk('mark_read', ids)
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      showNotification(result.affected > 0 ? `Marked ${result.affected} as read` : 'No unread messages')
+    },
+  })
+
+  const categorizeMutation = useMutation({
+    mutationFn: (categoryIds: string[]) =>
+      messages.update(selectedMessageId!, { category_ids: categoryIds } as never),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['message', selectedMessageId] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+    },
+  })
+
+  const toggleCategory = (catId: string) => {
+    const current = (message?.categories ?? []).map((c) => c.id)
+    const next = current.includes(catId) ? current.filter((id) => id !== catId) : [...current, catId]
+    categorizeMutation.mutate(next)
+  }
+  const messageCategoryIds = new Set((message?.categories ?? []).map((c) => c.id))
 
   const hasMsg = !!selectedMessageId
 
@@ -198,22 +294,60 @@ export function MailRibbon() {
       </RibbonBtn>
 
       {/* Move to */}
-      <div className="relative" ref={moveRef}>
+      <div ref={moveRef}>
         <RibbonBtn disabled={!hasMsg} label="Move to" onClick={() => setMoveOpen((v) => !v)}>
           <FolderInput size={16} />
           <span className="flex items-center gap-0.5">Move to <ChevronDown size={10} /></span>
         </RibbonBtn>
-        {moveOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-            {folderList.map((f) => (
-              <button key={f.id} onClick={() => moveMutation.mutate(f.id)}
-                className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate">
-                {f.name}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
+      {moveOpen && typeof window !== 'undefined' && createPortal(
+        <div
+          style={{ top: movePos.top, left: movePos.left }}
+          className="fixed z-[9999] w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1"
+        >
+          {folderList.map((f) => (
+            <button key={f.id} onClick={() => moveMutation.mutate(f.id)}
+              className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate">
+              {f.name}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+
+      {/* Categorize */}
+      <div ref={catRef}>
+        <RibbonBtn disabled={!hasMsg} label="Categorize" onClick={() => setCatOpen((v) => !v)}>
+          <Tag size={16} />
+          <span className="flex items-center gap-0.5">Categorize <ChevronDown size={10} /></span>
+        </RibbonBtn>
+      </div>
+      {catOpen && typeof window !== 'undefined' && createPortal(
+        <div
+          style={{ top: catPos.top, left: catPos.left }}
+          className="fixed z-[9999] w-52 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1"
+        >
+          {categoryList.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-[#605E5C]">No categories yet</div>
+          ) : (
+            categoryList.map((c) => {
+              const checked = messageCategoryIds.has(c.id)
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => toggleCategory(c.id)}
+                  className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+                >
+                  <Tag size={14} className="flex-shrink-0" style={{ color: c.color }} />
+                  <span className="flex-1 truncate">{c.name}</span>
+                  {checked && <span className="text-[#0078D4] text-xs">✓</span>}
+                </button>
+              )
+            })
+          )}
+        </div>,
+        document.body,
+      )}
 
       <RibbonSep />
 
@@ -252,27 +386,54 @@ export function MailRibbon() {
         <span>Flag / Unflag</span>
       </RibbonBtn>
 
+      <RibbonBtn
+        disabled={markAllReadMutation.isPending}
+        label="Mark all as read"
+        onClick={() => markAllReadMutation.mutate()}
+      >
+        <CheckCheck size={16} />
+        <span>Mark all read</span>
+      </RibbonBtn>
+
       <RibbonSep />
 
-      {/* Quick steps */}
-      {quickStepList.length > 0 && (
-        <div className="relative" ref={qsRef}>
-          <RibbonBtn disabled={!hasMsg} label="Quick steps" onClick={() => setQsOpen((v) => !v)}>
-            <Zap size={16} />
-            <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={10} /></span>
-          </RibbonBtn>
-          {qsOpen && (
-            <div className="absolute left-0 top-full mt-0.5 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1">
-              {quickStepList.map((qs) => (
-                <button key={qs.id} onClick={() => runQsMutation.mutate(qs.id)}
-                  className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate flex items-center gap-2">
-                  <Zap size={12} className="text-[#0078D4] flex-shrink-0" />
-                  {qs.name}
-                </button>
-              ))}
-            </div>
+      {/* Quick steps — always visible (so the user knows the feature exists);
+          dropdown shows existing macros + a manage link that jumps to settings. */}
+      <div ref={qsRef}>
+        <RibbonBtn disabled={!hasMsg} label="Quick steps" onClick={() => setQsOpen((v) => !v)}>
+          <Zap size={16} />
+          <span className="flex items-center gap-0.5">Quick steps <ChevronDown size={10} /></span>
+        </RibbonBtn>
+      </div>
+      {qsOpen && typeof window !== 'undefined' && createPortal(
+        <div
+          style={{ top: qsPos.top, left: qsPos.left }}
+          className="fixed z-[9999] w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1"
+        >
+          {quickStepList.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-[#A19F9D] italic">
+              No quick steps yet. Create one in settings.
+            </p>
+          ) : (
+            quickStepList.map((qs) => (
+              <button key={qs.id} onClick={() => runQsMutation.mutate(qs.id)}
+                className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] truncate flex items-center gap-2">
+                <Zap size={12} className="text-[#0078D4] flex-shrink-0" />
+                {qs.name}
+              </button>
+            ))
           )}
-        </div>
+          <div className="border-t border-[#EDEBE9] mt-1 pt-1">
+            <button
+              onClick={() => { setQsOpen(false); router.push('/settings/quick-steps') }}
+              className="w-full text-left text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1] flex items-center gap-2"
+            >
+              <Plus size={12} />
+              Manage quick steps
+            </button>
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

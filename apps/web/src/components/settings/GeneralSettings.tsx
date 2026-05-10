@@ -2,9 +2,10 @@
 
 import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { settings } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Select'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 
 interface FormValues {
@@ -27,6 +28,20 @@ const TIMEZONES = [
   'Australia/Sydney',
 ]
 
+const LOCALES = [
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'en-GB', label: 'English (UK)' },
+  { value: 'fr-FR', label: 'French' },
+  { value: 'de-DE', label: 'German' },
+  { value: 'es-ES', label: 'Spanish' },
+  { value: 'ja-JP', label: 'Japanese' },
+]
+
+const THEMES = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
+
 export function GeneralSettings() {
   const queryClient = useQueryClient()
 
@@ -35,7 +50,7 @@ export function GeneralSettings() {
     queryFn: () => settings.get(),
   })
 
-  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<FormValues>({
+  const { control, handleSubmit, reset, formState: { isSubmitting } } = useForm<FormValues>({
     defaultValues: { timezone: 'UTC', locale: 'en-US', theme: 'light' },
   })
 
@@ -61,53 +76,54 @@ export function GeneralSettings() {
 
       <form onSubmit={handleSubmit((d) => saveMutation.mutate(d))} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-[#605E5C] mb-1" htmlFor="timezone">
-            Timezone
-          </label>
-          <select
-            id="timezone"
-            aria-label="Timezone"
-            className="w-full text-sm border border-[#8A8886] rounded px-3 py-2 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
-            {...register('timezone')}
-          >
-            {TIMEZONES.map((tz) => (
-              <option key={tz} value={tz}>{tz}</option>
-            ))}
-          </select>
+          <label className="block text-sm font-medium text-[#605E5C] mb-1">Timezone</label>
+          <Controller
+            name="timezone"
+            control={control}
+            render={({ field }) => (
+              <Select
+                value={field.value}
+                onChange={field.onChange}
+                options={TIMEZONES.map((tz) => ({ value: tz, label: tz }))}
+                ariaLabel="Timezone"
+                className="w-full"
+              />
+            )}
+          />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#605E5C] mb-1" htmlFor="locale">
-            Language
-          </label>
-          <select
-            id="locale"
-            aria-label="Language"
-            className="w-full text-sm border border-[#8A8886] rounded px-3 py-2 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
-            {...register('locale')}
-          >
-            <option value="en-US">English (US)</option>
-            <option value="en-GB">English (UK)</option>
-            <option value="fr-FR">French</option>
-            <option value="de-DE">German</option>
-            <option value="es-ES">Spanish</option>
-            <option value="ja-JP">Japanese</option>
-          </select>
+          <label className="block text-sm font-medium text-[#605E5C] mb-1">Language</label>
+          <Controller
+            name="locale"
+            control={control}
+            render={({ field }) => (
+              <Select
+                value={field.value}
+                onChange={field.onChange}
+                options={LOCALES}
+                ariaLabel="Language"
+                className="w-full"
+              />
+            )}
+          />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#605E5C] mb-1" htmlFor="theme">
-            Theme
-          </label>
-          <select
-            id="theme"
-            aria-label="Theme"
-            className="w-full text-sm border border-[#8A8886] rounded px-3 py-2 text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
-            {...register('theme')}
-          >
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
+          <label className="block text-sm font-medium text-[#605E5C] mb-1">Theme</label>
+          <Controller
+            name="theme"
+            control={control}
+            render={({ field }) => (
+              <Select
+                value={field.value}
+                onChange={(v) => field.onChange(v as 'light' | 'dark')}
+                options={THEMES}
+                ariaLabel="Theme"
+                className="w-full"
+              />
+            )}
+          />
         </div>
 
         <Button

@@ -2,13 +2,18 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { quickSteps } from '@/lib/api'
+import { quickSteps, folders } from '@/lib/api'
 import type { QuickStep } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { FolderPicker } from '@/components/ui/FolderPicker'
 import { Plus, Trash2, Zap } from 'lucide-react'
 
 const ACTION_TYPES = [
+  { value: 'reply', label: 'Reply' },
+  { value: 'reply_all', label: 'Reply all' },
+  { value: 'forward', label: 'Forward' },
   { value: 'mark_read', label: 'Mark as read' },
   { value: 'mark_unread', label: 'Mark as unread' },
   { value: 'flag', label: 'Flag message' },
@@ -22,6 +27,11 @@ export function QuickStepSettings() {
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [newActions, setNewActions] = useState<{ type: string; params: Record<string, string> }[]>([])
+
+  const { data: folderList = [] } = useQuery({
+    queryKey: ['folders'],
+    queryFn: () => folders.list(),
+  })
 
   const { data: stepList = [], isLoading } = useQuery({
     queryKey: ['quick-steps'],
@@ -92,22 +102,20 @@ export function QuickStepSettings() {
             )}
             {newActions.map((action, i) => (
               <div key={i} className="flex items-center gap-2 mb-2">
-                <select
+                <Select
                   value={action.type}
-                  onChange={(e) => updateActionType(i, e.target.value)}
-                  className="flex-1 border border-[#8A8886] rounded px-2 py-1 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4]"
-                >
-                  {ACTION_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
+                  onChange={(v) => updateActionType(i, v)}
+                  options={ACTION_TYPES}
+                  ariaLabel={`Action ${i + 1} type`}
+                  className="flex-1"
+                />
                 {action.type === 'move_to_folder' && (
-                  <Input
-                    placeholder="Folder name"
+                  <FolderPicker
+                    folderList={folderList}
                     value={action.params.folder ?? ''}
-                    onChange={(e) => updateActionParam(i, 'folder', e.target.value)}
-                    className="w-32"
-                    aria-label="Folder name"
+                    onChange={(v) => updateActionParam(i, 'folder', v)}
+                    ariaLabel="Target folder"
+                    className="w-48"
                   />
                 )}
                 <button type="button" onClick={() => removeAction(i)} className="text-[#D13438]">

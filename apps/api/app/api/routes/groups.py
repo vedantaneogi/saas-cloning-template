@@ -29,6 +29,8 @@ class GroupOut(BaseModel):
     color: str
     member_count: int
     is_member: bool = False
+    is_owner: bool = False
+    is_favorite: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -56,6 +58,14 @@ class GroupMemberOut(BaseModel):
     user_id: uuid.UUID
     role: str
     joined_at: datetime
+    # Hydrated from the User row when the route does the JOIN. Optional to
+    # preserve back-compat for callers that don't request it.
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+
+
+class AddMemberRequest(BaseModel):
+    email: str
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,6 +91,25 @@ async def _is_member(db: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) 
     return result.scalar_one_or_none() is not None
 
 
+async def _is_owner(db: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    result = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == user_id,
+            GroupMember.role == "owner",
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _require_owner(db: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    if not await _is_owner(db, group_id, user_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": {"code": "not_owner", "message": "Only the group owner can do this"}},
+        )
+
+
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=list[GroupOut])
@@ -92,9 +121,17 @@ async def list_groups(
     groups = result.scalars().all()
     out = []
     for g in groups:
-        member = await _is_member(db, g.id, current_user.id)
+        member_q = await db.execute(
+            select(GroupMember).where(
+                GroupMember.group_id == g.id,
+                GroupMember.user_id == current_user.id,
+            )
+        )
+        membership = member_q.scalar_one_or_none()
         d = GroupOut.model_validate(g)
-        d.is_member = member
+        d.is_member = membership is not None
+        d.is_owner = membership is not None and membership.role == "owner"
+        d.is_favorite = bool(membership and membership.is_favorite)
         out.append(d)
     return out
 
@@ -134,6 +171,7 @@ async def create_group(
 
     out = GroupOut.model_validate(g)
     out.is_member = True
+    out.is_owner = True
     return out
 
 
@@ -145,6 +183,7 @@ async def update_group(
     current_user: User = Depends(get_current_user),
 ):
     g = await _get_group_or_404(db, group_id)
+    await _require_owner(db, group_id, current_user.id)
 
     if body.name is not None:
         g.name = body.name
@@ -159,10 +198,66 @@ async def update_group(
     await db.flush()
     rl_state.event_log.append("group_updated", {"id": str(g.id)})
 
-    member = await _is_member(db, g.id, current_user.id)
+    member_q = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_id == g.id,
+            GroupMember.user_id == current_user.id,
+        )
+    )
+    membership = member_q.scalar_one_or_none()
     out = GroupOut.model_validate(g)
-    out.is_member = member
+    out.is_member = membership is not None
+    out.is_owner = membership is not None and membership.role == "owner"
+    out.is_favorite = bool(membership and membership.is_favorite)
     return out
+
+
+@router.post("/{group_id}/favorite", response_model=GroupOut)
+async def toggle_favorite(
+    group_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Toggle the current user's favorite flag on this group. Membership
+    required — only members can favorite a group."""
+    g = await _get_group_or_404(db, group_id)
+    member_q = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == current_user.id,
+        )
+    )
+    membership = member_q.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": {"code": "not_member", "message": "Join the group before favoriting"}},
+        )
+    membership.is_favorite = not membership.is_favorite
+    await db.flush()
+    rl_state.event_log.append(
+        "group_favorite_toggled",
+        {"group_id": str(group_id), "is_favorite": membership.is_favorite},
+    )
+    out = GroupOut.model_validate(g)
+    out.is_member = True
+    out.is_owner = membership.role == "owner"
+    out.is_favorite = membership.is_favorite
+    return out
+
+
+@router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_group(
+    group_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Owner-only group teardown. Memberships cascade via FK ondelete."""
+    g = await _get_group_or_404(db, group_id)
+    await _require_owner(db, group_id, current_user.id)
+    await db.delete(g)
+    await db.flush()
+    rl_state.event_log.append("group_deleted", {"id": str(group_id), "name": g.name})
 
 
 @router.post("/{group_id}/join", response_model=GroupMemberOut, status_code=status.HTTP_201_CREATED)
@@ -232,7 +327,116 @@ async def list_members(
     current_user: User = Depends(get_current_user),
 ):
     await _get_group_or_404(db, group_id)
+    # JOIN User so the UI can render avatar/email/name without N+1.
     result = await db.execute(
-        select(GroupMember).where(GroupMember.group_id == group_id)
+        select(GroupMember, User)
+        .join(User, User.id == GroupMember.user_id)
+        .where(GroupMember.group_id == group_id)
+        .order_by(GroupMember.role.desc(), GroupMember.joined_at)
     )
-    return [GroupMemberOut.model_validate(m) for m in result.scalars().all()]
+    out: list[GroupMemberOut] = []
+    for membership, user in result.all():
+        d = GroupMemberOut.model_validate(membership)
+        d.email = user.email
+        d.display_name = user.display_name
+        out.append(d)
+    return out
+
+
+@router.post(
+    "/{group_id}/members",
+    response_model=GroupMemberOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_member(
+    group_id: uuid.UUID,
+    body: AddMemberRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    g = await _get_group_or_404(db, group_id)
+    await _require_owner(db, group_id, current_user.id)
+
+    target_q = await db.execute(select(User).where(User.email == body.email))
+    target = target_q.scalar_one_or_none()
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "user_not_found", "message": f"No user with email {body.email}"}},
+        )
+
+    # Idempotent: if they're already in the group, just echo the existing row.
+    existing_q = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == target.id,
+        )
+    )
+    existing = existing_q.scalar_one_or_none()
+    if existing:
+        out = GroupMemberOut.model_validate(existing)
+        out.email = target.email
+        out.display_name = target.display_name
+        return out
+
+    now = rl_state.clock.now()
+    membership = GroupMember(
+        id=uuid.uuid4(),
+        group_id=group_id,
+        user_id=target.id,
+        role="member",
+        joined_at=now,
+    )
+    db.add(membership)
+    g.member_count = (g.member_count or 0) + 1
+    g.updated_at = now
+    await db.flush()
+    rl_state.event_log.append(
+        "group_member_added",
+        {"group_id": str(group_id), "user_id": str(target.id)},
+    )
+    out = GroupMemberOut.model_validate(membership)
+    out.email = target.email
+    out.display_name = target.display_name
+    return out
+
+
+@router.delete("/{group_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_member(
+    group_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    g = await _get_group_or_404(db, group_id)
+    await _require_owner(db, group_id, current_user.id)
+
+    if user_id == current_user.id:
+        # Owner removing themselves should go through /leave so we keep the
+        # member-count accounting in one place.
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "cannot_remove_self", "message": "Use /leave to leave the group"}},
+        )
+
+    result = await db.execute(
+        select(GroupMember).where(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == user_id,
+        )
+    )
+    membership = result.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_member", "message": "User is not a member of this group"}},
+        )
+
+    await db.delete(membership)
+    g.member_count = max(0, (g.member_count or 1) - 1)
+    g.updated_at = rl_state.clock.now()
+    await db.flush()
+    rl_state.event_log.append(
+        "group_member_removed",
+        {"group_id": str(group_id), "user_id": str(user_id)},
+    )

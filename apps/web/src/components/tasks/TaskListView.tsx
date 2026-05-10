@@ -142,14 +142,35 @@ export function TaskListView({ listId, onSelectTask, selectedTaskId }: TaskListV
             description="Nothing to do here. Add a task above to get started."
           />
         ) : (
-          taskList.map((task) => (
-            <TaskItem
-              key={task.id}
-              task={task}
-              selected={selectedTaskId === task.id}
-              onClick={() => onSelectTask?.(task)}
-            />
-          ))
+          (() => {
+            // Group sublists under their parent so the list renders as a
+            // nested tree. Top-level (parent_task_id == null) drives the
+            // outer iteration; subtasks render indented underneath.
+            const childrenOf = new Map<string, Task[]>()
+            for (const t of taskList) {
+              if (t.parent_task_id) {
+                if (!childrenOf.has(t.parent_task_id)) childrenOf.set(t.parent_task_id, [])
+                childrenOf.get(t.parent_task_id)!.push(t)
+              }
+            }
+            const topLevel = taskList.filter((t) => !t.parent_task_id)
+            const renderRow = (task: Task, depth: number): React.ReactNode => {
+              const subs = childrenOf.get(task.id) ?? []
+              return (
+                <div key={task.id}>
+                  <div style={{ paddingLeft: depth * 24 }}>
+                    <TaskItem
+                      task={task}
+                      selected={selectedTaskId === task.id}
+                      onClick={() => onSelectTask?.(task)}
+                    />
+                  </div>
+                  {subs.map((sub) => renderRow(sub, depth + 1))}
+                </div>
+              )
+            }
+            return topLevel.map((t) => renderRow(t, 0))
+          })()
         )}
       </div>
     </div>

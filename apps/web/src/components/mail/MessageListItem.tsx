@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X } from 'lucide-react'
+import { Flag, Paperclip, Star, Trash2, FolderInput, Mail, MailOpen, ChevronRight, ChevronDown, Reply, Forward, MessagesSquare, Archive, Pin, Tag, Clock, ReplyAll, Copy, ShieldAlert, VolumeX, Download, Search, CheckSquare, Zap, MoreHorizontal, Filter, Eye, Volume2, X, Plus, Edit2, Wind, Lock } from 'lucide-react'
+import { SweepDialog } from '@/components/layout/RibbonTabs'
 import type { Message } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
 import { Avatar } from '@/components/ui/Avatar'
@@ -37,17 +38,56 @@ function MenuItem({ icon, label, onClick, disabled }: { icon: React.ReactNode; l
   )
 }
 
-function SubMenu({ icon, label, open, onOpenChange, children, alignRight }: {
+function SubMenu({ icon, label, open, onOpenChange, children }: {
   icon: React.ReactNode
   label: string
   open: boolean
   onOpenChange: (v: boolean) => void
   children: React.ReactNode
+  // alignRight is now auto-detected based on viewport room.
   alignRight?: boolean
 }) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  // Delayed-close timer so moving the cursor from the parent into the submenu
+  // doesn't trigger a close in the gap. Submenu cancels the timer on enter.
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelClose = () => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null }
+  }
+  const scheduleClose = () => {
+    cancelClose()
+    closeTimer.current = setTimeout(() => onOpenChange(false), 200)
+  }
+  useEffect(() => () => cancelClose(), [])
+
+  useEffect(() => {
+    if (!open) { setPos(null); return }
+    const compute = () => {
+      const rect = btnRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const submenuW = 220
+      // Open to the right by default; flip left if we'd overflow viewport.
+      let left = rect.right
+      if (left + submenuW > window.innerWidth - 8) left = Math.max(8, rect.left - submenuW)
+      // Anchor the submenu's TOP to the trigger button so the chevron sits next
+      // to the option you hovered. If the submenu is too tall to fit below, it
+      // scrolls internally rather than shifting away from the trigger.
+      const top = Math.max(8, rect.top)
+      setPos({ top, left })
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [open])
+
   return (
-    <div className="relative" onMouseEnter={() => onOpenChange(true)} onMouseLeave={() => onOpenChange(false)}>
+    <div
+      onMouseEnter={() => { cancelClose(); onOpenChange(true) }}
+      onMouseLeave={scheduleClose}
+    >
       <button
+        ref={btnRef}
         role="menuitem"
         aria-haspopup="true"
         aria-expanded={open}
@@ -56,11 +96,16 @@ function SubMenu({ icon, label, open, onOpenChange, children, alignRight }: {
         <span className="flex items-center gap-2"><span className="text-[#605E5C]">{icon}</span>{label}</span>
         <ChevronRight size={12} className="text-[#605E5C]" />
       </button>
-      {open && (
-        <div className={cn(
-          "absolute top-0 min-w-[180px] max-w-[240px] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 z-50",
-          alignRight ? "right-full" : "left-full"
-        )}>
+      {open && pos && (
+        <div
+          // Fixed positioning escapes any scrollable ancestor (e.g. the main
+          // context menu when it's tall enough to scroll), so the submenu
+          // never gets clipped — and we flip horizontally near the right edge.
+          className="fixed min-w-[180px] max-w-[240px] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 z-[60] max-h-[80vh] overflow-y-auto outlook-scrollbar"
+          style={{ top: pos.top, left: pos.left }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+        >
           {children}
         </div>
       )}
@@ -81,6 +126,8 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   const [copySearch, setCopySearch] = useState('')
   const [snoozeOpen, setSnoozeOpen] = useState(false)
   const [catOpen, setCatOpen] = useState(false)
+  const [catSearch, setCatSearch] = useState('')
+  const [sweepOpen, setSweepOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
   const [downloadOpen, setDownloadOpen] = useState(false)
@@ -114,6 +161,14 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   const isSelected = selectedMessageId === message.id
   const isUnread = !message.is_read
   const dateStr = message.received_at ?? message.created_at
+
+  // Boomerang reminder detection — fingerprint the exact notice body
+  // we drop in the user's inbox. Earlier this used `from === currentUser
+  // + in_reply_to_id`, which incorrectly matched every reply/forward in
+  // the Sent folder (turning all your sent replies yellow).
+  const isBoomerangReminder = !!(
+    message.body_text && message.body_text.startsWith('Message moved to top of Inbox by Boomerang')
+  )
 
   const markReadMutation = useMutation({
     mutationFn: (isRead: boolean) => messages.update(message.id, { is_read: isRead }),
@@ -169,17 +224,30 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   })
 
   const snoozeMutation = useMutation({
-    mutationFn: (snoozeUntil: string) => messages.update(message.id, { snooze_until: snoozeUntil } as never),
-    onSuccess: () => {
+    mutationFn: (snoozeUntil: string | null) =>
+      messages.update(message.id, { snooze_until: snoozeUntil } as never),
+    onSuccess: (_data, snoozeUntil) => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       setContextMenu(null)
+      if (snoozeUntil === null) {
+        showNotification('Returned to inbox')
+      } else {
+        const when = new Date(snoozeUntil).toLocaleString(undefined, {
+          weekday: 'short', month: 'short', day: 'numeric',
+          hour: 'numeric', minute: '2-digit',
+        })
+        showNotification(`Snoozed until ${when}`)
+      }
     },
   })
 
   const categorizeMutation = useMutation({
     mutationFn: (categoryIds: string[]) => messages.update(message.id, { category_ids: categoryIds } as never),
     onSuccess: () => {
+      // Invalidate both the list view and the per-message detail so the
+      // reading pane re-renders with the new chip set.
       queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['message', message.id] })
     },
   })
 
@@ -254,8 +322,12 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
         'relative flex gap-2 px-3 py-2 cursor-pointer border-b border-[#EDEBE9] transition-colors group',
         isSelected
           ? 'bg-[#EBF3FB] border-l-[3px] border-l-[#0078D4]'
-          : 'hover:bg-[#F3F2F1] border-l-[3px] border-l-transparent',
-        isUnread && !isSelected && 'bg-white'
+          : isBoomerangReminder
+            // Yellow follow-up tint matching followup.png — distinct from
+            // regular unread mail.
+            ? 'bg-[#FFF8E1] hover:bg-[#FFF1C2] border-l-[3px] border-l-[#FFB900]'
+            : 'hover:bg-[#F3F2F1] border-l-[3px] border-l-transparent',
+        isUnread && !isSelected && !isBoomerangReminder && 'bg-white'
       )}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
@@ -331,13 +403,47 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             {senderName}
           </span>
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Always-visible icons: attachment + reply type */}
+            {/* Always-visible icons: attachment + reply type. Boomerang
+                rows get a yellow follow-up flag (matches followup.png).
+                The body notice + pinned-to-top + yellow tint complete the
+                distinction. */}
             {message.has_attachments && (
               <Paperclip size={12} className="text-[#605E5C]" />
             )}
-            {message.in_reply_to_id && (
+            {message.in_reply_to_id && !isBoomerangReminder && (
               <Reply size={12} className="text-[#605E5C]" />
             )}
+            {message.encrypt_mode && message.encrypt_mode !== 'none' && (
+              <Lock size={12} className="text-[#0078D4]" aria-label="Encrypted" />
+            )}
+            {isBoomerangReminder && (
+              <Flag
+                size={12}
+                className="text-[#FFB900] fill-[#FFB900]"
+                aria-label="Boomerang follow-up"
+              />
+            )}
+            {/* Pending boomerang — only show when reminder is set AND
+                hasn't fired yet. Once fired the surface is the new
+                inbox copy itself, so this pill on the original sent row
+                disappears. */}
+            {message.boomerang_at && !message.boomerang_fired_at && (() => {
+              const ms = new Date(message.boomerang_at).getTime() - Date.now()
+              if (ms <= 0) return null
+              const mins = Math.round(ms / 60000)
+              const hrs = Math.round(mins / 60)
+              const days = Math.round(hrs / 24)
+              const summary = mins < 60 ? `${mins}m` : hrs < 24 ? `${hrs}h` : `${days}d`
+              return (
+                <span
+                  className="inline-flex items-center gap-0.5 text-[10px] text-[#0078D4] bg-[#EBF3FB] px-1 rounded-sm"
+                  title={`Follow-up reminder in ${summary}`}
+                >
+                  <Clock size={10} />
+                  {summary}
+                </span>
+              )
+            })()}
             <span className="text-xs text-[#605E5C] whitespace-nowrap">
               {formatMessageDate(dateStr)}
             </span>
@@ -369,20 +475,47 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             {message.categories && message.categories.length > 0 && (
               <span className="flex items-center gap-0.5" aria-label="Categories">
                 {message.categories.slice(0, 3).map((cat) => (
-                  <span
+                  <Tag
                     key={cat.id}
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: cat.color }}
-                    title={cat.name}
-                  />
+                    size={11}
+                    className="flex-shrink-0"
+                    style={{ color: cat.color }}
+                    aria-label={cat.name}
+                  >
+                    <title>{cat.name}</title>
+                  </Tag>
                 ))}
               </span>
             )}
             {message.is_pinned && (
-              <Star size={12} className="text-[#FFB900] fill-[#FFB900]" aria-label="Pinned" />
+              <Pin size={12} className="text-[#0078D4] fill-[#0078D4]" aria-label="Pinned" />
             )}
           </div>
         </div>
+
+        {/* Snooze indicator + one-click Unsnooze. Shows on every list rendering
+            whenever the message is currently snoozed (Snoozed view + any other
+            surface that lists it). */}
+        {message.snooze_until && new Date(message.snooze_until) > new Date() && (
+          <div className="flex items-center gap-2 mt-0.5 text-[11px]">
+            <span className="flex items-center gap-1 text-[#0078D4]">
+              <Clock size={10} />
+              Resurfaces {new Date(message.snooze_until).toLocaleString(undefined, {
+                weekday: 'short', month: 'short', day: 'numeric',
+                hour: 'numeric', minute: '2-digit',
+              })}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); snoozeMutation.mutate(null) }}
+              disabled={snoozeMutation.isPending}
+              aria-label="Unsnooze and return to inbox"
+              className="text-[#0078D4] hover:bg-[#EBF3FB] border border-[#0078D4] rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-50"
+            >
+              Unsnooze
+            </button>
+          </div>
+        )}
 
         {/* Attachment chips — shown like Outlook: "file.xlsx  +N" */}
         {message.attachments && message.attachments.length > 0 && (
@@ -420,9 +553,9 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
           <button
             onClick={(e) => { e.stopPropagation(); pinMutation.mutate() }}
             aria-label={message.is_pinned ? 'Unpin' : 'Pin'}
-            className={cn('p-1 rounded transition-colors', message.is_pinned ? 'text-[#FFB900]' : 'text-[#605E5C] hover:text-[#FFB900]')}
+            className={cn('p-1 rounded transition-colors', message.is_pinned ? 'text-[#0078D4]' : 'text-[#605E5C] hover:text-[#0078D4]')}
           >
-            <Star size={14} className={message.is_pinned ? 'fill-[#FFB900]' : ''} />
+            <Pin size={14} className={message.is_pinned ? 'fill-[#0078D4]' : ''} />
           </button>
         </div>
         <button
@@ -440,15 +573,39 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
         </span>
       )}
 
-      {/* Right-click context menu — matches real Outlook order exactly */}
-      {contextMenu && (
+      {/* Right-click context menu. The natural full menu is taller than most
+          viewports, so we cap height to fit the screen and force overflow-y:
+          scroll so the scrollbar is *always visible* — the user knows there's
+          more to reach. Submenus escape via fixed positioning. */}
+      {contextMenu && (() => {
+        const maxLeft = window.innerWidth - 232
+        const left = Math.max(8, Math.min(contextMenu.x, maxLeft))
+        // Anchor at the click; if the click is near the bottom, push the top
+        // up so the menu has room to render.
+        const margin = 8
+        const desired = Math.min(540, window.innerHeight - margin * 2)
+        const room = window.innerHeight - contextMenu.y - margin
+        const top = room < desired
+          ? Math.max(margin, window.innerHeight - desired - margin)
+          : contextMenu.y
+        // Hard cap so the menu always scrolls — the full Outlook context menu
+        // is taller than most viewports, and a hard cap guarantees the
+        // scrollbar is visible even on big screens. Also clamps to remaining
+        // viewport room so we never extend off-screen.
+        const HARD_CAP = 480
+        const maxHeight = Math.min(HARD_CAP, Math.max(160, window.innerHeight - top - margin))
+        return (
         <div
           ref={menuRef}
           role="menu"
-          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1 overflow-visible"
+          // Tailwind arbitrary variants hide the native scrollbar (WebKit + Firefox)
+          // while overflow-y:scroll keeps wheel/touch scrolling active.
+          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
           style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 240),
-            top: Math.min(contextMenu.y, window.innerHeight - 580),
+            left,
+            top,
+            maxHeight,
+            overflowY: 'scroll',
           }}
         >
           {/* 1. Reply / Reply all / Forward */}
@@ -544,20 +701,59 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
           />
           <MenuItem icon={<Pin size={14} />} label={message.is_pinned ? 'Unpin' : 'Pin'} onClick={() => { pinMutation.mutate() }} />
 
-          <SubMenu icon={<Tag size={14} />} label="Categorize" open={catOpen} onOpenChange={setCatOpen}>
-            {categoryList.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-[#605E5C]">No categories</div>
-            ) : categoryList.map((cat) => {
-              const isActive = (message.categories ?? []).some((c) => c.id === cat.id)
-              return (
-                <button key={cat.id} role="menuitem" onClick={(e) => { e.stopPropagation(); toggleCategory(cat.id) }}
-                  className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
-                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
-                  <span className="flex-1 text-left truncate">{cat.name}</span>
-                  {isActive && <span className="text-[#0078D4] text-xs font-bold">✓</span>}
-                </button>
+          <SubMenu icon={<Tag size={14} />} label="Categorize" open={catOpen} onOpenChange={(v) => { setCatOpen(v); if (!v) setCatSearch('') }}>
+            {/* Search box — Outlook-style filter for the category list */}
+            <div className="px-2 py-1.5 border-b border-[#EDEBE9]" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-[#F3F2F1] rounded">
+                <Search size={11} className="text-[#605E5C] flex-shrink-0" />
+                <input
+                  type="text"
+                  value={catSearch}
+                  onChange={(e) => setCatSearch(e.target.value)}
+                  placeholder="Search for a category"
+                  aria-label="Search categories"
+                  className="flex-1 text-xs bg-transparent focus:outline-none text-[#323130] placeholder:text-[#A19F9D]"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            </div>
+            {(() => {
+              const filtered = categoryList.filter((c) =>
+                c.name.toLowerCase().includes(catSearch.trim().toLowerCase())
               )
-            })}
+              if (filtered.length === 0) {
+                return <div className="px-3 py-2 text-xs text-[#605E5C]">No categories match.</div>
+              }
+              return filtered.map((cat) => {
+                const isActive = (message.categories ?? []).some((c) => c.id === cat.id)
+                return (
+                  <button key={cat.id} role="menuitem" onClick={(e) => { e.stopPropagation(); toggleCategory(cat.id) }}
+                    className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]">
+                    <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
+                    <span className="flex-1 text-left truncate">{cat.name}</span>
+                    {isActive && <span className="text-[#0078D4] text-xs font-bold">✓</span>}
+                  </button>
+                )
+              })
+            })()}
+            <div className="border-t border-[#EDEBE9] mt-1">
+              <button
+                role="menuitem"
+                onClick={(e) => { e.stopPropagation(); router.push('/settings/categories'); setContextMenu(null) }}
+                className="flex items-center gap-2 w-full text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1]"
+              >
+                <Plus size={14} className="flex-shrink-0" />
+                New category
+              </button>
+              <button
+                role="menuitem"
+                onClick={(e) => { e.stopPropagation(); router.push('/settings/categories'); setContextMenu(null) }}
+                className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+              >
+                <Edit2 size={14} className="flex-shrink-0 text-[#605E5C]" />
+                Manage categories
+              </button>
+            </div>
           </SubMenu>
 
           <MenuItem
@@ -573,6 +769,35 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
                 {opt.label}
               </button>
             ))}
+            <div className="border-t border-[#EDEBE9] px-3 py-2" onClick={(e) => e.stopPropagation()}>
+              <label className="block text-[11px] text-[#605E5C] mb-1">Pick a date / time</label>
+              <input
+                type="datetime-local"
+                aria-label="Custom snooze time"
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const iso = new Date(e.target.value).toISOString()
+                    if (new Date(iso) > new Date()) {
+                      snoozeMutation.mutate(iso)
+                    }
+                  }
+                }}
+                className="w-full text-xs border border-[#8A8886] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0078D4]"
+              />
+            </div>
+            {message.snooze_until && new Date(message.snooze_until) > new Date() && (
+              <button
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // Cleared by sending null — backend treats null as "not snoozed".
+                  snoozeMutation.mutate(null)
+                }}
+                className="w-full text-left text-sm text-[#0078D4] px-3 py-1.5 hover:bg-[#F3F2F1] border-t border-[#EDEBE9]"
+              >
+                Unsnooze
+              </button>
+            )}
           </SubMenu>
 
           <MenuItem
@@ -580,6 +805,12 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             label="Create task"
             disabled={createTaskMutation.isPending}
             onClick={() => createTaskMutation.mutate()}
+          />
+
+          <MenuItem
+            icon={<Wind size={14} />}
+            label="Sweep"
+            onClick={() => { setSweepOpen(true); setContextMenu(null) }}
           />
 
           <MenuSep />
@@ -727,6 +958,16 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
             </button>
           </SubMenu>
         </div>
+        )
+      })()}
+
+      {/* Sweep dialog — opened via the right-click menu entry */}
+      {sweepOpen && message.from_address && (
+        <SweepDialog
+          senderEmail={message.from_address}
+          senderName={message.from_name ?? message.from_address}
+          onClose={() => setSweepOpen(false)}
+        />
       )}
     </div>
   )

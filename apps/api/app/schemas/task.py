@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -43,6 +43,8 @@ class TaskCreate(BaseModel):
     importance: str = "normal"
     list_id: Optional[uuid.UUID] = None
     source_message_id: Optional[uuid.UUID] = None
+    parent_task_id: Optional[uuid.UUID] = None
+    recurrence_rule: Optional[dict[str, Any]] = None
     sort_order: int = 0
 
 
@@ -53,6 +55,8 @@ class TaskUpdate(BaseModel):
     reminder_at: Optional[datetime] = None
     importance: Optional[str] = None
     list_id: Optional[uuid.UUID] = None
+    parent_task_id: Optional[uuid.UUID] = None
+    recurrence_rule: Optional[dict[str, Any]] = None
     sort_order: Optional[int] = None
     is_completed: Optional[bool] = None
     steps: Optional[list[TaskStep]] = None
@@ -73,6 +77,8 @@ class TaskOut(BaseModel):
     importance: str
     steps: list[TaskStep] = []
     source_message_id: Optional[uuid.UUID] = None
+    parent_task_id: Optional[uuid.UUID] = None
+    recurrence_rule: Optional[dict[str, Any]] = None
     sort_order: int
     created_at: datetime
     updated_at: datetime

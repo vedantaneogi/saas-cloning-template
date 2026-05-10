@@ -99,6 +99,24 @@ async def lifespan(app: FastAPI):
     if seed_path:
         await _load_seed_from_path(seed_path)
 
+    # Seed default rooms if the rooms table is empty. Tenant-wide so
+    # one-time on first boot is enough.
+    from app.db.session import AsyncSessionLocal
+    from app.models.room import Room
+    from sqlalchemy import select, func
+    async with AsyncSessionLocal() as session:
+        existing = await session.execute(select(func.count()).select_from(Room))
+        if (existing.scalar() or 0) == 0:
+            defaults = [
+                Room(name="Conf Room Adams", location="Building 1, Floor 2", capacity=8, status="available"),
+                Room(name="Focus Room 1", location="Building 1, Floor 2", capacity=4, status="available"),
+                Room(name="Focus Room 2", location="Building 1, Floor 3", capacity=6, status="available"),
+                Room(name="Conf Room Baker", location="Building 1, Floor 2", capacity=10, status="busy"),
+                Room(name="Conf Room Crystal", location="Building 1, Floor 1", capacity=12, status="busy"),
+            ]
+            session.add_all(defaults)
+            await session.commit()
+
     # Configure Resend email delivery
     from app.core.email import configure_resend
     if settings.RESEND_API_KEY:

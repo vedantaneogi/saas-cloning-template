@@ -35,6 +35,36 @@ async def list_folders(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Lazy backfill: any system folder missing from a legacy DB (e.g.
+    # "Scheduled" for users seeded before that folder was added) gets
+    # created on first list. Newly-seeded users already have all of them.
+    from app.rl.seed_loader import SYSTEM_FOLDERS
+    existing_q = await db.execute(
+        select(Folder.slug).where(Folder.user_id == current_user.id)
+    )
+    existing_slugs = {row for row in existing_q.scalars().all()}
+    now = rl_state.clock.now()
+    backfilled = False
+    for spec in SYSTEM_FOLDERS:
+        if spec["slug"] in existing_slugs:
+            continue
+        db.add(Folder(
+            id=uuid.uuid4(),
+            user_id=current_user.id,
+            name=spec["name"],
+            slug=spec["slug"],
+            icon=spec["icon"],
+            sort_order=spec["sort_order"],
+            is_system=True,
+            unread_count=0,
+            total_count=0,
+            created_at=now,
+            updated_at=now,
+        ))
+        backfilled = True
+    if backfilled:
+        await db.flush()
+
     result = await db.execute(
         select(Folder)
         .where(Folder.user_id == current_user.id)

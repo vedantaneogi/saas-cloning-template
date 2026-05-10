@@ -141,6 +141,147 @@ function FileTextPreview({ blobUrl, filename }: { blobUrl: string; filename: str
   )
 }
 
+// ── PowerPoint preview — extract slide text from .pptx via JSZip ─────────────
+// .pptx is an OPC zip; ppt/slides/slideN.xml holds runs of text under <a:t>.
+// We render each slide as a card showing the extracted text outline. This is
+// a faithful preview for text-heavy decks; image/shape geometry is not rendered.
+function PptxPreview({ blobUrl, filename }: { blobUrl: string; filename: string }) {
+  const [slides, setSlides] = useState<{ title: string; bullets: string[] }[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const JSZip = (await import('jszip')).default
+        const buf = await fetch(blobUrl).then((r) => r.arrayBuffer())
+        const zip = await JSZip.loadAsync(buf)
+        const slideEntries = Object.keys(zip.files)
+          .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+          .sort((a, b) => {
+            const an = parseInt(a.match(/slide(\d+)\.xml$/)?.[1] ?? '0', 10)
+            const bn = parseInt(b.match(/slide(\d+)\.xml$/)?.[1] ?? '0', 10)
+            return an - bn
+          })
+        const out: { title: string; bullets: string[] }[] = []
+        for (const entry of slideEntries) {
+          const xml = await zip.file(entry)!.async('string')
+          // Each <p:sp> shape can hold <a:p> paragraphs; each <a:p> contains
+          // one or more <a:t> runs. Joining runs within a paragraph reconstructs
+          // the visible text line; the first paragraph that has text becomes
+          // the slide title.
+          const paragraphs: string[] = []
+          const paraRegex = /<a:p\b[^>]*>([\s\S]*?)<\/a:p>/g
+          const tRegex = /<a:t\b[^>]*>([\s\S]*?)<\/a:t>/g
+          let pm
+          while ((pm = paraRegex.exec(xml)) !== null) {
+            const inner = pm[1]
+            const runs: string[] = []
+            let tm
+            while ((tm = tRegex.exec(inner)) !== null) {
+              runs.push(decodeXmlEntities(tm[1]))
+            }
+            const line = runs.join('').trim()
+            if (line) paragraphs.push(line)
+          }
+          if (paragraphs.length === 0) {
+            out.push({ title: '(blank slide)', bullets: [] })
+          } else {
+            out.push({ title: paragraphs[0], bullets: paragraphs.slice(1) })
+          }
+        }
+        if (!cancelled) setSlides(out)
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to render slides')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [blobUrl])
+
+  return (
+    <div className="w-full h-[75vh] flex flex-col">
+      <div className="flex items-center gap-2 px-3 py-2 bg-[#C43E1C] text-white text-sm rounded-t">
+        <span className="font-semibold">PowerPoint</span>
+        <span className="text-xs opacity-80 truncate">{filename}</span>
+        {slides && <span className="ml-auto text-xs opacity-90">{slides.length} slide{slides.length === 1 ? '' : 's'}</span>}
+      </div>
+      <div className="flex-1 bg-[#FAF9F8] border border-[#EDEBE9] rounded-b overflow-auto p-4">
+        {error ? (
+          <p className="text-sm text-[#D13438]">{error}</p>
+        ) : slides === null ? (
+          <p className="text-sm text-[#605E5C]">Rendering presentation…</p>
+        ) : slides.length === 0 ? (
+          <p className="text-sm text-[#605E5C]">No slides found.</p>
+        ) : (
+          <div className="space-y-4">
+            {slides.map((s, i) => (
+              <div key={i} className="bg-white border border-[#EDEBE9] rounded shadow-sm overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-[#F3F2F1] border-b border-[#EDEBE9]">
+                  <span className="w-5 h-5 rounded-full bg-[#C43E1C] text-white text-[10px] font-semibold flex items-center justify-center">{i + 1}</span>
+                  <span className="text-xs text-[#605E5C]">Slide {i + 1}</span>
+                </div>
+                <div className="p-5">
+                  <h3 className="text-lg font-semibold text-[#323130] mb-3">{s.title}</h3>
+                  {s.bullets.length > 0 && (
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-[#323130]">
+                      {s.bullets.map((b, j) => <li key={j}>{b}</li>)}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+}
+
+function WordPreview({ blobUrl, filename }: { blobUrl: string; filename: string }) {
+  const [html, setHtml] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const buf = await fetch(blobUrl).then((r) => r.arrayBuffer())
+        const mammoth = (await import('mammoth')).default ?? (await import('mammoth'))
+        const result = await mammoth.convertToHtml({ arrayBuffer: buf })
+        if (!cancelled) setHtml(result.value || '<p><em>(empty document)</em></p>')
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to render document')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [blobUrl])
+  return (
+    <div className="w-full h-[60vh] flex flex-col">
+      <div className="flex items-center gap-2 px-3 py-2 bg-[#185ABD] text-white text-sm rounded-t">
+        <span className="font-semibold">Word</span>
+        <span className="text-xs opacity-80 truncate">{filename}</span>
+      </div>
+      <div className="flex-1 bg-white border border-[#EDEBE9] rounded-b overflow-auto p-6 text-sm text-[#323130]">
+        {error ? (
+          <p className="text-[#D13438]">{error}</p>
+        ) : html === null ? (
+          <p className="text-[#605E5C]">Rendering document…</p>
+        ) : (
+          <div className="prose-outlook" dangerouslySetInnerHTML={{ __html: html }} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 interface AttachmentBarProps {
   attachments: Attachment[]
 }
@@ -162,6 +303,11 @@ function isExcelFile(contentType: string, filename: string): boolean {
 
 function isWordFile(contentType: string, filename: string): boolean {
   return contentType.includes('word') || filename.endsWith('.docx') || filename.endsWith('.doc')
+}
+
+function isPptxFile(contentType: string, filename: string): boolean {
+  return contentType.includes('powerpoint') || contentType.includes('presentation') ||
+    filename.endsWith('.pptx') || filename.endsWith('.ppt')
 }
 
 function isTextFile(contentType: string, filename: string): boolean {
@@ -313,20 +459,9 @@ function AttachmentItem({ att }: { att: Attachment }) {
               ) : blobUrl && isTextFile(att.content_type, att.filename) ? (
                 <FileTextPreview blobUrl={blobUrl} filename={att.filename} />
               ) : blobUrl && isWordFile(att.content_type, att.filename) ? (
-                <div className="w-full h-[70vh] flex flex-col">
-                  <div className="flex items-center gap-2 px-3 py-2 bg-[#185ABD] text-white text-sm">
-                    <span className="font-semibold">Word</span>
-                    <span className="text-xs opacity-80">{att.filename}</span>
-                  </div>
-                  <div className="flex-1 bg-white border border-[#EDEBE9] overflow-auto p-6">
-                    <p className="text-sm text-[#605E5C] text-center py-8">
-                      Word document preview requires Microsoft 365.<br/>
-                      <button onClick={handleDownload} className="text-[#0078D4] hover:underline mt-2 inline-flex items-center gap-1">
-                        <Download size={13} /> Download to open in Word
-                      </button>
-                    </p>
-                  </div>
-                </div>
+                <WordPreview blobUrl={blobUrl} filename={att.filename} />
+              ) : blobUrl && isPptxFile(att.content_type, att.filename) ? (
+                <PptxPreview blobUrl={blobUrl} filename={att.filename} />
               ) : (
                 <div className="text-center py-16">
                   <span className="text-5xl mb-4 block">{icon}</span>

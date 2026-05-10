@@ -75,12 +75,20 @@ export function EventCard({ event, onClick, onDuplicate, compact = false, color 
       >
         {!compact && (
           <span className="flex items-center gap-1 truncate font-semibold">
+            {event.categories && event.categories.length > 0 && (
+              <Tag size={9} className="flex-shrink-0 opacity-90" />
+            )}
             {event.title}
             {isShared && <Share2 size={9} className="flex-shrink-0 opacity-80" />}
           </span>
         )}
         {compact ? (
-          <span className="truncate">{event.title}</span>
+          <span className="flex items-center gap-1 truncate">
+            {event.categories && event.categories.length > 0 && (
+              <Tag size={8} className="flex-shrink-0 opacity-90" />
+            )}
+            <span className="truncate">{event.title}</span>
+          </span>
         ) : (
           <span className="block truncate opacity-90">{startTime}</span>
         )}

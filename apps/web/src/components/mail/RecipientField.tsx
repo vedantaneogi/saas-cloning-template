@@ -1,9 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { X } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { X, Mail, UserPlus } from 'lucide-react'
 import { contacts } from '@/lib/api'
 import type { Contact } from '@/lib/api'
+import { Avatar } from '@/components/ui/Avatar'
+import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
 
 interface RecipientFieldProps {
@@ -14,6 +17,87 @@ interface RecipientFieldProps {
   id?: string
 }
 
+// Pulls "alice@x.com" out of either bare emails or "Name <alice@x.com>" formatted strings.
+function extractEmail(addr: string): string {
+  const match = addr.match(/<([^>]+)>/)
+  return (match ? match[1] : addr).trim()
+}
+
+function extractName(addr: string): string {
+  const match = addr.match(/^(.+?)\s*<[^>]+>/)
+  return match ? match[1].trim() : ''
+}
+
+interface ChipPopoverProps {
+  recipient: string
+  anchor: { x: number; y: number }
+  onClose: () => void
+}
+
+function ChipPopover({ recipient, anchor, onClose }: ChipPopoverProps) {
+  const email = extractEmail(recipient)
+  const name = extractName(recipient)
+  const openComposer = useUIStore((s) => s.openComposer)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  const { data: matches } = useQuery({
+    queryKey: ['contact-lookup', email],
+    queryFn: () => contacts.autocomplete(email),
+    staleTime: 60000,
+  })
+  const contact = matches?.[0]
+
+  // Click-outside dismiss
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [onClose])
+
+  const displayName = contact?.display_name || name || email
+
+  return (
+    <div
+      ref={cardRef}
+      className="fixed z-[9999] w-64 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 animate-fade-in"
+      style={{ left: anchor.x, top: anchor.y }}
+      role="dialog"
+      aria-label={`Contact card for ${displayName}`}
+    >
+      <div className="flex items-center gap-3 mb-2">
+        <Avatar name={displayName} size="md" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#323130] truncate">{displayName}</p>
+          <p className="text-xs text-[#605E5C] truncate">{email}</p>
+        </div>
+      </div>
+      {contact && (contact.job_title || contact.company || contact.phone) && (
+        <div className="space-y-0.5 mb-2 pb-2 border-b border-[#EDEBE9]">
+          {contact.job_title && <p className="text-xs text-[#605E5C] truncate">{contact.job_title}</p>}
+          {contact.company && <p className="text-xs text-[#605E5C] truncate">{contact.company}</p>}
+          {contact.phone && <p className="text-xs text-[#605E5C] truncate">{contact.phone}</p>}
+        </div>
+      )}
+      <div className="flex items-center gap-3 pt-1">
+        <button
+          type="button"
+          onClick={() => { openComposer({ to: [recipient] }); onClose() }}
+          className="flex items-center gap-1 text-xs text-[#0078D4] hover:underline"
+        >
+          <Mail size={11} /> Send email
+        </button>
+        {!contact && (
+          <span className="flex items-center gap-1 text-xs text-[#A19F9D]">
+            <UserPlus size={11} /> Not in contacts
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function RecipientField({ label, value, onChange, placeholder, id }: RecipientFieldProps) {
   const [input, setInput] = useState('')
   const [focused, setFocused] = useState(false)
@@ -22,12 +106,13 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
   const wrapperRef = useRef<HTMLDivElement>(null)
   const blurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Fetch suggestions on input change
+  // Fetch suggestions on input change. With an empty query we fall back to a
+  // generic 'a' lookup so we get a few recents/top contacts as soon as the
+  // field is focused — same behaviour as Outlook's compose.
   const fetchSuggestions = useCallback(async (q: string) => {
-    if (q.length < 2) { setSuggestions([]); return }
     try {
-      const results = await contacts.autocomplete(q)
-      setSuggestions(results)
+      const results = await contacts.autocomplete(q.length >= 2 ? q : 'a')
+      setSuggestions(results.slice(0, 6))
     } catch {
       setSuggestions([])
     }
@@ -63,41 +148,80 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
     }
   }
 
-  const showDropdown = focused && input.length >= 2 && suggestions.length > 0
+  // Show suggestions any time the field is focused (Outlook does this even
+  // before you type); the empty-input case falls back to a small "recents" set.
+  const showDropdown = focused && suggestions.length > 0
+
+  // Chip click OR hover → contact card popover (Outlook behaviour). Anchor coords
+  // are captured on the event and dismissed via outside-click in ChipPopover.
+  const [chipPopover, setChipPopover] = useState<{ recipient: string; x: number; y: number } | null>(null)
+  const chipHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   return (
     <div className="flex items-start gap-2 min-h-[32px]">
       {label && (
-        <label
-          htmlFor={id}
-          className="text-sm text-[#605E5C] pt-1.5 w-8 flex-shrink-0 text-right"
+        <button
+          type="button"
+          onClick={() => inputRef.current?.focus()}
+          // Always-visible outlined chip — matches Outlook's compose where
+          // the To/Cc/Bcc labels are persistent buttons, not hover-only.
+          className="text-sm text-[#323130] bg-white border border-[#D2D0CE] hover:bg-[#F3F2F1] hover:border-[#A19F9D] rounded px-3 py-1 flex-shrink-0 transition-colors min-w-[44px] text-center"
+          aria-label={`Add ${label.toLowerCase()} recipients`}
         >
           {label}
-        </label>
+        </button>
       )}
       <div
         className={cn(
-          'flex-1 flex flex-wrap items-center gap-1 min-h-[32px] border-b transition-colors py-1',
-          focused ? 'border-[#0078D4]' : 'border-[#EDEBE9]'
+          'flex-1 flex flex-wrap items-center gap-1 min-h-[32px] py-1 border-b transition-colors',
+          focused ? 'border-[#0078D4]' : 'border-[#E1DFDD]'
         )}
         onClick={() => inputRef.current?.focus()}
       >
-        {value.map((recipient) => (
-          <span
-            key={recipient}
-            className="inline-flex items-center gap-1 bg-[#EBF3FB] text-[#0078D4] text-xs px-2 py-0.5 rounded-full"
-          >
-            {recipient}
-            <button
-              type="button"
-              onClick={() => removeRecipient(recipient)}
-              aria-label={`Remove ${recipient}`}
-              className="hover:text-[#005A9E] transition-colors"
+        {value.map((recipient) => {
+          const displayLabel = extractName(recipient) || extractEmail(recipient)
+          return (
+            <span
+              key={recipient}
+              className="inline-flex items-center gap-1 bg-[#EBF3FB] text-[#0078D4] text-xs px-2 py-0.5 rounded-full hover:bg-[#C7E0F4] transition-colors"
             >
-              <X size={10} />
-            </button>
-          </span>
-        ))}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  setChipPopover({ recipient, x: rect.left, y: rect.bottom + 4 })
+                }}
+                onMouseEnter={(e) => {
+                  // Hover (with a small delay) also opens the contact card so users
+                  // don't always have to click — same delay as the EmailLink hover.
+                  if (chipHoverTimer.current) clearTimeout(chipHoverTimer.current)
+                  const target = e.currentTarget as HTMLElement
+                  chipHoverTimer.current = setTimeout(() => {
+                    const rect = target.getBoundingClientRect()
+                    setChipPopover({ recipient, x: rect.left, y: rect.bottom + 4 })
+                  }, 400)
+                }}
+                onMouseLeave={() => {
+                  if (chipHoverTimer.current) clearTimeout(chipHoverTimer.current)
+                }}
+                className="text-left truncate max-w-[200px]"
+                title={recipient}
+                aria-label={`Open contact card for ${displayLabel}`}
+              >
+                {displayLabel}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); removeRecipient(recipient) }}
+                aria-label={`Remove ${recipient}`}
+                className="hover:text-[#005A9E] transition-colors"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          )
+        })}
         <div className="relative flex-1 min-w-[120px]" ref={wrapperRef}>
           <input
             ref={inputRef}
@@ -128,7 +252,7 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
             <ul
               role="listbox"
               aria-label={`${label} suggestions`}
-              className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg w-72 max-h-48 overflow-y-auto"
+              className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg w-80 max-h-72 overflow-y-auto"
               style={{
                 top: (wrapperRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
                 left: wrapperRef.current?.getBoundingClientRect().left ?? 0,
@@ -149,14 +273,19 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
                           : contact.email
                       )
                     }}
-                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-[#F3F2F1] transition-colors"
+                    className="w-full text-left flex items-start gap-3 px-3 py-2.5 hover:bg-[#F3F2F1] transition-colors"
                   >
-                    <div className="w-6 h-6 rounded-full bg-[#0078D4] text-white flex items-center justify-center text-[10px] font-medium flex-shrink-0">
-                      {contact.display_name?.[0]?.toUpperCase() ?? contact.email[0].toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{contact.display_name}</p>
+                    <Avatar name={contact.display_name || contact.email} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-[#323130]">{contact.display_name}</p>
                       <p className="text-xs text-[#605E5C] truncate">{contact.email}</p>
+                      {(contact.job_title || contact.company) && (
+                        <p className="text-[11px] text-[#8A8886] truncate mt-0.5">
+                          {contact.job_title}
+                          {contact.job_title && contact.company ? ' · ' : ''}
+                          {contact.company}
+                        </p>
+                      )}
                     </div>
                   </button>
                 </li>
@@ -165,6 +294,13 @@ export function RecipientField({ label, value, onChange, placeholder, id }: Reci
           )}
         </div>
       </div>
+      {chipPopover && (
+        <ChipPopover
+          recipient={chipPopover.recipient}
+          anchor={{ x: chipPopover.x, y: chipPopover.y }}
+          onClose={() => setChipPopover(null)}
+        />
+      )}
     </div>
   )
 }

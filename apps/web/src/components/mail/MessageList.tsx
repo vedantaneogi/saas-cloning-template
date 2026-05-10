@@ -3,12 +3,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
-import { messages, folders, conversations as conversationsApi } from '@/lib/api'
+import { messages, folders, conversations as conversationsApi, categories } from '@/lib/api'
 import type { Message } from '@/lib/api'
 import { MessageListItem } from './MessageListItem'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Inbox, SortAsc, SortDesc, MailOpen, Trash2, Archive, Flag, X } from 'lucide-react'
+import { Inbox, SortAsc, SortDesc, MailOpen, Trash2, Archive, Flag, X, Tag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type DateGroup = 'Today' | 'Yesterday' | 'This week' | 'Last week' | 'Older'
@@ -71,6 +71,15 @@ export function MessageList() {
   const setSortOrder = useMailStore((s) => s.setSortOrder)
   const isInbox = selectedFolderSlug === 'inbox'
 
+  // Category filter — backend-driven; lets users slice the inbox by colored tag.
+  const { data: categoryList = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categories.list(),
+  })
+  const [categoryFilterIds, setCategoryFilterIds] = useState<string[]>([])
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false)
+  const categoryRef = useRef<HTMLDivElement>(null)
+
   // Filter & sort dropdown state
   const [filterMenuOpen, setFilterMenuOpen] = useState(false)
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
@@ -81,16 +90,17 @@ export function MessageList() {
   const jumpRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!filterMenuOpen && !sortMenuOpen && !jumpMenuOpen) return
+    if (!filterMenuOpen && !sortMenuOpen && !jumpMenuOpen && !categoryMenuOpen) return
     const handler = (e: MouseEvent) => {
       const t = e.target as Node
       if (filterMenuOpen && filterRef.current && !filterRef.current.contains(t)) setFilterMenuOpen(false)
       if (sortMenuOpen && sortRef.current && !sortRef.current.contains(t)) setSortMenuOpen(false)
       if (jumpMenuOpen && jumpRef.current && !jumpRef.current.contains(t)) setJumpMenuOpen(false)
+      if (categoryMenuOpen && categoryRef.current && !categoryRef.current.contains(t)) setCategoryMenuOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [filterMenuOpen, sortMenuOpen, jumpMenuOpen])
+  }, [filterMenuOpen, sortMenuOpen, jumpMenuOpen, categoryMenuOpen])
   const queryClient = useQueryClient()
   const selectedMessageIds = useMailStore((s) => s.selectedMessageIds)
   const selectAllMessages = useMailStore((s) => s.selectAllMessages)
@@ -126,6 +136,7 @@ export function MessageList() {
   )?.id
 
   const isFollowupView = selectedFolderSlug === 'followup'
+  const isSnoozedView = selectedFolderSlug === 'snoozed'
 
   const { data: followupData, isLoading: followupLoading } = useQuery({
     queryKey: ['messages-followup'],
@@ -135,19 +146,28 @@ export function MessageList() {
 
   const focusedParam = isInbox ? (focusedTab === 'focused' ? true : false) : undefined
 
+  const mentionsActive = activeFilter === 'mentions'
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder, focusedParam],
+    queryKey: ['messages', selectedFolderSlug, folderId, conversationGrouping, sortBy, sortOrder, focusedParam, isSnoozedView, categoryFilterIds, mentionsActive],
     queryFn: () =>
       messages.list({
-        folder_slug: selectedFolderSlug,
-        folder_id: folderId,
+        // Snoozed is a virtual cross-folder view — don't pin it to a folder.
+        folder_slug: isSnoozedView ? undefined : selectedFolderSlug,
+        folder_id: isSnoozedView ? undefined : folderId,
         conversation_grouping: conversationGrouping,
         sort: sortBy,
         order: sortOrder,
         per_page: 50,
         focused: focusedParam,
+        snoozed: isSnoozedView ? true : undefined,
+        mentions_only: mentionsActive ? true : undefined,
+        category_ids: categoryFilterIds.length > 0 ? categoryFilterIds : undefined,
       }),
     enabled: !isFollowupView,
+    // Auto-poll so server-side schedule-send dispatch (which runs at the top of
+    // list_messages) fires while the user is sitting on the inbox.
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   })
 
   const allMessages = isFollowupView ? (followupData?.items ?? []) : (data?.items ?? [])
@@ -159,7 +179,7 @@ export function MessageList() {
       case 'flagged': return msg.is_flagged
       case 'has_attachment': return msg.has_attachments
       case 'to_me': return true // All messages in inbox are "to me"
-      case 'mentions': return true // Placeholder
+      case 'mentions': return true // Server-side filter via mentions_only
       default: return true
     }
   }) : allMessages
@@ -320,6 +340,57 @@ export function MessageList() {
                     className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
                   >{g}</button>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Category filter — slice by colored tag */}
+          <div className="relative" ref={categoryRef}>
+            <button
+              onClick={() => { setCategoryMenuOpen((v) => !v); setFilterMenuOpen(false); setSortMenuOpen(false); setJumpMenuOpen(false) }}
+              aria-label="Filter by category"
+              title="Filter by category"
+              className={cn('p-1.5 rounded transition-colors', categoryFilterIds.length > 0 ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:bg-[#F3F2F1]')}
+            >
+              <Tag size={14} />
+            </button>
+            {categoryMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+                <div className="px-3 py-1 text-[11px] uppercase tracking-wide text-[#605E5C]">Filter by category</div>
+                <button
+                  onClick={() => { setCategoryFilterIds([]); setCategoryMenuOpen(false) }}
+                  className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors',
+                    categoryFilterIds.length === 0 ? 'text-[#0078D4] font-medium' : 'text-[#323130]'
+                  )}
+                >
+                  All categories
+                </button>
+                <div className="h-px bg-[#EDEBE9] my-1" />
+                {categoryList.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-[#A19F9D]">No categories yet. Create them in Settings.</p>
+                ) : (
+                  categoryList.map((cat) => {
+                    const active = categoryFilterIds.includes(cat.id)
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          setCategoryFilterIds((prev) =>
+                            prev.includes(cat.id) ? prev.filter((id) => id !== cat.id) : [...prev, cat.id]
+                          )
+                        }}
+                        className={cn(
+                          'w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors flex items-center gap-2',
+                          active ? 'text-[#0078D4] font-medium' : 'text-[#323130]'
+                        )}
+                      >
+                        <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
+                        <span className="flex-1 truncate">{cat.name}</span>
+                        {active && <span aria-hidden className="text-[#0078D4]">✓</span>}
+                      </button>
+                    )
+                  })
+                )}
               </div>
             )}
           </div>

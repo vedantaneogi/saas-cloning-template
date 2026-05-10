@@ -36,9 +36,11 @@ class MessageCreate(BaseModel):
     body_html: Optional[str] = None
     importance: str = "normal"
     sensitivity: str = "normal"
+    encrypt_mode: str = "none"
     is_draft: bool = False
     is_flagged: bool = False
     scheduled_send_at: Optional[datetime] = None
+    boomerang_at: Optional[datetime] = None
     signature_id: Optional[uuid.UUID] = None
 
 
@@ -54,6 +56,7 @@ class MessageUpdate(BaseModel):
     body_text: Optional[str] = None
     snooze_until: Optional[datetime] = None
     scheduled_send_at: Optional[datetime] = None
+    boomerang_at: Optional[datetime] = None
     category_ids: Optional[list[uuid.UUID]] = None
 
 
@@ -86,11 +89,15 @@ class MessageOut(BaseModel):
     is_draft: bool
     importance: str
     sensitivity: str
+    encrypt_mode: str = "none"
     has_attachments: bool
     in_reply_to_id: Optional[uuid.UUID] = None
     reply_type: str
+    event_id: Optional[uuid.UUID] = None
     snooze_until: Optional[datetime] = None
     scheduled_send_at: Optional[datetime] = None
+    boomerang_at: Optional[datetime] = None
+    boomerang_fired_at: Optional[datetime] = None
     sent_at: Optional[datetime] = None
     received_at: Optional[datetime] = None
     created_at: datetime

@@ -31,6 +31,8 @@ class CalendarOut(BaseModel):
     shared_by_user_id: Optional[uuid.UUID] = None
     permission_level: str
     is_visible: bool
+    publish_token: Optional[str] = None
+    publish_scope: str = "free_busy"
     created_at: datetime
     updated_at: datetime
 
@@ -71,6 +73,7 @@ class EventCreate(BaseModel):
     status: str = "busy"
     sensitivity: str = "normal"
     attendees: list[EventAttendeeIn] = []
+    category_ids: Optional[list[uuid.UUID]] = None
 
 
 class EventUpdate(BaseModel):
@@ -89,6 +92,7 @@ class EventUpdate(BaseModel):
     status: Optional[str] = None
     sensitivity: Optional[str] = None
     attendees: Optional[list[EventAttendeeIn]] = None
+    category_ids: Optional[list[uuid.UUID]] = None
 
 
 class EventOut(BaseModel):
@@ -113,6 +117,17 @@ class EventOut(BaseModel):
     sensitivity: str
     created_at: datetime
     updated_at: datetime
+    # Populated by list_events / get_event for color/filter rendering. Empty
+    # by default so model_validate(Event ORM row) still works.
+    categories: list["CategoryOut"] = []
+    # Attendees flow back so the frontend can filter group events without an
+    # extra round-trip per event. Populated by list_events.
+    attendees: list[EventAttendeeOut] = []
+
+
+from app.schemas.message import CategoryOut  # noqa: E402  (forward ref above; uses the
+# id/name/color shape that the rest of the events code already returns)
+EventOut.model_rebuild()
 
 
 class RespondRequest(BaseModel):

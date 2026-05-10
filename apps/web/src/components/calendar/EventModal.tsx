@@ -1,19 +1,25 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { events, calendars, contacts } from '@/lib/api'
-import type { Event, Contact } from '@/lib/api'
+import { events, calendars, contacts, categories as categoriesApi, rooms as roomsApi } from '@/lib/api'
+import type { Event, Contact, EventAttendee as EventAttendeeT, Category, Room as ApiRoom } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft, ChevronDown, Calendar as CalendarIcon } from 'lucide-react'
+import { RichTextEditor } from '@/components/ui/RichTextEditor'
+import { MapPin, Video, Users, Clock, RotateCcw, Check, HelpCircle, X as XIcon, CalendarSearch, Building2, Search, AlignLeft, ChevronDown, Calendar as CalendarIcon, Tag } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
+import { SchedulingAssistantView } from './SchedulingAssistantView'
+import { FindATimePane } from './FindATimePane'
+import { RoomFinderPopover } from './RoomFinderPopover'
+import { MOCK_ROOMS, type MockRoom } from './scheduling-mock'
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -41,6 +47,12 @@ interface EventModalProps {
   onClose: () => void
   initialDate?: Date
   event?: Event
+  // Pre-fill the attendee chip list when opened from a context that already
+  // knows participants (e.g. the Groups page seeds the group address here so
+  // the event is identifiable as belonging to that group).
+  initialAttendees?: { email: string; name: string }[]
+  // Pre-fill the title field for new events (e.g. "Team A event" from groups).
+  initialTitle?: string
 }
 
 function formatDateTimeLocal(date: Date): string {
@@ -49,7 +61,7 @@ function formatDateTimeLocal(date: Date): string {
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
-export function EventModal({ open, onClose, initialDate, event }: EventModalProps) {
+export function EventModal({ open, onClose, initialDate, event, initialAttendees, initialTitle }: EventModalProps) {
   const queryClient = useQueryClient()
   const [scopeDialog, setScopeDialog] = useState<{ action: 'save'; data: FormValues } | { action: 'delete' } | null>(null)
 
@@ -63,7 +75,31 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   const now = initialDate ?? new Date()
   const nowPlus1 = new Date(now.getTime() + 60 * 60 * 1000)
 
-  const existingDays = event?.recurrence_rule?.days_of_week ?? []
+  // Seed-style recurrence_rule uses iCal day codes (MO/TU/...) and uppercase
+  // frequency ("WEEKLY"). The form expects lowercase + integer day indices,
+  // so without normalisation Zod fails silently → Save looks like a no-op.
+  const ICAL_DAY_TO_INT: Record<string, number> = {
+    SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6,
+  }
+  const existingDays: number[] = (() => {
+    const raw = event?.recurrence_rule?.days_of_week as unknown
+    if (!Array.isArray(raw)) return []
+    return (raw as Array<number | string>).map((d) => {
+      if (typeof d === 'number') return ((d % 7) + 7) % 7
+      if (typeof d === 'string') {
+        const code = d.toUpperCase().slice(0, 2)
+        return ICAL_DAY_TO_INT[code] ?? 0
+      }
+      return 0
+    })
+  })()
+  const FREQ_VALUES = new Set(['daily', 'weekly', 'monthly', 'yearly'])
+  const normalizedFreq: 'daily' | 'weekly' | 'monthly' | 'yearly' = (() => {
+    const raw = event?.recurrence_rule?.frequency
+    if (!raw) return 'weekly'
+    const lower = String(raw).toLowerCase()
+    return (FREQ_VALUES.has(lower) ? lower : 'weekly') as 'daily' | 'weekly' | 'monthly' | 'yearly'
+  })()
 
   const {
     register,
@@ -85,7 +121,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           is_online_meeting: event.is_online_meeting,
           reminder_minutes: event.reminder_minutes,
           repeat: event.is_recurring,
-          repeat_frequency: event.recurrence_rule?.frequency ?? 'weekly',
+          repeat_frequency: normalizedFreq,
           repeat_interval: event.recurrence_rule?.interval ?? 1,
           repeat_end_type: event.recurrence_rule?.end_date ? 'date' : event.recurrence_rule?.count ? 'count' : 'never',
           repeat_end_date: event.recurrence_rule?.end_date ?? '',
@@ -93,7 +129,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           repeat_days_of_week: existingDays,
         }
       : {
-          title: '',
+          title: initialTitle ?? '',
           calendar_id: defaultCalendar?.id ?? '',
           start_time: formatDateTimeLocal(now),
           end_time: formatDateTimeLocal(nowPlus1),
@@ -117,6 +153,80 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   const repeatFrequency = watch('repeat_frequency')
   const repeatEndType = watch('repeat_end_type')
   const repeatDays = watch('repeat_days_of_week') ?? []
+  const watchedCalendarId = watch('calendar_id')
+
+  // Backfill calendar_id once the calendars query resolves. The form is created
+  // with calendar_id='' if the query hadn't returned yet — which makes Zod's
+  // .min(1) validation silently fail on Save, so the modal looks frozen.
+  useEffect(() => {
+    if (!event && !watchedCalendarId && defaultCalendar?.id) {
+      setValue('calendar_id', defaultCalendar.id, { shouldValidate: false })
+    }
+  }, [event, watchedCalendarId, defaultCalendar?.id, setValue])
+
+  const currentUser = useAuthStore((s) => s.currentUser)
+  const isOrganizer = !event || (currentUser?.id === event.user_id)
+  const [invitedAttendees, setInvitedAttendees] = useState<{ email: string; name: string }[]>(
+    initialAttendees ?? []
+  )
+
+  // Pull the full attendee list when editing — the list endpoint doesn't include them.
+  // For recurring events the calendar list passes a virtual-occurrence id (uuid5) that
+  // doesn't exist in the DB; fall back to the recurrence parent id so the lookup hits a
+  // real row and returns its attendees.
+  const detailId = event?.recurrence_parent_id ?? event?.id
+  const { data: eventDetail } = useQuery({
+    queryKey: ['event-detail', detailId],
+    queryFn: () => events.get(detailId!),
+    enabled: !!detailId,
+  })
+
+  const loadedAttendees: EventAttendeeT[] = eventDetail?.attendees ?? []
+
+  // Seed the invitee chips from the loaded attendee rows once they arrive.
+  // Skip the organizer row and the current user (they're not invitees of themselves).
+  useEffect(() => {
+    if (!event || !eventDetail) return
+    const currentEmail = currentUser?.email?.toLowerCase()
+    const invitees = (eventDetail.attendees || [])
+      .filter((a) => !a.is_organizer && a.email.toLowerCase() !== currentEmail)
+      .map((a) => ({ email: a.email, name: a.display_name ?? a.email }))
+    setInvitedAttendees(invitees)
+  }, [event, eventDetail, currentUser?.email])
+
+  // Categorize section — full category list + applied IDs for this event.
+  const { data: allCategories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.list(),
+  })
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
+  const [categorySearch, setCategorySearch] = useState('')
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
+  const categoryPickerRef = useRef<HTMLDivElement>(null)
+
+  // Seed selectedCategoryIds whenever the event detail comes back.
+  useEffect(() => {
+    if (!eventDetail?.categories) return
+    setSelectedCategoryIds(eventDetail.categories.map((c) => c.id))
+  }, [eventDetail])
+
+  // Outside-click for the picker.
+  useEffect(() => {
+    if (!categoryPickerOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (categoryPickerRef.current && !categoryPickerRef.current.contains(e.target as Node)) {
+        setCategoryPickerOpen(false)
+        setCategorySearch('')
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [categoryPickerOpen])
+
+  const selectedCategories: Category[] = allCategories.filter((c) => selectedCategoryIds.includes(c.id))
+  const filteredCategories = allCategories.filter((c) =>
+    c.name.toLowerCase().includes(categorySearch.trim().toLowerCase())
+  )
 
   const toggleDay = (day: number) => {
     const current = repeatDays
@@ -152,6 +262,13 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
       reminder_minutes: data.reminder_minutes,
       is_recurring: data.repeat,
       recurrence_rule: recurrenceRule,
+      attendees: invitedAttendees.map((a) => ({
+        email: a.email,
+        display_name: a.name,
+        is_organizer: false,
+        is_required: true,
+      })),
+      category_ids: selectedCategoryIds,
     }
   }
 
@@ -159,11 +276,13 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     mutationFn: ({ data, scope }: { data: FormValues; scope?: 'single' | 'following' | 'series' }) => {
       const payload = buildPayload(data)
       if (event) {
-        if (scope === 'single' && event.recurrence_parent_id) {
-          return events.update(event.recurrence_parent_id, payload, scope, event.start_time)
+        // Virtual occurrence ids aren't in the DB — use the parent for any scoped update.
+        const targetId = event.recurrence_parent_id ?? event.id
+        if (scope === 'single' || scope === 'following') {
+          return events.update(targetId, payload, scope, event.start_time)
         }
-        if (scope === 'following' && event.recurrence_parent_id) {
-          return events.update(event.recurrence_parent_id, payload, scope, event.start_time)
+        if (scope === 'series') {
+          return events.update(targetId, payload, scope)
         }
         return events.update(event.id, payload, scope)
       }
@@ -171,6 +290,13 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] })
+      // Refresh the attendee panel — proposed_new_time may have been cleared and
+      // RSVP statuses bumped to "accepted" for anyone whose proposal was honored.
+      queryClient.invalidateQueries({ queryKey: ['event-detail', event?.id] })
+      queryClient.invalidateQueries({ queryKey: ['event-detail', event?.recurrence_parent_id] })
+      // Inbox messages reference the event_id — make those refetch too so the
+      // organizer's "Other attendees" status chips update.
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
       setScopeDialog(null)
       onClose()
     },
@@ -178,8 +304,14 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
 
   const deleteMutation = useMutation({
     mutationFn: (scope?: 'single' | 'following' | 'series') => {
-      if ((scope === 'single' || scope === 'following') && event!.recurrence_parent_id) {
-        return events.delete(event!.recurrence_parent_id, scope, event!.start_time)
+      // Virtual occurrences carry a synthetic id but recurrence_parent_id points to the real parent row.
+      // For any scoped delete on a recurring event, target the parent.
+      const targetId = event!.recurrence_parent_id ?? event!.id
+      if (scope === 'single' || scope === 'following') {
+        return events.delete(targetId, scope, event!.start_time)
+      }
+      if (scope === 'series') {
+        return events.delete(targetId, scope)
       }
       return events.delete(event!.id, scope)
     },
@@ -191,24 +323,33 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
   })
 
   const respondMutation = useMutation({
-    mutationFn: (response: 'accepted' | 'tentative' | 'declined') =>
-      events.respond(event!.id, response),
+    mutationFn: (response: 'accepted' | 'tentative' | 'declined') => {
+      // For recurring virtual occurrences event.id is a synthesized uuid5 that
+      // doesn't exist in the DB — use the parent id so the RSVP lands on the row.
+      const targetId = event?.recurrence_parent_id ?? event!.id
+      return events.respond(targetId, response)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['event-detail', event?.recurrence_parent_id ?? event?.id] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
     },
   })
 
   const proposeMutation = useMutation({
-    mutationFn: ({ start_time, end_time }: { start_time: string; end_time: string }) =>
-      events.proposeTime(event!.id, start_time, end_time),
+    mutationFn: ({ start_time, end_time }: { start_time: string; end_time: string }) => {
+      const targetId = event?.recurrence_parent_id ?? event!.id
+      return events.proposeTime(targetId, start_time, end_time)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['event-detail', event?.recurrence_parent_id ?? event?.id] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
       setProposeOpen(false)
     },
   })
 
   const [calendarDropdownOpen, setCalendarDropdownOpen] = useState(false)
-  const currentUser = useAuthStore((s) => s.currentUser)
   const [proposeOpen, setProposeOpen] = useState(false)
   const [proposeStart, setProposeStart] = useState('')
   const [proposeEnd, setProposeEnd] = useState('')
@@ -230,14 +371,42 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     }
   }
 
-  const attendees = event?.attendees ?? []
-  const myAttendee = attendees.find((a) => !a.is_organizer)
+  // Attendee rows include the organizer and any invitees with their RSVP status.
+  // Use the loaded list (from /events/{id}) — the list endpoint doesn't include attendees.
+  const attendees: EventAttendeeT[] = loadedAttendees.length > 0 ? loadedAttendees : (event?.attendees ?? [])
+  // The current user's own attendee row — used to render the RSVP buttons when
+  // viewing an event you've been invited to.
+  const myAttendee = !isOrganizer
+    ? attendees.find((a) => a.email.toLowerCase() === (currentUser?.email ?? '').toLowerCase())
+    : undefined
+  // Whom to show in the "Invitees" / "Other attendees" panel:
+  //  - organizer view: everyone except the organizer (i.e. just the invitees)
+  //  - attendee view:  everyone except yourself (so you see the organizer + co-invitees)
+  const peoplePanel = isOrganizer
+    ? attendees.filter((a) => !a.is_organizer)
+    : attendees.filter((a) => a.email.toLowerCase() !== (currentUser?.email ?? '').toLowerCase())
+  // Aggregate counts for the at-a-glance status line ("2 accepted · 1 declined …").
+  const peopleStats = peoplePanel.reduce(
+    (acc, a) => {
+      if (a.is_organizer) return acc
+      acc[a.response_status as 'accepted' | 'tentative' | 'declined' | 'none'] =
+        (acc[a.response_status as 'accepted' | 'tentative' | 'declined' | 'none'] ?? 0) + 1
+      return acc
+    },
+    { accepted: 0, tentative: 0, declined: 0, none: 0 } as Record<string, number>
+  )
+  // Proposed-time chips are only meaningful to the organizer (they decide).
+  const proposals = attendees.filter((a) => !a.is_organizer && a.proposed_new_time)
+  // Collapse long lists ("+ N more") — Outlook does this past the first few rows.
+  const [peopleExpanded, setPeopleExpanded] = useState(false)
+  const PEOPLE_PREVIEW_LIMIT = 3
+  const visiblePeople = peopleExpanded ? peoplePanel : peoplePanel.slice(0, PEOPLE_PREVIEW_LIMIT)
+  const hiddenCount = peoplePanel.length - visiblePeople.length
 
   // Attendees invite field
   const [inviteQuery, setInviteQuery] = useState('')
   const [inviteResults, setInviteResults] = useState<Contact[]>([])
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [invitedAttendees, setInvitedAttendees] = useState<{ email: string; name: string }[]>([])
 
   const handleInviteSearch = async (q: string) => {
     setInviteQuery(q)
@@ -262,9 +431,70 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
     setInvitedAttendees((prev) => prev.filter((a) => a.email !== email))
   }
 
-  // Room finder
+  // Room finder — popover anchored to the location input (focus opens,
+  // outside click or selection closes). roomQuery / ROOMS / filteredRooms
+  // remain declared for backwards compat with stragglers but the popover
+  // itself now uses RoomFinderPopover with the shared mock dataset.
   const [roomFinderOpen, setRoomFinderOpen] = useState(false)
   const [roomQuery, setRoomQuery] = useState('')
+  // Rooms now live in the DB. Fetch the directory + add a create-mutation
+  // wired into the inline "Create new room" forms; both surfaces consume
+  // the same `roomDirectory` so a newly-created room appears immediately
+  // in both places and survives a refresh.
+  const { data: roomDirectory = [] } = useQuery({
+    queryKey: ['rooms'],
+    queryFn: () => roomsApi.list(),
+  })
+  // Cast ApiRoom → MockRoom shape (just IDs/strings differ — both `id`
+  // are strings in transit). The MockRoom type is what the SA + popover
+  // already consume.
+  const allRoomsAsMock: MockRoom[] = roomDirectory.map((r) => ({
+    id: r.id,
+    name: r.name,
+    location: r.location ?? '',
+    capacity: r.capacity,
+    status: r.status,
+  }))
+  const createRoomMutation = useMutation({
+    mutationFn: (data: { name: string; location?: string; capacity?: number }) => roomsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+    },
+  })
+  /** Persist a newly-created room. Returns the saved Room (with the
+   *  DB-assigned UUID) so the caller can immediately select it without
+   *  waiting for the rooms query to refetch. */
+  const handleCreateRoom = async (room: MockRoom): Promise<MockRoom> => {
+    const saved = await createRoomMutation.mutateAsync({
+      name: room.name,
+      location: room.location,
+      capacity: room.capacity,
+    })
+    return {
+      id: saved.id,
+      name: saved.name,
+      location: saved.location ?? '',
+      capacity: saved.capacity,
+      status: saved.status,
+    }
+  }
+  // Rooms picked for this event — shared between the location-field
+  // popover and the SA's Rooms section so picking in either place
+  // reflects in both. The location field stores the room *name* (it's a
+  // free-text input), but we also track IDs here so SA can render rows
+  // for them in the availability grid.
+  const [pickedRoomIds, setPickedRoomIds] = useState<string[]>([])
+  const locationWrapperRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!roomFinderOpen) return
+    const handler = (e: MouseEvent) => {
+      if (locationWrapperRef.current && !locationWrapperRef.current.contains(e.target as Node)) {
+        setRoomFinderOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [roomFinderOpen])
 
   const ROOMS = [
     { id: 'r1', name: 'Boardroom A', building: 'HQ – Floor 3', capacity: 20, features: ['Projector', 'Video conf'] },
@@ -285,39 +515,74 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
       )
     : ROOMS
 
-  // Scheduling assistant
-  const [schedulerOpen, setSchedulerOpen] = useState(false)
+  // Scheduling assistant — view switcher between the form and the
+  // full-screen SA layout (per scheduleassistanttask.md spec).
+  const [activeView, setActiveView] = useState<'event' | 'scheduling_assistant'>('event')
+  const [findATimeOpen, setFindATimeOpen] = useState(true)
   const startVal = watch('start_time')
   const endVal = watch('end_time')
-  const attendeeEmails = attendees.map((a) => a.email).filter(Boolean)
+  // attendeeEmails feeds the Find-a-time pane and the SA availability fetch.
+  // Earlier this was derived from `attendees` (the *loaded* RSVP list — empty
+  // for new events), which silently ignored everyone the user had typed
+  // into the autocomplete. Now we use `invitedAttendees` (the live list) +
+  // the organizer themselves, so changing invitees actually re-fetches.
+  const organizerEmail = (currentUser?.email ?? '').toLowerCase()
+  const invitedEmails = invitedAttendees.map((a) => a.email).filter(Boolean)
+  const attendeeEmails = (organizerEmail ? [organizerEmail, ...invitedEmails] : invitedEmails)
+  const showNotificationToast = useUIStore((s) => s.showNotification)
 
-  const { data: availabilityData, refetch: fetchAvailability, isFetching: availabilityLoading } = useQuery({
-    queryKey: ['availability', attendeeEmails, startVal, endVal],
-    queryFn: () => events.getAvailability(
-      attendeeEmails,
-      startVal ? new Date(startVal).toISOString() : new Date().toISOString(),
-      endVal ? new Date(endVal).toISOString() : new Date().toISOString(),
-    ),
-    enabled: false,
+  // Mini-day sidebar availability — fetch existing busy slots for the
+  // organizer + invitees on the date currently shown in the form. Drives
+  // the right-most pane so the user can see their own (and attendees')
+  // existing meetings while picking the time, like Outlook does.
+  const miniDayDate = startVal ? new Date(startVal) : new Date()
+  const miniDayKey = format(miniDayDate, 'yyyy-MM-dd')
+  const miniDayStart = (() => { const d = new Date(miniDayDate); d.setHours(0, 0, 0, 0); return d })()
+  const miniDayEnd = (() => { const d = new Date(miniDayDate); d.setHours(23, 59, 59, 999); return d })()
+  const { data: miniDayBusy } = useQuery({
+    queryKey: ['miniday-availability', attendeeEmails.join(','), miniDayKey],
+    queryFn: () => events.getAvailability(attendeeEmails, miniDayStart.toISOString(), miniDayEnd.toISOString()),
+    enabled: attendeeEmails.length > 0,
   })
+
+  // Helper — push an "HH:MM" start (mock-day = May 8 2026) into the form's
+  // start_time / end_time. Used by both the SA OK button and the Find-a-time
+  // suggested cards. End is start + 30 minutes by default.
+  const applyMockSlot = (startHHMM: string, durationMinutes = 30) => {
+    const [h, m] = startHHMM.split(':').map(Number)
+    // We anchor mock slots to the *event's existing date* (so picking a
+    // suggested time on Tue updates Tue, not the spec's hard-coded May 8).
+    const base = startVal ? new Date(startVal) : new Date()
+    base.setHours(h, m, 0, 0)
+    const end = new Date(base.getTime() + durationMinutes * 60_000)
+    setValue('start_time', formatDateTimeLocal(base))
+    setValue('end_time', formatDateTimeLocal(end))
+  }
+
+  // Selected suggested-slot start (HH:MM). Only meaningful when the user
+  // has explicitly picked a card; otherwise the recommended one is auto-
+  // highlighted by FindATimePane.
+  const [selectedSuggestedStart, setSelectedSuggestedStart] = useState<string | null>(null)
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={event ? 'Edit event' : 'New event'}
-      size="lg"
+      size="2xl"
     >
       {/* Outlook-style toolbar ribbon */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-[#EDEBE9] bg-[#FAF9F8] flex-shrink-0">
-        <button
-          type="button"
-          onClick={handleSubmit(handleSaveClick)}
-          disabled={saveMutation.isPending}
-          className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors"
-        >
-          <Check size={12} /> Save
-        </button>
+        {isOrganizer && (
+          <button
+            type="button"
+            onClick={handleSubmit(handleSaveClick)}
+            disabled={saveMutation.isPending}
+            className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors"
+          >
+            <Check size={12} /> Save
+          </button>
+        )}
         <div className="flex items-center border border-[#EDEBE9] rounded overflow-hidden">
           <button type="button" className="text-xs px-2.5 py-1 bg-white text-[#323130] border-r border-[#EDEBE9] font-medium">
             Event
@@ -326,6 +591,22 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
             Series
           </button>
         </div>
+        {/* Scheduling assistant view-switcher — toggles the modal body
+            between the event form and the dedicated SA grid view. */}
+        <button
+          type="button"
+          onClick={() => setActiveView('scheduling_assistant')}
+          aria-label="Scheduling assistant"
+          aria-pressed={activeView === 'scheduling_assistant'}
+          className={cn(
+            'flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors',
+            activeView === 'scheduling_assistant'
+              ? 'border-[#0078D4] text-[#0078D4] bg-[#EBF3FB]'
+              : 'border-[#EDEBE9] text-[#605E5C] hover:bg-[#F3F2F1]',
+          )}
+        >
+          <CalendarSearch size={12} /> Scheduling assistant
+        </button>
         <select
           className="text-xs border border-[#EDEBE9] rounded px-2 py-1 text-[#323130] bg-white focus:outline-none"
           defaultValue="busy"
@@ -348,7 +629,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           <option value={1440}>1 day</option>
         </select>
         <div className="ml-auto flex items-center gap-1">
-          {event && (
+          {event && isOrganizer && (
             <button
               type="button"
               onClick={handleDeleteClick}
@@ -412,6 +693,126 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
               Cancel
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* Attendee status summary (organizer + attendees both see this) + organizer-only proposals */}
+      {event && peoplePanel.length > 0 && (
+        <div className="px-4 pt-3 pb-2 border-b border-[#EDEBE9] space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-[#605E5C]">
+              {isOrganizer ? `Invitees (${peoplePanel.length})` : `Other attendees (${peoplePanel.length})`}
+            </p>
+            {/* Aggregate counts — shown when there's at least one non-organizer invitee */}
+            {(peopleStats.accepted + peopleStats.tentative + peopleStats.declined + peopleStats.none) > 0 && (
+              <p className="text-[11px] text-[#605E5C]">
+                <span className="text-[#107C10]">{peopleStats.accepted} accepted</span>
+                <span className="mx-1.5 text-[#A19F9D]">·</span>
+                <span className="text-[#8A6116]">{peopleStats.tentative} tentative</span>
+                <span className="mx-1.5 text-[#A19F9D]">·</span>
+                <span className="text-[#A4262C]">{peopleStats.declined} declined</span>
+                <span className="mx-1.5 text-[#A19F9D]">·</span>
+                <span>{peopleStats.none} pending</span>
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {visiblePeople.map((a) => {
+              const statusColor =
+                a.response_status === 'accepted' ? 'bg-[#107C10] text-white border-[#107C10]'
+                : a.response_status === 'tentative' ? 'bg-[#FFB900] text-white border-[#FFB900]'
+                : a.response_status === 'declined' ? 'bg-[#D13438] text-white border-[#D13438]'
+                : 'bg-white text-[#605E5C] border-[#D2D0CE]'
+              return (
+                <span
+                  key={a.id}
+                  className={cn('text-xs px-2 py-0.5 rounded border', statusColor)}
+                  title={`${a.email}${a.is_organizer ? ' (organizer)' : ''}: ${a.response_status}`}
+                >
+                  {a.display_name || a.email}
+                  {a.is_organizer ? (
+                    <span className="ml-1 opacity-80">· organizer</span>
+                  ) : (
+                    <span className="ml-1 opacity-80">
+                      · {a.response_status === 'accepted' ? 'accepted'
+                          : a.response_status === 'tentative' ? 'tentative'
+                          : a.response_status === 'declined' ? 'declined'
+                          : 'pending'}
+                    </span>
+                  )}
+                </span>
+              )
+            })}
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setPeopleExpanded(true)}
+                aria-label={`Show ${hiddenCount} more attendees`}
+                className="text-xs px-2 py-0.5 rounded border border-dashed border-[#0078D4] text-[#0078D4] hover:bg-[#EBF3FB] transition-colors"
+              >
+                + {hiddenCount} more
+              </button>
+            )}
+            {peopleExpanded && peoplePanel.length > PEOPLE_PREVIEW_LIMIT && (
+              <button
+                type="button"
+                onClick={() => setPeopleExpanded(false)}
+                aria-label="Collapse attendee list"
+                className="text-xs px-2 py-0.5 rounded border border-dashed border-[#605E5C] text-[#605E5C] hover:bg-[#F3F2F1] transition-colors"
+              >
+                Show less
+              </button>
+            )}
+          </div>
+          {/* Attendee's own proposal — read-only summary so they remember they proposed
+              and can see when. Only render when the current user has a pending proposal. */}
+          {!isOrganizer && myAttendee?.proposed_new_time && (
+            <div className="bg-[#FFF4CE] border border-[#F4D58A] rounded p-2">
+              <p className="text-xs text-[#8A6116] flex items-center gap-1">
+                <Clock size={11} />
+                <span>
+                  You proposed{' '}
+                  <strong>
+                    {format(new Date(myAttendee.proposed_new_time.start_time), 'EEE MMM d, h:mm a')}
+                    {' '}–{' '}
+                    {format(new Date(myAttendee.proposed_new_time.end_time), 'h:mm a')}
+                  </strong>
+                  . Awaiting organizer.
+                </span>
+              </p>
+            </div>
+          )}
+          {isOrganizer && proposals.length > 0 && (
+            <div className="bg-[#FFF4CE] border border-[#F4D58A] rounded p-2 space-y-1">
+              <p className="text-xs font-semibold text-[#8A6116] flex items-center gap-1">
+                <Clock size={11} /> New time proposals
+              </p>
+              {proposals.map((a) => {
+                const proposed = a.proposed_new_time!
+                const ps = new Date(proposed.start_time)
+                const pe = new Date(proposed.end_time)
+                return (
+                  <div key={a.id} className="flex items-center justify-between gap-2 text-xs">
+                    <div className="text-[#323130]">
+                      <strong>{a.display_name || a.email}</strong> proposed{' '}
+                      {format(ps, 'EEE MMM d, h:mm a')} – {format(pe, 'h:mm a')}
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Use proposed time from ${a.display_name || a.email}`}
+                      onClick={() => {
+                        setValue('start_time', formatDateTimeLocal(ps))
+                        setValue('end_time', formatDateTimeLocal(pe))
+                      }}
+                      className="text-xs bg-white border border-[#D2D0CE] hover:bg-[#F3F2F1] px-2 py-0.5 rounded transition-colors"
+                    >
+                      Use this time
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -525,6 +926,61 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
         </div>
       )}
 
+      {/* Scheduling Assistant view — replaces the form body when active.
+          OK confirms the chosen "HH:MM" slot back into the form's start /
+          end times. Cancel just flips back to the event form. */}
+      {activeView === 'scheduling_assistant' ? (
+        <SchedulingAssistantView
+          initialStart={
+            (() => {
+              if (!startVal) return '15:00'
+              const d = new Date(startVal)
+              return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+            })()
+          }
+          initialDurationMinutes={(() => {
+            if (!startVal || !endVal) return 30
+            return Math.max(15, Math.round((new Date(endVal).getTime() - new Date(startVal).getTime()) / 60_000))
+          })()}
+          initialDate={startVal ? new Date(startVal) : undefined}
+          invitedAttendees={invitedAttendees}
+          organizer={currentUser ? { email: currentUser.email, name: currentUser.display_name ?? currentUser.email } : undefined}
+          rooms={allRoomsAsMock}
+          onCreateRoom={handleCreateRoom}
+          pickedRoomIds={pickedRoomIds}
+          onPickedRoomsChange={(ids) => {
+            setPickedRoomIds(ids)
+            // Reflect the latest pick in the location field too — only
+            // overwrite if the field is empty or matches a known room
+            // name (so we don't clobber a custom typed location).
+            const known = new Set(allRoomsAsMock.map((r) => r.name))
+            const current = watch('location') ?? ''
+            if (!current || known.has(current)) {
+              const last = ids[ids.length - 1]
+              const r = allRoomsAsMock.find((x) => x.id === last)
+              if (r) setValue('location', r.name)
+              else if (ids.length === 0) setValue('location', '')
+            }
+          }}
+          onAddInvitee={(email, name) => {
+            if (invitedAttendees.find((a) => a.email === email)) return
+            setInvitedAttendees((prev) => [...prev, { email, name: name?.trim() || email }])
+          }}
+          onRemoveInvitee={removeInvitee}
+          onConfirm={(date, start, dur) => {
+            // Push the SA-chosen date into both start_time and end_time so
+            // changing the SA day actually moves the event off May 8.
+            const [h, m] = start.split(':').map(Number)
+            const startDate = new Date(date)
+            startDate.setHours(h, m, 0, 0)
+            const endDate = new Date(startDate.getTime() + dur * 60_000)
+            setValue('start_time', formatDateTimeLocal(startDate))
+            setValue('end_time', formatDateTimeLocal(endDate))
+            setActiveView('event')
+          }}
+          onCancel={() => setActiveView('event')}
+        />
+      ) : (
       <div className="flex flex-1 overflow-hidden">
       <form
         onSubmit={handleSubmit(handleSaveClick)}
@@ -545,7 +1001,9 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           )}
         </div>
 
-        {/* Attendees */}
+        {/* Attendees — only the organizer can edit the invite list. Attendees see the
+            "Other attendees" status panel above instead. */}
+        {isOrganizer && (
         <div className="flex items-start gap-3">
           <span className="w-5 text-[#605E5C] pt-2">
             <Users size={16} />
@@ -588,6 +1046,7 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
             )}
           </div>
         </div>
+        )}
 
         {/* Calendar — custom dropdown with color dots */}
         <div className="flex items-center gap-3">
@@ -804,97 +1263,35 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           <span className="w-5 text-[#605E5C]">
             <MapPin size={16} />
           </span>
-          <div className="flex-1 relative">
+          <div ref={locationWrapperRef} className="flex-1 relative">
             <input
               type="text"
               placeholder="Search for a location"
               aria-label="Location"
+              onFocus={() => setRoomFinderOpen(true)}
               className="w-full text-sm border-0 border-b border-[#8A8886] px-0 py-1.5 focus:outline-none focus:border-b-2 focus:border-[#0078D4] text-[#323130] bg-transparent placeholder:text-[#A19F9D]"
               {...register('location')}
             />
             <MapPin size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-[#A19F9D]" />
-          </div>
-        </div>
-
-        {/* Room finder */}
-        <div className="flex items-start gap-3">
-          <span className="w-5 text-[#605E5C] pt-1">
-            <Building2 size={16} />
-          </span>
-          <div className="flex-1">
-            <button
-              type="button"
-              aria-label="Find a room"
-              aria-expanded={roomFinderOpen}
-              onClick={() => setRoomFinderOpen((v) => !v)}
-              className={cn(
-                'text-sm px-2 py-1 rounded border transition-colors flex items-center gap-1.5',
-                roomFinderOpen
-                  ? 'border-[#0078D4] text-[#0078D4] bg-[#EBF3FB]'
-                  : 'border-[#D2D0CE] text-[#605E5C] hover:bg-[#F3F2F1]'
-              )}
-            >
-              <Building2 size={13} /> Find a room
-            </button>
-
+            {/* Suggested-rooms popover anchored below the location input
+                (Outlook focus-to-open). Available rooms fill the field;
+                busy rooms emit a toast and stay unselected. */}
             {roomFinderOpen && (
-              <div className="mt-2 border border-[#EDEBE9] rounded overflow-hidden">
-                {/* Search */}
-                <div className="flex items-center gap-2 px-2 py-1.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
-                  <Search size={12} className="text-[#A19F9D] flex-shrink-0" />
-                  <input
-                    type="text"
-                    value={roomQuery}
-                    onChange={(e) => setRoomQuery(e.target.value)}
-                    placeholder="Search rooms…"
-                    aria-label="Search rooms"
-                    className="flex-1 text-xs text-[#323130] placeholder:text-[#A19F9D] focus:outline-none bg-transparent"
-                  />
-                  {roomQuery && (
-                    <button type="button" onClick={() => setRoomQuery('')} className="text-[#A19F9D] hover:text-[#323130]">
-                      <XIcon size={11} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Room list */}
-                <div className="max-h-48 overflow-y-auto outlook-scrollbar">
-                  {filteredRooms.length === 0 ? (
-                    <p className="text-xs text-[#A19F9D] px-3 py-3">No rooms match your search.</p>
-                  ) : (
-                    filteredRooms.map((room) => (
-                      <button
-                        key={room.id}
-                        type="button"
-                        aria-label={`Select ${room.name}`}
-                        onClick={() => {
-                          setValue('location', `${room.name}, ${room.building}`)
-                          setRoomFinderOpen(false)
-                          setRoomQuery('')
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-[#F3F2F1] transition-colors border-b border-[#EDEBE9] last:border-0"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-[#323130] truncate">{room.name}</p>
-                            <p className="text-xs text-[#605E5C] truncate">{room.building}</p>
-                          </div>
-                          <div className="flex-shrink-0 text-right">
-                            <p className="text-xs text-[#605E5C]">Cap. {room.capacity}</p>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {room.features.map((f) => (
-                            <span key={f} className="text-xs bg-[#EDEBE9] text-[#605E5C] px-1.5 py-0.5 rounded">
-                              {f}
-                            </span>
-                          ))}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
+              <RoomFinderPopover
+                query={watch('location') ?? ''}
+                rooms={allRoomsAsMock}
+                onSelect={(room) => {
+                  setValue('location', room.name)
+                  // Sync into the SA Rooms list so flipping to SA shows
+                  // the picked room as a row + counts its availability.
+                  setPickedRoomIds((prev) => prev.includes(room.id) ? prev : [...prev, room.id])
+                  setRoomFinderOpen(false)
+                }}
+                onBusy={(room) =>
+                  showNotificationToast(`${room.name} is busy at the selected time.`)
+                }
+                onCreateRoom={handleCreateRoom}
+              />
             )}
           </div>
         </div>
@@ -938,156 +1335,139 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
 
         {/* Reminder moved to toolbar ribbon */}
 
-        {/* Description — card style matching Outlook */}
-        <div className="flex items-start gap-3">
+        {/* Categorize — pick / create category tags applied to this event */}
+        {isOrganizer && (
+        <div className="flex items-start gap-3" ref={categoryPickerRef}>
           <span className="w-5 text-[#605E5C] pt-1.5">
-            <AlignLeft size={16} />
+            <Tag size={16} />
           </span>
-          <div className="flex-1 border border-[#EDEBE9] rounded overflow-hidden">
-            <textarea
-              placeholder="Add a description or attach documents"
-              aria-label="Description"
-              rows={6}
-              className="w-full text-sm px-3 py-2 focus:outline-none text-[#323130] placeholder:text-[#A19F9D] resize-y border-0"
-              {...register('description')}
-            />
-            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-[#EDEBE9] bg-[#FAF9F8]">
-              <button type="button" className="p-1 text-[#605E5C] hover:bg-[#EDEBE9] rounded" title="Attach file">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7.5 1.5L3 6l4.5 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M2 12.5h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-              </button>
-              <button type="button" className="p-1 text-[#605E5C] hover:bg-[#EDEBE9] rounded" title="Insert image">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.2"/><circle cx="4.5" cy="5.5" r="1.5" fill="currentColor"/><path d="M1 10l3-3 2 2 3-3 4 4" stroke="currentColor" strokeWidth="1.1"/></svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Scheduling assistant */}
-        {attendeeEmails.length > 0 && (
-          <div className="border border-[#EDEBE9] rounded">
-            <button
-              type="button"
-              aria-label="Scheduling assistant"
-              aria-expanded={schedulerOpen}
-              onClick={() => {
-                setSchedulerOpen((v) => !v)
-                if (!schedulerOpen) fetchAvailability()
-              }}
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[#0078D4] hover:bg-[#F3F2F1] transition-colors rounded"
+          <div className="flex-1 relative">
+            <div
+              className={cn(
+                'flex flex-wrap items-center gap-1.5 min-h-[34px] border rounded px-2 py-1 cursor-text bg-white transition-colors',
+                categoryPickerOpen ? 'border-[#0078D4]' : 'border-[#EDEBE9] hover:border-[#8A8886]'
+              )}
+              onClick={() => setCategoryPickerOpen(true)}
             >
-              <CalendarSearch size={14} />
-              Scheduling assistant
-              {schedulerOpen ? <span className="ml-auto text-[#605E5C] text-xs">▲</span> : <span className="ml-auto text-[#605E5C] text-xs">▼</span>}
-            </button>
-            {schedulerOpen && (
-              <div className="border-t border-[#EDEBE9] px-3 py-3 space-y-3">
-                {availabilityLoading ? (
-                  <p className="text-xs text-[#605E5C] animate-pulse">Checking availability…</p>
-                ) : availabilityData ? (
-                  <>
-                    {/* Free/busy grid — one row per attendee, one cell per hour */}
-                    {(() => {
-                      const rangeStart = startVal ? new Date(startVal) : new Date()
-                      const rangeEnd = endVal ? new Date(endVal) : new Date(rangeStart.getTime() + 3600_000)
-                      const totalMs = rangeEnd.getTime() - rangeStart.getTime()
-                      const totalHours = Math.max(1, Math.ceil(totalMs / 3600_000))
-                      const hours = Array.from({ length: Math.min(totalHours, 24) }, (_, i) => i)
-
-                      const isBusy = (attendeeRow: { attendee: string; slots: Array<{ start: string; end: string; status: string }> }, hourOffset: number) => {
-                        const slotStart = new Date(rangeStart.getTime() + hourOffset * 3600_000)
-                        const slotEnd = new Date(slotStart.getTime() + 3600_000)
-                        return attendeeRow.slots.some((s) => {
-                          const bs = new Date(s.start), be = new Date(s.end)
-                          return bs < slotEnd && be > slotStart
-                        })
-                      }
-
-                      // Find suggested free slots: hours where all attendees are free
-                      const suggestedHours = hours.filter((h) =>
-                        availabilityData.every((row) => !isBusy(row, h))
-                      ).slice(0, 3)
-
-                      return (
-                        <>
-                          <div>
-                            <p className="text-xs font-semibold text-[#323130] mb-1.5">
-                              Free/busy grid
-                            </p>
-                            {/* Hour labels */}
-                            <div className="flex items-center gap-0 mb-1 ml-32">
-                              {hours.map((h) => (
-                                <div key={h} className="flex-1 text-center text-[9px] text-[#A19F9D]">
-                                  {format(new Date(rangeStart.getTime() + h * 3600_000), 'h')}
-                                </div>
-                              ))}
-                            </div>
-                            {availabilityData.map((row) => (
-                              <div key={row.attendee} className="flex items-center gap-0 mb-0.5">
-                                <span className="w-32 flex-shrink-0 text-xs text-[#323130] truncate pr-1">
-                                  {row.attendee.split('@')[0]}
-                                </span>
-                                {hours.map((h) => (
-                                  <div
-                                    key={h}
-                                    title={`${row.attendee} – ${format(new Date(rangeStart.getTime() + h * 3600_000), 'h:mm a')}: ${isBusy(row, h) ? 'Busy' : 'Free'}`}
-                                    className={cn(
-                                      'flex-1 h-4 border border-white',
-                                      isBusy(row, h) ? 'bg-[#D13438]' : 'bg-[#107C10]/30'
-                                    )}
-                                  />
-                                ))}
-                              </div>
-                            ))}
-                            <div className="flex items-center gap-3 mt-1.5">
-                              <span className="flex items-center gap-1 text-[10px] text-[#605E5C]">
-                                <span className="w-3 h-3 bg-[#107C10]/30 inline-block rounded-sm" /> Free
-                              </span>
-                              <span className="flex items-center gap-1 text-[10px] text-[#605E5C]">
-                                <span className="w-3 h-3 bg-[#D13438] inline-block rounded-sm" /> Busy
-                              </span>
-                            </div>
-                          </div>
-
-                          {suggestedHours.length > 0 && (
-                            <div>
-                              <p className="text-xs font-semibold text-[#323130] mb-1.5">Suggested times</p>
-                              <div className="flex flex-wrap gap-2">
-                                {suggestedHours.map((h) => {
-                                  const slotStart = new Date(rangeStart.getTime() + h * 3600_000)
-                                  const slotEnd = new Date(slotStart.getTime() + 3600_000)
-                                  return (
-                                    <button
-                                      key={h}
-                                      type="button"
-                                      onClick={() => {
-                                        setValue('start_time', formatDateTimeLocal(slotStart))
-                                        setValue('end_time', formatDateTimeLocal(slotEnd))
-                                      }}
-                                      className="text-xs bg-[#EBF3FB] hover:bg-[#C7E0F4] text-[#0078D4] px-2 py-1 rounded transition-colors"
-                                    >
-                                      {format(slotStart, 'EEE h:mm a')} – {format(slotEnd, 'h:mm a')}
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </>
+              {selectedCategories.length === 0 ? (
+                <span className="text-sm text-[#A19F9D]">Add categories</span>
+              ) : (
+                selectedCategories.map((cat) => (
+                  <span
+                    key={cat.id}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: `${cat.color}1F`, color: cat.color }}
+                  >
+                    <Tag size={11} style={{ color: cat.color }} />
+                    {cat.name}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${cat.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedCategoryIds((prev) => prev.filter((id) => id !== cat.id))
+                      }}
+                      className="hover:opacity-70"
+                    >
+                      <XIcon size={10} />
+                    </button>
+                  </span>
+                ))
+              )}
+            </div>
+            {categoryPickerOpen && (
+              <div className="absolute left-0 top-full mt-0.5 z-50 w-72 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 max-h-64 overflow-y-auto">
+                <div className="px-2 py-1.5 border-b border-[#EDEBE9]">
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-[#F3F2F1] rounded">
+                    <Search size={11} className="text-[#605E5C] flex-shrink-0" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={categorySearch}
+                      onChange={(e) => setCategorySearch(e.target.value)}
+                      placeholder="Search for a category"
+                      aria-label="Search categories"
+                      className="flex-1 text-xs bg-transparent focus:outline-none text-[#323130] placeholder:text-[#A19F9D]"
+                    />
+                  </div>
+                </div>
+                {filteredCategories.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-[#A19F9D]">No categories match.</p>
                 ) : (
-                  <p className="text-xs text-[#605E5C]">Click &quot;Scheduling assistant&quot; to check availability.</p>
+                  filteredCategories.map((cat) => {
+                    const active = selectedCategoryIds.includes(cat.id)
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCategoryIds((prev) =>
+                            prev.includes(cat.id) ? prev.filter((id) => id !== cat.id) : [...prev, cat.id]
+                          )
+                        }}
+                        className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+                      >
+                        <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
+                        <span className="flex-1 text-left truncate">{cat.name}</span>
+                        {active && <span className="text-[#0078D4] text-xs font-bold">✓</span>}
+                      </button>
+                    )
+                  })
                 )}
               </div>
             )}
           </div>
+        </div>
         )}
+
+        {/* Description — Outlook-style rich text editor with image insert (paste/embed). */}
+        <div className="flex items-start gap-3">
+          <span className="w-5 text-[#605E5C] pt-1.5">
+            <AlignLeft size={16} />
+          </span>
+          <div className="flex-1">
+            <RichTextEditor
+              content={watch('description') ?? ''}
+              onChange={(html) => setValue('description', html, { shouldDirty: true })}
+              placeholder="Add a description or attach documents"
+              minHeight="140px"
+            />
+            {/* Hidden input keeps the value flowing through react-hook-form so it
+                lands in buildPayload alongside the rest of the event fields. */}
+            <input type="hidden" {...register('description')} />
+          </div>
+        </div>
 
         {/* Actions moved to toolbar ribbon above */}
       </form>
 
-      {/* Mini day view sidebar — matches Outlook event modal */}
+      {/* Find a time — right-rail with suggested 30-min slots; shown when
+          the user has added at least one attendee. Closing it falls back
+          to the existing mini-day sidebar. */}
+      {findATimeOpen && invitedEmails.length > 0 && (
+        <FindATimePane
+          selectedSlotStart={selectedSuggestedStart}
+          attendeeEmails={attendeeEmails}
+          date={startVal ? new Date(startVal) : new Date()}
+          onSelectSlot={(start, _end, slotDate) => {
+            setSelectedSuggestedStart(start)
+            // Push the chosen date+time into the form so the calendar
+            // grid + the SA grid + the date input all reflect it.
+            const target = slotDate ?? (startVal ? new Date(startVal) : new Date())
+            const [h, m] = start.split(':').map(Number)
+            const startD = new Date(target); startD.setHours(h, m, 0, 0)
+            const endD = new Date(startD.getTime() + 30 * 60_000)
+            setValue('start_time', formatDateTimeLocal(startD))
+            setValue('end_time', formatDateTimeLocal(endD))
+          }}
+          onClose={() => setFindATimeOpen(false)}
+        />
+      )}
+
+      {/* Mini day view sidebar — matches Outlook event modal. Now shows
+          existing busy blocks for the organizer + every invitee on the
+          currently-selected day, so the user can see their own (and
+          attendees') conflicts while picking a time. */}
       <div className="w-56 flex-shrink-0 border-l border-[#EDEBE9] bg-white overflow-y-auto outlook-scrollbar hidden lg:block">
         <div className="px-3 py-2 border-b border-[#EDEBE9]">
           <p className="text-xs font-medium text-[#605E5C]">
@@ -1095,18 +1475,100 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
           </p>
         </div>
         <div className="relative">
-          {Array.from({ length: 12 }, (_, i) => i + 8).map((hour) => {
+          {(() => {
+            // Build a flat list of (email, start, end, status) for every
+            // busy slot on the day. Used to render coloured blocks in the
+            // mini-day view. Owner email determines the colour.
+            const ownerColor = (email: string): string => {
+              if (email.toLowerCase() === organizerEmail) return '#FFB900' // amber for organizer
+              // Deterministic per-email tint for invitees.
+              let h = 0
+              for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) >>> 0
+              const palette = ['#E3008C', '#8764B8', '#107C10', '#FF8C00', '#0078D4']
+              return palette[h % palette.length]
+            }
+            const busyByHour: Record<number, { email: string; start: Date; end: Date; color: string; title: string }[]> = {}
+            for (const row of (miniDayBusy ?? [])) {
+              for (const s of row.slots) {
+                const sd = new Date(s.start)
+                const ed = new Date(s.end)
+                // Only consider slots on the visible day.
+                if (sd.toDateString() !== miniDayDate.toDateString()) continue
+                const startHour = Math.max(8, sd.getHours())
+                const endHour = Math.min(20, ed.getHours() + (ed.getMinutes() > 0 ? 1 : 0))
+                for (let h = startHour; h < endHour; h++) {
+                  if (!busyByHour[h]) busyByHour[h] = []
+                  busyByHour[h].push({
+                    email: row.attendee,
+                    start: sd,
+                    end: ed,
+                    color: ownerColor(row.attendee),
+                    title: `${row.attendee} — Busy ${format(sd, 'h:mm a')}–${format(ed, 'h:mm a')}`,
+                  })
+                }
+              }
+            }
+            return Array.from({ length: 12 }, (_, i) => i + 8).map((hour) => {
             const eventStart = startVal ? new Date(startVal) : null
             const eventEnd = endVal ? new Date(endVal) : null
             const isInEvent = eventStart && eventEnd &&
               hour >= eventStart.getHours() && hour < eventEnd.getHours() + (eventEnd.getMinutes() > 0 ? 1 : 0)
 
+            // Click on an hour cell → move the event's start to that
+            // hour and keep the existing duration. Mirrors the click
+            // behaviour on the main calendar grid for new events.
+            const moveToHour = () => {
+              const baseDate = startVal ? new Date(startVal) : new Date()
+              const durationMs = eventStart && eventEnd
+                ? Math.max(15 * 60_000, eventEnd.getTime() - eventStart.getTime())
+                : 60 * 60_000
+              const newStart = new Date(baseDate)
+              newStart.setHours(hour, 0, 0, 0)
+              const newEnd = new Date(newStart.getTime() + durationMs)
+              setValue('start_time', formatDateTimeLocal(newStart))
+              setValue('end_time', formatDateTimeLocal(newEnd))
+            }
+
             return (
-              <div key={hour} className="flex border-b border-[#F3F2F1]" style={{ height: 32 }}>
+              <button
+                key={hour}
+                type="button"
+                onClick={moveToHour}
+                aria-label={`Set start to ${hour <= 12 ? `${hour} ${hour < 12 ? 'AM' : 'PM'}` : `${hour - 12} PM`}`}
+                className="w-full flex border-b border-[#F3F2F1] hover:bg-[#F3F2F1] transition-colors text-left"
+                style={{ height: 32 }}
+              >
                 <span className="w-12 text-[10px] text-[#A19F9D] text-right pr-2 pt-0.5 flex-shrink-0">
                   {hour <= 12 ? `${hour} ${hour < 12 ? 'AM' : 'PM'}` : `${hour - 12} PM`}
                 </span>
                 <div className="flex-1 relative">
+                  {/* Existing busy blocks (organizer + invitees) — drawn
+                      first so the current event's blue block draws on top. */}
+                  {(busyByHour[hour] ?? []).map((b, idx) => {
+                    // Vertical placement within this hour cell.
+                    const startMin = b.start.getHours() === hour ? b.start.getMinutes() : 0
+                    const endMin = b.end.getHours() === hour
+                      ? (b.end.getMinutes() === 0 ? 60 : b.end.getMinutes())
+                      : 60
+                    return (
+                      <div
+                        key={`${b.email}-${idx}`}
+                        className="absolute left-0.5 right-0.5 rounded-sm opacity-80"
+                        style={{
+                          top: `${(startMin / 60) * 100}%`,
+                          height: `${((endMin - startMin) / 60) * 100}%`,
+                          backgroundColor: b.color,
+                        }}
+                        title={b.title}
+                      >
+                        {hour === b.start.getHours() && (
+                          <span className="text-[9px] text-white px-1 truncate block leading-tight pt-0.5">
+                            {b.email.split('@')[0]}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
                   {isInEvent && (
                     <div
                       className="absolute inset-0 bg-[#0078D4] rounded-sm mx-0.5"
@@ -1124,12 +1586,14 @@ export function EventModal({ open, onClose, initialDate, event }: EventModalProp
                     </div>
                   )}
                 </div>
-              </div>
+              </button>
             )
-          })}
+            })
+          })()}
         </div>
       </div>
       </div>
+      )}
     </Modal>
   )
 }
