@@ -3,15 +3,17 @@
 Run from repo root with the api venv:
     apps/api/.venv/bin/python apps/api/seeds/samples/_generate.py
 
-Produces:
+Produces (per senior's preview-format list — pdf / image / pptx / docs / excel + csv):
     Q4-Sales-Report.xlsx   — multi-sheet workbook with formulas & formatting
     Project-Brief.pdf      — single-page PDF summary
     Logo.png               — small inline image
-    Notes.txt              — plain text file
+    Q1-Pipeline.csv        — comma-separated pipeline data
+    Status-Memo.docx       — Word memo with bullets / numbering
+    Q4-Review.pptx         — PowerPoint deck
 
 These files are loaded by `seed_loader.py` into the in-memory attachment
 store so anyone running the default seed can preview real binary content
-(Excel, PDF, image, text) without uploading their own files first.
+without uploading their own files first.
 """
 from __future__ import annotations
 
@@ -165,17 +167,59 @@ def make_png() -> None:
     print(f"wrote {out} ({out.stat().st_size} bytes)")
 
 
-def make_txt() -> None:
-    out = OUT / "Notes.txt"
+def make_csv() -> None:
+    out = OUT / "Q1-Pipeline.csv"
     out.write_text(
-        "Quick notes from the Q4 sync\n"
-        "============================\n\n"
-        "- Calendar recurrence is now live; series delete works end-to-end.\n"
-        "- Search moved to a top-bar dropdown matching real Outlook.\n"
-        "- Attachment previews: image, pdf, xlsx, docx, txt/csv/json.\n"
-        "- Next: PowerPoint preview + scheduling assistant overlay.\n",
+        "Account,Stage,ARR,Owner,Close Date\n"
+        "Acme Corp,Negotiation,120000,Frank Miller,2026-03-15\n"
+        "Globex,Closed Won,86000,Carol Williams,2026-02-21\n"
+        "Initech,Discovery,42000,Bob Smith,2026-04-30\n"
+        "Soylent,Proposal,175000,Alice Wilson,2026-04-10\n"
+        "Massive Dynamic,Negotiation,240000,Frank Miller,2026-03-28\n"
+        "Hooli,Closed Won,98000,Carol Williams,2026-02-08\n",
         encoding="utf-8",
     )
+    print(f"wrote {out} ({out.stat().st_size} bytes)")
+
+
+def make_docx() -> None:
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+
+    doc = Document()
+    title = doc.add_heading("Q4 Outlook Migration — Status Memo", level=0)
+    for run in title.runs:
+        run.font.color.rgb = RGBColor(0x00, 0x78, 0xD4)
+
+    doc.add_paragraph(
+        "Owner: Frank Miller   ·   Status: In progress   ·   Target: Dec 15"
+    )
+    doc.add_paragraph(
+        "This memo captures the rollout state for the Outlook clone migration "
+        "ahead of the December freeze. Send replies on this thread to confirm "
+        "or push back on the milestones below."
+    )
+
+    doc.add_heading("Highlights this week", level=2)
+    for line in (
+        "Recurring events ship-ready — series delete + scope edit verified.",
+        "Search universal dropdown live in production; Files tab now opens previews.",
+        "Boomerang follow-up wired end-to-end; reply suppression confirmed.",
+    ):
+        p = doc.add_paragraph(style="List Bullet")
+        p.add_run(line).font.size = Pt(11)
+
+    doc.add_heading("Open risks", level=2)
+    for line in (
+        "Cross-region timezone handling for invitees.",
+        "TipTap version drift between starter-kit and font-size extension.",
+        "DLP false-positive rate on long internal threads.",
+    ):
+        p = doc.add_paragraph(style="List Number")
+        p.add_run(line).font.size = Pt(11)
+
+    out = OUT / "Status-Memo.docx"
+    doc.save(out)
     print(f"wrote {out} ({out.stat().st_size} bytes)")
 
 
@@ -239,5 +283,6 @@ if __name__ == "__main__":
     make_xlsx()
     make_pdf()
     make_png()
-    make_txt()
+    make_csv()
+    make_docx()
     make_pptx()

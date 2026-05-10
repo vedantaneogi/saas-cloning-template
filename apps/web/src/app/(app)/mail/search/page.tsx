@@ -1,13 +1,15 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { messages, contacts } from '@/lib/api'
+import type { Attachment } from '@/lib/api'
 import { FolderTree } from '@/components/mail/FolderTree'
 import { MessageListItem } from '@/components/mail/MessageListItem'
 import { ReadingPane } from '@/components/mail/ReadingPane'
+import { AttachmentPreviewModal } from '@/components/mail/AttachmentBar'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Avatar } from '@/components/ui/Avatar'
@@ -80,6 +82,10 @@ function FilesResults({ q, from, to, cc, subject, keywords, readStatus, dateFrom
   q?: string; from?: string; to?: string; cc?: string; subject?: string; keywords?: string;
   readStatus?: string; dateFrom?: string; dateTo?: string; folderId?: string
 }) {
+  // Currently-open attachment for the in-app preview modal — reuses the
+  // same modal AttachmentBar uses inside the reading pane (PDF / image /
+  // PPTX / DOCX / XLSX / CSV / TXT).
+  const [previewing, setPreviewing] = useState<Attachment | null>(null)
   // Files tab forces has_attachment=true regardless of the URL param — the
   // tab's whole purpose is "show attachments" and prior versions only fired
   // the query when a text `q` was present, leaving the tab empty when the
@@ -125,17 +131,27 @@ function FilesResults({ q, from, to, cc, subject, keywords, readStatus, dateFrom
       </p>
       <ul className="divide-y divide-[#EDEBE9]">
         {filtered.map(({ message, attachment }) => (
-          <li key={attachment.id} className="px-3 py-2.5 hover:bg-[#F3F2F1] cursor-default flex items-start gap-2">
-            {attachmentIcon(attachment.filename, attachment.content_type)}
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-[#323130] truncate">{attachment.filename}</p>
-              <p className="text-xs text-[#605E5C] truncate">
-                {formatFileSize(attachment.size_bytes)} · From {message.from_name ?? message.from_address} · {message.subject || '(no subject)'}
-              </p>
-            </div>
+          <li key={attachment.id}>
+            <button
+              type="button"
+              onClick={() => setPreviewing(attachment)}
+              aria-label={`Preview ${attachment.filename}`}
+              className="w-full text-left px-3 py-2.5 hover:bg-[#F3F2F1] flex items-start gap-2 transition-colors"
+            >
+              {attachmentIcon(attachment.filename, attachment.content_type)}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-[#323130] truncate">{attachment.filename}</p>
+                <p className="text-xs text-[#605E5C] truncate">
+                  {formatFileSize(attachment.size_bytes)} · From {message.from_name ?? message.from_address} · {message.subject || '(no subject)'}
+                </p>
+              </div>
+            </button>
           </li>
         ))}
       </ul>
+      {previewing && (
+        <AttachmentPreviewModal attachment={previewing} onClose={() => setPreviewing(null)} />
+      )}
     </>
   )
 }

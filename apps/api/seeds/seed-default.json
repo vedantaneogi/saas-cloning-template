@@ -2220,11 +2220,11 @@
       {
         "id": "c0a13c1a-1111-4111-8111-000000000004",
         "message_id": "8fc4cfa8-2651-4728-b168-3e9839d0ca0f",
-        "filename": "Notes.txt",
-        "content_type": "text/plain",
+        "filename": "Status-Memo.docx",
+        "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "size_bytes": 0,
         "is_inline": false,
-        "sample_file": "Notes.txt"
+        "sample_file": "Status-Memo.docx"
       },
       {
         "id": "c0a13c1a-1111-4111-8111-000000000005",
@@ -2234,6 +2234,15 @@
         "size_bytes": 0,
         "is_inline": false,
         "sample_file": "Q4-Review.pptx"
+      },
+      {
+        "id": "c0a13c1a-1111-4111-8111-000000000006",
+        "message_id": "c132919a-6e36-4679-868b-5654252f279c",
+        "filename": "Q1-Pipeline.csv",
+        "content_type": "text/csv",
+        "size_bytes": 0,
+        "is_inline": false,
+        "sample_file": "Q1-Pipeline.csv"
       }
     ],
     "categories": [

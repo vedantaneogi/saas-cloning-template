@@ -1,7 +1,0 @@
-Quick notes from the Q4 sync
-============================
-
-- Calendar recurrence is now live; series delete works end-to-end.
-- Search moved to a top-bar dropdown matching real Outlook.
-- Attachment previews: image, pdf, xlsx, docx, txt/csv/json.
-- Next: PowerPoint preview + scheduling assistant overlay.
