@@ -1,0 +1,125 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* ── DocuSign Logo Colors ── */
+  --ds-logo-red: #E8342A;
+  --ds-logo-indigo: #3B1FA3;
+
+  /* ── Brand Colors (extracted from live DocuSign app) ── */
+  --ds-purple-primary: #4C00FF;
+  --ds-purple-dark: #1B0A3C;
+  --ds-purple-medium: #6B2CF5;
+  --ds-purple-light: #EDE8FF;
+  --ds-indigo-dark: #2D0F6B;
+  --ds-purple-gradient: linear-gradient(135deg, #1B0A3C 0%, #4C00FF 100%);
+
+  /* ── Neutral Colors ── */
+  --ds-white: #FFFFFF;
+  --ds-gray-bg: #F4F4F4;
+  --ds-gray-card: #FFFFFF;
+  --ds-gray-border: #E0E0E0;
+  --ds-gray-scrollbar: #C5CCD6;
+
+  /* ── Text Colors ── */
+  --ds-text-primary: #130F2E;
+  --ds-text-secondary: #6B6B6B;
+  --ds-text-muted: #9EA5AD;
+  --ds-text-link: #4C00FF;
+
+  /* ── Status Colors ── */
+  --ds-success: #00B851;
+  --ds-success-light: #E6F9EE;
+  --ds-error: #D93025;
+  --ds-error-light: #FDECEA;
+  --ds-warning: #FF6D00;
+  --ds-warning-light: #FFF3E0;
+  --ds-info: #0288D1;
+  --ds-notification-dot: #E8342A;
+
+  /* ── Button Colors ── */
+  --ds-btn-primary-bg: #1B0A3C;
+  --ds-btn-primary-hover: #2D0F6B;
+  --ds-btn-secondary-border: #C5CCD6;
+  --ds-btn-gray-bg: #EBEBEB;
+
+  /* ── Navigation ── */
+  --ds-nav-bg: #FFFFFF;
+  --ds-nav-active-underline: #4C00FF;
+  --ds-nav-height: 56px;
+
+  /* ── Layout ── */
+  --ds-sidebar-width: 260px;
+  --ds-sidebar-collapsed-width: 60px;
+
+  /* ── Recipient Role Colors ── */
+  --recipient-1: #4C00FF;
+  --recipient-2: #00B851;
+  --recipient-3: #FF6D00;
+  --recipient-4: #D93025;
+  --recipient-5: #0288D1;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 17px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  /* DSIndigo is DocuSign's proprietary typeface — falls back to system sans-serif */
+  font-family: 'DS Indigo', 'DSIndigo', Helvetica, Arial, sans-serif;
+  color: var(--ds-text-primary);
+  background: var(--ds-white);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+a {
+  color: var(--ds-text-link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ds-gray-scrollbar);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #A8B3BE;
+  background-clip: content-box;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ds-gray-scrollbar) transparent;
+}

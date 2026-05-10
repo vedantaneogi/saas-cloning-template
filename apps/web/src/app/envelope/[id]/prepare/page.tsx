@@ -1,0 +1,3057 @@
+"use client";
+
+import { useState, useRef, useEffect, type ReactNode } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { CaretUp, CaretDown, X, Trash, Info, Desktop, Question, GearSix, PencilSimple, AddressBook, UserPlus, Layout, Key, ChatText, Eye, UserCircle, IdentificationCard } from "@phosphor-icons/react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowUp03Icon } from "@hugeicons/core-free-icons";
+import {
+  getEnvelope,
+  uploadDocument,
+  deleteDocument,
+  updateEnvelope,
+  addRecipient as addRecipientAPI,
+  updateRecipient as updateRecipientAPI,
+  deleteRecipient as deleteRecipientAPI,
+  setRecipientAccessCode,
+  setRecipientPrivateMessage,
+  saveEnvelopeAsTemplate,
+  bulkSendDirect,
+} from "@/features/envelopes/api";
+import { getRecipientColor } from "@/lib/utils";
+import { useAuthStore } from "@/features/auth/store";
+import { useToast, ToastContainer } from "@/components/ui/Toast";
+
+interface RecipientForm {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  templateRole?: string;
+  order: number;
+  color: string;
+  privateMessage?: string;
+  accessCode?: string;
+  idCheck?: boolean;
+}
+
+// Per-recipient inline section visibility
+interface RecipientInlineState {
+  showAccessCode: boolean;
+  showPrivateMessage: boolean;
+  accessCodeCollapsed: boolean;
+  privateMessageCollapsed: boolean;
+  verificationMethod: string;
+}
+
+const formatSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const roleLabel: Record<string, string> = {
+  signer: "Needs to Sign",
+  approver: "Needs to Approve",
+  in_person: "In Person Signer",
+  cc: "Receives a Copy",
+  viewer: "Needs to View",
+};
+
+export default function PrepareEnvelopePage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
+  const { toasts, addToast, dismissToast } = useToast();
+
+  // ── Section collapse state — all open by default ──────────────────────────
+  const [documentsOpen, setDocumentsOpen] = useState(true);
+  const [recipientsOpen, setRecipientsOpen] = useState(true);
+  const [messageOpen, setMessageOpen] = useState(true);
+
+  // ── Advanced Options panel ─────────────────────────────────────────────────
+  const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false);
+  const [advSignOnPaper, setAdvSignOnPaper] = useState(false);
+  const [advChangeSigningResponsibility, setAdvChangeSigningResponsibility] = useState(false);
+  const [advAutoReminders, setAdvAutoReminders] = useState(false);
+  const [advDaysUntilExpiry, setAdvDaysUntilExpiry] = useState(120);
+  const [advExpirationAlert, setAdvExpirationAlert] = useState(0);
+  const [advResponsiveSigning, setAdvResponsiveSigning] = useState(false);
+  const [advAllowComments, setAdvAllowComments] = useState(false);
+  // Applied advanced option values (committed on "Apply" click)
+  const [appliedDaysUntilExpiry, setAppliedDaysUntilExpiry] = useState(120);
+
+  // ── Reminder days (from "Frequency of reminders" dropdown) ────────────────
+  const [reminderDays, setReminderDays] = useState(0);
+
+  // ── Dropdown open states ───────────────────────────────────────────────────
+  const [uploadDropdownOpen, setUploadDropdownOpen] = useState(false);
+  const [roleDropdownOpen, setRoleDropdownOpen] = useState<Record<string, boolean>>({});
+  const [addRecipientDropdownOpen, setAddRecipientDropdownOpen] = useState(false);
+  const [customizeDropdownOpen, setCustomizeDropdownOpen] = useState<Record<string, boolean>>({});
+
+  // ── Inline expandable sections per recipient ──────────────────────────────
+  const [recipientInlineState, setRecipientInlineState] = useState<Record<string, RecipientInlineState>>({});
+
+  const getInlineState = (recipientId: string): RecipientInlineState =>
+    recipientInlineState[recipientId] ?? {
+      showAccessCode: false,
+      showPrivateMessage: false,
+      accessCodeCollapsed: false,
+      privateMessageCollapsed: false,
+      verificationMethod: "Access Code",
+    };
+
+  const updateInlineState = (recipientId: string, updates: Partial<RecipientInlineState>) => {
+    setRecipientInlineState((prev) => ({
+      ...prev,
+      [recipientId]: { ...getInlineState(recipientId), ...updates },
+    }));
+  };
+
+  // ── File state ─────────────────────────────────────────────────────────────
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ id: string; name: string; size: number }>>([]);
+  // Keep a reference to the actual File objects so bulk-send can re-upload them
+  const uploadedFileObjectsRef = useRef<File[]>([]);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadingDocs, setUploadingDocs] = useState<Record<string, boolean>>({});
+  const [justUploadedDocs, setJustUploadedDocs] = useState<Record<string, boolean>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Validation state ───────────────────────────────────────────────────────
+  const [triedToProceed, setTriedToProceed] = useState(false);
+  const [duplicateEmailErrors, setDuplicateEmailErrors] = useState<Record<string, boolean>>({});
+
+  // ── Recipients ─────────────────────────────────────────────────────────────
+  const [recipients, setRecipients] = useState<RecipientForm[]>([
+    { id: "r1", name: "", email: "", role: "signer", order: 1, color: getRecipientColor(0) },
+  ]);
+  const [imOnlySigner, setImOnlySigner] = useState(false);
+  const [setSigningOrder, setSetSigningOrder] = useState(false);
+  const [signingDiagramOpen, setSigningDiagramOpen] = useState(false);
+
+  // ── Template mode ──────────────────────────────────────────────────────────
+  const searchParams = useSearchParams();
+  const isTemplateMode = searchParams.get("mode") === "template";
+  const [templateName, setTemplateName] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
+  const [category, setCategory] = useState<string>("");
+
+  // ── Bulk send modal ────────────────────────────────────────────────────────
+  const isBulkMode = searchParams.get("bulk") === "true";
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkSending, setBulkSending] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("bulk") === "true") {
+      setBulkModalOpen(true);
+      setBulkStep(1);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [bulkStep, setBulkStep] = useState<1 | 2 | 3>(1);
+  const [bulkMethod, setBulkMethod] = useState<"manual" | "csv">("manual");
+  const [bulkCsvFile, setBulkCsvFile] = useState<File | null>(null);
+  const [bulkCsvRows, setBulkCsvRows] = useState<Array<{ name: string; email: string; valid: boolean }>>([]);
+  const [bulkActiveTab, setBulkActiveTab] = useState<"all" | "errors">("all");
+  const bulkCsvInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Message ────────────────────────────────────────────────────────────────
+  const [subject, setSubject] = useState("Complete with Docusign:");
+  const [message, setMessage] = useState("");
+
+  // ── Data fetching ──────────────────────────────────────────────────────────
+  const { data: envelope } = useQuery({
+    queryKey: ["envelope", id],
+    queryFn: () => getEnvelope(id),
+  });
+
+  // Guard: only pre-populate from API once (on initial load).
+  // Without this, every React Query refetch would append/overwrite user edits.
+  const didPrePopulateRef = useRef(false);
+  const prevIdRef = useRef(id);
+  useEffect(() => {
+    if (prevIdRef.current !== id) {
+      didPrePopulateRef.current = false;
+      prevIdRef.current = id;
+    }
+  }, [id]);
+
+  // ── Pre-populate form from existing envelope data ─────────────────────────
+  useEffect(() => {
+    if (!envelope || didPrePopulateRef.current) return;
+    didPrePopulateRef.current = true;
+
+    if (envelope.subject) setSubject(envelope.subject);
+    if (envelope.message) setMessage(envelope.message);
+    if ((envelope as any).category) setCategory((envelope as any).category);
+    // Restore reminder_days from saved envelope
+    if (typeof envelope.reminder_days === "number" && envelope.reminder_days > 0) {
+      setReminderDays(envelope.reminder_days);
+    }
+    // Restore expires_at → convert back to days-from-now for the Advanced Options panel
+    if (envelope.expiresAt) {
+      const msLeft = new Date(envelope.expiresAt).getTime() - Date.now();
+      const daysLeft = Math.max(1, Math.round(msLeft / (1000 * 60 * 60 * 24)));
+      setAdvDaysUntilExpiry(daysLeft);
+      setAppliedDaysUntilExpiry(daysLeft);
+    }
+    // Restore advanced boolean options from saved envelope
+    if (typeof (envelope as any).allow_comments === "boolean") {
+      setAdvAllowComments((envelope as any).allow_comments as boolean);
+    }
+    if (typeof (envelope as any).responsive_signing === "boolean") {
+      setAdvResponsiveSigning((envelope as any).responsive_signing as boolean);
+    }
+    if (envelope.recipients && envelope.recipients.length > 0) {
+      const loaded = envelope.recipients.map((r: any, i: number) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        role: r.role || "signer",
+        templateRole: r.template_role_label ?? undefined,
+        order: r.order || i + 1,
+        color: getRecipientColor(i),
+        privateMessage: r.private_message ?? undefined,
+        accessCode: r.access_code ?? undefined,
+        idCheck: r.id_check ?? false,
+      }));
+      setRecipients(loaded);
+      setRecipientInlineState((prev) => {
+        const next = { ...prev };
+        for (const r of loaded) {
+          const hasIdCheck = !!r.idCheck;
+          const verMethod = hasIdCheck ? "ID Evidence" : "Access Code";
+          if (r.accessCode || r.privateMessage || hasIdCheck) {
+            next[r.id] = {
+              ...{ showAccessCode: false, showPrivateMessage: false, accessCodeCollapsed: false, privateMessageCollapsed: false, verificationMethod: verMethod },
+              ...(next[r.id] ?? {}),
+              showAccessCode: !!r.accessCode || hasIdCheck,
+              showPrivateMessage: !!r.privateMessage,
+              verificationMethod: verMethod,
+            };
+          }
+        }
+        return next;
+      });
+      // Restore imOnlySigner if envelope was saved with only the sender as recipient
+      const userEmail = currentUser?.email?.toLowerCase();
+      if (
+        userEmail &&
+        envelope.recipients.length === 1 &&
+        envelope.recipients[0].email?.toLowerCase() === userEmail
+      ) {
+        setImOnlySigner(true);
+      }
+    }
+    if (envelope.documents && envelope.documents.length > 0) {
+      // Only pre-populate from API on initial load (when we have no local state yet).
+      // After uploads the local state takes precedence to preserve file sizes.
+      setUploadedFiles((prev) => {
+        if (prev.length > 0) return prev;
+        return envelope.documents.map((d) => ({
+          id: d.id,
+          name: d.name || d.original_filename || d.filename || "document.pdf",
+          size: 0, // size not returned by API
+        }));
+      });
+    }
+  }, [envelope]);
+
+  // ── Upload mutation ────────────────────────────────────────────────────────
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      setUploadProgress((prev) => ({ ...prev, [file.name]: 0 }));
+      setUploadingDocs((prev) => ({ ...prev, [file.name]: true }));
+      const result = await uploadDocument(id, file);
+      setUploadProgress((prev) => ({ ...prev, [file.name]: 100 }));
+      return { result, file };
+    },
+    onSuccess: ({ result, file }) => {
+      const docId = result.documentId;
+      setUploadingDocs((prev) => {
+        const next = { ...prev };
+        delete next[file.name];
+        return next;
+      });
+      // Track File object for bulk-send re-upload
+      uploadedFileObjectsRef.current = [...uploadedFileObjectsRef.current, file];
+      setUploadedFiles((prev) => [
+        ...prev,
+        {
+          id: docId,
+          name: result.name || file.name,
+          size: file.size,
+        },
+      ]);
+      // Show green checkmark for 1.5 s
+      setJustUploadedDocs((prev) => ({ ...prev, [docId]: true }));
+      setTimeout(() => {
+        setJustUploadedDocs((prev) => {
+          const next = { ...prev };
+          delete next[docId];
+          return next;
+        });
+      }, 1500);
+      // Invalidate so the editor page gets fresh documents list
+      queryClient.invalidateQueries({ queryKey: ["envelope", id] });
+    },
+    onError: (_err, file) => {
+      setUploadingDocs((prev) => {
+        const next = { ...prev };
+        delete next[file.name];
+        return next;
+      });
+      setUploadProgress((prev) => {
+        const next = { ...prev };
+        delete next[file.name];
+        return next;
+      });
+    },
+  });
+
+  // ── Save & continue mutation ───────────────────────────────────────────────
+  const saveAndContinueMutation = useMutation({
+    mutationFn: async () => {
+      // Calculate expires_at from appliedDaysUntilExpiry (days from now)
+      const expiresAt = appliedDaysUntilExpiry > 0
+        ? new Date(Date.now() + appliedDaysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+
+      await updateEnvelope(id, {
+        subject: subject || envelope?.subject || "Untitled",
+        message,
+        reminder_days: reminderDays,
+        ...(expiresAt ? { expires_at: expiresAt } : {}),
+        ...(category ? { category } : {}),
+      });
+
+      // Build a map of persisted recipients keyed by their server-assigned UUID.
+      // Recipients pre-populated from the API have a real UUID as `id`; locally-
+      // added rows (not yet saved) have a temp id like "r1" or "r<timestamp>".
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const existingIds = new Set(
+        (envelope?.recipients ?? []).map((r) => r.id),
+      );
+
+      // Determine which persisted recipients are still present in the local state.
+      // Any that are no longer in the local list must be deleted from the backend.
+      // This handles: (a) explicit removes, (b) "I'm the only signer" replacing all
+      // previous recipients, and (c) switching back from imOnlySigner.
+      const keptPersistedIds = new Set(
+        recipients
+          .filter((r) => UUID_REGEX.test(r.id) && existingIds.has(r.id))
+          .map((r) => r.id),
+      );
+      for (const persistedId of existingIds) {
+        if (!keptPersistedIds.has(persistedId)) {
+          await deleteRecipientAPI(persistedId).catch((err) => {
+            console.error("Failed to delete stale recipient:", persistedId, err);
+          });
+        }
+      }
+
+      const seen = new Set<string>();
+      for (const r of recipients) {
+        const email = r.email.trim().toLowerCase();
+        const name = r.name.trim();
+        // In template mode, skip only if both name and email are empty (fully blank row).
+        // In normal mode, require both name and a valid email.
+        if (isTemplateMode) {
+          if (!name && !email && !r.templateRole?.trim()) continue;
+        } else {
+          if (!name || !email) continue;
+        }
+        const dedupeKey = email || r.id;
+        if (email && seen.has(dedupeKey)) continue;
+        if (email) seen.add(dedupeKey);
+
+        // When signing order is unchecked, all recipients get routing_order 1 (parallel).
+        // When checked, use the individual order values set by the user.
+        const routingOrder = setSigningOrder ? r.order : 1;
+
+        const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
+        let savedRecipientId = r.id;
+        const idCheck = !!r.idCheck || getInlineState(r.id).verificationMethod === "ID Evidence";
+        if (isPersistedRecipient) {
+          await updateRecipientAPI(r.id, {
+            name: r.name.trim() || r.templateRole?.trim() || "Recipient",
+            email: r.email.trim(),
+            role: r.role,
+            routing_order: routingOrder,
+            private_message: r.privateMessage || undefined,
+            id_check: idCheck,
+            ...(isTemplateMode && r.templateRole?.trim() ? { template_role_label: r.templateRole.trim() } : {}),
+          });
+        } else {
+          const newR = await addRecipientAPI(id, {
+            name: r.name.trim() || r.templateRole?.trim() || "Recipient",
+            email: r.email.trim(),
+            role: r.role,
+            routing_order: routingOrder,
+            private_message: r.privateMessage || undefined,
+            id_check: idCheck,
+            ...(isTemplateMode && r.templateRole?.trim() ? { template_role_label: r.templateRole.trim() } : {}),
+          });
+          if (newR?.id) savedRecipientId = newR.id;
+        }
+        if (r.accessCode?.trim() && !idCheck) {
+          await setRecipientAccessCode(savedRecipientId, r.accessCode.trim()).catch((err) => {
+            console.error("Failed to save access code for recipient:", savedRecipientId, err);
+            addToast("Failed to save access code for a recipient.", "error");
+          });
+        }
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["envelope", id] });
+      const destination = isTemplateMode
+        ? `/envelope/${id}/edit?mode=template`
+        : `/envelope/${id}/edit`;
+      router.push(destination);
+    },
+    onError: (err: unknown) => {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? String((err as { message: unknown }).message)
+            : "An unexpected error occurred. Please try again.";
+      addToast(`Failed to save envelope: ${message}`, "error");
+    },
+  });
+
+  // ── File drop ──────────────────────────────────────────────────────────────
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+  const handleFilesDrop = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter(
+      (f) =>
+        f.type === "application/pdf" ||
+        f.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        f.type === "application/msword" ||
+        f.name.endsWith(".pdf") ||
+        f.name.endsWith(".docx") ||
+        f.name.endsWith(".doc"),
+    );
+    for (const file of fileArray) {
+      if (file.size > MAX_FILE_SIZE) {
+        addToast(`${file.name} exceeds 10 MB limit.`, "error");
+        continue;
+      }
+      await uploadMutation.mutateAsync(file);
+    }
+  };
+
+  // ── Recipient helpers ──────────────────────────────────────────────────────
+  const addRecipient = () => {
+    const idx = recipients.length;
+    setRecipients((prev) => [
+      ...prev,
+      {
+        id: `r${Date.now()}`,
+        name: "",
+        email: "",
+        role: "signer",
+        order: idx + 1,
+        color: getRecipientColor(idx),
+      },
+    ]);
+  };
+
+  const removeRecipient = (idToRemove: string) => {
+    // If this is a persisted recipient (UUID), delete it from the backend too
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const existingIds = new Set((envelope?.recipients ?? []).map((r) => r.id));
+    if (UUID_REGEX.test(idToRemove) && existingIds.has(idToRemove)) {
+      deleteRecipientAPI(idToRemove).catch((err) => {
+        console.error("Failed to delete recipient:", err);
+      });
+    }
+    setRecipients((prev) =>
+      prev
+        .filter((r) => r.id !== idToRemove)
+        .map((r, i) => ({ ...r, order: i + 1, color: getRecipientColor(i) })),
+    );
+  };
+
+  const updateRecipient = (recipientId: string, updates: Partial<RecipientForm>) => {
+    setRecipients((prev) =>
+      prev.map((r) => (r.id === recipientId ? { ...r, ...updates } : r)),
+    );
+  };
+
+  // ── Close all dropdowns on background click ────────────────────────────────
+  const closeAllDropdowns = () => {
+    setUploadDropdownOpen(false);
+    setAddRecipientDropdownOpen(false);
+    setRoleDropdownOpen({});
+    setCustomizeDropdownOpen({});
+  };
+
+  // ── Bulk send helpers ──────────────────────────────────────────────────────
+  const downloadSampleCsv = () => {
+    const csv = "name,email\nJohn Smith,john@example.com\nJane Doe,jane@example.com";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "sample-bulk-send.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const parseBulkCsv = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) { setBulkCsvRows([]); return; }
+      const header = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/"/g, ""));
+      const nameIdx = header.findIndex(h => h === "name");
+      const emailIdx = header.findIndex(h => h === "email");
+      const parsed = lines.slice(1).map(line => {
+        const cols = line.split(",").map(c => c.trim().replace(/"/g, ""));
+        const name = nameIdx >= 0 ? cols[nameIdx] || "" : cols[0] || "";
+        const email = emailIdx >= 0 ? cols[emailIdx] || "" : cols[1] || "";
+        return { name, email, valid: name.length > 0 && email.includes("@") };
+      });
+      setBulkCsvRows(parsed);
+      setBulkStep(3);
+    };
+    reader.readAsText(file);
+  };
+
+  // ── Proceed guard ──────────────────────────────────────────────────────────
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const hasDocuments = (uploadedFiles.length > 0) || (envelope?.documents?.length ?? 0) > 0;
+  // In template mode, name/email are optional — always considered valid
+  const hasValidRecipient = isTemplateMode
+    ? true
+    : imOnlySigner
+    ? true
+    : recipients.some(
+        (r) => r.name?.trim() && r.email?.trim() && EMAIL_REGEX.test(r.email.trim()),
+      );
+  const hasInvalidEmail = !isTemplateMode && !imOnlySigner &&
+    recipients.some(
+      (r) => r.email?.trim() && !EMAIL_REGEX.test(r.email.trim()),
+    );
+  const isUploading = Object.keys(uploadingDocs).length > 0;
+  const hasDuplicateEmails = Object.values(duplicateEmailErrors).some(Boolean);
+  const canProceed = hasDocuments && hasValidRecipient && !isUploading && !hasDuplicateEmails && !hasInvalidEmail;
+
+  // ──────────────────────────────────────────────────────────────────────────
+  return (
+    <>
+    <div
+      className="min-h-screen"
+      style={{ background: "#F5F5F5" }}
+      onClick={closeAllDropdowns}
+    >
+      {/* ══════════════════════════════════════════
+          Sticky Header
+      ══════════════════════════════════════════ */}
+      <header
+        className="sticky top-0 z-50 bg-white"
+        style={{
+          borderBottom: "1px solid #E0E0E0",
+          height: "64px",
+        }}
+      >
+        <div
+          className="flex items-center justify-between h-full"
+          style={{ padding: "0 16px 0 8px" }}
+        >
+        {/* Left: close + title */}
+        <div className="flex items-center" style={{ gap: "12px" }}>
+          <button
+            onClick={() => router.back()}
+            className="flex items-center justify-center rounded hover:bg-gray-100 transition-colors"
+            style={{ width: "32px", height: "32px" }}
+            aria-label="Close"
+          >
+            <X size={18} weight="bold" color="#333" />
+          </button>
+          <span
+            style={{
+              fontSize: "16px",
+              fontWeight: 400,
+              color: "rgba(19, 0, 50, 0.9)",
+              cursor: "default",
+            }}
+          >
+            {isTemplateMode ? "Create a Template" : "Set Up Envelope"}
+          </span>
+        </div>
+
+        {/* Right: help + settings + CTA */}
+        <div className="flex items-center" style={{ gap: "8px" }}>
+          <button
+            className="flex items-center justify-center rounded hover:bg-gray-100 transition-colors"
+            style={{ width: "32px", height: "32px" }}
+            aria-label="Help"
+          >
+            <Question size={20} weight="bold" color="#555" />
+          </button>
+          <button
+            className="flex items-center justify-center rounded hover:bg-gray-100 transition-colors"
+            style={{ width: "32px", height: "32px" }}
+            aria-label="Settings"
+            onClick={() => setAdvancedOptionsOpen(true)}
+          >
+            <GearSix size={20} weight="bold" color="#555" />
+          </button>
+          {/* Save and Close (template mode only) */}
+          {isTemplateMode && (
+            <button
+              onClick={async () => {
+                if (!hasDocuments) {
+                  addToast("Please upload at least one document before saving as a template.", "error");
+                  return;
+                }
+                try {
+                  // 1. Persist envelope subject + description (stored as message).
+                  await updateEnvelope(id, {
+                    subject: templateName.trim() || "Untitled Template",
+                    message: templateDescription,
+                  });
+
+                  // 2. Persist recipients so the template captures them correctly.
+                  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                  const existingIds = new Set(
+                    (envelope?.recipients ?? []).map((r) => r.id),
+                  );
+
+                  // Delete stale persisted recipients no longer in local state
+                  const keptPersistedIds = new Set(
+                    recipients
+                      .filter((r) => UUID_REGEX.test(r.id) && existingIds.has(r.id))
+                      .map((r) => r.id),
+                  );
+                  for (const persistedId of existingIds) {
+                    if (!keptPersistedIds.has(persistedId)) {
+                      await deleteRecipientAPI(persistedId).catch((err) => {
+                        console.error("Failed to delete stale recipient:", persistedId, err);
+                      });
+                    }
+                  }
+
+                  const seen = new Set<string>();
+                  const roleLabelsMap: Record<string, string> = {};
+                  for (const r of recipients) {
+                    const email = r.email.trim().toLowerCase();
+                    const name = r.name.trim() || r.templateRole?.trim() || "";
+                    if (!name && !email) continue;
+                    if (email && seen.has(email)) continue;
+                    if (email) seen.add(email);
+                    const recipientName = r.name.trim() || r.templateRole?.trim() || "Recipient";
+                    const routingOrder = setSigningOrder ? r.order : 1;
+                    const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
+                    let savedId = r.id;
+                    const idCheck = !!r.idCheck || getInlineState(r.id).verificationMethod === "ID Evidence";
+                    if (isPersistedRecipient) {
+                      await updateRecipientAPI(r.id, {
+                        name: recipientName,
+                        email: r.email.trim(),
+                        role: r.role,
+                        routing_order: routingOrder,
+                        id_check: idCheck,
+                      });
+                    } else {
+                      const newR = await addRecipientAPI(id, {
+                        name: recipientName,
+                        email: r.email.trim(),
+                        role: r.role,
+                        routing_order: routingOrder,
+                        id_check: idCheck,
+                      });
+                      if (newR?.id) savedId = newR.id;
+                    }
+                    if (r.templateRole?.trim()) {
+                      roleLabelsMap[savedId] = r.templateRole.trim();
+                    }
+                  }
+
+                  // 3. Snapshot envelope → template record.
+                  await saveEnvelopeAsTemplate(id, templateName.trim() || undefined, roleLabelsMap);
+                  router.push("/templates");
+                } catch {
+                  addToast("Failed to save template. Please try again.", "error");
+                }
+              }}
+              disabled={isUploading}
+              className="flex items-center gap-2 transition-opacity"
+              style={{
+                background: "white",
+                border: "1px solid rgba(19,0,50,0.25)",
+                borderRadius: "4px",
+                padding: "8px 16px",
+                fontSize: "14px",
+                fontWeight: 500,
+                color: "rgba(19,0,50,0.9)",
+                cursor: isUploading ? "not-allowed" : "pointer",
+                opacity: isUploading ? 0.5 : 1,
+              }}
+              onMouseOver={(e) => (e.currentTarget.style.background = "rgba(19,0,50,0.04)")}
+              onMouseOut={(e) => (e.currentTarget.style.background = "white")}
+            >
+              Save and Close
+            </button>
+          )}
+          <div className="relative group">
+            <button
+              onClick={() => {
+                if (!canProceed) {
+                  setTriedToProceed(true);
+                  if (isUploading) {
+                    addToast("Please wait for all documents to finish uploading before proceeding.", "error");
+                    return;
+                  }
+                  const missing: string[] = [];
+                  if (!hasDocuments) missing.push("upload at least one document");
+                  if (!hasValidRecipient) missing.push("fill in a valid recipient name and email");
+                  if (hasInvalidEmail) missing.push("enter a valid email address for all recipients");
+                  if (hasDuplicateEmails) missing.push("remove duplicate recipient emails");
+                  addToast(`Please ${missing.join(" and ")} before proceeding.`, "error");
+                  return;
+                }
+                saveAndContinueMutation.mutate();
+              }}
+              disabled={saveAndContinueMutation.isPending || isUploading}
+              className="flex items-center gap-2 text-white transition-opacity"
+              style={{
+                background: canProceed ? "#4C00FF" : "#9CA3AF",
+                borderRadius: "4px",
+                padding: "8px 20px",
+                fontSize: "14px",
+                fontWeight: 500,
+                opacity: (saveAndContinueMutation.isPending || isUploading) ? 0.5 : 1,
+                cursor: (saveAndContinueMutation.isPending || !canProceed) ? "not-allowed" : "pointer",
+              }}
+            >
+              {saveAndContinueMutation.isPending ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : isUploading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                imOnlySigner ? "Sign" : "Next: Add Fields"
+              )}
+            </button>
+            {!canProceed && (
+              <div
+                className="absolute right-0 top-full mt-1 z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{
+                  background: "rgba(19,0,50,0.85)",
+                  color: "#fff",
+                  fontSize: "12px",
+                  borderRadius: "4px",
+                  padding: "6px 10px",
+                  whiteSpace: "nowrap",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                }}
+              >
+                Upload at least one document and add a recipient
+              </div>
+            )}
+          </div>
+        </div>
+        </div>
+      </header>
+
+      {/* ══════════════════════════════════════════
+          Scrollable content column
+      ══════════════════════════════════════════ */}
+      <div style={{ paddingTop: "24px", paddingBottom: "40px" }}>
+        <div style={{ maxWidth: "1040px", margin: "0 auto", paddingLeft: "24px", paddingRight: "24px" }}>
+
+          {/* ────────────────────────────────────────
+              Template name & description (template mode only)
+          ──────────────────────────────────────── */}
+          {isTemplateMode && (
+            <div
+              style={{
+                background: "white",
+                border: "1px solid rgba(19,0,50,0.12)",
+                borderRadius: "8px",
+                padding: "24px",
+                marginBottom: "24px",
+              }}
+            >
+              <h2 style={{ fontSize: "20px", fontWeight: 500, color: "rgba(19,0,50,0.9)", marginBottom: "20px" }}>
+                Template details
+              </h2>
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  htmlFor="template-name"
+                  style={{
+                    display: "block",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    color: "rgba(19,0,50,0.7)",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Template name
+                </label>
+                <input
+                  id="template-name"
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="e.g., Non-Disclosure Agreement"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid rgba(19,0,50,0.18)",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    color: "rgba(19,0,50,0.9)",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = "#4C00FF")}
+                  onBlur={(e) => (e.target.style.borderColor = "rgba(19,0,50,0.18)")}
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="template-description"
+                  style={{
+                    display: "block",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    color: "rgba(19,0,50,0.7)",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Template description <span style={{ fontWeight: 400, color: "rgba(19,0,50,0.45)" }}>(optional)</span>
+                </label>
+                <textarea
+                  id="template-description"
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                  placeholder="Describe what this template is used for..."
+                  rows={3}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid rgba(19,0,50,0.18)",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    color: "rgba(19,0,50,0.9)",
+                    outline: "none",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = "#4C00FF")}
+                  onBlur={(e) => (e.target.style.borderColor = "rgba(19,0,50,0.18)")}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ────────────────────────────────────────
+              Section 1 — Add documents
+          ──────────────────────────────────────── */}
+          <div>
+            {/* Section heading row */}
+            <button
+              className="w-full flex items-center justify-between text-left"
+              style={{ padding: "0 0 16px" }}
+              onClick={() => setDocumentsOpen((o) => !o)}
+            >
+              <span
+                style={{
+                  fontSize: "20px",
+                  fontWeight: 500,
+                  color: "rgba(19,0,50,0.9)",
+                }}
+              >
+                Add documents
+              </span>
+              {documentsOpen ? (
+                <CaretUp size={20} weight="bold" color="#555" />
+              ) : (
+                <CaretDown size={20} weight="bold" color="#555" />
+              )}
+            </button>
+
+            {documentsOpen && (
+              <>
+                {/* Thin divider below heading */}
+                <div style={{ height: "1px", background: "rgba(19,0,50,0.12)", marginBottom: "16px" }} />
+
+                {/* Drop zone — wrapped in label so clicking anywhere triggers the file picker natively */}
+                <label
+                  htmlFor="file-upload-input"
+                  className="flex flex-col items-center justify-center cursor-pointer transition-colors"
+                  style={{
+                    background: isDraggingFile ? "rgba(76,0,255,0.04)" : "rgba(19,0,50,0.04)",
+                    borderBottom: `1px solid ${isDraggingFile ? "#4C00FF" : "rgb(169,169,169)"}`,
+                    borderRadius: "0px",
+                    padding: "40px 24px",
+                    gap: "12px",
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    setIsDraggingFile(true);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingFile(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setIsDraggingFile(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingFile(false);
+                    if (e.dataTransfer.files) handleFilesDrop(e.dataTransfer.files);
+                  }}
+                >
+                  {/* Upload icon in a rounded square box like real DocuSign */}
+                  <div
+                    className="flex items-center justify-center"
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      background: "rgba(19,0,50,0.08)",
+                      borderRadius: "8px",
+                    }}
+                  >
+                    <HugeiconsIcon icon={ArrowUp03Icon} size={24} color="rgba(19,0,50,0.7)" />
+                  </div>
+                  <p style={{ fontSize: "16px", color: "rgba(19,0,50,0.9)", margin: 0 }}>
+                    Drop your files here or
+                  </p>
+                  <p style={{ fontSize: "12px", color: "rgba(19,0,50,0.35)", margin: "4px 0 0" }}>
+                    PDF, DOCX, DOC — max 10 MB per file
+                  </p>
+
+                  {/* Upload split button — stop propagation so clicking the button doesn't also trigger the label */}
+                  <div
+                    className="relative"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      className="flex items-center gap-2 font-medium text-white"
+                      style={{
+                        background: "#4C00FF",
+                        borderRadius: "4px",
+                        padding: "8px 20px",
+                        fontSize: "16px",
+                        fontWeight: 500,
+                      }}
+                      onClick={() => setUploadDropdownOpen((o) => !o)}
+                    >
+                      Upload
+                      <CaretDown size={14} weight="bold" color="white" />
+                    </button>
+
+                    {uploadDropdownOpen && (
+                      <div
+                        className="absolute left-0 mt-1 bg-white rounded shadow-lg z-10 py-1"
+                        style={{
+                          border: "1px solid #E0E0E0",
+                          minWidth: "220px",
+                          top: "100%",
+                        }}
+                      >
+                        {/* Desktop — click the ref directly so the dropdown closing doesn't cancel the file picker */}
+                        <button
+                          className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3 cursor-pointer"
+                          style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
+                          onClick={() => {
+                            // Fire the file input first, then close dropdown in the next frame
+                            fileInputRef.current?.click();
+                            requestAnimationFrame(() => setUploadDropdownOpen(false));
+                          }}
+                        >
+                          <Desktop size={22} weight="bold" color="#555" />
+                          Desktop
+                        </button>
+                        <button
+                          className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
+                          style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
+                          onClick={() => { setUploadDropdownOpen(false); router.push("/templates"); }}
+                        >
+                          <Layout size={22} weight="bold" color="#555" />
+                          Use a template
+                        </button>
+
+                        <hr style={{ border: "none", borderTop: "1px solid #E8E8E8", margin: "4px 0" }} />
+
+                        {/* Cloud providers */}
+                        <button
+                          className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
+                          style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
+                          onClick={() => { setUploadDropdownOpen(false); }}
+                        >
+                          <span style={{ fontSize: "14px", fontWeight: 700, color: "#888", width: "22px", textAlign: "center", fontFamily: "sans-serif" }}>box</span>
+                          Box
+                        </button>
+                        <button
+                          className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
+                          style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
+                          onClick={() => { setUploadDropdownOpen(false); }}
+                        >
+                          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 2l4.5 3L12 4l1.5 1L18 2v4.5L15 9l3 2.5V16l-4.5-3L12 14l-1.5-1L6 16v-4.5L9 9 6 6.5V2z" fill="#999"/></svg>
+                          Dropbox
+                        </button>
+                        <button
+                          className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
+                          style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
+                          onClick={() => { setUploadDropdownOpen(false); }}
+                        >
+                          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 11l8-5-4-3-4 2.5L8 3 4 6l8 5zm0 2L4 8v6l8 5 8-5V8l-8 5z" fill="#bbb"/><path d="M12 13l-8-5v6l8 5V13z" fill="#999"/><path d="M12 13l8-5v6l-8 5V13z" fill="#888"/></svg>
+                          Google Drive
+                        </button>
+                        <button
+                          className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
+                          style={{ padding: "10px 16px", fontSize: "15px", color: "#1B0A3C" }}
+                          onClick={() => { setUploadDropdownOpen(false); }}
+                        >
+                          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 16a4 4 0 01-4-4c0-1.95 1.4-3.57 3.25-3.92A5.5 5.5 0 0116.5 3 5.5 5.5 0 0122 8.5c0 .28-.02.55-.07.82A3.5 3.5 0 0121 16H12z" fill="#aaa" opacity="0.7"/><path d="M8 20a3 3 0 01-3-3c0-1.3.84-2.4 2-2.82V12a5 5 0 015-5c2.34 0 4.29 1.6 4.84 3.77A3.5 3.5 0 0117.5 17.5 3.49 3.49 0 0116 17H8z" fill="#999"/></svg>
+                          OneDrive
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </label>
+
+                {/* Add More Documents link — only visible after upload */}
+                {uploadedFiles.length > 0 && (
+                  <div className="flex justify-start mt-3">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      style={{ color: "#4C00FF", fontSize: "14px", fontWeight: 400, background: "none", border: "none", padding: 0 }}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Add More Documents
+                    </button>
+                  </div>
+                )}
+
+                {/* In-progress uploads — indeterminate animated bar */}
+                {Object.keys(uploadingDocs).map((name) => (
+                  <div
+                    key={name}
+                    className="mt-3 rounded"
+                    style={{
+                      border: "1px solid #E0E0E0",
+                      background: "#FAFAFA",
+                      padding: "12px",
+                    }}
+                  >
+                    <div className="flex justify-between mb-2">
+                      <span
+                        className="truncate"
+                        style={{ fontSize: "13px", color: "rgba(19,0,50,0.9)" }}
+                      >
+                        {name}
+                      </span>
+                      <span style={{ fontSize: "12px", color: "#4C00FF", fontWeight: 500 }}>
+                        Uploading...
+                      </span>
+                    </div>
+                    <div
+                      className="rounded-full overflow-hidden"
+                      style={{ height: "4px", background: "#E0E0E0", position: "relative" }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          height: "100%",
+                          width: "40%",
+                          background: "#4C00FF",
+                          borderRadius: "9999px",
+                          animation: "uploadIndeterminate 1.4s ease-in-out infinite",
+                        }}
+                      />
+                    </div>
+                    <style>{`
+                      @keyframes uploadIndeterminate {
+                        0%   { left: -40%; width: 40%; }
+                        50%  { left: 60%; width: 40%; }
+                        100% { left: 110%; width: 40%; }
+                      }
+                    `}</style>
+                  </div>
+                ))}
+
+                {/* Uploaded file list */}
+                {uploadedFiles.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {uploadedFiles.map((file, i) => {
+                      const isJustUploaded = justUploadedDocs[file.id];
+                      return (
+                        <div
+                          key={file.id || i}
+                          className="flex items-center gap-3 rounded"
+                          style={{
+                            border: `1px solid ${isJustUploaded ? "#22c55e" : "#E0E0E0"}`,
+                            background: isJustUploaded ? "#f0fdf4" : "#FAFAFA",
+                            padding: "12px 16px",
+                            transition: "border-color 0.3s, background 0.3s",
+                          }}
+                        >
+                          {/* Icon: green checkmark flash, then PDF icon */}
+                          {isJustUploaded ? (
+                            <div
+                              className="flex items-center justify-center flex-shrink-0 rounded"
+                              style={{ background: "#dcfce7", width: "36px", height: "36px" }}
+                            >
+                              <svg viewBox="0 0 24 24" fill="#16a34a" width="20" height="20">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                              </svg>
+                            </div>
+                          ) : (
+                            <div
+                              className="flex items-center justify-center flex-shrink-0 rounded"
+                              style={{ background: "#FFEBEE", width: "36px", height: "36px" }}
+                            >
+                              <svg viewBox="0 0 24 24" fill="#D93025" width="18" height="18">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z" />
+                              </svg>
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className="font-medium truncate"
+                              style={{ fontSize: "13px", color: "rgba(19,0,50,0.9)" }}
+                            >
+                              {file.name || "document.pdf"}
+                            </p>
+                            {isJustUploaded ? (
+                              <p style={{ fontSize: "12px", color: "#16a34a", fontWeight: 500 }}>
+                                Uploaded
+                              </p>
+                            ) : (
+                              <p style={{ fontSize: "12px", color: file.size > 0 ? "#999" : "#22c55e" }}>
+                                {file.size > 0 ? formatSize(file.size) : "Uploaded"}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={async () => {
+                              if (file.id) {
+                                try { await deleteDocument(file.id); } catch (e) {
+                                  console.error("Failed to delete document:", e);
+                                }
+                              }
+                              uploadedFileObjectsRef.current = uploadedFileObjectsRef.current.filter((_, idx) => idx !== i);
+                              setUploadedFiles((prev) => prev.filter((_, idx) => idx !== i));
+                            }}
+                            className="rounded hover:bg-red-50 transition-colors"
+                            style={{ padding: "6px" }}
+                            aria-label="Remove file"
+                          >
+                            <Trash size={16} weight="bold" color="#999" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Section divider */}
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.12)", margin: "24px 0" }} />
+
+          {/* ────────────────────────────────────────
+              Section 2 — Add recipients
+          ──────────────────────────────────────── */}
+          <div>
+            {/* Section heading row */}
+            <button
+              className="w-full flex items-center justify-between text-left"
+              style={{ padding: "4px 0 16px" }}
+              onClick={() => setRecipientsOpen((o) => !o)}
+            >
+              <span
+                style={{
+                  fontSize: "20px",
+                  fontWeight: 500,
+                  color: "rgba(19,0,50,0.9)",
+                }}
+              >
+                Add recipients
+              </span>
+              {recipientsOpen ? (
+                <CaretUp size={20} weight="bold" color="#555" />
+              ) : (
+                <CaretDown size={20} weight="bold" color="#555" />
+              )}
+            </button>
+
+            {recipientsOpen && (
+              <div>
+                {/* Thin divider below heading */}
+                <div style={{ height: "1px", background: "rgba(19,0,50,0.12)", marginBottom: "16px" }} />
+                {/* Options rows — stacked vertically like real DocuSign */}
+                <div className="mb-4" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {/* "I'm the only signer" — hidden in template mode */}
+                  {!isTemplateMode && (
+                    <label className="flex items-center gap-2 cursor-pointer select-none" style={{ width: "fit-content" }}>
+                      <input
+                        type="checkbox"
+                        checked={imOnlySigner}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setImOnlySigner(checked);
+                          if (checked) {
+                            const userName = currentUser?.name || envelope?.from || "";
+                            const userEmail = currentUser?.email || envelope?.fromEmail || "";
+                            setRecipients([{
+                              id: "r1",
+                              name: userName,
+                              email: userEmail,
+                              role: "signer",
+                              order: 1,
+                              color: getRecipientColor(0),
+                            }]);
+                          } else if (!checked) {
+                            setRecipients([{
+                              id: "r1",
+                              name: "",
+                              email: "",
+                              role: "signer",
+                              order: 1,
+                              color: getRecipientColor(0),
+                            }]);
+                          }
+                        }}
+                        className="w-4 h-4"
+                        style={{ accentColor: "#4C00FF" }}
+                      />
+                      <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)" }}>
+                        I&apos;m the only signer
+                      </span>
+                      <Info size={15} weight="bold" color="rgba(19,0,50,0.5)" />
+                    </label>
+                  )}
+
+                  {!imOnlySigner && (
+                    <label className="flex items-center gap-2 select-none" style={{ width: "fit-content", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={setSigningOrder}
+                        onChange={(e) => setSetSigningOrder(e.target.checked)}
+                        className="w-4 h-4"
+                        style={{ accentColor: "#4C00FF" }}
+                      />
+                      <span style={{ fontSize: "14px", color: setSigningOrder ? "rgba(19,0,50,0.9)" : "rgba(19,0,50,0.5)" }}>
+                        Set signing order
+                      </span>
+                      <button
+                        className="hover:underline"
+                        onClick={(e) => { e.preventDefault(); setSigningDiagramOpen(true); }}
+                        style={{ fontSize: "14px", color: "#4C00FF", fontWeight: 400, background: "none", border: "none", cursor: "pointer" }}
+                      >
+                        View
+                      </button>
+                      {!isTemplateMode && (
+                        <button
+                          className="hover:underline"
+                          onClick={(e) => { e.preventDefault(); setBulkModalOpen(true); setBulkStep(1); }}
+                          style={{ fontSize: "14px", color: "#4C00FF", fontWeight: 400, background: "none", border: "none", cursor: "pointer" }}
+                        >
+                          Bulk send
+                        </button>
+                      )}
+                    </label>
+                  )}
+                </div>
+
+                {/* Recipient cards — hidden when "I'm the only signer" */}
+                {!imOnlySigner && (
+                <div className="space-y-3" style={{ marginTop: "16px" }}>
+                  {recipients.map((recipient, recipientIdx) => (
+                    <div key={recipient.id}>
+                    <div
+                      style={{
+                        border: "1px solid rgba(19,0,50,0.12)",
+                        borderLeft: `4px solid ${recipient.color}`,
+                        borderRadius: "4px",
+                        padding: "16px 24px",
+                        background: "#fff",
+                        position: "relative",
+                      }}
+                    >
+                      {/* Reorder arrows — always visible when multiple recipients */}
+                      {recipients.length > 1 && (
+                        <div style={{ position: "absolute", right: "8px", top: "8px", display: "flex", flexDirection: "column", gap: "2px" }}>
+                          <button
+                            disabled={recipientIdx === 0}
+                            onClick={() => {
+                              if (recipientIdx === 0) return;
+                              setRecipients((prev) => {
+                                const arr = [...prev];
+                                [arr[recipientIdx - 1], arr[recipientIdx]] = [arr[recipientIdx], arr[recipientIdx - 1]];
+                                return arr.map((r, i) => ({ ...r, order: i + 1 }));
+                              });
+                            }}
+                            style={{
+                              width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center",
+                              border: "1px solid rgba(19,0,50,0.15)", borderRadius: "3px", background: "white",
+                              cursor: recipientIdx === 0 ? "default" : "pointer",
+                              opacity: recipientIdx === 0 ? 0.3 : 1,
+                              color: "rgba(19,0,50,0.6)",
+                            }}
+                            title="Move up"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 2L1 6h8L5 2z" fill="currentColor"/></svg>
+                          </button>
+                          <button
+                            disabled={recipientIdx === recipients.length - 1}
+                            onClick={() => {
+                              if (recipientIdx === recipients.length - 1) return;
+                              setRecipients((prev) => {
+                                const arr = [...prev];
+                                [arr[recipientIdx], arr[recipientIdx + 1]] = [arr[recipientIdx + 1], arr[recipientIdx]];
+                                return arr.map((r, i) => ({ ...r, order: i + 1 }));
+                              });
+                            }}
+                            style={{
+                              width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center",
+                              border: "1px solid rgba(19,0,50,0.15)", borderRadius: "3px", background: "white",
+                              cursor: recipientIdx === recipients.length - 1 ? "default" : "pointer",
+                              opacity: recipientIdx === recipients.length - 1 ? 0.3 : 1,
+                              color: "rgba(19,0,50,0.6)",
+                            }}
+                            title="Move down"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 8L1 4h8L5 8z" fill="currentColor"/></svg>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Signing order input — only visible when "Set signing order" is checked */}
+                      {setSigningOrder && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                          <label style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)" }}>Order</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={recipient.order}
+                            onChange={(e) => {
+                              const raw = parseInt(e.target.value) || 1;
+                              const clamped = Math.max(1, Math.min(recipients.length, raw));
+                              setRecipients((prev) => {
+                                const others = prev
+                                  .filter((r) => r.id !== recipient.id)
+                                  .sort((a, b) => a.order - b.order);
+                                const result: typeof prev = [];
+                                let oi = 0;
+                                for (let pos = 1; pos <= prev.length; pos++) {
+                                  if (pos === clamped) {
+                                    result.push({ ...prev.find((r) => r.id === recipient.id)!, order: pos });
+                                  } else if (oi < others.length) {
+                                    result.push({ ...others[oi], order: pos });
+                                    oi++;
+                                  }
+                                }
+                                return result;
+                              });
+                            }}
+                            style={{ width: "60px", padding: "6px 8px", border: "1px solid rgba(19,0,50,0.25)", borderRadius: "4px", fontSize: "14px" }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Role name field — template mode only, shown above Name */}
+                      {isTemplateMode && (
+                        <div style={{ marginBottom: "12px" }}>
+                          <label
+                            className="block mb-1"
+                            style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}
+                          >
+                            Role
+                          </label>
+                          <input
+                            type="text"
+                            value={recipient.templateRole ?? ""}
+                            onChange={(e) =>
+                              updateRecipient(recipient.id, { templateRole: e.target.value })
+                            }
+                            placeholder="e.g., Customer, Admin, Sales Rep"
+                            className="focus:outline-none transition-all"
+                            style={{
+                              border: "1px solid rgba(19,0,50,0.25)",
+                              borderRadius: "4px",
+                              padding: "8px 12px",
+                              fontSize: "16px",
+                              width: "100%",
+                              maxWidth: "320px",
+                              color: "rgba(19,0,50,0.9)",
+                            }}
+                            onFocus={(e) => {
+                              e.target.style.borderColor = "#4C00FF";
+                              e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)";
+                            }}
+                            onBlur={(e) => {
+                              e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                              e.target.style.boxShadow = "none";
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Row 1: Name + Role dropdown + Customize + Remove */}
+                      <div className="flex items-end gap-3 mb-3 flex-wrap">
+                        {/* Name */}
+                        <div className="flex-1" style={{ minWidth: "160px" }}>
+                          <label
+                            className="block mb-1"
+                            style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}
+                          >
+                            Name {!isTemplateMode && <span style={{ color: "#C0392B" }}>*</span>}
+                          </label>
+                          <div className="relative">
+                            <AddressBook
+                              size={15}
+                              weight="bold"
+                              color="#aaa"
+                              style={{
+                                position: "absolute",
+                                left: "10px",
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                pointerEvents: "none",
+                              }}
+                            />
+                            <input
+                              type="text"
+                              value={recipient.name}
+                              onChange={(e) =>
+                                updateRecipient(recipient.id, { name: e.target.value })
+                              }
+                              disabled={imOnlySigner}
+                              placeholder={undefined}
+                              className="w-full focus:outline-none transition-all"
+                              style={{
+                                paddingLeft: "36px",
+                                paddingRight: "12px",
+                                paddingTop: "8px",
+                                paddingBottom: "8px",
+                                fontSize: "16px",
+                                border: `1px solid ${triedToProceed && !isTemplateMode && !recipient.name?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
+                                borderRadius: "4px",
+                                background: imOnlySigner ? "#F3F3F3" : "#fff",
+                                color: imOnlySigner ? "#888" : "rgba(19,0,50,0.9)",
+                                cursor: imOnlySigner ? "not-allowed" : undefined,
+                              }}
+                              onFocus={(e) => {
+                                if (!imOnlySigner) {
+                                  e.target.style.borderColor = "#4C00FF";
+                                  e.target.style.boxShadow =
+                                    "0 0 0 2px rgba(76,0,255,0.12)";
+                                }
+                              }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = triedToProceed && !isTemplateMode && !recipient.name?.trim() ? "#C0392B" : "rgba(19,0,50,0.25)";
+                                e.target.style.boxShadow = "none";
+                              }}
+                            />
+                            {triedToProceed && !isTemplateMode && !recipient.name?.trim() && (
+                              <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
+                                Required
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Role dropdown */}
+                        <div
+                          className="relative"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            className="flex items-center gap-1.5 bg-white transition-colors hover:bg-gray-50"
+                            style={{
+                              border: "1px solid rgba(19,0,50,0.25)",
+                              borderRadius: "4px",
+                              padding: "8px 12px",
+                              fontSize: "16px",
+                              fontWeight: 500,
+                              color: "rgba(19,0,50,0.9)",
+                              whiteSpace: "nowrap",
+                            }}
+                            onClick={() =>
+                              setRoleDropdownOpen((prev) => ({
+                                ...prev,
+                                [recipient.id]: !prev[recipient.id],
+                              }))
+                            }
+                          >
+                            <PencilSimple size={16} weight="bold" color="rgba(19,0,50,0.7)" />
+                            {roleLabel[recipient.role] ?? "Needs to Sign"}
+                            <CaretDown size={14} weight="bold" color="rgba(19,0,50,0.7)" />
+                          </button>
+
+                          {roleDropdownOpen[recipient.id] && (
+                            <div
+                              className="absolute bg-white rounded shadow-lg z-10 py-1"
+                              style={{
+                                border: "1px solid #E0E0E0",
+                                minWidth: "200px",
+                                top: "100%",
+                                left: 0,
+                                marginTop: "2px",
+                              }}
+                            >
+                              {(
+                                [
+                                  { value: "signer", label: "Needs to Sign", icon: <PencilSimple size={16} weight="bold" color="#555" /> },
+                                  { value: "approver", label: "Needs to Approve", icon: <svg viewBox="0 0 24 24" fill="#555" width="16" height="16"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg> },
+                                  { value: "in_person", label: "In Person Signer", icon: <UserCircle size={16} weight="bold" color="#555" /> },
+                                  { value: "cc", label: "Receives a Copy", icon: <span style={{ fontSize: "11px", fontWeight: 700, color: "#555", lineHeight: 1 }}>CC</span> },
+                                  { value: "viewer", label: "Needs to View", icon: <Eye size={16} weight="bold" color="#555" /> },
+                                ] as { value: string; label: string; icon: ReactNode }[]
+                              ).map(({ value, label, icon }) => (
+                                <button
+                                  key={value}
+                                  className="w-full text-left hover:bg-gray-50 transition-colors flex items-center gap-2"
+                                  style={{
+                                    padding: "9px 16px",
+                                    fontSize: "14px",
+                                    color: "#333",
+                                  }}
+                                  onClick={() => {
+                                    updateRecipient(recipient.id, { role: value });
+                                    setRoleDropdownOpen((prev) => ({
+                                      ...prev,
+                                      [recipient.id]: false,
+                                    }));
+                                  }}
+                                >
+                                  <span className="flex items-center justify-center" style={{ width: "18px" }}>{icon}</span>
+                                  <span style={{ flex: 1 }}>{label}</span>
+                                  {recipient.role === value && (
+                                    <svg viewBox="0 0 24 24" fill="#4C00FF" width="16" height="16"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Customize dropdown */}
+                        <div
+                          className="relative"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            className="flex items-center gap-1.5 bg-white transition-colors hover:bg-gray-50"
+                            style={{
+                              border: "1px solid rgba(19,0,50,0.25)",
+                              borderRadius: "4px",
+                              padding: "8px 12px",
+                              fontSize: "16px",
+                              fontWeight: 500,
+                              color: "rgba(19,0,50,0.9)",
+                            }}
+                            onClick={() =>
+                              setCustomizeDropdownOpen((prev) => ({
+                                ...prev,
+                                [recipient.id]: !prev[recipient.id],
+                              }))
+                            }
+                          >
+                            Customize
+                            <CaretDown size={14} weight="bold" color="rgba(19,0,50,0.7)" />
+                          </button>
+
+                          {customizeDropdownOpen[recipient.id] && (
+                            <div
+                              className="absolute bg-white rounded shadow-lg z-10 py-1"
+                              style={{
+                                border: "1px solid #E0E0E0",
+                                minWidth: "260px",
+                                top: "100%",
+                                left: 0,
+                                marginTop: "2px",
+                              }}
+                            >
+                              <button
+                                className="w-full text-left hover:bg-gray-50 transition-colors flex items-start gap-3"
+                                style={{ padding: "12px 16px" }}
+                                onClick={() => {
+                                  setCustomizeDropdownOpen((prev) => ({ ...prev, [recipient.id]: false }));
+                                  updateRecipient(recipient.id, { idCheck: false, accessCode: undefined });
+                                  updateInlineState(recipient.id, { showAccessCode: true, accessCodeCollapsed: false, verificationMethod: "Access Code" });
+                                }}
+                              >
+                                <Key size={20} weight="bold" color="#555" style={{ flexShrink: 0, marginTop: "2px" }} />
+                                <div>
+                                  <div style={{ fontSize: "14px", fontWeight: 500, color: "#1B0A3C" }}>Add access code</div>
+                                  <div style={{ fontSize: "12px", color: "#888", marginTop: "2px" }}>Enter a code that only you and this recipient know.</div>
+                                </div>
+                              </button>
+                              <button
+                                className="w-full text-left hover:bg-gray-50 transition-colors flex items-start gap-3"
+                                style={{ padding: "12px 16px" }}
+                                onClick={() => {
+                                  setCustomizeDropdownOpen((prev) => ({ ...prev, [recipient.id]: false }));
+                                  updateRecipient(recipient.id, { idCheck: true, accessCode: undefined });
+                                  updateInlineState(recipient.id, { showAccessCode: true, accessCodeCollapsed: false, verificationMethod: "ID Evidence" });
+                                }}
+                              >
+                                <IdentificationCard size={20} weight="bold" color="#555" style={{ flexShrink: 0, marginTop: "2px" }} />
+                                <div>
+                                  <div style={{ fontSize: "14px", fontWeight: 500, color: "#1B0A3C" }}>ID verification</div>
+                                  <div style={{ fontSize: "12px", color: "#888", marginTop: "2px" }}>Require the signer to verify their identity with a government-issued ID.</div>
+                                </div>
+                              </button>
+                              <button
+                                className="w-full text-left hover:bg-gray-50 transition-colors flex items-start gap-3"
+                                style={{ padding: "12px 16px" }}
+                                onClick={() => {
+                                  setCustomizeDropdownOpen((prev) => ({ ...prev, [recipient.id]: false }));
+                                  updateInlineState(recipient.id, { showPrivateMessage: true, privateMessageCollapsed: false });
+                                }}
+                              >
+                                <ChatText size={20} weight="bold" color="#555" style={{ flexShrink: 0, marginTop: "2px" }} />
+                                <div>
+                                  <div style={{ fontSize: "14px", fontWeight: 500, color: "#1B0A3C" }}>Add private message</div>
+                                  <div style={{ fontSize: "12px", color: "#888", marginTop: "2px" }}>
+                                    {recipient.privateMessage ? "Edit personal note for this recipient." : "Include a personal note with this recipient."}
+                                  </div>
+                                </div>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Private message indicator — shows when there's a saved message but section is hidden */}
+                        {recipient.privateMessage && !getInlineState(recipient.id).showPrivateMessage && (
+                          <div title={recipient.privateMessage}>
+                            <label className="block font-semibold mb-1 invisible" style={{ fontSize: "12px" }}>&nbsp;</label>
+                            <button
+                              onClick={() => updateInlineState(recipient.id, { showPrivateMessage: true, privateMessageCollapsed: false })}
+                              className="flex items-center gap-1 rounded transition-colors hover:bg-purple-50"
+                              style={{ padding: "8px 10px", border: "1px solid rgba(76,0,255,0.3)", background: "rgba(76,0,255,0.05)", borderRadius: "4px" }}
+                              title="Private message set — click to edit"
+                            >
+                              <ChatText size={14} weight="bold" color="#4C00FF" />
+                              <span style={{ fontSize: "12px", color: "#4C00FF", fontWeight: 500 }}>Note</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Remove button */}
+                        {recipients.length > 1 && (
+                          <div>
+                            <label
+                              className="block font-semibold mb-1 invisible"
+                              style={{ fontSize: "12px" }}
+                            >
+                              &nbsp;
+                            </label>
+                            <button
+                              onClick={() => removeRecipient(recipient.id)}
+                              className="flex items-center justify-center rounded hover:bg-red-50 transition-colors"
+                              style={{
+                                width: "36px",
+                                height: "36px",
+                              }}
+                              aria-label="Remove recipient"
+                            >
+                              <Trash size={16} weight="bold" color="#aaa" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Row 2: Email */}
+                      <div style={{ marginTop: "12px" }}>
+                        <label
+                          className="block mb-1"
+                          style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}
+                        >
+                          Email {!isTemplateMode && <span style={{ color: "#C0392B" }}>*</span>}
+                        </label>
+                        <input
+                          type="email"
+                          value={recipient.email}
+                          onChange={(e) => {
+                            const newEmail = e.target.value;
+                            updateRecipient(recipient.id, { email: newEmail });
+                            // Check for duplicate emails
+                            const emailLower = newEmail.trim().toLowerCase();
+                            if (emailLower) {
+                              const isDuplicate = recipients.some(
+                                (r) => r.id !== recipient.id && r.email.trim().toLowerCase() === emailLower
+                              );
+                              setDuplicateEmailErrors((prev) => ({ ...prev, [recipient.id]: isDuplicate }));
+                            } else {
+                              setDuplicateEmailErrors((prev) => ({ ...prev, [recipient.id]: false }));
+                            }
+                          }}
+                          disabled={imOnlySigner}
+                          placeholder={undefined}
+                          className="focus:outline-none transition-all"
+                          style={{
+                            border: `1px solid ${(triedToProceed && !isTemplateMode && !recipient.email?.trim()) || duplicateEmailErrors[recipient.id] ? "#C0392B" : "rgba(19,0,50,0.25)"}`,
+                            borderRadius: "4px",
+                            padding: "8px 16px",
+                            fontSize: "16px",
+                            width: "100%",
+                            maxWidth: "460px",
+                            background: imOnlySigner ? "#F3F3F3" : "#fff",
+                            color: imOnlySigner ? "#888" : "rgba(19,0,50,0.9)",
+                            cursor: imOnlySigner ? "not-allowed" : undefined,
+                          }}
+                          onFocus={(e) => {
+                            if (!imOnlySigner) {
+                              e.target.style.borderColor = "#4C00FF";
+                              e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)";
+                            }
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = (triedToProceed && !isTemplateMode && !recipient.email?.trim()) || duplicateEmailErrors[recipient.id] ? "#C0392B" : "rgba(19,0,50,0.25)";
+                            e.target.style.boxShadow = "none";
+                          }}
+                        />
+                        {duplicateEmailErrors[recipient.id] && (
+                          <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
+                            This email address is already used by another recipient
+                          </p>
+                        )}
+                        {triedToProceed && !isTemplateMode && !recipient.email?.trim() && (
+                          <p style={{ fontSize: "11px", color: "#C0392B", marginTop: "4px" }}>
+                            Required
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Inline: Access Code ── */}
+                    {getInlineState(recipient.id).showAccessCode && (
+                      <div
+                        style={{
+                          borderLeft: `4px solid ${recipient.color}`,
+                          borderTop: "1px solid rgba(19,0,50,0.12)",
+                          borderRight: "1px solid rgba(19,0,50,0.12)",
+                          borderBottom: "1px solid rgba(19,0,50,0.12)",
+                          borderRadius: "0 0 4px 4px",
+                          background: "#fff",
+                          marginTop: "-1px",
+                        }}
+                      >
+                        {/* Header row */}
+                        <div
+                          className="flex items-center justify-between"
+                          style={{ padding: "12px 16px", borderBottom: getInlineState(recipient.id).accessCodeCollapsed ? "none" : "1px solid rgba(19,0,50,0.08)" }}
+                        >
+                          <span style={{ fontSize: "14px", fontWeight: 600, color: "rgba(19,0,50,0.9)" }}>
+                            Access code
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                updateRecipient(recipient.id, { accessCode: undefined });
+                                updateInlineState(recipient.id, { showAccessCode: false });
+                                const recipId = recipient.id;
+                                if (!/^r/.test(recipId)) {
+                                  setRecipientAccessCode(recipId, "").catch(() => { /* clearing access code — non-critical */ });
+                                }
+                              }}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title="Remove access code"
+                            >
+                              <Trash size={15} weight="bold" color="#999" />
+                            </button>
+                            <button
+                              onClick={() => updateInlineState(recipient.id, { accessCodeCollapsed: !getInlineState(recipient.id).accessCodeCollapsed })}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title={getInlineState(recipient.id).accessCodeCollapsed ? "Expand" : "Collapse"}
+                            >
+                              {getInlineState(recipient.id).accessCodeCollapsed
+                                ? <CaretDown size={14} weight="bold" color="#555" />
+                                : <CaretUp size={14} weight="bold" color="#555" />
+                              }
+                            </button>
+                          </div>
+                        </div>
+                        {/* Body */}
+                        {!getInlineState(recipient.id).accessCodeCollapsed && (
+                          <div style={{ padding: "14px 16px 16px" }}>
+                            {/* Verification method dropdown */}
+                            <div style={{ marginBottom: "14px" }}>
+                              <label
+                                style={{
+                                  display: "block",
+                                  fontSize: "13px",
+                                  fontWeight: 500,
+                                  color: "rgba(19,0,50,0.7)",
+                                  marginBottom: "6px",
+                                }}
+                              >
+                                Verification method
+                              </label>
+                              <select
+                                className="bg-white focus:outline-none"
+                                value={getInlineState(recipient.id).verificationMethod}
+                                onChange={(e) => {
+                                  const method = e.target.value;
+                                  updateInlineState(recipient.id, { verificationMethod: method });
+                                  updateRecipient(recipient.id, { idCheck: method === "ID Evidence" });
+                                }}
+                                style={{
+                                  border: "1px solid rgba(19,0,50,0.25)",
+                                  borderRadius: "4px",
+                                  padding: "8px 12px",
+                                  fontSize: "14px",
+                                  color: "rgba(19,0,50,0.9)",
+                                  width: "100%",
+                                  maxWidth: "320px",
+                                }}
+                              >
+                                {[
+                                  { value: "Access Code", label: "Access Code" },
+                                  { value: "SMS", label: "SMS (Coming Soon)" },
+                                  { value: "Knowledge-based", label: "Knowledge-based (Coming Soon)" },
+                                  { value: "ID Evidence", label: "ID Evidence" },
+                                  { value: "Phone Verification", label: "Phone Verification (Coming Soon)" },
+                                ].map((opt) => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {getInlineState(recipient.id).verificationMethod === "Access Code" ? (
+                              <>
+                                <input
+                                  type="text"
+                                  value={recipient.accessCode ?? ""}
+                                  onChange={(e) => updateRecipient(recipient.id, { accessCode: e.target.value })}
+                                  placeholder="Enter access code"
+                                  className="focus:outline-none transition-all"
+                                  style={{
+                                    width: "100%",
+                                    maxWidth: "320px",
+                                    padding: "8px 12px",
+                                    border: "1px solid rgba(19,0,50,0.25)",
+                                    borderRadius: "4px",
+                                    fontSize: "14px",
+                                    color: "rgba(19,0,50,0.9)",
+                                    marginBottom: "10px",
+                                    display: "block",
+                                  }}
+                                  onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)"; }}
+                                  onBlur={(e) => {
+                                    e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                                    e.target.style.boxShadow = "none";
+                                    const code = recipient.accessCode?.trim() || "";
+                                    if (code && !/^r/.test(recipient.id)) {
+                                      setRecipientAccessCode(recipient.id, code).catch(() => {});
+                                    }
+                                  }}
+                                />
+                                <div style={{ fontSize: "12px", color: "rgba(19,0,50,0.5)", lineHeight: "1.6" }}>
+                                  Codes are not case-sensitive.<br />
+                                  You must provide this code to the signer.<br />
+                                  This code is available for you to review on the Envelope Details page.
+                                </div>
+                              </>
+                            ) : getInlineState(recipient.id).verificationMethod === "ID Evidence" ? (
+                              <div style={{
+                                padding: "12px 16px",
+                                background: "#F0FDF4",
+                                border: "1px solid #BBF7D0",
+                                borderRadius: "6px",
+                                fontSize: "13px",
+                                color: "#166534",
+                                maxWidth: "320px",
+                              }}>
+                                The signer will be asked to verify their identity by uploading a government-issued ID before accessing the document.
+                              </div>
+                            ) : (
+                              <div style={{
+                                padding: "12px 16px",
+                                background: "#FFF8E1",
+                                border: "1px solid #FFE082",
+                                borderRadius: "6px",
+                                fontSize: "13px",
+                                color: "#F57F17",
+                                maxWidth: "320px",
+                              }}>
+                                This verification method is not yet available. Use Access Code or ID Evidence for recipient authentication.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Inline: Private Message ── */}
+                    {getInlineState(recipient.id).showPrivateMessage && (
+                      <div
+                        style={{
+                          borderLeft: `4px solid ${recipient.color}`,
+                          borderTop: "1px solid rgba(19,0,50,0.12)",
+                          borderRight: "1px solid rgba(19,0,50,0.12)",
+                          borderBottom: "1px solid rgba(19,0,50,0.12)",
+                          borderRadius: "0 0 4px 4px",
+                          background: "#fff",
+                          marginTop: "-1px",
+                        }}
+                      >
+                        {/* Header row */}
+                        <div
+                          className="flex items-center justify-between"
+                          style={{ padding: "12px 16px", borderBottom: getInlineState(recipient.id).privateMessageCollapsed ? "none" : "1px solid rgba(19,0,50,0.08)" }}
+                        >
+                          <span style={{ fontSize: "14px", fontWeight: 600, color: "rgba(19,0,50,0.9)" }}>
+                            Private message
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                updateRecipient(recipient.id, { privateMessage: undefined });
+                                updateInlineState(recipient.id, { showPrivateMessage: false });
+                                if (!/^r/.test(recipient.id)) {
+                                  setRecipientPrivateMessage(recipient.id, "").catch(() => {});
+                                }
+                              }}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title="Remove private message"
+                            >
+                              <Trash size={15} weight="bold" color="#999" />
+                            </button>
+                            <button
+                              onClick={() => updateInlineState(recipient.id, { privateMessageCollapsed: !getInlineState(recipient.id).privateMessageCollapsed })}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title={getInlineState(recipient.id).privateMessageCollapsed ? "Expand" : "Collapse"}
+                            >
+                              {getInlineState(recipient.id).privateMessageCollapsed
+                                ? <CaretDown size={14} weight="bold" color="#555" />
+                                : <CaretUp size={14} weight="bold" color="#555" />
+                              }
+                            </button>
+                          </div>
+                        </div>
+                        {/* Body */}
+                        {!getInlineState(recipient.id).privateMessageCollapsed && (
+                          <div style={{ padding: "14px 16px 16px" }}>
+                            <div className="flex justify-end" style={{ marginBottom: "4px" }}>
+                              <span style={{ fontSize: "12px", color: "rgba(19,0,50,0.5)" }}>
+                                {(recipient.privateMessage || "").length}/1000
+                              </span>
+                            </div>
+                            <textarea
+                              value={recipient.privateMessage ?? ""}
+                              onChange={(e) => updateRecipient(recipient.id, { privateMessage: e.target.value.slice(0, 1000) })}
+                              rows={3}
+                              className="w-full focus:outline-none transition-all resize-none"
+                              style={{
+                                padding: "8px 12px",
+                                border: "1px solid rgba(19,0,50,0.25)",
+                                borderRadius: "4px",
+                                fontSize: "14px",
+                                color: "rgba(19,0,50,0.9)",
+                              }}
+                              onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)"; }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                                e.target.style.boxShadow = "none";
+                                const msg = recipient.privateMessage?.trim() || "";
+                                if (!/^r/.test(recipient.id)) {
+                                  setRecipientPrivateMessage(recipient.id, msg).catch(() => {});
+                                }
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    </div>
+                  ))}
+                </div>
+                )}
+
+                {/* Add Recipient split button — hidden when user is only signer */}
+                {!imOnlySigner && (
+                <div
+                  className="relative flex items-stretch mt-4"
+                  style={{ width: "fit-content" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    className="flex items-center gap-2 transition-colors hover:bg-gray-50"
+                    style={{
+                      border: "1px solid rgba(19,0,50,0.5)",
+                      borderRight: "none",
+                      borderRadius: "4px 0 0 4px",
+                      padding: "4px 12px",
+                      fontSize: "16px",
+                      fontWeight: 500,
+                      color: "rgba(19,0,50,0.9)",
+                      height: "40px",
+                      background: "transparent",
+                    }}
+                    onClick={(e) => { e.stopPropagation(); addRecipient(); }}
+                  >
+                    <UserPlus size={18} weight="bold" />
+                    Add Recipient
+                  </button>
+                  <button
+                    className="flex items-center justify-center transition-colors hover:bg-gray-50"
+                    style={{
+                      border: "1px solid rgba(19,0,50,0.5)",
+                      borderLeft: "1px solid rgba(19,0,50,0.6)",
+                      borderRadius: "0 4px 4px 0",
+                      padding: "0",
+                      width: "40px",
+                      height: "40px",
+                      color: "rgba(19,0,50,0.9)",
+                      background: "transparent",
+                    }}
+                    onClick={() => setAddRecipientDropdownOpen((o) => !o)}
+                    aria-label="More add recipient options"
+                  >
+                    <CaretDown size={14} weight="bold" />
+                  </button>
+
+                  {addRecipientDropdownOpen && (
+                    <div
+                      className="absolute bg-white rounded shadow-lg z-10 py-1"
+                      style={{
+                        border: "1px solid #E0E0E0",
+                        minWidth: "200px",
+                        top: "100%",
+                        left: 0,
+                        marginTop: "2px",
+                      }}
+                    >
+                      <button
+                        className="w-full text-left flex items-center gap-2"
+                        style={{ padding: "10px 16px", fontSize: "14px", color: "#999", cursor: "default" }}
+                        onClick={() => setAddRecipientDropdownOpen(false)}
+                        disabled
+                      >
+                        <AddressBook size={18} weight="bold" color="#ccc" />
+                        Add From Contacts <span style={{ fontSize: "11px", color: "#bbb" }}>(Coming soon)</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+                )}
+
+              </div>
+            )}
+          </div>
+
+          {/* Section divider */}
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.12)", margin: "24px 0" }} />
+
+          {/* ────────────────────────────────────────
+              Section 3 — Add message
+          ──────────────────────────────────────── */}
+          <div>
+            {/* Section heading row */}
+            <button
+              className="w-full flex items-center justify-between text-left"
+              style={{ padding: "4px 0 16px" }}
+              onClick={() => setMessageOpen((o) => !o)}
+            >
+              <span
+                style={{
+                  fontSize: "20px",
+                  fontWeight: 500,
+                  color: "rgba(19,0,50,0.9)",
+                }}
+              >
+                Add message
+              </span>
+              {messageOpen ? (
+                <CaretUp size={20} weight="bold" color="#555" />
+              ) : (
+                <CaretDown size={20} weight="bold" color="#555" />
+              )}
+            </button>
+
+            {messageOpen && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                {/* Thin divider below heading */}
+                <div style={{ height: "1px", background: "rgba(19,0,50,0.12)" }} />
+                {/* Subject */}
+                <div>
+                  <div className="flex items-center justify-between" style={{ marginBottom: "4px" }}>
+                    <label
+                      style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}
+                    >
+                      Subject <span style={{ color: "#C0392B" }}>*</span>
+                    </label>
+                    <span style={{ fontSize: "12px", color: "rgba(19,0,50,0.7)", fontWeight: 500 }}>
+                      {subject.length}/100
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={subject}
+                    maxLength={100}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Complete with Docusign:"
+                    className="w-full focus:outline-none transition-all"
+                    style={{
+                      border: "1px solid rgba(19,0,50,0.25)",
+                      borderRadius: "4px",
+                      padding: "8px 16px",
+                      fontSize: "16px",
+                      color: "rgba(19,0,50,0.9)",
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = "#4C00FF";
+                      e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)";
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                      e.target.style.boxShadow = "none";
+                    }}
+                  />
+                </div>
+
+                {/* Message */}
+                <div>
+                  <div className="flex items-center justify-between" style={{ marginBottom: "4px" }}>
+                    <label
+                      style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}
+                    >
+                      Message
+                    </label>
+                    <span style={{ fontSize: "12px", color: "rgba(19,0,50,0.7)", fontWeight: 500 }}>
+                      {message.length}/10000
+                    </span>
+                  </div>
+                  <textarea
+                    value={message}
+                    maxLength={10000}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Enter Message"
+                    rows={4}
+                    className="w-full focus:outline-none transition-all resize-none"
+                    style={{
+                      border: "1px solid rgba(19,0,50,0.25)",
+                      borderRadius: "4px",
+                      padding: "8px 16px",
+                      fontSize: "16px",
+                      color: "rgba(19,0,50,0.9)",
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = "#4C00FF";
+                      e.target.style.boxShadow = "0 0 0 2px rgba(76,0,255,0.12)";
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = "rgba(19,0,50,0.25)";
+                      e.target.style.boxShadow = "none";
+                    }}
+                  />
+                </div>
+
+                {/* Category dropdown (envelope mode only) */}
+                {!isTemplateMode && (
+                  <div>
+                    <label style={{ fontSize: "16px", color: "rgba(19,0,50,0.9)", fontWeight: 600, display: "block", marginBottom: "8px" }}>
+                      Category
+                    </label>
+                    <select
+                      className="bg-white focus:outline-none"
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      style={{
+                        border: "1px solid rgba(19,0,50,0.25)",
+                        borderRadius: "4px",
+                        padding: "8px 12px",
+                        fontSize: "14px",
+                        color: category ? "rgba(19,0,50,0.9)" : "rgba(19,0,50,0.45)",
+                        width: "100%",
+                        maxWidth: "360px",
+                      }}
+                    >
+                      <option value="">-- Select --</option>
+                      {[
+                        "Agency Agreements", "Bank Account Opening Agreements", "Confidentiality Agreements",
+                        "Consulting Agreements", "Contractor Agreements", "Credit Card Agreements",
+                        "Distribution Agreements", "Employment Contracts", "Franchise Agreements",
+                        "Independent Contractor Agreements", "Intellectual Property Assignment Agreements",
+                        "Investment Account Agreements", "Joint Venture Agreements", "Lease Agreements",
+                        "Licensing Agreements", "Loan Agreements", "Loan Applications",
+                        "Non-Disclosure Agreements (NDAs)", "Onboarding Agreements", "Other",
+                        "Partnership Agreements", "Purchase Agreements", "Sales Contracts",
+                        "Service Agreements", "Software License Agreements", "Vendor Agreements",
+                        "Wealth Management Agreements",
+                      ].map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Frequency of reminders */}
+                <div className="flex items-center" style={{ gap: "12px" }}>
+                  <label style={{ fontSize: "16px", color: "rgba(19,0,50,0.9)", fontWeight: 400 }}>
+                    Frequency of reminders
+                  </label>
+                  <select
+                    className="bg-white focus:outline-none"
+                    value={reminderDays}
+                    onChange={(e) => setReminderDays(parseInt(e.target.value) || 0)}
+                    style={{
+                      border: "1px solid rgba(19,0,50,0.25)",
+                      borderRadius: "4px",
+                      padding: "6px 12px",
+                      fontSize: "16px",
+                      color: "rgba(19,0,50,0.9)",
+                    }}
+                  >
+                    <option value="0">Every 0 days</option>
+                    <option value="1">Every 1 day</option>
+                    <option value="2">Every 2 days</option>
+                    <option value="3">Every 3 days</option>
+                    <option value="7">Every 7 days</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* Hidden file input — lives at page level so it's always in the DOM, never removed by dropdown close */}
+      <input
+        ref={fileInputRef}
+        id="file-upload-input"
+        type="file"
+        accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+        multiple
+        style={{ position: "absolute", width: 0, height: 0, opacity: 0, overflow: "hidden", pointerEvents: "none" }}
+        onChange={(e) => {
+          if (e.target.files) handleFilesDrop(e.target.files);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Signing Order Diagram Modal */}
+      {signingDiagramOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => setSigningDiagramOpen(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-2xl"
+            style={{ width: "520px", maxWidth: "90vw", padding: "32px", position: "relative" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 style={{ fontSize: "22px", fontWeight: 500, color: "rgba(19,0,50,0.9)", margin: 0 }}>
+                Signing Order Diagram
+              </h2>
+              <button
+                onClick={() => setSigningDiagramOpen(false)}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}
+              >
+                <X size={20} weight="bold" color="#555" />
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0" }}>
+              {/* SENDER */}
+              <div className="flex items-center gap-4" style={{ width: "100%", padding: "12px 0" }}>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.05em", width: "100px" }}>SENDER</span>
+                <div style={{ flex: 1, borderBottom: "2px dashed rgba(19,0,50,0.12)" }} />
+                <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "rgba(19,0,50,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 600, color: "rgba(19,0,50,0.6)" }}>
+                  {currentUser?.name?.split(" ").map(n => n[0]).join("").substring(0, 2) || "ME"}
+                </div>
+              </div>
+
+              {/* Vertical connector */}
+              <div style={{ width: "2px", height: "20px", background: "rgba(19,0,50,0.12)", marginLeft: "auto", marginRight: "20px" }} />
+
+              {/* Recipients */}
+              {recipients.filter(r => r.name || r.email).map((r, i) => (
+                <div key={r.id}>
+                  <div className="flex items-center gap-4" style={{ width: "100%", padding: "12px 0" }}>
+                    <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.7)", width: "100px" }}>{r.order}</span>
+                    <div style={{ flex: 1, borderBottom: "2px dashed rgba(19,0,50,0.12)" }} />
+                    <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: r.color || "rgba(19,0,50,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <PencilSimple size={18} weight="bold" color="white" />
+                    </div>
+                  </div>
+                  {i < recipients.filter(r2 => r2.name || r2.email).length - 1 && (
+                    <div style={{ width: "2px", height: "20px", background: "rgba(19,0,50,0.12)", marginLeft: "auto", marginRight: "20px" }} />
+                  )}
+                </div>
+              ))}
+
+              {/* Vertical connector */}
+              <div style={{ width: "2px", height: "20px", background: "rgba(19,0,50,0.12)", marginLeft: "auto", marginRight: "20px" }} />
+
+              {/* COMPLETED */}
+              <div className="flex items-center gap-4" style={{ width: "100%", padding: "12px 0" }}>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.05em", width: "100px" }}>COMPLETED</span>
+                <div style={{ flex: 1, borderBottom: "2px dashed rgba(19,0,50,0.12)" }} />
+                <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "rgba(19,0,50,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg viewBox="0 0 24 24" fill="rgba(19,0,50,0.4)" width="20" height="20"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setSigningDiagramOpen(false)}
+                style={{
+                  padding: "8px 24px",
+                  borderRadius: "4px",
+                  border: "1px solid rgba(19,0,50,0.25)",
+                  background: "white",
+                  color: "rgba(19,0,50,0.9)",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          Advanced Options slide-out panel
+      ══════════════════════════════════════════ */}
+      {/* Backdrop */}
+      {advancedOptionsOpen && (
+        <div
+          className="fixed inset-0 z-40"
+          style={{ background: "rgba(0,0,0,0.25)" }}
+          onClick={() => setAdvancedOptionsOpen(false)}
+        />
+      )}
+
+      {/* Panel */}
+      <div
+        className="fixed top-0 right-0 h-full bg-white z-50 flex flex-col"
+        style={{
+          width: "400px",
+          maxWidth: "100vw",
+          borderLeft: "1px solid #E0E0E0",
+          boxShadow: "-4px 0 24px rgba(0,0,0,0.10)",
+          transform: advancedOptionsOpen ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 0.25s ease",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Panel header */}
+        <div
+          className="flex items-center justify-between flex-shrink-0"
+          style={{ padding: "18px 20px", borderBottom: "1px solid #E0E0E0" }}
+        >
+          <span style={{ fontSize: "17px", fontWeight: 600, color: "rgba(19,0,50,0.9)" }}>
+            Advanced Options
+          </span>
+          <button
+            onClick={() => setAdvancedOptionsOpen(false)}
+            className="flex items-center justify-center rounded hover:bg-gray-100 transition-colors"
+            style={{ width: "32px", height: "32px" }}
+            aria-label="Close"
+          >
+            <X size={18} weight="bold" color="#555" />
+          </button>
+        </div>
+
+        {/* Panel body — scrollable */}
+        <div className="flex-1 overflow-y-auto" style={{ padding: "20px" }}>
+
+          {/* ── Recipient Privileges ── */}
+          <div style={{ marginBottom: "28px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Recipient Privileges
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer select-none" style={{ marginBottom: "12px" }}>
+              <input
+                type="checkbox"
+                checked={advSignOnPaper}
+                onChange={(e) => setAdvSignOnPaper(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Recipients can sign on paper
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={advChangeSigningResponsibility}
+                onChange={(e) => setAdvChangeSigningResponsibility(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Recipients can change signing responsibility or assign a delegate
+              </span>
+            </label>
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.10)", marginBottom: "24px" }} />
+
+          {/* ── Reminders ── */}
+          <div style={{ marginBottom: "28px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Reminders
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={advAutoReminders}
+                onChange={(e) => setAdvAutoReminders(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Turn on auto reminders
+              </span>
+            </label>
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.10)", marginBottom: "24px" }} />
+
+          {/* ── Expiration ── */}
+          <div style={{ marginBottom: "28px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Expiration
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+              <label style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", flex: 1 }}>
+                Days until envelope expires
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={advDaysUntilExpiry}
+                onChange={(e) => setAdvDaysUntilExpiry(parseInt(e.target.value) || 120)}
+                className="focus:outline-none"
+                style={{
+                  width: "80px",
+                  padding: "6px 10px",
+                  border: "1px solid rgba(19,0,50,0.25)",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  color: "rgba(19,0,50,0.9)",
+                  textAlign: "right",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(19,0,50,0.25)"; }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <label style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", flex: 1 }}>
+                Expiration Alert / Send alert
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={advExpirationAlert}
+                onChange={(e) => setAdvExpirationAlert(parseInt(e.target.value) || 0)}
+                className="focus:outline-none"
+                style={{
+                  width: "80px",
+                  padding: "6px 10px",
+                  border: "1px solid rgba(19,0,50,0.25)",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  color: "rgba(19,0,50,0.9)",
+                  textAlign: "right",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#4C00FF"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(19,0,50,0.25)"; }}
+              />
+            </div>
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.10)", marginBottom: "24px" }} />
+
+          {/* ── Mobile-Friendly ── */}
+          <div style={{ marginBottom: "28px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Mobile-Friendly
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={advResponsiveSigning}
+                onChange={(e) => setAdvResponsiveSigning(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Enable Responsive Signing for this envelope
+              </span>
+            </label>
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid rgba(19,0,50,0.10)", marginBottom: "24px" }} />
+
+          {/* ── Comments ── */}
+          <div>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "rgba(19,0,50,0.5)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+              Comments
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={advAllowComments}
+                onChange={(e) => setAdvAllowComments(e.target.checked)}
+                className="mt-0.5 w-4 h-4 flex-shrink-0"
+                style={{ accentColor: "#4C00FF" }}
+              />
+              <span style={{ fontSize: "14px", color: "rgba(19,0,50,0.9)", lineHeight: "1.4" }}>
+                Allow comments
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* Panel footer */}
+        <div
+          className="flex-shrink-0 flex justify-end gap-3"
+          style={{ padding: "16px 20px", borderTop: "1px solid #E0E0E0" }}
+        >
+          <button
+            onClick={() => setAdvancedOptionsOpen(false)}
+            className="hover:bg-gray-50 transition-colors"
+            style={{
+              padding: "8px 20px",
+              borderRadius: "4px",
+              border: "1px solid rgba(19,0,50,0.25)",
+              background: "white",
+              color: "rgba(19,0,50,0.9)",
+              fontSize: "14px",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              setAppliedDaysUntilExpiry(advDaysUntilExpiry);
+              // Persist advanced options to backend immediately on Apply
+              const expiresAt = advDaysUntilExpiry > 0
+                ? new Date(Date.now() + advDaysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
+                : undefined;
+              try {
+                await updateEnvelope(id, {
+                  ...(expiresAt ? { expires_at: expiresAt } : {}),
+                  allow_comments: advAllowComments,
+                  responsive_signing: advResponsiveSigning,
+                  reminder_days: reminderDays,
+                });
+              } catch (err) {
+                console.error("Failed to save advanced options:", err);
+              }
+              setAdvancedOptionsOpen(false);
+            }}
+            style={{
+              padding: "8px 20px",
+              borderRadius: "4px",
+              background: "#4C00FF",
+              color: "white",
+              fontSize: "14px",
+              fontWeight: 500,
+              cursor: "pointer",
+              border: "none",
+            }}
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════
+          Bulk Send Modal
+      ══════════════════════════════════════════ */}
+      {bulkModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => setBulkModalOpen(false)}
+        >
+          <div
+            className="bg-white"
+            style={{ width: "560px", maxWidth: "90vw", borderRadius: "12px", padding: "32px", position: "relative" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* ── Step 1: Choose method ── */}
+            {bulkStep === 1 && (
+              <>
+                {/* Header */}
+                <div className="flex items-center justify-between" style={{ marginBottom: "8px" }}>
+                  <h2 style={{ fontSize: "22px", fontWeight: 500, color: "rgba(19,0,50,0.9)", margin: 0 }}>
+                    Bulk send
+                  </h2>
+                  <button
+                    onClick={() => setBulkModalOpen(false)}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}
+                  >
+                    <X size={20} weight="bold" color="#555" />
+                  </button>
+                </div>
+                <p style={{ fontSize: "14px", color: "rgba(19,0,50,0.55)", marginBottom: "24px" }}>
+                  Choose how you&apos;d like to upload your recipient list.
+                </p>
+
+                {/* Method cards */}
+                <div style={{ display: "flex", gap: "16px", marginBottom: "28px" }}>
+                  {/* Enter manually */}
+                  <button
+                    onClick={() => setBulkMethod("manual")}
+                    style={{
+                      flex: 1,
+                      border: `1.5px solid ${bulkMethod === "manual" ? "#4C00FF" : "rgba(19,0,50,0.15)"}`,
+                      background: bulkMethod === "manual" ? "rgba(76,0,255,0.04)" : "#fff",
+                      borderRadius: "8px",
+                      padding: "16px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      display: "flex",
+                      gap: "12px",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "50%",
+                        border: `2px solid ${bulkMethod === "manual" ? "#4C00FF" : "rgba(19,0,50,0.3)"}`,
+                        flexShrink: 0,
+                        marginTop: "2px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {bulkMethod === "manual" && (
+                        <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#4C00FF" }} />
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "15px", fontWeight: 500, color: "rgba(19,0,50,0.9)", marginBottom: "4px" }}>
+                        Enter manually
+                      </div>
+                      <div style={{ fontSize: "13px", color: "rgba(19,0,50,0.55)", lineHeight: "1.4" }}>
+                        Best for shorter lists. Type each recipient&apos;s name, role, and email address.
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Upload a CSV */}
+                  <button
+                    onClick={() => setBulkMethod("csv")}
+                    style={{
+                      flex: 1,
+                      border: `1.5px solid ${bulkMethod === "csv" ? "#4C00FF" : "rgba(19,0,50,0.15)"}`,
+                      background: bulkMethod === "csv" ? "rgba(76,0,255,0.04)" : "#fff",
+                      borderRadius: "8px",
+                      padding: "16px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      display: "flex",
+                      gap: "12px",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "50%",
+                        border: `2px solid ${bulkMethod === "csv" ? "#4C00FF" : "rgba(19,0,50,0.3)"}`,
+                        flexShrink: 0,
+                        marginTop: "2px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {bulkMethod === "csv" && (
+                        <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#4C00FF" }} />
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "15px", fontWeight: 500, color: "rgba(19,0,50,0.9)", marginBottom: "4px" }}>
+                        Upload a CSV
+                      </div>
+                      <div style={{ fontSize: "13px", color: "rgba(19,0,50,0.55)", lineHeight: "1.4" }}>
+                        Required for 10+ recipients. We&apos;ll provide a sample for formatting help.
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={downloadSampleCsv}
+                    style={{ fontSize: "14px", color: "#4C00FF", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                  >
+                    ↓ Sample CSV
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (bulkMethod === "manual") {
+                        setBulkModalOpen(false);
+                      } else {
+                        setBulkStep(2);
+                      }
+                    }}
+                    style={{
+                      background: "#4C00FF",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "8px 24px",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Step 2: Upload CSV ── */}
+            {bulkStep === 2 && (
+              <>
+                {/* Header */}
+                <div className="flex items-center justify-between" style={{ marginBottom: "20px" }}>
+                  <h2 style={{ fontSize: "20px", fontWeight: 500, color: "rgba(19,0,50,0.9)", margin: 0 }}>
+                    Upload a CSV
+                  </h2>
+                  <button
+                    onClick={() => setBulkModalOpen(false)}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}
+                  >
+                    <X size={20} weight="bold" color="#555" />
+                  </button>
+                </div>
+
+                {/* Drop zone */}
+                <label
+                  className="flex flex-col items-center justify-center cursor-pointer transition-colors"
+                  style={{
+                    background: "rgba(19,0,50,0.04)",
+                    borderBottom: "1px solid rgb(169,169,169)",
+                    borderRadius: "0px",
+                    padding: "40px 24px",
+                    gap: "10px",
+                    marginBottom: "16px",
+                  }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && (file.name.endsWith(".csv") || file.type === "text/csv")) {
+                      setBulkCsvFile(file);
+                      parseBulkCsv(file);
+                    }
+                  }}
+                >
+                  <p style={{ fontSize: "16px", color: "rgba(19,0,50,0.7)", margin: 0 }}>
+                    Drag and drop file here
+                  </p>
+                  <p style={{ fontSize: "13px", color: "rgba(19,0,50,0.4)", margin: 0 }}>
+                    Supported Formats: CSV
+                  </p>
+                  <button
+                    onClick={(e) => { e.preventDefault(); bulkCsvInputRef.current?.click(); }}
+                    style={{
+                      marginTop: "4px",
+                      background: "#4C00FF",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "8px 20px",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Select File
+                  </button>
+                </label>
+
+                <p style={{ fontSize: "13px", color: "rgba(19,0,50,0.55)", marginBottom: "24px" }}>
+                  For help formatting your list, download the{" "}
+                  <button
+                    onClick={downloadSampleCsv}
+                    style={{ fontSize: "13px", color: "#4C00FF", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  >
+                    ↓ Sample CSV
+                  </button>
+                </p>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => { setBulkMethod("manual"); setBulkStep(1); }}
+                    style={{ fontSize: "14px", color: "#4C00FF", background: "none", border: "none", cursor: "pointer" }}
+                  >
+                    Enter Manually Instead
+                  </button>
+                  <button
+                    disabled={!bulkCsvFile}
+                    onClick={() => {
+                      if (bulkCsvFile) {
+                        // parseBulkCsv advances to step 3; if already parsed, advance manually
+                        if (bulkCsvRows.length > 0) {
+                          setBulkStep(3);
+                        } else {
+                          parseBulkCsv(bulkCsvFile);
+                        }
+                      }
+                    }}
+                    style={{
+                      background: "#4C00FF",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "8px 24px",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                      cursor: bulkCsvFile ? "pointer" : "not-allowed",
+                      opacity: bulkCsvFile ? 1 : 0.4,
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+
+                {/* Hidden CSV file input */}
+                <input
+                  ref={bulkCsvInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setBulkCsvFile(file);
+                    parseBulkCsv(file);
+                    e.target.value = "";
+                  }}
+                />
+              </>
+            )}
+
+            {/* ── Step 3: Review recipients ── */}
+            {bulkStep === 3 && (
+              <>
+                {/* Header */}
+                <div className="flex items-center justify-between" style={{ marginBottom: "16px" }}>
+                  <h2 style={{ fontSize: "20px", fontWeight: 500, color: "rgba(19,0,50,0.9)", margin: 0 }}>
+                    Recipients
+                  </h2>
+                  <button
+                    onClick={() => setBulkModalOpen(false)}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}
+                  >
+                    <X size={20} weight="bold" color="#555" />
+                  </button>
+                </div>
+
+                {/* Tabs */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0",
+                    borderBottom: "1px solid rgba(19,0,50,0.12)",
+                    marginBottom: "16px",
+                  }}
+                >
+                  {(["all", "errors"] as const).map((tab) => {
+                    const count = tab === "all" ? bulkCsvRows.length : bulkCsvRows.filter(r => !r.valid).length;
+                    const label = tab === "all" ? `All Recipients (${count})` : `Errors (${count})`;
+                    const isActive = bulkActiveTab === tab;
+                    return (
+                      <button
+                        key={tab}
+                        onClick={() => setBulkActiveTab(tab)}
+                        style={{
+                          padding: "8px 16px",
+                          fontSize: "14px",
+                          color: isActive ? "#4C00FF" : "rgba(19,0,50,0.55)",
+                          background: "none",
+                          border: "none",
+                          borderBottom: isActive ? "2px solid #4C00FF" : "2px solid transparent",
+                          cursor: "pointer",
+                          fontWeight: isActive ? 500 : 400,
+                          marginBottom: "-1px",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Table */}
+                <div style={{ border: "1px solid rgba(19,0,50,0.12)", borderRadius: "4px", overflow: "hidden", maxHeight: "300px", overflowY: "auto", marginBottom: "24px" }}>
+                  <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                    <thead style={{ background: "rgba(19,0,50,0.04)", position: "sticky", top: 0 }}>
+                      <tr>
+                        <th style={{ padding: "8px 12px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "rgba(19,0,50,0.5)", width: "40px" }}>#</th>
+                        <th style={{ padding: "8px 12px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "rgba(19,0,50,0.5)" }}>Name</th>
+                        <th style={{ padding: "8px 12px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "rgba(19,0,50,0.5)" }}>Email</th>
+                        <th style={{ padding: "8px 12px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "rgba(19,0,50,0.5)" }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkCsvRows
+                        .filter(r => bulkActiveTab === "all" || !r.valid)
+                        .map((r, i) => (
+                          <tr key={i} style={{ borderTop: "1px solid rgba(19,0,50,0.06)" }}>
+                            <td style={{ padding: "8px 12px", color: "rgba(19,0,50,0.4)", fontSize: "13px" }}>{i + 1}</td>
+                            <td style={{ padding: "8px 12px", color: "rgba(19,0,50,0.9)", fontSize: "13px" }}>{r.name || "—"}</td>
+                            <td style={{ padding: "8px 12px", color: "rgba(19,0,50,0.9)", fontSize: "13px" }}>{r.email || "—"}</td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <span
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  padding: "2px 8px",
+                                  borderRadius: "10px",
+                                  background: r.valid ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
+                                  color: r.valid ? "#16a34a" : "#dc2626",
+                                }}
+                              >
+                                {r.valid ? "Valid" : "Invalid"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => { setBulkStep(2); }}
+                    style={{ fontSize: "14px", color: "#4C00FF", background: "none", border: "none", cursor: "pointer" }}
+                  >
+                    Back to Upload
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const validRows = bulkCsvRows.filter(r => r.valid);
+                      if (validRows.length === 0) return;
+
+                      if (isBulkMode && bulkCsvFile) {
+                        // ── CSV-driven bulk send: one envelope per CSV row ──
+                        const docs = uploadedFileObjectsRef.current;
+                        if (docs.length === 0) {
+                          // No docs yet — populate recipients from CSV, close modal, let user upload docs
+                          setRecipients(validRows.map((r, i) => ({
+                            id: `csv-${i}`,
+                            name: r.name,
+                            email: r.email,
+                            role: "signer" as const,
+                            order: i + 1,
+                            color: getRecipientColor(i),
+                          })));
+                          setBulkModalOpen(false);
+                          return;
+                        }
+                        setBulkSending(true);
+                        try {
+                          const result = await bulkSendDirect(
+                            docs,
+                            bulkCsvFile,
+                            subject || "Bulk Send",
+                            message || "",
+                            reminderDays,
+                          );
+                          setBulkModalOpen(false);
+                          setBulkCsvFile(null);
+                          setBulkCsvRows([]);
+                          setBulkActiveTab("all");
+                          // Redirect to batch progress tracker
+                          if (result?.batch_id) {
+                            router.push(`/agreements/bulk-send?batch_id=${result.batch_id}`);
+                          } else {
+                            router.push(`/agreements/bulk-send`);
+                          }
+                        } catch (err) {
+                          const msg = err instanceof Error ? err.message : "Bulk send failed. Please try again.";
+                          addToast(`Bulk send error: ${msg}`, "error");
+                        } finally {
+                          setBulkSending(false);
+                        }
+                      } else {
+                        // ── Non-bulk mode: populate recipients form only ────
+                        const newRecipients: RecipientForm[] = validRows.map((r, i) => ({
+                          id: `bulk-${Date.now()}-${i}`,
+                          name: r.name,
+                          email: r.email,
+                          role: "signer",
+                          order: i + 1,
+                          color: getRecipientColor(i),
+                        }));
+                        setRecipients(newRecipients);
+                        setBulkModalOpen(false);
+                        setBulkCsvFile(null);
+                        setBulkCsvRows([]);
+                        setBulkActiveTab("all");
+                      }
+                    }}
+                    disabled={bulkCsvRows.filter(r => r.valid).length === 0 || bulkSending}
+                    style={{
+                      background: "#4C00FF",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "8px 24px",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                      cursor: (bulkCsvRows.filter(r => r.valid).length === 0 || bulkSending) ? "not-allowed" : "pointer",
+                      opacity: (bulkCsvRows.filter(r => r.valid).length === 0 || bulkSending) ? 0.4 : 1,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    {bulkSending && (
+                      <span style={{ width: "14px", height: "14px", border: "2px solid white", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.6s linear infinite" }} />
+                    )}
+                    {bulkSending ? "Sending…" : isBulkMode ? "Send to All" : "Save"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+    <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
+  );
+}

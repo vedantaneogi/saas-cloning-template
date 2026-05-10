@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-APP_NAME ?= saas-clone-factory
+APP_NAME ?= docusign-clone
 PYTHON ?= python3
 NODE_PM ?= pnpm
 UV ?= uv
@@ -20,7 +20,17 @@ help:
 	@echo "  make git-init               Initialize git if missing"
 	@echo "  make install                Install root/web/desktop deps, sync api if uv exists"
 	@echo ""
-	@echo "Pipeline placeholders"
+	@echo "Docker"
+	@echo "  make docker-up              Start all services with Docker Compose"
+	@echo "  make docker-down            Stop all services"
+	@echo "  make docker-build           Build all Docker images"
+	@echo "  make seed                   Seed the database with sample data"
+	@echo ""
+	@echo "Development"
+	@echo "  make dev-api                Run API server locally"
+	@echo "  make dev-web                Run web app locally"
+	@echo ""
+	@echo "Pipeline"
 	@echo "  make capture                Run capture placeholder"
 	@echo "  make formalize              Run formalization placeholder"
 	@echo "  make synthesize             Run synthesis placeholder"
@@ -59,6 +69,8 @@ bootstrap:
 .PHONY: chmod-scripts
 chmod-scripts:
 	@find scripts -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+	@find docker -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+	@find apps -type f -name "entrypoint.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 .PHONY: doctor
 doctor:
@@ -92,10 +104,34 @@ install:
 		if command -v $(UV) >/dev/null 2>&1; then \
 			cd apps/api && $(UV) sync; \
 		else \
-			echo "$(UV) not found; skipping api sync"; \
+			cd apps/api && pip install -e ".[dev]" 2>/dev/null || pip install -e .; \
 		fi; \
 	fi
 	@echo "Install step complete."
+
+.PHONY: dev-api
+dev-api:
+	cd apps/api && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+.PHONY: dev-web
+dev-web:
+	$(NODE_PM) --dir apps/web dev
+
+.PHONY: docker-up
+docker-up:
+	docker compose up -d
+
+.PHONY: docker-down
+docker-down:
+	docker compose down
+
+.PHONY: docker-build
+docker-build:
+	docker compose build
+
+.PHONY: seed
+seed:
+	curl -X POST http://localhost:8000/admin/seed -H "X-API-Key: dev-admin-key"
 
 .PHONY: capture
 capture:
