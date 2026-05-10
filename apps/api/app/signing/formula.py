@@ -161,8 +161,8 @@ def _apply_date_functions(expr: str, values: dict[str, str]) -> str:
     expr = re.sub(rf'AddMonths\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_months, expr)
     expr = re.sub(rf'AddYears\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _add_years, expr)
     expr = re.sub(rf'DateDiff\s*\(\s*{_arg}\s*,\s*{_arg}\s*\)', _date_diff, expr)
-    expr = re.sub(rf'Day\s*\(\s*{_arg}\s*\)', _day, expr)
     expr = re.sub(rf'Days\s*\(\s*{_arg}\s*\)', _days, expr)
+    expr = re.sub(rf'Day\s*\(\s*{_arg}\s*\)', _day, expr)
     return expr
 
 

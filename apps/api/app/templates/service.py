@@ -176,7 +176,7 @@ async def create_envelope_from_template(
             email=role_data.get("email", ""),
             role=role_val,
             routing_order=role_data.get("routing_order", 1),
-            access_code=role_data.get("access_code"),
+            access_code=None,
             template_role_label=role_data.get("role_label"),
         )
         db.add(recip)

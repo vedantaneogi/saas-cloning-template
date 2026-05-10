@@ -213,6 +213,7 @@ class Recipient(Base):
     access_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     private_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     template_role_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    id_check: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     # Relationships
     envelope: Mapped["Envelope"] = relationship("Envelope", back_populates="recipients")

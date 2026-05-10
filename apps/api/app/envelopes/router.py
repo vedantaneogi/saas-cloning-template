@@ -568,8 +568,6 @@ async def save_envelope_as_template(
             "role": r.role.value,
             "routing_order": r.routing_order,
         }
-        if r.access_code:
-            role_entry["access_code"] = r.access_code
         label = role_labels.get(str(r.id)) or r.template_role_label
         if not label:
             role_name = {"signer": "Signer", "approver": "Approver", "cc": "CC", "viewer": "Viewer", "in_person": "In Person Signer"}.get(r.role.value, "Recipient")

@@ -35,8 +35,11 @@ export function SigningField({
   inlinePositioned,
 }: SigningFieldProps) {
   const isCompleted = !!value;
-
-  // (Payment auto-fill removed — signer must click the field and acknowledge via modal)
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [cardNum, setCardNum] = useState("");
+  const [expMM, setExpMM] = useState("");
+  const [expYY, setExpYY] = useState("");
+  const [cvv, setCvv] = useState("");
 
   const posStyle: React.CSSProperties = inlinePositioned
     ? { width: "100%", height: "100%" }
@@ -98,7 +101,7 @@ export function SigningField({
   const bgColor = getBgColor();
 
   const handleClick = () => {
-    if (isCompleted) return;
+    if (isCompleted && field.type !== "checkbox") return;
     if (field.type === "signature") {
       onSignatureRequest(field.id, "signature");
     } else if (field.type === "initial") {
@@ -355,40 +358,94 @@ export function SigningField({
             labelValueMap[f.label] = allFieldValues[f.id];
           }
         }
-        // Replace [FieldLabel] references with numeric values
-        let substituted = formulaStr.replace(/\[([^\]]+)\]/g, (_match, label: string) => {
-          const val = labelValueMap[label];
-          if (val !== undefined) {
-            const n = parseFloat(val);
-            return isNaN(n) ? "0" : String(n);
-          }
-          return "0";
+        // Helper: parse date string
+        const parseDate = (s: string): Date | null => {
+          if (!s) return null;
+          const d = new Date(s);
+          if (!isNaN(d.getTime())) return d;
+          const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+          return null;
+        };
+        const resolveRef = (arg: string): string => {
+          const t = arg.trim();
+          if (t.startsWith("[") && t.endsWith("]")) return labelValueMap[t.slice(1, -1)] ?? "";
+          return t.replace(/^["']|["']$/g, "");
+        };
+
+        let substituted = formulaStr;
+        // Date functions — process BEFORE numeric substitution (need raw date strings)
+        substituted = substituted.replace(/Today\s*\(\s*\)/gi, () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; });
+        substituted = substituted.replace(/Now\s*\(\s*\)/gi, () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`; });
+        const dateArg = /(\[[^\]]+\]|"[^"]*"|'[^']*'|[\d][\d.:\-]+[\d]|[\d.+-]+)/;
+        substituted = substituted.replace(new RegExp(`AddDays\\s*\\(\\s*${dateArg.source}\\s*,\\s*${dateArg.source}\\s*\\)`, "gi"), (_, d, n) => {
+          const dt = parseDate(resolveRef(d)); const days = parseFloat(resolveRef(n));
+          if (!dt || isNaN(days)) return "0";
+          dt.setDate(dt.getDate() + days);
+          return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
         });
-        // Evaluate built-in functions client-side for live preview
-        substituted = substituted.replace(/Floor\s*\(\s*([\d.+-]+)\s*\)/gi, (_, v) => String(Math.floor(parseFloat(v) || 0)));
-        substituted = substituted.replace(/Round\s*\(\s*([\d.+-]+)\s*,\s*([\d]+)\s*\)/gi, (_, v, p) => String(parseFloat((parseFloat(v) || 0).toFixed(parseInt(p) || 0))));
-        substituted = substituted.replace(/Abs\s*\(\s*([\d.+-]+)\s*\)/gi, (_, v) => String(Math.abs(parseFloat(v) || 0)));
-        substituted = substituted.replace(/min\s*\(\s*([\d.,\s+-]+)\s*\)/gi, (_, args) => { const nums = args.split(",").map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)); return nums.length ? String(Math.min(...nums)) : "0"; });
-        substituted = substituted.replace(/max\s*\(\s*([\d.,\s+-]+)\s*\)/gi, (_, args) => { const nums = args.split(",").map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)); return nums.length ? String(Math.max(...nums)) : "0"; });
-        substituted = substituted.replace(/sum\s*\(\s*([\d.,\s+-]+)\s*\)/gi, (_, args) => { const nums = args.split(",").map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)); return String(nums.reduce((a: number, b: number) => a + b, 0)); });
-        substituted = substituted.replace(/average\s*\(\s*([\d.,\s+-]+)\s*\)/gi, (_, args) => { const nums = args.split(",").map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)); return nums.length ? String(nums.reduce((a: number, b: number) => a + b, 0) / nums.length) : "0"; });
-        substituted = substituted.replace(/Today\s*\(\s*\)/gi, () => new Date().toISOString().slice(0, 10));
-        substituted = substituted.replace(/Now\s*\(\s*\)/gi, () => new Date().toISOString().slice(0, 19).replace("T", " "));
-        substituted = substituted.replace(/if\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)/gi, (_, cond, t, f) => {
-          const c = cond.trim();
-          for (const [op, fn] of [[">=", (a: number, b: number) => a >= b], ["<=", (a: number, b: number) => a <= b], ["!=", (a: number, b: number) => a !== b], ["==", (a: number, b: number) => a === b], [">", (a: number, b: number) => a > b], ["<", (a: number, b: number) => a < b]] as [string, (a: number, b: number) => boolean][]) {
-            if (c.includes(op)) {
-              const parts = c.split(op);
-              return (fn(parseFloat(parts[0]) || 0, parseFloat(parts[1]) || 0) ? t : f).trim();
+        substituted = substituted.replace(new RegExp(`AddMonths\\s*\\(\\s*${dateArg.source}\\s*,\\s*${dateArg.source}\\s*\\)`, "gi"), (_, d, n) => {
+          const dt = parseDate(resolveRef(d)); const months = parseInt(resolveRef(n));
+          if (!dt || isNaN(months)) return "0";
+          dt.setMonth(dt.getMonth() + months);
+          return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+        });
+        substituted = substituted.replace(new RegExp(`AddYears\\s*\\(\\s*${dateArg.source}\\s*,\\s*${dateArg.source}\\s*\\)`, "gi"), (_, d, n) => {
+          const dt = parseDate(resolveRef(d)); const years = parseInt(resolveRef(n));
+          if (!dt || isNaN(years)) return "0";
+          dt.setFullYear(dt.getFullYear() + years);
+          return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+        });
+        substituted = substituted.replace(new RegExp(`DateDiff\\s*\\(\\s*${dateArg.source}\\s*,\\s*${dateArg.source}\\s*\\)`, "gi"), (_, d1, d2) => {
+          const a = parseDate(resolveRef(d1)); const b = parseDate(resolveRef(d2));
+          if (!a || !b) return "0";
+          return String(Math.round((a.getTime() - b.getTime()) / 86400000));
+        });
+        substituted = substituted.replace(new RegExp(`Days\\s*\\(\\s*${dateArg.source}\\s*\\)`, "gi"), (_, d) => {
+          const dt = parseDate(resolveRef(d));
+          if (!dt) return "0";
+          return String(new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate());
+        });
+        substituted = substituted.replace(new RegExp(`Day\\s*\\(\\s*${dateArg.source}\\s*\\)`, "gi"), (_, d) => {
+          const dt = parseDate(resolveRef(d));
+          return dt ? String(dt.getDate()) : "0";
+        });
+
+        // Check if result is a date/datetime string — show directly
+        if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(substituted.trim())) {
+          const dateStr = substituted.trim().slice(0, 10);
+          const rd = new Date(dateStr + "T00:00:00");
+          displayValue = rd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+        } else {
+          // Replace remaining [Label] refs with numeric values
+          substituted = substituted.replace(/\[([^\]]+)\]/g, (_match, label: string) => {
+            const val = labelValueMap[label];
+            if (val !== undefined) { const n = parseFloat(val); return isNaN(n) ? "0" : String(n); }
+            return "0";
+          });
+          // Math functions
+          substituted = substituted.replace(/Floor\s*\(\s*([\d.+-]+)\s*\)/gi, (_, v) => String(Math.floor(parseFloat(v) || 0)));
+          substituted = substituted.replace(/Round\s*\(\s*([\d.+-]+)\s*,\s*([\d]+)\s*\)/gi, (_, v, p) => String(parseFloat((parseFloat(v) || 0).toFixed(parseInt(p) || 0))));
+          substituted = substituted.replace(/Abs\s*\(\s*([\d.+-]+)\s*\)/gi, (_, v) => String(Math.abs(parseFloat(v) || 0)));
+          substituted = substituted.replace(/min\s*\(\s*([\d.,\s+-]+)\s*\)/gi, (_, args) => { const nums = args.split(",").map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)); return nums.length ? String(Math.min(...nums)) : "0"; });
+          substituted = substituted.replace(/max\s*\(\s*([\d.,\s+-]+)\s*\)/gi, (_, args) => { const nums = args.split(",").map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)); return nums.length ? String(Math.max(...nums)) : "0"; });
+          substituted = substituted.replace(/sum\s*\(\s*([\d.,\s+-]+)\s*\)/gi, (_, args) => { const nums = args.split(",").map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)); return String(nums.reduce((a: number, b: number) => a + b, 0)); });
+          substituted = substituted.replace(/average\s*\(\s*([\d.,\s+-]+)\s*\)/gi, (_, args) => { const nums = args.split(",").map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)); return nums.length ? String(nums.reduce((a: number, b: number) => a + b, 0) / nums.length) : "0"; });
+          substituted = substituted.replace(/if\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)/gi, (_, cond, t, f) => {
+            const c = cond.trim();
+            for (const [op, fn] of [[">=", (a: number, b: number) => a >= b], ["<=", (a: number, b: number) => a <= b], ["!=", (a: number, b: number) => a !== b], ["==", (a: number, b: number) => a === b], [">", (a: number, b: number) => a > b], ["<", (a: number, b: number) => a < b]] as [string, (a: number, b: number) => boolean][]) {
+              if (c.includes(op)) { const parts = c.split(op); return (fn(parseFloat(parts[0]) || 0, parseFloat(parts[1]) || 0) ? t : f).trim(); }
             }
+            return (parseFloat(c) !== 0 ? t : f).trim();
+          });
+          if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(substituted.trim())) {
+            const rd = new Date(substituted.trim().slice(0, 10) + "T00:00:00");
+            displayValue = rd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+          } else if (/^[\d\s+\-*/().]+$/.test(substituted.trim())) {
+            // eslint-disable-next-line no-new-func
+            const result = Function('"use strict"; return (' + substituted + ')')() as number;
+            displayValue = isNaN(result) || !isFinite(result) ? "Error" : result.toFixed(dp);
           }
-          return (parseFloat(c) !== 0 ? t : f).trim();
-        });
-        // Evaluate safe arithmetic
-        if (/^[\d\s+\-*/().]+$/.test(substituted.trim())) {
-          // eslint-disable-next-line no-new-func
-          const result = Function('"use strict"; return (' + substituted + ')')() as number;
-          displayValue = isNaN(result) || !isFinite(result) ? "Error" : result.toFixed(dp);
         }
       } catch {
         displayValue = "Error";
@@ -508,7 +565,7 @@ export function SigningField({
       ? (field.paymentAmount / 100).toFixed(2)
       : "0.00";
     const isPaid = !!value;
-    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const payFormFilled = cardNum.length > 0 && expMM.length > 0 && expYY.length > 0 && cvv.length > 0;
 
     return (
       <>
@@ -559,20 +616,20 @@ export function SigningField({
                   </div>
                 </div>
 
-                <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Debit/Credit Card</div>
-                <input disabled placeholder="XXXX XXXX XXXX XXXX" style={{ width: "100%", border: "1px solid #E5E7EB", borderRadius: "6px", padding: "10px 12px", fontSize: "14px", color: "#9CA3AF", marginBottom: "12px", background: "#F9FAFB" }} />
+                <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Debit/Credit Card <span style={{ color: "#EF4444" }}>*</span></div>
+                <input type="text" inputMode="numeric" placeholder="XXXX XXXX XXXX XXXX" value={cardNum} onChange={(e) => setCardNum(e.target.value.replace(/[^0-9 ]/g, ""))} style={{ width: "100%", border: `1px solid ${cardNum ? "#1B0A3C" : "#E5E7EB"}`, borderRadius: "6px", padding: "10px 12px", fontSize: "14px", color: "#1B0A3C", marginBottom: "12px", background: "white", outline: "none" }} />
 
                 <div className="flex gap-3 mb-4">
                   <div className="flex-1">
-                    <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Expiration Date</div>
+                    <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Expiration Date <span style={{ color: "#EF4444" }}>*</span></div>
                     <div className="flex gap-2">
-                      <input disabled placeholder="MM" style={{ width: "50%", border: "1px solid #E5E7EB", borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#9CA3AF", background: "#F9FAFB" }} />
-                      <input disabled placeholder="YYYY" style={{ width: "50%", border: "1px solid #E5E7EB", borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#9CA3AF", background: "#F9FAFB" }} />
+                      <input type="text" inputMode="numeric" placeholder="MM" maxLength={2} value={expMM} onChange={(e) => setExpMM(e.target.value.replace(/[^0-9]/g, ""))} style={{ width: "50%", border: `1px solid ${expMM ? "#1B0A3C" : "#E5E7EB"}`, borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#1B0A3C", background: "white", outline: "none" }} />
+                      <input type="text" inputMode="numeric" placeholder="YYYY" maxLength={4} value={expYY} onChange={(e) => setExpYY(e.target.value.replace(/[^0-9]/g, ""))} style={{ width: "50%", border: `1px solid ${expYY ? "#1B0A3C" : "#E5E7EB"}`, borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#1B0A3C", background: "white", outline: "none" }} />
                     </div>
                   </div>
                   <div style={{ width: "40%" }}>
-                    <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Security Code</div>
-                    <input disabled placeholder="CVV" style={{ width: "100%", border: "1px solid #E5E7EB", borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#9CA3AF", background: "#F9FAFB" }} />
+                    <div style={{ fontSize: "12px", color: "#6B7280", marginBottom: "4px" }}>Security Code <span style={{ color: "#EF4444" }}>*</span></div>
+                    <input type="text" inputMode="numeric" placeholder="CVV" maxLength={4} value={cvv} onChange={(e) => setCvv(e.target.value.replace(/[^0-9]/g, ""))} style={{ width: "100%", border: `1px solid ${cvv ? "#1B0A3C" : "#E5E7EB"}`, borderRadius: "6px", padding: "10px 8px", fontSize: "14px", color: "#1B0A3C", background: "white", outline: "none" }} />
                   </div>
                 </div>
 
@@ -581,8 +638,9 @@ export function SigningField({
                 </p>
 
                 <button
-                  className="w-full py-3 rounded text-sm font-bold text-white"
-                  style={{ background: "#00B851", border: "none", cursor: "pointer" }}
+                  disabled={!payFormFilled}
+                  className="w-full py-3 rounded text-sm font-bold text-white disabled:opacity-40"
+                  style={{ background: "#00B851", border: "none", cursor: payFormFilled ? "pointer" : "not-allowed" }}
                   onClick={() => {
                     onValueChange(field.id, `Payment completed - $${amountDollars}`);
                     setShowPaymentModal(false);

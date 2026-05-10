@@ -10,6 +10,7 @@ export interface SigningSession {
   fields: PlacedField[];
   documents: Array<{ id: string; name: string; pageCount: number }>;
   requiresAccessCode?: boolean;
+  requiresIdCheck?: boolean;
 }
 
 // Raw shape returned by the backend signing session endpoint
@@ -74,6 +75,7 @@ interface RawSigningSession {
     page_count: number;
   }>;
   requiresAccessCode?: boolean;
+  requiresIdCheck?: boolean;
 }
 
 function mapSigningSession(raw: RawSigningSession): SigningSession {
@@ -142,6 +144,7 @@ function mapSigningSession(raw: RawSigningSession): SigningSession {
     fields,
     documents,
     requiresAccessCode: raw.requiresAccessCode === true,
+    requiresIdCheck: raw.requiresIdCheck === true,
   };
 }
 

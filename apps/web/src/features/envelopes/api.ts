@@ -121,7 +121,7 @@ export async function deleteEnvelope(id: string): Promise<void> {
 
 export async function addRecipient(
   envelopeId: string,
-  data: { name: string; email: string; role: string; routing_order: number; private_message?: string },
+  data: { name: string; email: string; role: string; routing_order: number; private_message?: string; id_check?: boolean },
 ): Promise<Recipient> {
   const res = await apiClient.post(`/envelopes/${envelopeId}/recipients`, data);
   return res.data;
@@ -129,7 +129,7 @@ export async function addRecipient(
 
 export async function updateRecipient(
   recipientId: string,
-  data: { name?: string; email?: string; role?: string; routing_order?: number; private_message?: string },
+  data: { name?: string; email?: string; role?: string; routing_order?: number; private_message?: string; id_check?: boolean },
 ): Promise<Recipient> {
   const res = await apiClient.put(`/recipients/${recipientId}`, data);
   return res.data;

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CaretUp, CaretDown, X, Trash, Info, Desktop, Question, GearSix, PencilSimple, AddressBook, UserPlus, Layout, Key, ChatText, Eye, UserCircle } from "@phosphor-icons/react";
+import { CaretUp, CaretDown, X, Trash, Info, Desktop, Question, GearSix, PencilSimple, AddressBook, UserPlus, Layout, Key, ChatText, Eye, UserCircle, IdentificationCard } from "@phosphor-icons/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUp03Icon } from "@hugeicons/core-free-icons";
 import {
@@ -33,6 +33,7 @@ interface RecipientForm {
   color: string;
   privateMessage?: string;
   accessCode?: string;
+  idCheck?: boolean;
 }
 
 // Per-recipient inline section visibility
@@ -207,7 +208,7 @@ export default function PrepareEnvelopePage() {
       setAdvResponsiveSigning((envelope as any).responsive_signing as boolean);
     }
     if (envelope.recipients && envelope.recipients.length > 0) {
-      const loaded = envelope.recipients.map((r, i) => ({
+      const loaded = envelope.recipients.map((r: any, i: number) => ({
         id: r.id,
         name: r.name,
         email: r.email,
@@ -217,18 +218,21 @@ export default function PrepareEnvelopePage() {
         color: getRecipientColor(i),
         privateMessage: r.private_message ?? undefined,
         accessCode: r.access_code ?? undefined,
+        idCheck: r.id_check ?? false,
       }));
       setRecipients(loaded);
-      // Restore inline section visibility for any recipient with saved values
       setRecipientInlineState((prev) => {
         const next = { ...prev };
         for (const r of loaded) {
-          if (r.accessCode || r.privateMessage) {
+          const hasIdCheck = !!r.idCheck;
+          const verMethod = hasIdCheck ? "ID Evidence" : "Access Code";
+          if (r.accessCode || r.privateMessage || hasIdCheck) {
             next[r.id] = {
-              ...{ showAccessCode: false, showPrivateMessage: false, accessCodeCollapsed: false, privateMessageCollapsed: false, verificationMethod: "Access Code" },
+              ...{ showAccessCode: false, showPrivateMessage: false, accessCodeCollapsed: false, privateMessageCollapsed: false, verificationMethod: verMethod },
               ...(next[r.id] ?? {}),
-              showAccessCode: !!r.accessCode,
+              showAccessCode: !!r.accessCode || hasIdCheck,
               showPrivateMessage: !!r.privateMessage,
+              verificationMethod: verMethod,
             };
           }
         }
@@ -372,30 +376,30 @@ export default function PrepareEnvelopePage() {
 
         const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
         let savedRecipientId = r.id;
+        const idCheck = !!r.idCheck || getInlineState(r.id).verificationMethod === "ID Evidence";
         if (isPersistedRecipient) {
-          // Update existing recipient in case name/role/order was changed in the UI.
           await updateRecipientAPI(r.id, {
             name: r.name.trim() || r.templateRole?.trim() || "Recipient",
             email: r.email.trim(),
             role: r.role,
             routing_order: routingOrder,
             private_message: r.privateMessage || undefined,
+            id_check: idCheck,
             ...(isTemplateMode && r.templateRole?.trim() ? { template_role_label: r.templateRole.trim() } : {}),
           });
         } else {
-          // New recipient — add to envelope.
           const newR = await addRecipientAPI(id, {
             name: r.name.trim() || r.templateRole?.trim() || "Recipient",
             email: r.email.trim(),
             role: r.role,
             routing_order: routingOrder,
             private_message: r.privateMessage || undefined,
+            id_check: idCheck,
             ...(isTemplateMode && r.templateRole?.trim() ? { template_role_label: r.templateRole.trim() } : {}),
           });
           if (newR?.id) savedRecipientId = newR.id;
         }
-        // Persist access code if set
-        if (r.accessCode?.trim()) {
+        if (r.accessCode?.trim() && !idCheck) {
           await setRecipientAccessCode(savedRecipientId, r.accessCode.trim()).catch((err) => {
             console.error("Failed to save access code for recipient:", savedRecipientId, err);
             addToast("Failed to save access code for a recipient.", "error");
@@ -646,12 +650,14 @@ export default function PrepareEnvelopePage() {
                     const routingOrder = setSigningOrder ? r.order : 1;
                     const isPersistedRecipient = UUID_REGEX.test(r.id) && existingIds.has(r.id);
                     let savedId = r.id;
+                    const idCheck = !!r.idCheck || getInlineState(r.id).verificationMethod === "ID Evidence";
                     if (isPersistedRecipient) {
                       await updateRecipientAPI(r.id, {
                         name: recipientName,
                         email: r.email.trim(),
                         role: r.role,
                         routing_order: routingOrder,
+                        id_check: idCheck,
                       });
                     } else {
                       const newR = await addRecipientAPI(id, {
@@ -659,6 +665,7 @@ export default function PrepareEnvelopePage() {
                         email: r.email.trim(),
                         role: r.role,
                         routing_order: routingOrder,
+                        id_check: idCheck,
                       });
                       if (newR?.id) savedId = newR.id;
                     }
@@ -1584,13 +1591,29 @@ export default function PrepareEnvelopePage() {
                                 style={{ padding: "12px 16px" }}
                                 onClick={() => {
                                   setCustomizeDropdownOpen((prev) => ({ ...prev, [recipient.id]: false }));
-                                  updateInlineState(recipient.id, { showAccessCode: true, accessCodeCollapsed: false });
+                                  updateRecipient(recipient.id, { idCheck: false, accessCode: undefined });
+                                  updateInlineState(recipient.id, { showAccessCode: true, accessCodeCollapsed: false, verificationMethod: "Access Code" });
                                 }}
                               >
                                 <Key size={20} weight="bold" color="#555" style={{ flexShrink: 0, marginTop: "2px" }} />
                                 <div>
                                   <div style={{ fontSize: "14px", fontWeight: 500, color: "#1B0A3C" }}>Add access code</div>
                                   <div style={{ fontSize: "12px", color: "#888", marginTop: "2px" }}>Enter a code that only you and this recipient know.</div>
+                                </div>
+                              </button>
+                              <button
+                                className="w-full text-left hover:bg-gray-50 transition-colors flex items-start gap-3"
+                                style={{ padding: "12px 16px" }}
+                                onClick={() => {
+                                  setCustomizeDropdownOpen((prev) => ({ ...prev, [recipient.id]: false }));
+                                  updateRecipient(recipient.id, { idCheck: true, accessCode: undefined });
+                                  updateInlineState(recipient.id, { showAccessCode: true, accessCodeCollapsed: false, verificationMethod: "ID Evidence" });
+                                }}
+                              >
+                                <IdentificationCard size={20} weight="bold" color="#555" style={{ flexShrink: 0, marginTop: "2px" }} />
+                                <div>
+                                  <div style={{ fontSize: "14px", fontWeight: 500, color: "#1B0A3C" }}>ID verification</div>
+                                  <div style={{ fontSize: "12px", color: "#888", marginTop: "2px" }}>Require the signer to verify their identity with a government-issued ID.</div>
                                 </div>
                               </button>
                               <button
@@ -1783,9 +1806,11 @@ export default function PrepareEnvelopePage() {
                               <select
                                 className="bg-white focus:outline-none"
                                 value={getInlineState(recipient.id).verificationMethod}
-                                onChange={(e) =>
-                                  updateInlineState(recipient.id, { verificationMethod: e.target.value })
-                                }
+                                onChange={(e) => {
+                                  const method = e.target.value;
+                                  updateInlineState(recipient.id, { verificationMethod: method });
+                                  updateRecipient(recipient.id, { idCheck: method === "ID Evidence" });
+                                }}
                                 style={{
                                   border: "1px solid rgba(19,0,50,0.25)",
                                   borderRadius: "4px",
@@ -1800,7 +1825,7 @@ export default function PrepareEnvelopePage() {
                                   { value: "Access Code", label: "Access Code" },
                                   { value: "SMS", label: "SMS (Coming Soon)" },
                                   { value: "Knowledge-based", label: "Knowledge-based (Coming Soon)" },
-                                  { value: "ID Evidence", label: "ID Evidence (Coming Soon)" },
+                                  { value: "ID Evidence", label: "ID Evidence" },
                                   { value: "Phone Verification", label: "Phone Verification (Coming Soon)" },
                                 ].map((opt) => (
                                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1842,6 +1867,18 @@ export default function PrepareEnvelopePage() {
                                   This code is available for you to review on the Envelope Details page.
                                 </div>
                               </>
+                            ) : getInlineState(recipient.id).verificationMethod === "ID Evidence" ? (
+                              <div style={{
+                                padding: "12px 16px",
+                                background: "#F0FDF4",
+                                border: "1px solid #BBF7D0",
+                                borderRadius: "6px",
+                                fontSize: "13px",
+                                color: "#166534",
+                                maxWidth: "320px",
+                              }}>
+                                The signer will be asked to verify their identity by uploading a government-issued ID before accessing the document.
+                              </div>
                             ) : (
                               <div style={{
                                 padding: "12px 16px",
@@ -1852,7 +1889,7 @@ export default function PrepareEnvelopePage() {
                                 color: "#F57F17",
                                 maxWidth: "320px",
                               }}>
-                                This verification method is not yet available. Use Access Code for recipient authentication.
+                                This verification method is not yet available. Use Access Code or ID Evidence for recipient authentication.
                               </div>
                             )}
                           </div>

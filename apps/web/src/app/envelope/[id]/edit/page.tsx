@@ -494,7 +494,7 @@ function FormulaModal({ field, allFields, onClose, onSave }: FormulaModalProps) 
     const knownLabels = new Set(referenceable.map((r) => r.label?.toLowerCase()));
     const invalid = refs.filter((r) => !knownLabels.has(r.slice(1, -1).toLowerCase()));
     if (invalid.length > 0) return `Formula Error. Field${invalid.length > 1 ? "s" : ""} not found: ${invalid.join(", ")}`;
-    const cleaned = f.replace(/\[[^\]]+\]/g, "0").replace(/AddDays|AddMonths|AddYears|DateDiff|Day|Days|Today|Now|Floor|Round|Abs|min|max|sum|average|if/gi, "").replace(/[0-9.+\-*/()%, >=<!]/g, "");
+    const cleaned = f.replace(/\[[^\]]+\]/g, "0").replace(/AddDays|AddMonths|AddYears|DateDiff|Days|Day|Today|Now|Floor|Round|Abs|min|max|sum|average|if/gi, "").replace(/[0-9.+\-*/()%, >=<!]/g, "");
     if (cleaned.trim()) return `Formula Error. Invalid characters: ${cleaned.trim()}`;
     return null;
   };

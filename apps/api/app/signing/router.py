@@ -82,6 +82,7 @@ class SigningSessionResponse(BaseModel):
     fields: List[FieldResponse]
     documents: List[SigningDocumentInfo]
     requiresAccessCode: bool = False
+    requiresIdCheck: bool = False
 
 
 class CompleteSigningResponse(BaseModel):
@@ -203,6 +204,7 @@ async def get_signing_session(
         fields=[FieldResponse.model_validate(f) for f in fields],
         documents=signing_documents,
         requiresAccessCode=bool(recipient.access_code),
+        requiresIdCheck=bool(recipient.id_check),
     )
 
 

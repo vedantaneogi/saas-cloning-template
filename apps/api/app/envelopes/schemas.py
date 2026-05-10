@@ -130,6 +130,7 @@ class RecipientCreate(BaseModel):
     access_code: Optional[str] = None
     private_message: Optional[str] = None
     template_role_label: Optional[str] = None
+    id_check: Optional[bool] = None
 
 
 class RecipientUpdate(BaseModel):
@@ -140,6 +141,7 @@ class RecipientUpdate(BaseModel):
     routing_order: Optional[int] = Field(default=None, ge=1, le=100)
     access_code: Optional[str] = None
     private_message: Optional[str] = None
+    id_check: Optional[bool] = None
 
 
 class RecipientResponse(BaseModel):
@@ -159,6 +161,7 @@ class RecipientResponse(BaseModel):
     access_code: Optional[str] = None
     private_message: Optional[str] = None
     template_role_label: Optional[str] = None
+    id_check: bool = False
     fields: List[FieldResponse] = []
 
 

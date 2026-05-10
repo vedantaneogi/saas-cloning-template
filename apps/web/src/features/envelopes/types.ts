@@ -19,6 +19,7 @@ export interface Recipient {
   private_message?: string;
   access_code?: string;
   template_role_label?: string;
+  id_check?: boolean;
 }
 
 export interface EnvelopeDocument {

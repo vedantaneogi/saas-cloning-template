@@ -548,6 +548,9 @@ async def add_recipient(
     if data.access_code:
         import hashlib
         recipient.access_code = hashlib.sha256(data.access_code.strip().encode()).hexdigest()
+    if data.id_check:
+        recipient.id_check = True
+        recipient.access_code = None
     db.add(recipient)
     await db.commit()
     await db.refresh(recipient)
@@ -580,6 +583,10 @@ async def update_recipient(
         recipient.private_message = data.private_message or None
     if data.template_role_label is not None:
         recipient.template_role_label = data.template_role_label or None
+    if data.id_check is not None:
+        recipient.id_check = data.id_check
+        if data.id_check:
+            recipient.access_code = None
     await db.commit()
     await db.refresh(recipient)
     return recipient
