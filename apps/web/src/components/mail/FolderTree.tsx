@@ -206,11 +206,6 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
     },
   })
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY })
-  }
-
   const handleRenameSubmit = () => {
     if (renameValue.trim() && renameValue !== folder.name) renameMutation.mutate(renameValue.trim())
     setRenaming(false)
@@ -233,7 +228,6 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   const isActive = currentSlug === (folder.slug || folder.id)
   const hasChildren = children.length > 0
   const icon = SYSTEM_ICONS[folder.slug] ?? <Folder size={16} />
-  const [hovered, setHovered] = useState(false)
 
   const slug = folder.slug || folder.id
 
@@ -258,9 +252,9 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
           setSelectedFolderId(folder.id)
           setSelectedMessageId(null)
         }}
-        onContextMenu={handleContextMenu}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        // Right-click context menu intentionally removed — the senior wants
+        // the three-dot button to be the single way into the folder menu so
+        // it's clearly discoverable instead of hiding behind a right-click.
         aria-label={folder.name}
         aria-current={isActive ? 'page' : undefined}
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setIsDragOver(true) }}
@@ -308,9 +302,15 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
           <span className="flex-1 truncate">{folder.name}</span>
         )}
 
-        {/* Show count normally, swap to 3-dot icon on hover */}
+        {/* Three-dot menu is the single, always-visible entry point to the
+            folder actions (replaces the hover-swap with the unread count).
+            Unread count, when present, sits to its left so users still see
+            it at a glance. */}
         {!renaming && (
-          (hovered || contextMenu) ? (
+          <span className="flex items-center gap-1 flex-shrink-0">
+            {folder.unread_count > 0 && (
+              <Badge variant="unread">{folder.unread_count}</Badge>
+            )}
             <button
               onClick={(e) => {
                 e.preventDefault()
@@ -318,16 +318,13 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
                 const rect = e.currentTarget.getBoundingClientRect()
                 openContextMenuAt(rect.left, rect.bottom + 2)
               }}
-              className="flex-shrink-0 p-0.5 rounded hover:bg-[#D2D0CE] text-[#605E5C] transition-all"
+              className="p-0.5 rounded hover:bg-[#D2D0CE] text-[#605E5C] transition-all"
               title="More options"
+              aria-label={`More options for ${folder.name}`}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/></svg>
             </button>
-          ) : (
-            folder.unread_count > 0 ? (
-              <Badge variant="unread">{folder.unread_count}</Badge>
-            ) : null
-          )
+          </span>
         )}
       </Link>
 
