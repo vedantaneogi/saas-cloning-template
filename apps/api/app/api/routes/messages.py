@@ -817,23 +817,28 @@ async def create_message(
     # Ensure every sent message lives inside a conversation so the recipient's
     # eventual reply lands on the same thread as the sender's original copy.
     # (Drafts skip — they have no recipients yet.)
+    from app.models.conversation import Conversation
     conv_id = body.conversation_id
+    parent_msg: Optional[Message] = None
     # Ribbon Reply/Reply All/Forward sends in_reply_to_id but no conversation_id
     # (the compose draft only carries replyToMessageId). Inherit the parent's
     # conversation so the reply threads with the original instead of starting
     # a brand-new conversation.
     if not conv_id and body.in_reply_to_id:
-        parent = await db.execute(
+        parent_q = await db.execute(
             select(Message).where(
                 Message.id == body.in_reply_to_id,
                 Message.user_id == current_user.id,
             )
         )
-        parent_msg = parent.scalar_one_or_none()
+        parent_msg = parent_q.scalar_one_or_none()
         if parent_msg and parent_msg.conversation_id:
             conv_id = parent_msg.conversation_id
+    # No conversation yet — create one. If the user is replying to a message
+    # that itself lacks a conversation_id (typical for older seeded inbox
+    # rows), back-fill the parent so the original + reply land in the same
+    # thread instead of two parallel single-message conversations.
     if not conv_id and not body.is_draft:
-        from app.models.conversation import Conversation
         conv = Conversation(
             id=uuid.uuid4(),
             user_id=current_user.id,
@@ -845,6 +850,22 @@ async def create_message(
         db.add(conv)
         await db.flush()
         conv_id = conv.id
+        if parent_msg is not None:
+            parent_msg.conversation_id = conv_id
+            parent_msg.updated_at = now
+            # Also stamp every sibling already in the user's mailbox that
+            # references this parent (e.g. earlier replies in the chain) so a
+            # fragmented history collapses into one thread on first reply.
+            sib_q = await db.execute(
+                select(Message).where(
+                    Message.user_id == current_user.id,
+                    Message.in_reply_to_id == parent_msg.id,
+                    Message.conversation_id.is_(None),
+                )
+            )
+            for sib in sib_q.scalars().all():
+                sib.conversation_id = conv_id
+                sib.updated_at = now
 
     # Schedule-send: future scheduled_send_at means the message is parked as a
     # draft (in Drafts) until _flush_due_scheduled dispatches it.
