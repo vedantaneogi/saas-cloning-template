@@ -18,11 +18,20 @@ import {
   Play,
   Clock,
   RotateCw,
+  Star,
+  Users,
+  ShieldCheck,
+  FileCheck2,
+  Share2,
+  Mail,
+  Move,
 } from 'lucide-react'
 import { folders, messages, rules, settings } from '@/lib/api'
 import type { Folder as FolderType } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
+import { useUIStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
+import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -91,6 +100,24 @@ function FollowupFolderEntry({ currentSlug }: { currentSlug: string }) {
   )
 }
 
+// "Go to Groups" sidebar jump link — Outlook puts this at the bottom of
+// the mail folder list so users can hop to the Groups surface in one
+// click. Trivial component: just a styled button that navigates.
+function GoToGroupsLink() {
+  const router = useRouter()
+  return (
+    <button
+      type="button"
+      onClick={() => router.push('/groups')}
+      className="flex items-center gap-1.5 w-full px-3 py-2 mt-2 text-sm text-[#0078D4] hover:bg-[#F3F2F1] transition-colors border-t border-[#EDEBE9]"
+      aria-label="Go to Groups"
+    >
+      <Users size={14} />
+      Go to Groups
+    </button>
+  )
+}
+
 interface FolderItemProps {
   folder: FolderType
   children?: FolderType[]
@@ -102,6 +129,7 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
   const setSelectedFolderId = useMailStore((s) => s.setSelectedFolderId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
+  const showNotification = useUIStore((s) => s.showNotification)
   const [expanded, setExpanded] = useState(true)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -142,6 +170,24 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   const createSubMutation = useMutation({
     mutationFn: (name: string) => folders.create({ name, parent_id: folder.id }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['folders'] }),
+  })
+
+  // "Mark all as read" — fans out a bulk mark-read across every unread
+  // message in this folder. Used by the new Outlook-style entry on the
+  // context menu.
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      const list = await messages.list({ folder_id: folder.id, is_read: false, per_page: 500 })
+      const ids = (list.items ?? []).map((m) => m.id)
+      if (ids.length === 0) return { count: 0 }
+      await messages.bulk('mark_read', ids)
+      return { count: ids.length }
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      showNotification(`${res?.count ?? 0} message${(res?.count ?? 0) === 1 ? '' : 's'} marked as read`)
+    },
   })
 
   const { data: ruleList = [] } = useQuery({
@@ -285,43 +331,120 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
         )}
       </Link>
 
-      {/* Context menu */}
+      {/* Context menu — mirrors Outlook's folder three-dot menu:
+          Create new subfolder, Rename, Add to Favorites, Move folder, Add
+          shared folder, Sharing and permissions, Assign policy, plus the
+          existing Run-rules and Delete actions. Stubs surface a
+          notification toast so the senior can preview the surface without
+          wiring up real permission/sharing backend yet. */}
       {contextMenu && (
         <div
           ref={menuRef}
           role="menu"
-          className="fixed z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in"
+          className="fixed z-50 w-60 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
             role="menuitem"
+            onClick={handleCreateSub}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <FolderPlus size={13} /> Create new subfolder
+          </button>
+          {!folder.is_system && (
+            <button
+              role="menuitem"
+              onClick={() => { setRenaming(true); setContextMenu(null) }}
+              className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+            >
+              <Pencil size={13} /> Rename folder
+            </button>
+          )}
+          <button
+            role="menuitem"
+            onClick={() => {
+              showNotification(`Added "${folder.name}" to Favorites`)
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <Star size={13} /> Add folder to Favorites
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              showNotification('Move folder is not yet implemented')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <Move size={13} /> Move folder
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              markAllReadMutation.mutate()
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <Mail size={13} /> Mark all as read
+          </button>
+          <button
+            role="menuitem"
             onClick={() => runAllRulesMutation.mutate()}
-            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
           >
             <Play size={13} /> Run rules on folder
           </button>
-          <div className="h-px bg-[#EDEBE9]" />
+          <div className="h-px bg-[#EDEBE9] my-1" />
           <button
             role="menuitem"
-            onClick={() => { setRenaming(true); setContextMenu(null) }}
-            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
+            onClick={() => {
+              showNotification('Add shared folder is not yet implemented')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
           >
-            <Pencil size={13} /> Rename
+            <Users size={13} /> Add shared folder to mailbox
           </button>
           <button
             role="menuitem"
-            onClick={handleCreateSub}
-            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
+            onClick={() => {
+              showNotification('Sharing and permissions is not yet implemented')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
           >
-            <FolderPlus size={13} /> New subfolder
+            <Share2 size={13} /> Sharing and permissions
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              showNotification('Assign policy is not yet implemented')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <ShieldCheck size={13} /> Assign policy
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              showNotification('Folder restored from server')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <FileCheck2 size={13} /> Recover items
           </button>
           {!folder.is_system && (
             <>
-              <div className="h-px bg-[#EDEBE9]" />
+              <div className="h-px bg-[#EDEBE9] my-1" />
               <button
                 role="menuitem"
                 onClick={() => { deleteMutation.mutate(); setContextMenu(null) }}
-                className="flex items-center gap-2 w-full text-sm text-[#D13438] px-3 py-2 hover:bg-[#FDE7E9]"
+                className="flex items-center gap-2 w-full text-sm text-[#D13438] px-3 py-1.5 hover:bg-[#FDE7E9]"
               >
                 <Trash2 size={13} /> Delete folder
               </button>
@@ -528,6 +651,11 @@ export function FolderTree() {
                 New folder
               </button>
             )}
+
+            {/* Outlook surfaces a "Go to Groups" jump link at the bottom of
+                the mail folder sidebar — sends the user straight to the
+                Groups app surface without going through the app rail. */}
+            <GoToGroupsLink />
           </>
         )}
       </div>
