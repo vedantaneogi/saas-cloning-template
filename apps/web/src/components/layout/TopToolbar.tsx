@@ -498,15 +498,16 @@ export function TopToolbar() {
           </button>
         </div>
 
-        {/* Search — Outlook style with All folders + filter icon. The bar
-            anchors at a narrow width when idle and expands to its full
-            center band only while focused (the senior asked for this — the
-            position stays put, only the width grows on click). */}
-        <div className="flex-1 flex justify-center">
+        {/* Search — left-anchored next to the Outlook label (matches the
+            real client per searchopen.png). Narrow when idle, expands to a
+            wide band on focus while keeping its left edge fixed; the
+            remaining flex space sits to its right so it grows toward the
+            center without nudging the navbar items. */}
+        <div className="flex-1 flex justify-start min-w-0">
           <div
             className={cn(
-              'relative w-full transition-[max-width] duration-150 ease-out',
-              searchFocused ? 'max-w-4xl' : 'max-w-md'
+              'relative transition-[width] duration-150 ease-out',
+              searchFocused ? 'w-[min(880px,100%)]' : 'w-[280px]'
             )}
             ref={searchDropdownRef}
           >

@@ -2287,6 +2287,9 @@ function ViewRibbon() {
   const setSortBy = useMailStore((s) => s.setSortBy)
   const sortOrder = useMailStore((s) => s.sortOrder)
   const setSortOrder = useMailStore((s) => s.setSortOrder)
+  const categoryFilterIds = useMailStore((s) => s.categoryFilterIds)
+  const toggleCategoryFilter = useMailStore((s) => s.toggleCategoryFilter)
+  const clearCategoryFilter = useMailStore((s) => s.clearCategoryFilter)
   const showNotification = useUIStore((s) => s.showNotification)
 
   type MenuKind = 'pane' | 'arrange' | 'density' | 'categories' | null
@@ -2460,18 +2463,37 @@ function ViewRibbon() {
             </div>
           )}
           {menu === 'categories' && (
-            <div className="w-48">
-              {categoryList.map((cat: { id: string; name: string; color: string }) => (
-                <button key={cat.id}
-                  onClick={() => {
-                    showNotification(`Showing ${cat.name} messages`)
-                    setMenu(null)
-                  }}
-                  className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors">
-                  <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
-                  {cat.name}
-                </button>
-              ))}
+            <div className="w-52">
+              <button
+                onClick={() => { clearCategoryFilter(); setMenu(null) }}
+                className={cn(
+                  'w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]',
+                  categoryFilterIds.length === 0 ? 'text-[#0078D4] font-medium' : 'text-[#323130]',
+                )}
+              >
+                All categories
+              </button>
+              <div className="h-px bg-[#EDEBE9] my-1" />
+              {categoryList.map((cat: { id: string; name: string; color: string }) => {
+                const active = categoryFilterIds.includes(cat.id)
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => toggleCategoryFilter(cat.id)}
+                    className={cn(
+                      'w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors',
+                      active && 'bg-[#EBF3FB] text-[#0078D4]',
+                    )}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-sm flex-shrink-0 border border-[#D2D0CE]"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                    <span className="flex-1 truncate">{cat.name}</span>
+                    {active && <Check size={12} className="flex-shrink-0" />}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>,

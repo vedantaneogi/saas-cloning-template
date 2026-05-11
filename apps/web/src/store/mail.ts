@@ -11,6 +11,10 @@ interface MailState {
   sortBy: 'date' | 'from' | 'subject' | 'size'
   sortOrder: 'asc' | 'desc'
   searchQuery: string
+  // Inbox category filter — lifted to the store so the View ribbon (in
+  // RibbonTabs) can drive the same filter as the inline category chip on
+  // MessageList. Empty array = no filter.
+  categoryFilterIds: string[]
 
   setSelectedFolderId: (id: string | null) => void
   setSelectedFolderSlug: (slug: string) => void
@@ -24,6 +28,9 @@ interface MailState {
   setSortBy: (sort: MailState['sortBy']) => void
   setSortOrder: (order: MailState['sortOrder']) => void
   setSearchQuery: (query: string) => void
+  setCategoryFilterIds: (ids: string[]) => void
+  toggleCategoryFilter: (id: string) => void
+  clearCategoryFilter: () => void
 }
 
 export const useMailStore = create<MailState>((set) => ({
@@ -37,6 +44,7 @@ export const useMailStore = create<MailState>((set) => ({
   sortBy: 'date',
   sortOrder: 'desc',
   searchQuery: '',
+  categoryFilterIds: [],
 
   setSelectedFolderId: (id) => set({ selectedFolderId: id }),
   setSelectedFolderSlug: (slug) => set({ selectedFolderSlug: slug }),
@@ -56,4 +64,15 @@ export const useMailStore = create<MailState>((set) => ({
   setSortBy: (sort) => set({ sortBy: sort }),
   setSortOrder: (order) => set({ sortOrder: order }),
   setSearchQuery: (query) => set({ searchQuery: query }),
+  setCategoryFilterIds: (ids) => set({ categoryFilterIds: ids }),
+  toggleCategoryFilter: (id) =>
+    set((state) => {
+      const has = state.categoryFilterIds.includes(id)
+      return {
+        categoryFilterIds: has
+          ? state.categoryFilterIds.filter((x) => x !== id)
+          : [...state.categoryFilterIds, id],
+      }
+    }),
+  clearCategoryFilter: () => set({ categoryFilterIds: [] }),
 }))

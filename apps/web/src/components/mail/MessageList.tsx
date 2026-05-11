@@ -76,7 +76,19 @@ export function MessageList() {
     queryKey: ['categories'],
     queryFn: () => categories.list(),
   })
-  const [categoryFilterIds, setCategoryFilterIds] = useState<string[]>([])
+  // Lifted to the mail store so the View ribbon can drive the same filter.
+  // Local setter wrapper preserves the previous API used below.
+  const categoryFilterIds = useMailStore((s) => s.categoryFilterIds)
+  const setCategoryFilterIdsStore = useMailStore((s) => s.setCategoryFilterIds)
+  const setCategoryFilterIds = (
+    next: string[] | ((prev: string[]) => string[]),
+  ) => {
+    if (typeof next === 'function') {
+      setCategoryFilterIdsStore(next(categoryFilterIds))
+    } else {
+      setCategoryFilterIdsStore(next)
+    }
+  }
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false)
   const categoryRef = useRef<HTMLDivElement>(null)
 
