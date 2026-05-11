@@ -45,59 +45,59 @@ const SYSTEM_ICONS: Record<string, React.ReactNode> = {
   deleted: <Trash2 size={16} />,
 }
 
-// Virtual "Snoozed" surface — there's no DB folder for snoozed messages, just a
-// list filter (snooze_until > now). Lives next to the system folders so users
-// can re-find anything they snoozed without scanning the inbox.
-function SnoozedFolderEntry({ currentSlug }: { currentSlug: string }) {
+// Shared virtual-folder row used by Snoozed + Follow up. Mirrors the
+// FolderItem layout (3px left accent + chevron spacer + icon + label)
+// so these virtual entries line up exactly with the system folders above
+// them. Previously they used a raw `px-3` button and rendered a few
+// pixels to the left of the regular folders.
+function VirtualFolderEntry({
+  slug,
+  label,
+  icon,
+  currentSlug,
+}: {
+  slug: string
+  label: string
+  icon: React.ReactNode
+  currentSlug: string
+}) {
   const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
   const setSelectedFolderId = useMailStore((s) => s.setSelectedFolderId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
-  const isActive = currentSlug === 'snoozed'
+  const isActive = currentSlug === slug
   return (
     <button
       type="button"
       onClick={() => {
-        setSelectedFolderSlug('snoozed')
+        setSelectedFolderSlug(slug)
         setSelectedFolderId(null)
         setSelectedMessageId(null)
       }}
       className={cn(
-        'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-sm transition-colors text-left',
-        isActive ? 'bg-[#EBF3FB] text-[#0078D4] font-medium' : 'text-[#323130] hover:bg-[#F3F2F1]'
+        'group w-full flex items-center gap-1.5 py-1 rounded-sm text-sm transition-colors text-left',
+        isActive
+          ? 'bg-[#EBF3FB] text-[#0078D4] font-semibold border-l-[3px] border-l-[#0078D4]'
+          : 'text-[#323130] hover:bg-[#EDEBE9] border-l-[3px] border-l-transparent',
       )}
+      style={{ paddingLeft: '6px' }}
       aria-current={isActive ? 'page' : undefined}
     >
-      <Clock size={16} />
-      Snoozed
+      {/* Match the FolderItem chevron spacer so icons align column-wise. */}
+      <span className="w-3 flex-shrink-0" />
+      <span className={cn('flex-shrink-0', isActive ? 'text-[#0078D4]' : 'text-[#605E5C]')}>
+        {icon}
+      </span>
+      <span className="flex-1 truncate">{label}</span>
     </button>
   )
 }
 
-// Follow-ups: surfaces sent messages with no reply in N days. Backed by the
-// /messages/needs-followup endpoint, no real folder row in the DB.
+function SnoozedFolderEntry({ currentSlug }: { currentSlug: string }) {
+  return <VirtualFolderEntry slug="snoozed" label="Snoozed" icon={<Clock size={16} />} currentSlug={currentSlug} />
+}
+
 function FollowupFolderEntry({ currentSlug }: { currentSlug: string }) {
-  const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
-  const setSelectedFolderId = useMailStore((s) => s.setSelectedFolderId)
-  const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
-  const isActive = currentSlug === 'followup'
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        setSelectedFolderSlug('followup')
-        setSelectedFolderId(null)
-        setSelectedMessageId(null)
-      }}
-      className={cn(
-        'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-sm transition-colors text-left',
-        isActive ? 'bg-[#EBF3FB] text-[#0078D4] font-medium' : 'text-[#323130] hover:bg-[#F3F2F1]'
-      )}
-      aria-current={isActive ? 'page' : undefined}
-    >
-      <RotateCw size={16} />
-      Follow up
-    </button>
-  )
+  return <VirtualFolderEntry slug="followup" label="Follow up" icon={<RotateCw size={16} />} currentSlug={currentSlug} />
 }
 
 // Three-dot menu attached to the account row in the sidebar header. The
