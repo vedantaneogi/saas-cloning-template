@@ -225,7 +225,6 @@ function InviteActions({ message }: { message: Message }) {
 import { EmailLink } from './EmailLink'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { cn, formatOutlookDate, trimQuotedReply } from '@/lib/utils'
 import {
   Reply,
@@ -234,8 +233,6 @@ import {
   MoreHorizontal,
   Mail,
   MailOpen,
-  Send,
-  Maximize2,
   X,
   CalendarDays,
   LayoutGrid,
@@ -252,16 +249,10 @@ import {
 export function ReadingPane() {
   const selectedMessageId = useMailStore((s) => s.selectedMessageId)
   const openComposer = useUIStore((s) => s.openComposer)
-  const showNotification = useUIStore((s) => s.showNotification)
   const currentUser = useAuthStore((s) => s.currentUser)
   const queryClient = useQueryClient()
 
   const [expandedThreadMsgId, setExpandedThreadMsgId] = useState<string | null>(null)
-
-  // Inline reply state
-  const [inlineReplyType, setInlineReplyType] = useState<'reply' | 'reply_all' | 'forward' | null>(null)
-  const [inlineBodyHtml, setInlineBodyHtml] = useState('')
-  const [inlineForwardTo, setInlineForwardTo] = useState('')
 
   // More-actions menu state (the ••• button at the right of each msg header).
   const [moreMenuMsgId, setMoreMenuMsgId] = useState<string | null>(null)
@@ -312,11 +303,7 @@ export function ReadingPane() {
     return () => document.removeEventListener('mousedown', handler)
   }, [moreMenuMsgId])
 
-  // Reset inline reply when message changes
   useEffect(() => {
-    setInlineReplyType(null)
-    setInlineBodyHtml('')
-    setInlineForwardTo('')
     setExpandedThreadMsgId(null)
   }, [selectedMessageId])
 
@@ -333,42 +320,6 @@ export function ReadingPane() {
   })
 
   const threadMessages = (convData?.messages ?? []).filter((m) => m.id !== selectedMessageId)
-
-  const inlineSendMutation = useMutation({
-    mutationFn: async () => {
-      if (!message || !inlineReplyType) return
-      if (inlineReplyType === 'forward') {
-        const toList = inlineForwardTo.split(',').map((t) => t.trim()).filter(Boolean)
-        return messages.forward(message.id, {
-          to_addresses: toList.map((t) => {
-            const m = t.match(/^(.+)\s<(.+)>$/)
-            return m ? { name: m[1].trim(), email: m[2] } : { email: t }
-          }),
-          body_html: inlineBodyHtml,
-        } as never)
-      }
-      return messages.reply(message.id, {
-        body_html: inlineBodyHtml,
-        reply_all: inlineReplyType === 'reply_all',
-      } as never)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] })
-      queryClient.invalidateQueries({ queryKey: ['folders'] })
-      queryClient.invalidateQueries({ queryKey: ['conversation', message?.conversation_id] })
-      showNotification('Message sent')
-      setInlineReplyType(null)
-      setInlineBodyHtml('')
-    },
-  })
-
-  const openInlineReply = (type: 'reply' | 'reply_all' | 'forward') => {
-    if (!message) return
-    const draft = draftFromReply(message, type)
-    setInlineBodyHtml(draft.bodyHtml ?? '')
-    setInlineForwardTo('')
-    setInlineReplyType(type)
-  }
 
   const composerOpen = useUIStore((s) => s.composerOpen)
 
@@ -521,8 +472,8 @@ export function ReadingPane() {
                           <EmailLink email={msg.from_address} name={msg.from_name} />
                         </h3>
                         <div className="flex items-center gap-0.5 flex-shrink-0">
-                          <button onClick={() => openInlineReply('reply')} title="Reply" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><Reply size={15} /></button>
-                          <button onClick={() => openInlineReply('reply_all')} title="Reply all" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><ReplyAll size={15} /></button>
+                          <button onClick={() => openComposer(draftFromReply(message, 'reply'))} title="Reply" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><Reply size={15} /></button>
+                          <button onClick={() => openComposer(draftFromReply(message, 'reply_all'))} title="Reply all" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><ReplyAll size={15} /></button>
                           <button onClick={() => openComposer(draftFromReply(msg, 'forward'))} title="Forward" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><Forward size={15} /></button>
                           <button title="Schedule meeting" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><CalendarDays size={15} /></button>
                           <button title="More apps" className="text-[#605E5C] hover:text-[#0078D4] p-1 rounded hover:bg-[#F3F2F1] transition-colors"><LayoutGrid size={15} /></button>
@@ -591,10 +542,10 @@ export function ReadingPane() {
                   </div>
 
                   {/* Reply / Forward buttons — only on the selected (top, newest) message */}
-                  {isSelected && !inlineReplyType && (
+                  {isSelected && (
                     <div className="px-4 pb-4 ml-[52px] flex items-center gap-2">
                       <button
-                        onClick={() => openInlineReply('reply')}
+                        onClick={() => openComposer(draftFromReply(msg, 'reply'))}
                         className="flex items-center gap-1.5 text-sm text-[#323130] border border-[#8A8886] rounded px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors"
                       >
                         <Reply size={14} className="text-[#605E5C]" /> Reply
@@ -632,124 +583,6 @@ export function ReadingPane() {
         </div>
       </div>
 
-      {/* Inline reply editor — pinned at bottom */}
-      {inlineReplyType && (() => {
-        // Compute the recipient sets so we can show them as chips before sending.
-        // Reply: just the original sender. Reply-all: also includes original
-        // To (minus self) + original Cc.
-        const replyToRecipients: { name?: string; email: string }[] = inlineReplyType !== 'forward'
-          ? [{ name: message.from_name ?? undefined, email: message.from_address }]
-          : []
-        const replyCcRecipients: { name?: string; email: string }[] = inlineReplyType === 'reply_all'
-          ? [
-              ...(message.to_addresses ?? []).filter(
-                (a) => (a.email ?? '').toLowerCase() !== (currentUserEmail ?? '').toLowerCase()
-              ),
-              ...(message.cc_addresses ?? []),
-            ]
-          : []
-        return (
-        <div className="border-t border-[#EDEBE9] bg-white flex-shrink-0">
-          <div className="flex items-center justify-between px-4 py-2 bg-[#FAF9F8] border-b border-[#EDEBE9]">
-            <span className="text-sm font-medium text-[#323130]">
-              {inlineReplyType === 'forward' ? 'Forward' : inlineReplyType === 'reply_all' ? 'Reply All' : 'Reply'}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => {
-                  openComposer(draftFromReply(message, inlineReplyType))
-                  setInlineReplyType(null)
-                }}
-                aria-label="Pop out to full composer"
-                title="Open in full composer"
-                className="text-[#605E5C] hover:text-[#323130] p-1 rounded hover:bg-[#EDEBE9]"
-              >
-                <Maximize2 size={13} />
-              </button>
-              <button
-                onClick={() => setInlineReplyType(null)}
-                aria-label="Close inline reply"
-                className="text-[#605E5C] hover:text-[#323130] p-1 rounded hover:bg-[#EDEBE9]"
-              >
-                <X size={13} />
-              </button>
-            </div>
-          </div>
-          {/* To/Cc preview rendered as Outlook-style chip pills so the user sees
-              exactly who'll receive the reply before sending. */}
-          {inlineReplyType !== 'forward' && (
-            <div className="px-4 py-2 border-b border-[#EDEBE9] space-y-1 bg-white">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-[#323130] w-7 flex-shrink-0">To</span>
-                <div className="flex flex-wrap gap-1">
-                  {replyToRecipients.map((r) => (
-                    <span
-                      key={r.email}
-                      className="inline-flex items-center gap-1 bg-[#EBF3FB] text-[#0078D4] text-xs px-2 py-0.5 rounded-full"
-                      title={r.email}
-                    >
-                      {r.name || r.email}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              {inlineReplyType === 'reply_all' && replyCcRecipients.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-xs font-semibold text-[#323130] w-7 flex-shrink-0 pt-0.5">Cc</span>
-                  <div className="flex flex-wrap gap-1">
-                    {replyCcRecipients.map((r) => (
-                      <span
-                        key={r.email}
-                        className="inline-flex items-center gap-1 bg-[#F3F2F1] text-[#605E5C] text-xs px-2 py-0.5 rounded-full"
-                        title={r.email}
-                      >
-                        {r.name || r.email}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          {inlineReplyType === 'forward' && (
-            <div className="px-4 py-1.5 border-b border-[#EDEBE9] flex items-center gap-2">
-              <span className="text-xs text-[#605E5C] w-5 flex-shrink-0">To</span>
-              <input
-                type="text"
-                value={inlineForwardTo}
-                onChange={(e) => setInlineForwardTo(e.target.value)}
-                placeholder="Recipients (comma-separated)"
-                aria-label="Forward to"
-                className="flex-1 text-sm text-[#323130] placeholder:text-[#A19F9D] focus:outline-none py-0.5"
-              />
-            </div>
-          )}
-          <RichTextEditor
-            content={inlineBodyHtml}
-            onChange={setInlineBodyHtml}
-            placeholder="Write your reply..."
-            minHeight="120px"
-            className="border-0 rounded-none"
-          />
-          <div className="flex items-center gap-2 px-4 py-2 border-t border-[#EDEBE9] bg-[#FAF9F8]">
-            <button
-              onClick={() => inlineSendMutation.mutate()}
-              disabled={inlineSendMutation.isPending || (inlineReplyType === 'forward' && !inlineForwardTo.trim())}
-              aria-label="Send reply"
-              className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-sm font-medium px-4 py-1.5 rounded transition-colors"
-            >
-              <Send size={13} /> Send
-            </button>
-            <button
-              onClick={() => setInlineReplyType(null)}
-              className="text-sm text-[#605E5C] hover:text-[#323130] px-3 py-1.5 hover:bg-[#EDEBE9] rounded transition-colors"
-            >
-              Discard
-            </button>
-          </div>
-        </div>
-        )
-      })()}
     </div>
 
     {/* More-actions popover — portal so it floats above any overflow clipping. */}

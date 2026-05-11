@@ -46,39 +46,69 @@ async def list_conversations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    filters = [Conversation.user_id == current_user.id]
-
-    total_result = await db.execute(
-        select(func.count()).select_from(Conversation).where(*filters)
-    )
-    total = total_result.scalar() or 0
-
-    result = await db.execute(
-        select(Conversation)
-        .where(*filters)
-        .order_by(desc(Conversation.last_message_at))
+    # Aggregate every conversation the user participates in — owned by them or
+    # not — by scanning their own messages. The per-user message_count is the
+    # number of rows the user can see in that thread, so threading badges in
+    # the list (e.g. "(3)") stay accurate for recipients too.
+    agg_q = await db.execute(
+        select(
+            Message.conversation_id,
+            func.count(Message.id).label("msg_count"),
+            func.max(Message.received_at).label("last_at"),
+            func.bool_or(Message.has_attachments).label("any_att"),
+        )
+        .where(
+            Message.user_id == current_user.id,
+            Message.conversation_id.is_not(None),
+        )
+        .group_by(Message.conversation_id)
+        .order_by(desc(func.max(Message.received_at)))
         .limit(limit + 1)
     )
-    convs = list(result.scalars().all())
+    rows = list(agg_q.all())
 
-    has_more = len(convs) > limit
-    items = convs[:limit]
-    next_cursor = str(items[-1].id) if has_more else None
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = str(rows[-1][0]) if has_more else None
 
-    def _out(c: Conversation) -> dict:
-        return {
-            "id": c.id,
-            "user_id": c.user_id,
-            "subject": c.subject,
-            "last_message_at": c.last_message_at.isoformat() if c.last_message_at else None,
-            "message_count": c.message_count,
-            "has_attachments": c.has_attachments,
-        }
+    conv_ids = [r[0] for r in rows]
+    conv_map: dict[uuid.UUID, Conversation] = {}
+    subj_map: dict[uuid.UUID, str] = {}
+    if conv_ids:
+        conv_q = await db.execute(
+            select(Conversation).where(Conversation.id.in_(conv_ids))
+        )
+        conv_map = {c.id: c for c in conv_q.scalars().all()}
+        # Fall back to a representative message's subject when the user can't
+        # see the owner Conversation row (still happens for recipients).
+        subj_q = await db.execute(
+            select(Message.conversation_id, func.max(Message.subject))
+            .where(
+                Message.user_id == current_user.id,
+                Message.conversation_id.in_(conv_ids),
+            )
+            .group_by(Message.conversation_id)
+        )
+        subj_map = {cid: s for cid, s in subj_q.all()}
+
+    items: list[ConversationOut] = []
+    for conv_id, msg_count, last_at, any_att in rows:
+        conv = conv_map.get(conv_id)
+        items.append(
+            ConversationOut(
+                id=conv_id,
+                user_id=conv.user_id if conv else current_user.id,
+                subject=(conv.subject if conv else subj_map.get(conv_id, "")) or "",
+                last_message_at=last_at.isoformat() if last_at else None,
+                message_count=msg_count,
+                has_attachments=bool(any_att),
+            )
+        )
 
     return ConversationList(
-        items=[ConversationOut(**_out(c)) for c in items],
+        items=items,
         next_cursor=next_cursor,
-        total_count=total,
+        total_count=len(items) + (1 if has_more else 0),
     )
 
 
@@ -88,34 +118,50 @@ async def get_conversation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Conversation).where(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id,
-        )
-    )
-    conv = result.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": {"code": "not_found", "message": "Conversation not found"}},
-        )
-
+    # Conversation rows are owned by the original sender, but a conversation_id
+    # is shared across every participant's mailbox (the recipient's delivered
+    # copy carries the same conversation_id). Authorisation is therefore based
+    # on whether the *requester* has any message in this thread — not on who
+    # created the Conversation row — otherwise the recipient gets a 404 when
+    # expanding a thread the sender started.
     msgs_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id, Message.user_id == current_user.id)
         .order_by(Message.received_at)
     )
     messages = msgs_result.scalars().all()
+    if not messages:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_found", "message": "Conversation not found"}},
+        )
 
-    conv_out = ConversationOut(
-        id=conv.id,
-        user_id=conv.user_id,
-        subject=conv.subject,
-        last_message_at=conv.last_message_at.isoformat() if conv.last_message_at else None,
-        message_count=conv.message_count,
-        has_attachments=conv.has_attachments,
+    # Prefer the original Conversation row for subject/metadata, but synthesize
+    # a stand-in from the user's own messages if the owner row isn't visible.
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
     )
+    conv = result.scalar_one_or_none()
+
+    if conv:
+        conv_out = ConversationOut(
+            id=conv.id,
+            user_id=conv.user_id,
+            subject=conv.subject,
+            last_message_at=conv.last_message_at.isoformat() if conv.last_message_at else None,
+            message_count=conv.message_count,
+            has_attachments=conv.has_attachments,
+        )
+    else:
+        latest = max(messages, key=lambda m: m.received_at or m.created_at)
+        conv_out = ConversationOut(
+            id=conversation_id,
+            user_id=current_user.id,
+            subject=latest.subject or "",
+            last_message_at=(latest.received_at or latest.created_at).isoformat(),
+            message_count=len(messages),
+            has_attachments=any(m.has_attachments for m in messages),
+        )
 
     return ConversationDetail(
         conversation=conv_out,
