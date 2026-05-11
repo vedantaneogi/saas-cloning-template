@@ -62,6 +62,142 @@ async def _get_folder_by_slug(db: AsyncSession, slug: str, user_id: uuid.UUID) -
     return result.scalar_one_or_none()
 
 
+_SUBJECT_PREFIX_RE = re.compile(r"^(re|fw|fwd)\s*:\s*", re.IGNORECASE)
+
+
+def _normalize_subject(subject: Optional[str]) -> str:
+    """Strip Re:/Fw:/Fwd: prefixes (any number of them) and lowercase."""
+    s = (subject or "").strip()
+    while True:
+        m = _SUBJECT_PREFIX_RE.match(s)
+        if not m:
+            break
+        s = s[m.end():].strip()
+    return s.lower()
+
+
+async def _link_recipient_thread(
+    db: AsyncSession,
+    sent_msg: Message,
+    sender_email: str,
+    rec_user: User,
+    rec_email: str,
+    now: datetime,
+) -> Optional[uuid.UUID]:
+    """Reconcile a sent message into the recipient's view of the same thread.
+
+    Returns the conversation_id the delivered copy should use. Side-effects:
+      - May back-fill conversation_id on the recipient's existing related
+        messages (so the receiver's inbox now groups them together).
+      - May back-fill sent_msg.conversation_id to match an existing thread on
+        the recipient's side (so the sender's view stays aligned with the
+        canonical id we just settled on).
+      - May create a mirror of the reply parent in the recipient's Sent
+        folder when the recipient was the parent's original author (covers
+        the seeded one-sided mailbox case so the receiver has the original
+        message to thread the reply against).
+
+    Matching uses normalized subject + sender↔recipient participation, not
+    just conversation_id, because seed data + cross-mailbox replies can leave
+    each side with a different id even though they're logically one thread.
+    """
+    delivery_conv_id = sent_msg.conversation_id
+    sender_lower = sender_email.lower()
+    rec_lower = rec_email.lower()
+    base = _normalize_subject(sent_msg.subject)
+
+    related: list[Message] = []
+    if base:
+        # Pull any of the recipient's messages whose normalized subject
+        # matches the candidate base. Cheap to do in SQL with an IN list.
+        existing_q = await db.execute(
+            select(Message).where(
+                Message.user_id == rec_user.id,
+                func.lower(Message.subject).in_([
+                    base,
+                    f"re: {base}",
+                    f"fw: {base}",
+                    f"fwd: {base}",
+                ]),
+            )
+        )
+        for em in existing_q.scalars().all():
+            # Participant filter: subject alone can collide across unrelated
+            # threads ("Hello"), so require the sender to actually be in the
+            # other party's address book for that row.
+            if (em.from_address or "").lower() == sender_lower:
+                related.append(em)
+                continue
+            participants = (em.to_addresses or []) + (em.cc_addresses or [])
+            if any(
+                (p.get("email") or "").lower() == sender_lower
+                for p in participants
+                if isinstance(p, dict)
+            ):
+                related.append(em)
+
+    if related:
+        # Pick a canonical conversation id. Prefer one already in use on the
+        # recipient's side so we don't disrupt their existing thread; fall
+        # back to the sender's; if neither exists, leave it unset.
+        target = next((rm.conversation_id for rm in related if rm.conversation_id), None) or delivery_conv_id
+        if target:
+            for em in related:
+                if em.conversation_id != target:
+                    em.conversation_id = target
+                    em.updated_at = now
+            if sent_msg.conversation_id != target:
+                sent_msg.conversation_id = target
+                sent_msg.updated_at = now
+            delivery_conv_id = target
+        return delivery_conv_id
+
+    # No prior related message in the recipient's mailbox. If the sender is
+    # replying to a parent message that was *originally authored by this
+    # recipient*, mirror that parent into the recipient's Sent folder so
+    # they have the full thread on their side too. This handles the common
+    # case where the seed only populated one mailbox and there's nothing on
+    # the recipient's side for the new reply to thread against.
+    if not sent_msg.in_reply_to_id:
+        return delivery_conv_id
+    parent_q = await db.execute(
+        select(Message).where(Message.id == sent_msg.in_reply_to_id)
+    )
+    parent = parent_q.scalar_one_or_none()
+    if not parent or (parent.from_address or "").lower() != rec_lower:
+        return delivery_conv_id
+    rec_sent_folder = await _get_folder_by_slug(db, "sent", rec_user.id)
+    if not rec_sent_folder:
+        return delivery_conv_id
+    mirror = Message(
+        id=uuid.uuid4(),
+        user_id=rec_user.id,
+        folder_id=rec_sent_folder.id,
+        conversation_id=delivery_conv_id,
+        from_address=parent.from_address,
+        from_name=parent.from_name,
+        to_addresses=parent.to_addresses or [],
+        cc_addresses=parent.cc_addresses or [],
+        bcc_addresses=[],
+        subject=parent.subject or "",
+        body_html=parent.body_html,
+        body_text=parent.body_text,
+        importance=parent.importance,
+        sensitivity=parent.sensitivity,
+        encrypt_mode=parent.encrypt_mode,
+        has_attachments=False,
+        is_read=True,
+        is_draft=False,
+        sent_at=parent.sent_at or parent.received_at or parent.created_at,
+        received_at=parent.received_at or parent.sent_at or parent.created_at,
+        created_at=parent.created_at or now,
+        updated_at=now,
+    )
+    db.add(mirror)
+    await db.flush()
+    return delivery_conv_id
+
+
 async def _deliver_to_recipients(
     db: AsyncSession, sent_msg: Message, to_addresses: list, cc_addresses: list, bcc_addresses: list, sender: User
 ):
@@ -113,62 +249,11 @@ async def _deliver_to_recipients(
         if not rec_inbox:
             continue
 
-        # Cross-mailbox threading: the recipient's mailbox is independent, so
-        # a message they sent earlier (or another delivered copy in the same
-        # chain) may have a different conversation_id than our sent_msg. Find
-        # any of their messages that belong to the same logical thread — by
-        # matching base subject (strip RE:/FW: prefixes) and participant
-        # overlap (sender ↔ recipient) — and converge everything onto a
-        # single conversation_id. Without this, the receiver sees each reply
-        # as a standalone row even though the sender's view is threaded.
-        delivery_conv_id = sent_msg.conversation_id
-        base_subject = (sent_msg.subject or "").strip()
-        while True:
-            m = re.match(r"^(re|fw|fwd)\s*:\s*", base_subject, re.IGNORECASE)
-            if not m:
-                break
-            base_subject = base_subject[m.end():].strip()
-        if base_subject:
-            sender_lower = sender.email.lower()
-            existing_q = await db.execute(
-                select(Message).where(
-                    Message.user_id == rec_user.id,
-                    func.lower(Message.subject).in_([
-                        base_subject.lower(),
-                        f"re: {base_subject.lower()}",
-                        f"fw: {base_subject.lower()}",
-                        f"fwd: {base_subject.lower()}",
-                    ]),
-                )
-            )
-            existing_msgs = list(existing_q.scalars().all())
-            # Only consider messages that actually involve the sender (either
-            # as from_address or in to/cc), so unrelated threads with the same
-            # subject don't get accidentally merged.
-            related = []
-            for em in existing_msgs:
-                if (em.from_address or "").lower() == sender_lower:
-                    related.append(em)
-                    continue
-                participants = (em.to_addresses or []) + (em.cc_addresses or [])
-                if any((p.get("email") or "").lower() == sender_lower for p in participants if isinstance(p, dict)):
-                    related.append(em)
-            if related:
-                # Prefer an existing conversation_id from the recipient's side
-                # if one is present (they may have a thread already going).
-                target_conv = next((m.conversation_id for m in related if m.conversation_id), None) or delivery_conv_id
-                # Back-fill every related message that isn't already on the
-                # target conversation, plus the sender's sent_msg itself so
-                # future replies on either side stay aligned.
-                if target_conv:
-                    for em in related:
-                        if em.conversation_id != target_conv:
-                            em.conversation_id = target_conv
-                            em.updated_at = now
-                    if sent_msg.conversation_id != target_conv:
-                        sent_msg.conversation_id = target_conv
-                        sent_msg.updated_at = now
-                    delivery_conv_id = target_conv
+        # Reconcile threading for the recipient's view (back-fill + mirror
+        # parent when needed) — see _link_recipient_thread for details.
+        delivery_conv_id = await _link_recipient_thread(
+            db, sent_msg, sender.email, rec_user, rec_email, now
+        )
 
         delivered = Message(
             id=uuid.uuid4(),
