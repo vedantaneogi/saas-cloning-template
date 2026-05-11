@@ -2281,9 +2281,21 @@ function ViewRibbon() {
   const queryClient = useQueryClient()
   const conversationGrouping = useMailStore((s) => s.conversationGrouping)
   const setConversationGrouping = useMailStore((s) => s.setConversationGrouping)
+  const readingPanePosition = useMailStore((s) => s.readingPanePosition)
+  const setReadingPanePosition = useMailStore((s) => s.setReadingPanePosition)
+  const sortBy = useMailStore((s) => s.sortBy)
+  const setSortBy = useMailStore((s) => s.setSortBy)
+  const sortOrder = useMailStore((s) => s.sortOrder)
+  const setSortOrder = useMailStore((s) => s.setSortOrder)
   const showNotification = useUIStore((s) => s.showNotification)
   const [catFilterOpen, setCatFilterOpen] = useState(false)
+  const [paneMenuOpen, setPaneMenuOpen] = useState(false)
+  const [densityMenuOpen, setDensityMenuOpen] = useState(false)
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const catFilterRef = useRef<HTMLDivElement>(null)
+  const paneMenuRef = useRef<HTMLDivElement>(null)
+  const densityMenuRef = useRef<HTMLDivElement>(null)
+  const sortMenuRef = useRef<HTMLDivElement>(null)
 
   const { data: categoryList = [] } = useQuery({
     queryKey: ['categories'],
@@ -2291,34 +2303,59 @@ function ViewRibbon() {
   })
 
   useEffect(() => {
-    if (!catFilterOpen) return
     const handler = (e: MouseEvent) => {
-      if (catFilterRef.current && !catFilterRef.current.contains(e.target as Node)) setCatFilterOpen(false)
+      const t = e.target as Node
+      if (catFilterOpen && catFilterRef.current && !catFilterRef.current.contains(t)) setCatFilterOpen(false)
+      if (paneMenuOpen && paneMenuRef.current && !paneMenuRef.current.contains(t)) setPaneMenuOpen(false)
+      if (densityMenuOpen && densityMenuRef.current && !densityMenuRef.current.contains(t)) setDensityMenuOpen(false)
+      if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(t)) setSortMenuOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [catFilterOpen])
+  }, [catFilterOpen, paneMenuOpen, densityMenuOpen, sortMenuOpen])
 
+  // Persist + apply locally. The server field is `reading_pane_position`
+  // (the older code mistakenly sent `reading_pane`, which the API ignored —
+  // that's why View tab "wasn't working"). We update the zustand store
+  // first for instant UI feedback, then fire-and-forget the persist call.
   const updateSettingsMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => settings.update({ mail: data } as never),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] })
-      showNotification('View settings updated')
     },
   })
+  const setReadingPane = (pos: 'right' | 'bottom' | 'off') => {
+    setReadingPanePosition(pos)
+    updateSettingsMutation.mutate({ reading_pane_position: pos })
+    setPaneMenuOpen(false)
+    showNotification(`Reading pane: ${pos === 'off' ? 'Off' : pos === 'right' ? 'Right' : 'Bottom'}`)
+  }
 
   return (
     <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto ribbon-scroll" role="toolbar" aria-label="View toolbar">
-      {/* Reading pane position */}
-      <RibbonBtn label="Reading pane on right" onClick={() => updateSettingsMutation.mutate({ reading_pane: 'right' })}>
-        <PanelRight size={15} /><span>Right</span>
-      </RibbonBtn>
-      <RibbonBtn label="Reading pane on bottom" onClick={() => updateSettingsMutation.mutate({ reading_pane: 'bottom' })}>
-        <PanelBottom size={15} /><span>Bottom</span>
-      </RibbonBtn>
-      <RibbonBtn label="Reading pane off" onClick={() => updateSettingsMutation.mutate({ reading_pane: 'off' })}>
-        <PanelLeftClose size={15} /><span>Off</span>
-      </RibbonBtn>
+      {/* Reading pane — single flyout (matches Outlook's View ribbon). */}
+      <div className="relative" ref={paneMenuRef}>
+        <RibbonBtn label="Reading pane" onClick={() => setPaneMenuOpen((v) => !v)}>
+          <PanelRight size={15} />
+          <span className="flex items-center gap-0.5">Reading pane <ChevronDown size={10} /></span>
+        </RibbonBtn>
+        {paneMenuOpen && (
+          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+            <button onClick={() => setReadingPane('right')}
+              className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'right' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+              <PanelRight size={14} /> Right
+            </button>
+            <button onClick={() => setReadingPane('bottom')}
+              className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'bottom' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+              <PanelBottom size={14} /> Bottom
+            </button>
+            <button onClick={() => setReadingPane('off')}
+              className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'off' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+              <PanelLeftClose size={14} /> Off
+            </button>
+          </div>
+        )}
+      </div>
 
       <RibbonSep />
 
@@ -2333,19 +2370,82 @@ function ViewRibbon() {
 
       <RibbonSep />
 
+      {/* Arrange / Sort — order the inbox by date / sender / subject etc.,
+          ascending or descending. Matches the Outlook View > Arrange menu. */}
+      <div className="relative" ref={sortMenuRef}>
+        <RibbonBtn label="Arrange" onClick={() => setSortMenuOpen((v) => !v)}>
+          <Filter size={15} />
+          <span className="flex items-center gap-0.5">Arrange <ChevronDown size={10} /></span>
+        </RibbonBtn>
+        {sortMenuOpen && (
+          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+            {[
+              { v: 'date', l: 'Date' },
+              { v: 'from', l: 'From' },
+              { v: 'subject', l: 'Subject' },
+              { v: 'size', l: 'Size' },
+              { v: 'importance', l: 'Importance' },
+            ].map((opt) => (
+              <button key={opt.v}
+                onClick={() => { setSortBy(opt.v as never); setSortMenuOpen(false) }}
+                className={cn('w-full flex items-center justify-between text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]',
+                  sortBy === opt.v && 'bg-[#EBF3FB] text-[#0078D4]')}>
+                {opt.l}{sortBy === opt.v && <Check size={12} />}
+              </button>
+            ))}
+            <div className="h-px bg-[#EDEBE9] my-1" />
+            <button onClick={() => { setSortOrder('desc'); setSortMenuOpen(false) }}
+              className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', sortOrder === 'desc' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+              Newest on top
+            </button>
+            <button onClick={() => { setSortOrder('asc'); setSortMenuOpen(false) }}
+              className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', sortOrder === 'asc' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+              Oldest on top
+            </button>
+          </div>
+        )}
+      </div>
+
+      <RibbonSep />
+
+      {/* Density — Outlook lets users compact the message list. We persist
+          via the existing settings endpoint so it survives refresh. */}
+      <div className="relative" ref={densityMenuRef}>
+        <RibbonBtn label="Density" onClick={() => setDensityMenuOpen((v) => !v)}>
+          <AlignJustify size={15} />
+          <span className="flex items-center gap-0.5">Density <ChevronDown size={10} /></span>
+        </RibbonBtn>
+        {densityMenuOpen && (
+          <div className="absolute left-0 top-full mt-0.5 z-50 w-40 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+            {(['compact', 'medium', 'comfortable'] as const).map((d) => (
+              <button key={d}
+                onClick={() => {
+                  updateSettingsMutation.mutate({ density: d })
+                  setDensityMenuOpen(false)
+                  showNotification(`Density: ${d}`)
+                }}
+                className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] capitalize">
+                {d}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <RibbonSep />
+
       {/* Category filter */}
       {categoryList.length > 0 && (
         <div className="relative" ref={catFilterRef}>
           <RibbonBtn label="Filter by category" onClick={() => setCatFilterOpen((v) => !v)}>
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-            <span>Categories</span>
+            <Tag size={15} />
+            <span className="flex items-center gap-0.5">Categories <ChevronDown size={10} /></span>
           </RibbonBtn>
           {catFilterOpen && (
             <div className="absolute left-0 top-full mt-0.5 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
               {categoryList.map((cat: { id: string; name: string; color: string }) => (
                 <button key={cat.id}
                   onClick={() => {
-                    // Navigate to search filtered by category
                     showNotification(`Showing ${cat.name} messages`)
                     setCatFilterOpen(false)
                   }}
