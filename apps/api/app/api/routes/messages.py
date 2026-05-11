@@ -818,6 +818,20 @@ async def create_message(
     # eventual reply lands on the same thread as the sender's original copy.
     # (Drafts skip — they have no recipients yet.)
     conv_id = body.conversation_id
+    # Ribbon Reply/Reply All/Forward sends in_reply_to_id but no conversation_id
+    # (the compose draft only carries replyToMessageId). Inherit the parent's
+    # conversation so the reply threads with the original instead of starting
+    # a brand-new conversation.
+    if not conv_id and body.in_reply_to_id:
+        parent = await db.execute(
+            select(Message).where(
+                Message.id == body.in_reply_to_id,
+                Message.user_id == current_user.id,
+            )
+        )
+        parent_msg = parent.scalar_one_or_none()
+        if parent_msg and parent_msg.conversation_id:
+            conv_id = parent_msg.conversation_id
     if not conv_id and not body.is_draft:
         from app.models.conversation import Conversation
         conv = Conversation(
