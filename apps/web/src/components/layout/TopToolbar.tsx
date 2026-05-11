@@ -570,12 +570,18 @@ export function TopToolbar() {
                       <X size={14} />
                     </button>
                   )}
-                  <button type="button"
-                    aria-label="Search filters"
-                    onClick={() => setShowSearchFilters((v) => !v)}
-                    className={cn('p-1 rounded transition-colors', showSearchFilters ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:text-[#323130]')}>
-                    <Filter size={14} />
-                  </button>
+                  {/* Filter funnel only renders when the search bar is
+                      focused — keeps the idle bar clean (just placeholder +
+                      magnifier), matching Outlook. */}
+                  {searchFocused && (
+                    <button type="button"
+                      aria-label="Search filters"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setShowSearchFilters((v) => !v)}
+                      className={cn('p-1 rounded transition-colors', showSearchFilters ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:text-[#323130]')}>
+                      <Filter size={14} />
+                    </button>
+                  )}
                   {/* Magnifier button is fully functional now — clicking it
                       runs the same search-page navigation as pressing Enter
                       so the icon isn't decorative. With an empty query +

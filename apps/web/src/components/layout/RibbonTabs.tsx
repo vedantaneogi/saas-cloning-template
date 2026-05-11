@@ -2295,6 +2295,7 @@ function ViewRibbon() {
   type MenuKind = 'pane' | 'arrange' | 'density' | 'categories' | null
   const [menu, setMenu] = useState<MenuKind>(null)
   const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const [catSearch, setCatSearch] = useState('')
   const paneBtnRef = useRef<HTMLDivElement>(null)
   const arrangeBtnRef = useRef<HTMLDivElement>(null)
   const densityBtnRef = useRef<HTMLDivElement>(null)
@@ -2318,6 +2319,12 @@ function ViewRibbon() {
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [menu])
+
+  // Reset the inline category search when the menu closes so reopening
+  // doesn't carry over a stale filter term.
+  useEffect(() => {
+    if (menu !== 'categories') setCatSearch('')
   }, [menu])
 
   const openMenu = (kind: Exclude<MenuKind, null>, ref: React.RefObject<HTMLDivElement | null>) => {
@@ -2462,40 +2469,62 @@ function ViewRibbon() {
               ))}
             </div>
           )}
-          {menu === 'categories' && (
-            <div className="w-52">
-              <button
-                onClick={() => { clearCategoryFilter(); setMenu(null) }}
-                className={cn(
-                  'w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]',
-                  categoryFilterIds.length === 0 ? 'text-[#0078D4] font-medium' : 'text-[#323130]',
-                )}
-              >
-                All categories
-              </button>
-              <div className="h-px bg-[#EDEBE9] my-1" />
-              {categoryList.map((cat: { id: string; name: string; color: string }) => {
-                const active = categoryFilterIds.includes(cat.id)
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => toggleCategoryFilter(cat.id)}
-                    className={cn(
-                      'w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors',
-                      active && 'bg-[#EBF3FB] text-[#0078D4]',
-                    )}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-sm flex-shrink-0 border border-[#D2D0CE]"
-                      style={{ backgroundColor: cat.color }}
+          {menu === 'categories' && (() => {
+            // Mirror the right-click Categorize submenu (MessageListItem):
+            // bordered shell, search input header, colored tag rows, ✓ on
+            // active, footer links. Reused styles so the View popover feels
+            // identical to the per-message one.
+            const filtered = (categoryList as { id: string; name: string; color: string }[]).filter((c) =>
+              c.name.toLowerCase().includes(catSearch.trim().toLowerCase())
+            )
+            return (
+              <div className="w-56 py-1">
+                <div className="px-2 py-1.5 border-b border-[#EDEBE9]" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-[#F3F2F1] rounded">
+                    <Search size={11} className="text-[#605E5C] flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={catSearch}
+                      onChange={(e) => setCatSearch(e.target.value)}
+                      placeholder="Search for a category"
+                      aria-label="Search categories"
+                      className="flex-1 text-xs bg-transparent focus:outline-none text-[#323130] placeholder:text-[#A19F9D]"
+                      onClick={(e) => e.stopPropagation()}
                     />
-                    <span className="flex-1 truncate">{cat.name}</span>
-                    {active && <Check size={12} className="flex-shrink-0" />}
-                  </button>
-                )
-              })}
-            </div>
-          )}
+                  </div>
+                </div>
+                <button
+                  role="menuitem"
+                  onClick={() => { clearCategoryFilter(); setMenu(null) }}
+                  className={cn(
+                    'flex items-center gap-2 w-full text-sm px-3 py-1.5 hover:bg-[#F3F2F1]',
+                    categoryFilterIds.length === 0 ? 'text-[#0078D4] font-medium' : 'text-[#323130]',
+                  )}
+                >
+                  All categories
+                </button>
+                {filtered.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-[#605E5C]">No categories match.</div>
+                ) : (
+                  filtered.map((cat) => {
+                    const active = categoryFilterIds.includes(cat.id)
+                    return (
+                      <button
+                        key={cat.id}
+                        role="menuitem"
+                        onClick={(e) => { e.stopPropagation(); toggleCategoryFilter(cat.id) }}
+                        className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+                      >
+                        <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
+                        <span className="flex-1 text-left truncate">{cat.name}</span>
+                        {active && <span className="text-[#0078D4] text-xs font-bold">✓</span>}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            )
+          })()}
         </div>,
         document.body
       )}
