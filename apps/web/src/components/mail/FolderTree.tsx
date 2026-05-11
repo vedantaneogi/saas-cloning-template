@@ -100,6 +100,71 @@ function FollowupFolderEntry({ currentSlug }: { currentSlug: string }) {
   )
 }
 
+// Three-dot menu attached to the account row in the sidebar header. The
+// only action we need today is "Create new folder" (delegates back to the
+// parent's inline-input flow), but the component is set up so additional
+// account-level entries (Add shared account, Settings, etc.) can be added
+// later without re-wiring the trigger.
+function AccountMenuButton({ onCreateFolder }: { onCreateFolder: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (menuRef.current?.contains(t)) return
+      if (btnRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          const r = btnRef.current?.getBoundingClientRect()
+          if (r) setPos({ top: r.bottom + 4, left: r.left })
+          setOpen((v) => !v)
+        }}
+        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[#EDEBE9] text-[#605E5C] transition-all flex-shrink-0"
+        title="More options"
+        aria-label="Mailbox options"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <circle cx="3" cy="8" r="1.2" fill="currentColor" />
+          <circle cx="8" cy="8" r="1.2" fill="currentColor" />
+          <circle cx="13" cy="8" r="1.2" fill="currentColor" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+          style={{ top: pos.top, left: pos.left }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            role="menuitem"
+            onClick={() => { onCreateFolder(); setOpen(false) }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <FolderPlus size={13} /> Create new folder
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
 // "Go to Groups" sidebar jump link — Outlook puts this at the bottom of
 // the mail folder list so users can hop to the Groups surface in one
 // click. Trivial component: just a styled button that navigates.
@@ -228,6 +293,7 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   const isActive = currentSlug === (folder.slug || folder.id)
   const hasChildren = children.length > 0
   const icon = SYSTEM_ICONS[folder.slug] ?? <Folder size={16} />
+  const [hovered, setHovered] = useState(false)
 
   const slug = folder.slug || folder.id
 
@@ -255,6 +321,8 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
         // Right-click context menu intentionally removed — the senior wants
         // the three-dot button to be the single way into the folder menu so
         // it's clearly discoverable instead of hiding behind a right-click.
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         aria-label={folder.name}
         aria-current={isActive ? 'page' : undefined}
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setIsDragOver(true) }}
@@ -302,15 +370,10 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
           <span className="flex-1 truncate">{folder.name}</span>
         )}
 
-        {/* Three-dot menu is the single, always-visible entry point to the
-            folder actions (replaces the hover-swap with the unread count).
-            Unread count, when present, sits to its left so users still see
-            it at a glance. */}
+        {/* Three-dot only on hover (or while its own menu is open); fall
+            back to the unread count badge when the row is idle. */}
         {!renaming && (
-          <span className="flex items-center gap-1 flex-shrink-0">
-            {folder.unread_count > 0 && (
-              <Badge variant="unread">{folder.unread_count}</Badge>
-            )}
+          (hovered || contextMenu) ? (
             <button
               onClick={(e) => {
                 e.preventDefault()
@@ -318,13 +381,17 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
                 const rect = e.currentTarget.getBoundingClientRect()
                 openContextMenuAt(rect.left, rect.bottom + 2)
               }}
-              className="p-0.5 rounded hover:bg-[#D2D0CE] text-[#605E5C] transition-all"
+              className="flex-shrink-0 p-0.5 rounded hover:bg-[#D2D0CE] text-[#605E5C] transition-all"
               title="More options"
               aria-label={`More options for ${folder.name}`}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/></svg>
             </button>
-          </span>
+          ) : (
+            folder.unread_count > 0 ? (
+              <Badge variant="unread">{folder.unread_count}</Badge>
+            ) : null
+          )
         )}
       </Link>
 
@@ -582,13 +649,11 @@ export function FolderTree() {
                 {accountExpanded ? <ChevronDown size={12} className="text-[#605E5C] flex-shrink-0" /> : <ChevronRight size={12} className="text-[#605E5C] flex-shrink-0" />}
                 <span className="text-xs font-semibold text-[#323130] truncate">{currentUser?.email ?? 'Mail'}</span>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleNewFolder() }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[#EDEBE9] text-[#605E5C] transition-all flex-shrink-0"
-                title="Create new folder"
-              >
-                <FolderPlus size={14} />
-              </button>
+              {/* Three-dot menu on the mailbox header — opens a small popover
+                  whose primary action is "Create new folder". Matches the
+                  Outlook design where the account row exposes its own menu
+                  rather than a one-off icon button. */}
+              <AccountMenuButton onCreateFolder={handleNewFolder} />
             </div>
 
             {accountExpanded && (
@@ -621,7 +686,11 @@ export function FolderTree() {
               </ul>
             )}
 
-            {newFolderInput ? (
+            {/* Inline new-folder input — fires when the account menu's
+                "Create new folder" item is invoked. The standalone bottom
+                button was removed since the same action now lives in the
+                three-dot menu on the mailbox row. */}
+            {newFolderInput && (
               <div className="flex items-center gap-1.5 px-3 py-1 mt-1">
                 <FolderPlus size={14} className="text-[#0078D4] flex-shrink-0" />
                 <input
@@ -638,15 +707,6 @@ export function FolderTree() {
                   className="flex-1 text-sm border border-[#0078D4] rounded px-1.5 py-0.5 focus:outline-none text-[#323130]"
                 />
               </div>
-            ) : (
-              <button
-                onClick={handleNewFolder}
-                className="flex items-center gap-1.5 w-full px-3 py-2 text-sm text-[#605E5C] hover:text-[#323130] hover:bg-[#F3F2F1] transition-colors mt-1"
-                aria-label="New folder"
-              >
-                <FolderPlus size={14} className="text-[#0078D4]" />
-                New folder
-              </button>
             )}
 
             {/* Outlook surfaces a "Go to Groups" jump link at the bottom of
