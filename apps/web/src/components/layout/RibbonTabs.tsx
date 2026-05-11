@@ -89,7 +89,11 @@ export function RibbonTabs() {
   }, [fileMenuOpen])
 
   return (
-    <div className="flex flex-col flex-shrink-0 relative z-10">
+    // Outlook's tab+ribbon block sits on a faint gray well with a thin
+    // shadow underneath, giving it a "tray" / floating look against the
+    // panes below. We add a 1px gray bg around the white ribbon to expose
+    // a top hairline and a bottom shadow so it visually lifts off.
+    <div className="flex flex-col flex-shrink-0 relative z-10 bg-[#F3F2F1] pb-1 shadow-[0_1px_0_0_rgba(0,0,0,0.04)]">
       {/* Tab bar */}
       <div className="h-8 bg-white border-b border-[#EDEBE9] flex items-center gap-0 px-1">
         <button
