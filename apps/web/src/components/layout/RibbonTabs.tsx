@@ -292,6 +292,69 @@ function FontDropdown({
   )
 }
 
+// ─── Outlook-style color swatch picker ──────────────────────────────────────
+// Single source of truth for both the font-color and highlight popovers so
+// the senior gets the same look in both. Palette is a 2-D array of {label,
+// color} cells laid out as Outlook does (3 rows × 6 cells: pure → light →
+// grayscale). Reset row at the bottom matches "No color" / "Automatic" in
+// the live Outlook menu.
+function OutlookSwatchPicker({
+  title,
+  resetLabel,
+  containerRef,
+  pos,
+  onPick,
+  onReset,
+  palette,
+}: {
+  title: string
+  resetLabel: string
+  containerRef: React.RefObject<HTMLDivElement | null>
+  pos: { top: number; left: number }
+  onPick: (hex: string) => void
+  onReset: () => void
+  palette: { label: string; color: string }[][]
+}) {
+  return (
+    <div
+      ref={containerRef}
+      role="menu"
+      aria-label={title}
+      className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      <div className="px-3 pt-2 pb-1 text-[11px] font-semibold text-[#605E5C]">{title}</div>
+      <div role="grid" className="px-2 pb-2">
+        {palette.map((row, ri) => (
+          <div key={ri} role="row" className="flex gap-1 mb-1 last:mb-0">
+            {row.map((cell) => (
+              <button
+                key={cell.color}
+                role="gridcell"
+                type="button"
+                aria-label={cell.label}
+                title={cell.label}
+                onClick={() => onPick(cell.color)}
+                className="w-6 h-6 rounded-sm border border-[#D2D0CE] hover:ring-2 hover:ring-[#0078D4] hover:z-10 transition"
+                style={{ backgroundColor: cell.color }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-[#EDEBE9] mt-0.5" />
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onReset}
+        className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+      >
+        {resetLabel}
+      </button>
+    </div>
+  )
+}
+
 // ─── Compose Message Ribbon (shown when composing inline) ────────────────────
 function ComposeMessageRibbon() {
   const editor = useEditorStore((s) => s.editor)
@@ -316,17 +379,35 @@ function ComposeMessageRibbon() {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [popupPos, setPopupPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
 
-  // Outlook palette — top row is the "Theme" strip (dark→light tints of the
-  // accent), bottom 6×5 grid is the standard color block. Senior asked for
-  // this layout instead of the flat 7-color row we shipped. Same shape is
-  // reused for the text-highlight picker so both popovers feel identical.
-  const THEME_COLORS = ['#000000', '#FFFFFF', '#E7E6E6', '#44546A', '#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47']
-  const STANDARD_COLORS = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0']
-  // Highlights use the same 10-cell standard row + a softer pastel theme
-  // row (light tints + neutral grays) to mirror Outlook's "Text Highlight
-  // Color" dropdown.
-  const HIGHLIGHT_THEME = ['#FFFFFF', '#000000', '#FFF2CC', '#FCE4D6', '#DDEBF7', '#E2EFDA', '#FFE699', '#F4B084', '#9DC3E6', '#A9D08E']
-  const HIGHLIGHT_STANDARD = ['#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#0070C0', '#FF0000', '#FFA500', '#7030A0', '#FFC0CB', '#808080']
+  // Outlook's color swatch grid: 3 rows × 6 cells — pure → light → grayscale
+  // (taken verbatim from the live Outlook Text Highlight Color menu). Used
+  // for both font color and highlight pickers so the popovers feel identical.
+  const OUTLOOK_PALETTE: { label: string; color: string }[][] = [
+    [
+      { label: 'Cyan', color: '#00FFFF' },
+      { label: 'Green', color: '#00FF00' },
+      { label: 'Yellow', color: '#FFFF00' },
+      { label: 'Orange', color: '#FF8000' },
+      { label: 'Red', color: '#FF0000' },
+      { label: 'Magenta', color: '#FF00FF' },
+    ],
+    [
+      { label: 'Light cyan', color: '#80FFFF' },
+      { label: 'Light green', color: '#80FF80' },
+      { label: 'Light yellow', color: '#FFFF80' },
+      { label: 'Light orange', color: '#FFC080' },
+      { label: 'Light red', color: '#FF8080' },
+      { label: 'Light magenta', color: '#FF80FF' },
+    ],
+    [
+      { label: 'White', color: '#FFFFFF' },
+      { label: 'Light gray', color: '#CCCCCC' },
+      { label: 'Gray', color: '#999999' },
+      { label: 'Dark gray', color: '#666666' },
+      { label: 'Darker gray', color: '#333333' },
+      { label: 'Black', color: '#000000' },
+    ],
+  ]
 
   const FONT_FAMILIES = ['Aptos', 'Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana']
   const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36']
@@ -524,124 +605,47 @@ function ComposeMessageRibbon() {
       <RibbonSep tall />
 
       {/* ─── Group: Color + Highlight ─── */}
+      {/* Font color icon: bold "A" with a colored underline bar that
+          reflects the current selection — matches Outlook's text-color
+          glyph (senior asked for the literal "A" instead of our custom
+          mountain-shape icon). */}
       <div ref={colorBtnRef}>
         <RibbonBtn large label="Font color" onClick={() => { setPopupPos(getPos(colorBtnRef)); setColorPickerOpen((v) => !v); setHighlightPickerOpen(false) }}>
-          <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M5 15h10M7.5 3l-4.5 10h2.2l1.3-3h6.5l1.3 3h2.2L11.5 3h-4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><rect x="3" y="16.5" width="14" height="2.5" fill={currentColor} rx="0.5"/></svg>
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <text x="10" y="14" textAnchor="middle" fontFamily="Segoe UI, Arial, sans-serif" fontWeight="700" fontSize="13" fill="currentColor">A</text>
+            <rect x="3" y="16.5" width="14" height="2.5" fill={currentColor} rx="0.5" />
+          </svg>
         </RibbonBtn>
       </div>
       {colorPickerOpen && (
-        <div ref={colorRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-56 animate-fade-in" style={{ top: popupPos.top, left: popupPos.left }}>
-          <p className="text-[11px] font-semibold text-[#605E5C] mb-1">Theme Colors</p>
-          <div className="grid grid-cols-10 gap-0.5 mb-2">
-            {THEME_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                title={c}
-                onClick={() => { run(() => editor!.chain().focus().setColor(c).run()); setColorPickerOpen(false) }}
-                className="w-4 h-4 rounded-sm border border-[#D2D0CE] hover:ring-1 hover:ring-[#0078D4] transition"
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-          <p className="text-[11px] font-semibold text-[#605E5C] mb-1">Standard Colors</p>
-          <div className="grid grid-cols-10 gap-0.5 mb-2">
-            {STANDARD_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                title={c}
-                onClick={() => { run(() => editor!.chain().focus().setColor(c).run()); setColorPickerOpen(false) }}
-                className="w-4 h-4 rounded-sm border border-[#D2D0CE] hover:ring-1 hover:ring-[#0078D4] transition"
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-          <div className="border-t border-[#EDEBE9] pt-1.5 space-y-0.5">
-            <button
-              type="button"
-              onClick={() => { run(() => editor!.chain().focus().unsetColor().run()); setColorPickerOpen(false) }}
-              className="w-full flex items-center gap-2 text-left text-[12px] text-[#323130] px-1 py-1 hover:bg-[#F3F2F1] rounded"
-            >
-              <span className="w-4 h-4 rounded-sm border border-[#D2D0CE] bg-white flex items-center justify-center text-[#605E5C] text-[10px]">×</span>
-              Automatic
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const v = window.prompt('Enter hex color (e.g. #FF8800)')
-                if (v && /^#?[0-9a-fA-F]{3,8}$/.test(v.trim())) {
-                  const hex = v.trim().startsWith('#') ? v.trim() : `#${v.trim()}`
-                  run(() => editor!.chain().focus().setColor(hex).run())
-                }
-                setColorPickerOpen(false)
-              }}
-              className="w-full text-left text-[12px] text-[#323130] px-1 py-1 hover:bg-[#F3F2F1] rounded"
-            >
-              More Colors…
-            </button>
-          </div>
-        </div>
+        <OutlookSwatchPicker
+          title="Font color"
+          resetLabel="Automatic"
+          containerRef={colorRef}
+          pos={popupPos}
+          onPick={(hex) => { run(() => editor!.chain().focus().setColor(hex).run()); setColorPickerOpen(false) }}
+          onReset={() => { run(() => editor!.chain().focus().unsetColor().run()); setColorPickerOpen(false) }}
+          palette={OUTLOOK_PALETTE}
+        />
       )}
 
+      {/* Highlight icon: pencil / marker tip (senior asked for the
+          pencil glyph instead of the prior triangle highlighter). */}
       <div ref={highlightBtnRef}>
         <RibbonBtn large label="Text highlight" active={editor?.isActive('highlight')} onClick={() => { setPopupPos(getPos(highlightBtnRef)); setHighlightPickerOpen((v) => !v); setColorPickerOpen(false) }}>
-          <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M4 16h12M6 4l8 9H6V4z" fill="#FFD700" stroke="currentColor" strokeWidth="1.1"/></svg>
+          <Pencil size={15} />
         </RibbonBtn>
       </div>
       {highlightPickerOpen && (
-        <div ref={highlightRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-56 animate-fade-in" style={{ top: popupPos.top, left: popupPos.left }}>
-          <p className="text-[11px] font-semibold text-[#605E5C] mb-1">Theme Colors</p>
-          <div className="grid grid-cols-10 gap-0.5 mb-2">
-            {HIGHLIGHT_THEME.map((c) => (
-              <button
-                key={c}
-                type="button"
-                title={c}
-                onClick={() => { run(() => editor!.chain().focus().toggleHighlight({ color: c }).run()); setHighlightPickerOpen(false) }}
-                className="w-4 h-4 rounded-sm border border-[#D2D0CE] hover:ring-1 hover:ring-[#0078D4] transition"
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-          <p className="text-[11px] font-semibold text-[#605E5C] mb-1">Standard Colors</p>
-          <div className="grid grid-cols-10 gap-0.5 mb-2">
-            {HIGHLIGHT_STANDARD.map((c) => (
-              <button
-                key={c}
-                type="button"
-                title={c}
-                onClick={() => { run(() => editor!.chain().focus().toggleHighlight({ color: c }).run()); setHighlightPickerOpen(false) }}
-                className="w-4 h-4 rounded-sm border border-[#D2D0CE] hover:ring-1 hover:ring-[#0078D4] transition"
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-          <div className="border-t border-[#EDEBE9] pt-1.5 space-y-0.5">
-            <button
-              type="button"
-              onClick={() => { run(() => editor!.chain().focus().unsetHighlight().run()); setHighlightPickerOpen(false) }}
-              className="w-full flex items-center gap-2 text-left text-[12px] text-[#323130] px-1 py-1 hover:bg-[#F3F2F1] rounded"
-            >
-              <span className="w-4 h-4 rounded-sm border border-[#D2D0CE] bg-white flex items-center justify-center text-[#605E5C] text-[10px]">×</span>
-              No Color
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const v = window.prompt('Enter hex highlight color (e.g. #FFFF00)')
-                if (v && /^#?[0-9a-fA-F]{3,8}$/.test(v.trim())) {
-                  const hex = v.trim().startsWith('#') ? v.trim() : `#${v.trim()}`
-                  run(() => editor!.chain().focus().toggleHighlight({ color: hex }).run())
-                }
-                setHighlightPickerOpen(false)
-              }}
-              className="w-full text-left text-[12px] text-[#323130] px-1 py-1 hover:bg-[#F3F2F1] rounded"
-            >
-              More Colors…
-            </button>
-          </div>
-        </div>
+        <OutlookSwatchPicker
+          title="Text highlight color"
+          resetLabel="No color"
+          containerRef={highlightRef}
+          pos={popupPos}
+          onPick={(hex) => { run(() => editor!.chain().focus().toggleHighlight({ color: hex }).run()); setHighlightPickerOpen(false) }}
+          onReset={() => { run(() => editor!.chain().focus().unsetHighlight().run()); setHighlightPickerOpen(false) }}
+          palette={OUTLOOK_PALETTE}
+        />
       )}
 
       <RibbonSep tall />
