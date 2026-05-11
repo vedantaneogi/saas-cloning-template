@@ -37,6 +37,12 @@ interface EditorStore {
   onDiscard: (() => void) | null
   setOnDiscard: (fn: (() => void) | null) => void
 
+  // Save the current compose draft, then close the composer. Used when the
+  // user clicks another message in the list while a compose is open — we
+  // don't want them trapped, but we also don't want to silently lose work.
+  onSaveAndClose: (() => void) | null
+  setOnSaveAndClose: (fn: (() => void) | null) => void
+
   importance: 'low' | 'normal' | 'high'
   setImportance: (v: 'low' | 'normal' | 'high') => void
 
@@ -71,6 +77,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   onDiscard: null,
   setOnDiscard: (fn) => set({ onDiscard: fn }),
+
+  onSaveAndClose: null,
+  setOnSaveAndClose: (fn) => set({ onSaveAndClose: fn }),
 
   importance: 'normal',
   setImportance: (v) => set({ importance: v }),

@@ -11,6 +11,7 @@ import { cn, formatMessageDate, stripHtml, truncate } from '@/lib/utils'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { messages, folders, categories, tasks } from '@/lib/api'
 import { useUIStore, draftFromReply } from '@/store/ui'
+import { useEditorStore } from '@/store/editor'
 import { useRouter } from 'next/navigation'
 
 interface MessageListItemProps {
@@ -289,6 +290,13 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   const isChecked = selectedMessageIds.has(message.id)
 
   const handleClick = () => {
+    // If a compose is open inline (the reading pane is replaced by the
+    // composer), clicking a different message would otherwise leave the user
+    // stuck because ReadingPane keeps rendering ComposeInline. Fire the
+    // composer's registered save-and-close hook so the in-flight draft is
+    // persisted and the pane is freed before we set the new selection.
+    const onSaveAndClose = useEditorStore.getState().onSaveAndClose
+    onSaveAndClose?.()
     setSelectedMessageId(message.id)
     if (isUnread) {
       markReadMutation.mutate(true)

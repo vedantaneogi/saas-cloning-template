@@ -31,16 +31,17 @@ function AppIcon({ name, size = 28 }: { name: string; size?: number }) {
 }
 
 // ─── Waffle Icon (Microsoft 365 app launcher) ──────────────────────────────
-// Matches the Fluent waffle used on the real Outlook web UI: a 2×2 cluster
-// of colored tiles (blue/red/green/yellow) instead of the plain white grid we
-// shipped earlier. Senior asked for the same icon as Microsoft 365 / Outlook.
+// The real Outlook launcher button uses a plain monochrome 3×3 grid of
+// dots in white-on-blue — NOT the colored 4-tile Microsoft brand logo.
+// Senior flagged that mismatch ("keep this not the Microsoft logo with blue
+// color and white dots"), so the trigger here matches the Fluent
+// `GridDots` glyph instead of the brand square.
 function WaffleIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <rect x="1.5" y="1.5" width="7.5" height="7.5" rx="0.6" fill="#F25022" />
-      <rect x="11" y="1.5" width="7.5" height="7.5" rx="0.6" fill="#7FBA00" />
-      <rect x="1.5" y="11" width="7.5" height="7.5" rx="0.6" fill="#00A4EF" />
-      <rect x="11" y="11" width="7.5" height="7.5" rx="0.6" fill="#FFB900" />
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+      {[3, 10, 17].map((cy) => [3, 10, 17].map((cx) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.4" />
+      )))}
     </svg>
   )
 }
