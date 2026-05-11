@@ -165,6 +165,24 @@ function AccountMenuButton({ onCreateFolder }: { onCreateFolder: () => void }) {
   )
 }
 
+// Same Fluent-style Groups glyph as the app rail (AppSidebar.GroupsIcon)
+// so the "Go to Groups" jump link reads as the same destination —
+// previously this used lucide's generic Users icon which the senior
+// flagged as inconsistent with the rail icon.
+function GroupsRailIcon({ size = 16 }: { size?: number }) {
+  const color = '#0F6CBD'
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="5.5" r="2.5" fill={color} />
+      <circle cx="4.5" cy="7.5" r="1.8" fill={color} opacity="0.55" />
+      <circle cx="15.5" cy="7.5" r="1.8" fill={color} opacity="0.55" />
+      <path d="M6 16.5c0-2.2 1.8-4 4-4s4 1.8 4 4" fill={color} />
+      <path d="M1 17c0-1.6 1.2-2.8 2.8-2.8.9 0 1.7.4 2.2 1" fill={color} opacity="0.45" />
+      <path d="M19 17c0-1.6-1.2-2.8-2.8-2.8-.9 0-1.7.4-2.2 1" fill={color} opacity="0.45" />
+    </svg>
+  )
+}
+
 // "Go to Groups" sidebar jump link — Outlook puts this at the bottom of
 // the mail folder list so users can hop to the Groups surface in one
 // click. Trivial component: just a styled button that navigates.
@@ -174,10 +192,10 @@ function GoToGroupsLink() {
     <button
       type="button"
       onClick={() => router.push('/groups')}
-      className="flex items-center gap-1.5 w-full px-3 py-2 mt-2 text-sm text-[#0078D4] hover:bg-[#F3F2F1] transition-colors border-t border-[#EDEBE9]"
+      className="flex items-center gap-2 w-full px-3 py-2 mt-2 text-sm text-[#0078D4] hover:bg-[#F3F2F1] transition-colors border-t border-[#EDEBE9]"
       aria-label="Go to Groups"
     >
-      <Users size={14} />
+      <GroupsRailIcon size={16} />
       Go to Groups
     </button>
   )
