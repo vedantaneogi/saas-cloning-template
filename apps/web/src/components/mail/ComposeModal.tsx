@@ -250,6 +250,12 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     onSuccess: ({ draft, scheduled }) => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['folders'] })
+      // When the sent message is a reply, the backend back-fills the
+      // parent's conversation_id (so the original in Inbox now belongs to
+      // a thread). The inbox row will only render as a thread once the
+      // conversation list / per-conv queries refresh, so kick those too.
+      queryClient.invalidateQueries({ queryKey: ['conversations-list'] })
+      queryClient.invalidateQueries({ queryKey: ['conversation'] })
       if (scheduled) {
         showNotification('Message scheduled')
         // Park the user in the Scheduled folder so they can find / edit /
