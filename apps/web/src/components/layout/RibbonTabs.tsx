@@ -89,12 +89,13 @@ export function RibbonTabs() {
   }, [fileMenuOpen])
 
   return (
-    // Outlook's ribbon block sits on its own tinted surface (faint
-    // blue-tinged gray) so it visually pops above the white message list +
-    // reading pane below. Margins create a top/side gap exposing the
-    // outer wrapper, and a soft shadow underneath lifts it off the panes.
-    <div className="flex flex-col flex-shrink-0 relative z-10 bg-[#EAF1F8] m-1.5 rounded-md shadow-[0_2px_8px_rgba(15,108,189,0.10)] border border-[#D6E4F2] overflow-hidden">
-      {/* Tab bar */}
+    // Two-layer ribbon: the tab strip stays attached to the blue navbar
+    // (flush, no surrounding chrome) while the actual ribbon toolbar
+    // below floats on its own tinted card (margin + shadow + border).
+    // Senior asked for the tab/file row to stay attached and only the
+    // ribbon itself to look separate.
+    <div className="flex flex-col flex-shrink-0 relative z-10">
+      {/* Tab bar — flush, attached to the bar above */}
       <div className="h-8 bg-white border-b border-[#EDEBE9] flex items-center gap-0 px-1">
         <button
           aria-label="Toggle navigation"
@@ -181,7 +182,9 @@ export function RibbonTabs() {
         )}
       </div>
 
-      {/* Tab panel content — changes per section */}
+      {/* Tab panel content — wrapped in a tinted card so only the
+          ribbon (not the tab strip above) appears to float. */}
+      <div className="bg-[#EAF1F8] mx-1.5 mt-1 mb-1.5 rounded-md border border-[#D6E4F2] shadow-[0_2px_8px_rgba(15,108,189,0.10)] overflow-hidden">
       {isComposing ? (
         // Compose toolbar — every compose tab (Message/Insert/Format text/
         // Draw/Options) shows the formatting ribbon so the toolbar never
@@ -203,6 +206,7 @@ export function RibbonTabs() {
           {activeTab === 'Help' && <HelpRibbon />}
         </>
       )}
+      </div>
     </div>
   )
 }
