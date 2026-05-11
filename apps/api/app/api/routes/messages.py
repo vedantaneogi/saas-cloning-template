@@ -112,11 +112,69 @@ async def _deliver_to_recipients(
         rec_inbox = await _get_folder_by_slug(db, "inbox", rec_user.id)
         if not rec_inbox:
             continue
+
+        # Cross-mailbox threading: the recipient's mailbox is independent, so
+        # a message they sent earlier (or another delivered copy in the same
+        # chain) may have a different conversation_id than our sent_msg. Find
+        # any of their messages that belong to the same logical thread — by
+        # matching base subject (strip RE:/FW: prefixes) and participant
+        # overlap (sender ↔ recipient) — and converge everything onto a
+        # single conversation_id. Without this, the receiver sees each reply
+        # as a standalone row even though the sender's view is threaded.
+        delivery_conv_id = sent_msg.conversation_id
+        base_subject = (sent_msg.subject or "").strip()
+        while True:
+            m = re.match(r"^(re|fw|fwd)\s*:\s*", base_subject, re.IGNORECASE)
+            if not m:
+                break
+            base_subject = base_subject[m.end():].strip()
+        if base_subject:
+            sender_lower = sender.email.lower()
+            existing_q = await db.execute(
+                select(Message).where(
+                    Message.user_id == rec_user.id,
+                    func.lower(Message.subject).in_([
+                        base_subject.lower(),
+                        f"re: {base_subject.lower()}",
+                        f"fw: {base_subject.lower()}",
+                        f"fwd: {base_subject.lower()}",
+                    ]),
+                )
+            )
+            existing_msgs = list(existing_q.scalars().all())
+            # Only consider messages that actually involve the sender (either
+            # as from_address or in to/cc), so unrelated threads with the same
+            # subject don't get accidentally merged.
+            related = []
+            for em in existing_msgs:
+                if (em.from_address or "").lower() == sender_lower:
+                    related.append(em)
+                    continue
+                participants = (em.to_addresses or []) + (em.cc_addresses or [])
+                if any((p.get("email") or "").lower() == sender_lower for p in participants if isinstance(p, dict)):
+                    related.append(em)
+            if related:
+                # Prefer an existing conversation_id from the recipient's side
+                # if one is present (they may have a thread already going).
+                target_conv = next((m.conversation_id for m in related if m.conversation_id), None) or delivery_conv_id
+                # Back-fill every related message that isn't already on the
+                # target conversation, plus the sender's sent_msg itself so
+                # future replies on either side stay aligned.
+                if target_conv:
+                    for em in related:
+                        if em.conversation_id != target_conv:
+                            em.conversation_id = target_conv
+                            em.updated_at = now
+                    if sent_msg.conversation_id != target_conv:
+                        sent_msg.conversation_id = target_conv
+                        sent_msg.updated_at = now
+                    delivery_conv_id = target_conv
+
         delivered = Message(
             id=uuid.uuid4(),
             user_id=rec_user.id,
             folder_id=rec_inbox.id,
-            conversation_id=sent_msg.conversation_id,
+            conversation_id=delivery_conv_id,
             in_reply_to_id=sent_msg.in_reply_to_id,
             reply_type=sent_msg.reply_type,
             from_address=sender.email,
