@@ -1,0 +1,317 @@
+{
+  "$schema": "linear-seed/v1",
+  "workspaces": [
+    {
+      "slug": "demo",
+      "name": "Demo Workspace",
+      "icon_color": "#f59e0b",
+      "members": [
+        { "name": "Navtesh Maken", "email": "nm@example.com", "initials": "NM", "color": "#5e6ad2" },
+        { "name": "Alex Park", "email": "ap@example.com", "initials": "AP", "color": "#26b5ce" },
+        { "name": "Sam Rivera", "email": "sr@example.com", "initials": "SR", "color": "#f2994a" }
+      ],
+      "workspace_labels": [
+        { "name": "Bug", "color": "#eb5757" },
+        { "name": "Feature", "color": "#5e6ad2" },
+        { "name": "Improvement", "color": "#26b5ce" },
+        { "name": "Tech Debt", "color": "#bc7cf0" },
+        { "name": "Customer", "color": "#f2c94c" },
+        { "name": "Security", "color": "#f2994a" }
+      ],
+      "customer_requests": [
+        {
+          "customer_name": "Marina Voss",
+          "customer_email": "marina@acme.example.com",
+          "source": "zendesk",
+          "title": "Workspace stuck on loading screen after login",
+          "body": "Hi — since the Monday update, our team can't load the workspace. Spinner stays forever. Cleared cache, tried two browsers, same result. Five people affected.",
+          "status": "linked",
+          "issue_identifier": "ENG-1"
+        },
+        {
+          "customer_name": "Devon Chu",
+          "customer_email": "devon@northstar.example.com",
+          "source": "slack",
+          "title": "Bulk-update mutation rate-limits us at 50",
+          "body": "We script bulk reassignments via your API and constantly hit a 429 around 50 issues. Could the limit be raised for enterprise?",
+          "status": "linked",
+          "issue_identifier": "ENG-20"
+        },
+        {
+          "customer_name": "Priya Ramaswamy",
+          "customer_email": "priya@helix.example.com",
+          "source": "email",
+          "title": "Keyboard shortcut to jump between projects",
+          "body": "Love the Cmd-K palette, but I'd really like a one-keystroke jump between recent projects — Linear used to have G then P.",
+          "status": "pending"
+        },
+        {
+          "customer_name": "Sam Okafor",
+          "customer_email": "sam@fieldcraft.example.com",
+          "source": "intercom",
+          "title": "Need a way to bulk-archive completed cycles",
+          "body": "We have 40+ cycles from last year. Can we hide / archive completed cycles workspace-wide?",
+          "status": "pending"
+        },
+        {
+          "customer_name": "Lina Park",
+          "customer_email": "lina@orbital.example.com",
+          "source": "feedback",
+          "title": "Inbox filter for mentions-only",
+          "body": "Inbox volume is too high. I want a one-click filter for only @mentions.",
+          "status": "pending"
+        },
+        {
+          "customer_name": "Hiro Tanaka",
+          "customer_email": "hiro@bluefin.example.com",
+          "source": "zendesk",
+          "title": "Off-by-one in cycle progress %",
+          "body": "Cycle progress shows 0% even when one issue is Done in a cycle of two. Looks like a rounding error.",
+          "status": "resolved",
+          "issue_identifier": "ENG-26"
+        }
+      ],
+      "documents": [
+        {
+          "title": "Q2 reliability spec",
+          "icon": "🛠️",
+          "project": "Q2 Platform Reliability",
+          "creator_email": "nm@example.com",
+          "body": "# Q2 Platform Reliability spec\n\n**Owner:** Navtesh Maken · **Target:** Aug 30 2026\n\n## Problem\n\nP95 latency on `/api/issues` regressed to 480ms after the Postgres migration. We need to get back under 200ms while keeping the new schema.\n\n## Approach\n\n1. **Profile** — capture EXPLAIN plans for the 5 hottest endpoints.\n2. **Index** — add `(team_id, state)` covering index on `issues`.\n3. **Hot path** — move payload serialization off the request thread.\n4. **Observability** — track p95 in Datadog with per-endpoint breakdown.\n\n## Non-goals\n\n- Rewriting the GraphQL resolver layer.\n- Migrating away from the current Postgres cluster.\n\n## Open questions\n\n- Do we want a per-team SLO or a single workspace SLO?\n- Should the cache layer be in front of FastAPI or inside the resolver?"
+        },
+        {
+          "title": "Onboarding research notes",
+          "icon": "🧪",
+          "project": "New onboarding flow",
+          "creator_email": "sr@example.com",
+          "body": "# Onboarding research — synthesized themes\n\nFrom 12 user interviews (May 2026).\n\n## Themes\n\n1. **First-issue friction.** Users don't know what to type. We should pre-seed an example.\n2. **Team discovery.** Half the users never realized there were multiple teams in the workspace.\n3. **Keyboard wall.** Power-user shortcuts surface too early; new users want pointer-first.\n\n## Recommendations\n\n- Default workspace ships with a 'Welcome to Linear' sample issue.\n- Surface team switcher more prominently in the first session.\n- Defer the keyboard cheatsheet popup until session 2.\n\n## Risks\n\n- Sample issue clutters real workspaces. Mitigation: archive it once the user creates their first real issue."
+        },
+        {
+          "title": "Compliance evidence checklist",
+          "icon": "🔒",
+          "project": "SOC2 Type II",
+          "creator_email": "nm@example.com",
+          "body": "# SOC2 Type II — evidence checklist\n\n## Status\n\n- [x] Gap analysis complete (Apr 28)\n- [x] Policies in `compliance/policies/` reviewed\n- [ ] Vendor questionnaires (8 of 14 returned)\n- [ ] Access review for Q2 (in progress)\n- [ ] Audit window booked (target: late Aug)\n\n## Owner\n\nNavtesh, with contractor support from Vanta.\n\n## Risks\n\nVendor due diligence is the long pole — already at-risk last update.\n"
+        },
+        {
+          "title": "Engineering operating handbook",
+          "icon": "📘",
+          "creator_email": "nm@example.com",
+          "body": "# Engineering operating handbook\n\n## Cadence\n\n- 2-week cycles, kicked off Monday.\n- Project updates posted every Friday by EOD.\n- Triage rota rotates weekly; current owner runs the Monday triage meeting.\n\n## Definition of done\n\n1. Tests added or updated.\n2. Code reviewed by one other team member.\n3. Behind a feature flag if user-visible.\n4. Telemetry in place — at minimum a usage counter.\n\n## On-call\n\nFollow the [Grafana latency dashboard](#) and Datadog alerts. If unsure, page the cycle owner first."
+        }
+      ],
+      "initiatives": [
+        {
+          "name": "Platform foundations",
+          "description": "Stabilize the core platform — latency, reliability, and compliance — so product teams can ship faster on a trusted base.",
+          "icon_color": "#26b5ce",
+          "status": "active",
+          "owner_email": "nm@example.com",
+          "target_date": "2026-12-31T00:00:00Z"
+        },
+        {
+          "name": "Growth & activation",
+          "description": "Increase week-1 activation by redesigning onboarding and rebuilding the mobile client on a shared core.",
+          "icon_color": "#f2c94c",
+          "status": "active",
+          "owner_email": "sr@example.com",
+          "target_date": "2026-12-31T00:00:00Z"
+        },
+        {
+          "name": "Trust & compliance",
+          "description": "Achieve SOC2 Type II and prepare for enterprise security review.",
+          "icon_color": "#f2994a",
+          "status": "planned",
+          "owner_email": "nm@example.com",
+          "target_date": "2026-10-30T00:00:00Z"
+        }
+      ],
+      "projects": [
+        {
+          "name": "Q2 Platform Reliability",
+          "description": "Drive p95 latency below 200ms across critical endpoints and eliminate flakey background jobs.",
+          "icon_color": "#26b5ce",
+          "state": "started",
+          "lead_email": "nm@example.com",
+          "initiative": "Platform foundations",
+          "start_date": "2026-04-01T00:00:00Z",
+          "target_date": "2026-08-30T00:00:00Z",
+          "milestones": [
+            { "name": "Latency baseline" },
+            { "name": "p95 < 200ms on hot endpoints" },
+            { "name": "Background job SLO" }
+          ],
+          "updates": [
+            { "body": "Baseline measurement complete. Hot endpoint inventory in place.", "health": "onTrack", "author_email": "nm@example.com" },
+            { "body": "Database connection pool exhaustion is blocking the p95 work. Mitigation landing this week.", "health": "atRisk", "author_email": "nm@example.com" }
+          ]
+        },
+        {
+          "name": "New onboarding flow",
+          "description": "Redesign first-run experience so 80% of new users complete the welcome checklist.",
+          "icon_color": "#f2c94c",
+          "state": "started",
+          "lead_email": "sr@example.com",
+          "initiative": "Growth & activation",
+          "start_date": "2026-04-15T00:00:00Z",
+          "target_date": "2026-09-30T00:00:00Z",
+          "milestones": [
+            { "name": "Research & user testing" },
+            { "name": "Visual design v1" },
+            { "name": "Implementation + experiment launch" }
+          ],
+          "updates": [
+            { "body": "User interviews wrapped. Themes documented in research doc.", "health": "onTrack", "author_email": "sr@example.com" }
+          ]
+        },
+        {
+          "name": "Mobile app v2",
+          "description": "Ground-up rewrite of the mobile client on the new shared core.",
+          "icon_color": "#bc7cf0",
+          "state": "planned",
+          "lead_email": "ap@example.com",
+          "initiative": "Growth & activation",
+          "start_date": "2026-06-01T00:00:00Z",
+          "target_date": "2026-12-30T00:00:00Z",
+          "milestones": [
+            { "name": "Tech spike: shared core" },
+            { "name": "Design system port" }
+          ]
+        },
+        {
+          "name": "SOC2 Type II",
+          "description": "Achieve SOC2 Type II certification by end of next quarter.",
+          "icon_color": "#f2994a",
+          "state": "started",
+          "lead_email": "nm@example.com",
+          "initiative": "Trust & compliance",
+          "start_date": "2026-05-01T00:00:00Z",
+          "target_date": "2026-10-30T00:00:00Z",
+          "milestones": [
+            { "name": "Gap analysis" },
+            { "name": "Policies & evidence collection" },
+            { "name": "Audit window" }
+          ],
+          "updates": [
+            { "body": "Vendor due diligence is behind. Pulling in a contractor to catch up.", "health": "offTrack", "author_email": "nm@example.com" }
+          ]
+        },
+        {
+          "name": "Q1 Performance Wins",
+          "description": "Shipped reliability and performance improvements during Q1.",
+          "icon_color": "#5e6ad2",
+          "state": "completed",
+          "lead_email": "nm@example.com",
+          "initiative": "Platform foundations",
+          "start_date": "2026-01-15T00:00:00Z",
+          "target_date": "2026-04-30T00:00:00Z",
+          "milestones": [
+            { "name": "API caching layer" },
+            { "name": "Search index rebuild" }
+          ],
+          "updates": [
+            { "body": "All milestones shipped on schedule.", "health": "onTrack", "author_email": "nm@example.com" }
+          ]
+        }
+      ],
+      "teams": [
+        {
+          "key": "ENG",
+          "name": "Engineering",
+          "icon_color": "#22c55e",
+          "cycles_enabled": true,
+          "labels": [
+            { "name": "Backend", "color": "#5e6ad2" },
+            { "name": "Frontend", "color": "#26b5ce" },
+            { "name": "Infra", "color": "#9b9b9b" },
+            { "name": "API", "color": "#bc7cf0" }
+          ],
+          "cycles": [
+            { "number": 18, "name": "Cycle 18", "starts_at": "2026-04-13T00:00:00Z", "ends_at": "2026-04-27T00:00:00Z", "completed_at": "2026-04-27T18:00:00Z" },
+            { "number": 19, "name": "Cycle 19", "starts_at": "2026-04-27T00:00:00Z", "ends_at": "2026-05-11T00:00:00Z", "completed_at": "2026-05-11T18:00:00Z" },
+            { "number": 20, "name": "Cycle 20", "starts_at": "2026-05-04T00:00:00Z", "ends_at": "2026-05-18T00:00:00Z" },
+            { "number": 21, "name": "Cycle 21", "starts_at": "2026-05-18T00:00:00Z", "ends_at": "2026-06-01T00:00:00Z" }
+          ],
+          "issues": [
+            {
+              "identifier": "ENG-1",
+              "title": "Reduce p95 latency on /api/issues below 200ms",
+              "description": "**Context**\n\nTracking reduce p95 latency on /api/issues below 200ms. Goal, plan, and acceptance criteria below.\n\n**Plan**\n\n- [ ] Investigate current behavior\n- [ ] Land minimal fix\n- [ ] Add regression test",
+              "priority": 1,
+              "state": "In Progress",
+              "estimate": 5,
+              "assignee_email": "nm@example.com",
+              "project": "Q2 Platform Reliability",
+              "cycle_number": 20,
+              "labels": ["Backend"],
+              "sub_issues": [
+                { "identifier": "ENG-2", "title": "Profile /api/issues query plan", "priority": 2, "state": "In Progress", "labels": ["Backend"], "assignee_email": "nm@example.com" },
+                { "identifier": "ENG-3", "title": "Add covering index on (team_id, state)", "priority": 2, "state": "Todo", "labels": ["Backend"], "assignee_email": "nm@example.com" },
+                { "identifier": "ENG-4", "title": "Move payload serialization off the hot path", "priority": 3, "state": "Todo", "labels": ["Backend"], "assignee_email": "ap@example.com" },
+                { "identifier": "ENG-5", "title": "Track p95 in Datadog dashboard", "priority": 4, "state": "Backlog", "labels": ["Backend"] }
+              ],
+              "relations": [{ "type": "blocks", "target": "ENG-46" }],
+              "comments": [
+                { "author_email": "nm@example.com", "body": "Quick update: the worst offenders are the labels and project join. Plan to split into two queries." }
+              ]
+            },
+            { "identifier": "ENG-6", "title": "Fix race condition in cycle rollover job", "priority": 2, "state": "Todo", "labels": ["Backend"], "assignee_email": "nm@example.com", "cycle_number": 20 },
+            { "identifier": "ENG-7", "title": "Migrate session store to Redis cluster", "priority": 2, "state": "Backlog", "labels": ["Infra"], "estimate": 8 },
+            { "identifier": "ENG-11", "title": "Add tracing to GraphQL resolvers", "priority": 3, "state": "Todo", "labels": ["Backend"], "assignee_email": "ap@example.com", "cycle_number": 20 },
+            { "identifier": "ENG-12", "title": "Bundle-size regression on workspace shell", "priority": 2, "state": "In Progress", "labels": ["Frontend"], "assignee_email": "ap@example.com", "project": "New onboarding flow", "cycle_number": 20 },
+            { "identifier": "ENG-13", "title": "Implement workspace settings UI", "priority": 2, "state": "In Progress", "labels": ["Frontend"], "assignee_email": "ap@example.com", "project": "New onboarding flow", "cycle_number": 20 },
+            { "identifier": "ENG-18", "title": "Drop unused indexes on issues table", "priority": 4, "state": "Backlog", "labels": ["Backend"] },
+            { "identifier": "ENG-19", "title": "Improve error boundaries on document editor", "priority": 3, "state": "Todo", "labels": ["Frontend"], "assignee_email": "ap@example.com" },
+            { "identifier": "ENG-20", "title": "Rate limit the bulk-update mutation", "priority": 1, "state": "In Progress", "labels": ["API"], "assignee_email": "nm@example.com", "cycle_number": 20 },
+            { "identifier": "ENG-21", "title": "Replace polling with subscriptions for inbox", "priority": 3, "state": "Backlog", "labels": ["Frontend"] },
+            { "identifier": "ENG-23", "title": "Cache project rollup queries", "priority": 3, "state": "Todo", "labels": ["Backend"], "assignee_email": "nm@example.com" },
+            { "identifier": "ENG-24", "title": "Add idempotency keys to write mutations", "priority": 2, "state": "Backlog", "labels": ["API"] },
+            { "identifier": "ENG-25", "title": "Investigate flaky cycle insights test", "priority": 4, "state": "Todo", "labels": ["Backend"], "assignee_email": "ap@example.com" },
+            { "identifier": "ENG-26", "title": "Fix off-by-one in cycle progress chart", "priority": 3, "state": "In Review", "labels": ["Frontend"], "assignee_email": "sr@example.com" },
+            { "identifier": "ENG-27", "title": "Switch CI to remote cache", "priority": 3, "state": "Done", "labels": ["Infra"], "assignee_email": "nm@example.com" },
+            { "identifier": "ENG-28", "title": "Roll our own avatar service", "priority": 4, "state": "Canceled", "labels": ["Backend"] },
+            { "identifier": "ENG-29", "title": "Move static assets to CDN edge", "priority": 3, "state": "Done", "labels": ["Infra"], "assignee_email": "ap@example.com", "project": "Q1 Performance Wins" },
+            { "identifier": "ENG-30", "title": "Backfill missing audit log entries", "priority": 2, "state": "In Progress", "labels": ["Backend"], "assignee_email": "nm@example.com" },
+            { "identifier": "ENG-32", "title": "Sub-issue parent reassignment loses children", "priority": 1, "state": "In Progress", "labels": ["Backend", "Bug"], "assignee_email": "nm@example.com" },
+            { "identifier": "ENG-34", "title": "Re-architect notification fan-out", "priority": 3, "state": "Backlog", "labels": ["Backend"] },
+            { "identifier": "ENG-40", "title": "Investigate 5xx spike on /graphql", "priority": 1, "state": "Done", "labels": ["Backend"], "assignee_email": "nm@example.com", "project": "Q1 Performance Wins" },
+            { "identifier": "ENG-44", "title": "Auth callback rejects state with special chars", "priority": 2, "state": "In Progress", "labels": ["API"], "assignee_email": "ap@example.com" },
+            { "identifier": "ENG-46", "title": "Postgres connection pool exhaustion", "priority": 1, "state": "In Progress", "labels": ["Backend"], "assignee_email": "nm@example.com", "project": "Q2 Platform Reliability" },
+            { "identifier": "ENG-47", "title": "Onboarding empty-state illustrations", "priority": 2, "state": "In Progress", "assignee_email": "sr@example.com", "project": "New onboarding flow",
+              "sub_issues": [
+                { "identifier": "ENG-48", "title": "Inbox empty state", "priority": 3, "state": "Done", "assignee_email": "sr@example.com" },
+                { "identifier": "ENG-49", "title": "Triage empty state", "priority": 3, "state": "In Progress", "assignee_email": "sr@example.com" },
+                { "identifier": "ENG-50", "title": "Projects empty state", "priority": 4, "state": "Todo", "assignee_email": "sr@example.com" }
+              ]
+            },
+            { "identifier": "ENG-51", "title": "Color tokens for dark mode pass 2", "priority": 2, "state": "In Progress", "assignee_email": "sr@example.com" },
+            { "identifier": "ENG-59", "title": "Audit color contrast for AA compliance", "priority": 2, "state": "In Progress", "assignee_email": "sr@example.com" },
+            { "identifier": "ENG-67", "title": "First-run tour storyboard", "priority": 2, "state": "In Progress", "assignee_email": "sr@example.com" },
+            { "identifier": "ENG-71", "title": "Annual SOC2 evidence collection", "priority": 2, "state": "In Progress", "assignee_email": "nm@example.com", "project": "SOC2 Type II" },
+            { "identifier": "ENG-72", "title": "Hire senior backend engineer", "priority": 2, "state": "In Progress", "assignee_email": "nm@example.com" },
+            { "identifier": "ENG-79", "title": "Interview loop for design lead", "priority": 2, "state": "In Progress", "assignee_email": "nm@example.com" }
+          ],
+          "triage_issues": [
+            { "identifier": "ENG-T1", "title": "Customer report: app stuck on loading screen after login", "priority": 1, "state": "Backlog", "source": "zendesk", "description": "Customer email forwarded from support: 'after login the page never finishes loading. Tried logout/login and clearing cache.'" },
+            { "identifier": "ENG-T2", "title": "Slack: prod alert — p95 spike on /api/issues", "priority": 1, "state": "Backlog", "source": "slack", "description": "Datadog alert fired 14m ago. p95 above 480ms for 5m." },
+            { "identifier": "ENG-T3", "title": "Feature request: keyboard shortcut to jump between projects", "priority": 3, "state": "Backlog", "source": "feedback" }
+          ]
+        },
+        {
+          "key": "DES",
+          "name": "Design",
+          "icon_color": "#a855f7",
+          "labels": [
+            { "name": "Visual", "color": "#f2c94c" },
+            { "name": "UX", "color": "#26b5ce" }
+          ],
+          "issues": [
+            { "identifier": "DES-1", "title": "Component library: revisit Button variants", "priority": 3, "state": "Todo", "labels": ["Visual"], "assignee_email": "sr@example.com" },
+            { "identifier": "DES-2", "title": "Spec project update composer", "priority": 2, "state": "Done", "labels": ["UX"], "assignee_email": "sr@example.com" },
+            { "identifier": "DES-3", "title": "Mobile bottom nav exploration", "priority": 3, "state": "Backlog", "labels": ["UX"] }
+          ]
+        }
+      ]
+    }
+  ]
+}

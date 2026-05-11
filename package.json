@@ -5,7 +5,10 @@
   "scripts": {
     "dev:web": "pnpm --dir apps/web dev",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
-    "capture": "node scripts/capture/run-computer-use.mjs",
+    "capture": "node agents/capture-agent/src/run.mjs",
+    "capture:login": "node agents/capture-agent/src/run.mjs --login",
+    "capture:discover": "node agents/capture-agent/src/run.mjs --discover",
+    "seed:linear": "node scripts/seed/linear-seed.mjs",
     "formalize": "node scripts/formalize/normalize-session.mjs",
     "synthesize": "node scripts/synthesize/generate-playwright-assets.mjs && node scripts/synthesize/generate-specs.mjs",
     "generate": "node scripts/generate/generate-backend.mjs && node scripts/generate/generate-openapi-client.mjs && node scripts/generate/generate-frontend.mjs && node scripts/generate/generate-tests.mjs && node scripts/generate/generate-seeds.mjs",

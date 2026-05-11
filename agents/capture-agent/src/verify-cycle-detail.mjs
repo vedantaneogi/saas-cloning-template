@@ -1,0 +1,11 @@
+import { chromium } from "playwright";
+const b = await chromium.launch();
+const p = await b.newPage();
+await p.setViewportSize({ width: 1440, height: 900 });
+p.on("pageerror", (e) => console.error("PAGE ERROR:", e.message));
+p.on("console", (m) => { if (m.type() === "error") console.error("CONSOLE ERROR:", m.text()); });
+await p.goto("http://localhost:3000/demo/cycle/ca678329-88f0-430e-9cfa-341d4a0526e5", { waitUntil: "networkidle" });
+await p.waitForTimeout(800);
+await p.screenshot({ path: "research/clone-shots/clone.cycle-detail.png", fullPage: true });
+await b.close();
+console.log("done");

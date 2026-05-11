@@ -1,0 +1,120 @@
+/* Linear design tokens. Extracted from captured tokens.json files and
+   given semantic names. LCH values are Linear's native color space. */
+
+:root,
+[data-theme="dark"] {
+  /* surfaces */
+  --bg-app: lch(4.52% 0.3 272);              /* main app background */
+  --bg-sidebar: #090909;                      /* sidebar surface */
+  --bg-elevated: lch(8% 0.3 272);             /* cards, popovers */
+  --bg-elevated-hover: lch(11% 0.4 272);
+  --bg-row-hover: #ffffff0a;                  /* hover on list rows */
+  --bg-row-selected: #ffffff14;
+  --bg-input: lch(7% 0.3 272);
+  --bg-pill: #ffffff0d;
+  --bg-tag: #ffffff14;
+
+  /* borders */
+  --border-default: lch(8.84% 1.38 272 / 1);
+  --border-subtle: #ffffff14;
+  --border-strong: #ffffff26;
+
+  /* text */
+  --text-primary: lch(98% 1 272 / 1);
+  --text-secondary: lch(90.35% 1.15 272 / 1);
+  --text-tertiary: lch(61.399% 1.15 272 / 1);
+  --text-quaternary: lch(36.308% 1.15 272 / 1);
+
+  /* accents */
+  --accent: #5e6ad2;
+  --accent-hover: #7077e8;
+  --accent-soft: #5e6ad21f;
+
+  /* status (Linear's workflow state colors) */
+  --status-backlog: #95a2b3;
+  --status-todo: #e2e2e2;
+  --status-in-progress: #f2c94c;
+  --status-in-review: #5e6ad2;
+  --status-done: #5e6ad2;
+  --status-canceled: #95a2b3;
+
+  /* priority */
+  --priority-urgent: #f2453d;
+  --priority-high: #ef7e3a;
+  --priority-medium: #d9b34c;
+  --priority-low: #95a2b3;
+  --priority-none: #6b6f76;
+
+  /* labels (semantic colors) */
+  --label-bug: #eb5757;
+  --label-feature: #5e6ad2;
+  --label-improvement: #26b5ce;
+  --label-tech-debt: #bc7cf0;
+  --label-customer: #f2c94c;
+  --label-security: #f2994a;
+  --label-backend: #5e6ad2;
+  --label-frontend: #26b5ce;
+  --label-infra: #9b9b9b;
+  --label-api: #bc7cf0;
+
+  /* shadows */
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="light"] {
+  --bg-app: #fbfbfb;
+  --bg-sidebar: #f5f5f5;
+  --bg-elevated: #ffffff;
+  --bg-elevated-hover: #f3f3f3;
+  --bg-row-hover: #00000008;
+  --bg-row-selected: #0000000f;
+  --bg-input: #ffffff;
+  --bg-pill: #00000008;
+  --bg-tag: #0000000d;
+
+  --border-default: #e8e8ea;
+  --border-subtle: #ededee;
+  --border-strong: #d0d0d4;
+
+  --text-primary: #18181b;
+  --text-secondary: #3e3e44;
+  --text-tertiary: #6b6f76;
+  --text-quaternary: #95a2b3;
+
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+:root {
+  /* invariant tokens */
+  --sidebar-width: 244px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-pill: 9999px;
+
+  /* typography */
+  --font-default: "Inter", "InterVariable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --fs-micro: 0.6875rem;     /* 11px */
+  --fs-mini: 0.75rem;        /* 12px */
+  --fs-small: 0.8125rem;     /* 13px */
+  --fs-default: 0.9375rem;   /* 15px */
+  --fs-large: 1.125rem;      /* 18px */
+  --fs-title2: 1.5rem;
+  --fs-title1: 2.25rem;
+
+  --fw-regular: 400;
+  --fw-medium: 510;
+  --fw-semibold: 590;
+  --fw-bold: 700;
+
+  /* motion (Linear's actual easing + speed values) */
+  --ease-quick: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-snap: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --speed-fast: 0.1s;
+  --speed-default: 0.15s;
+  --speed-slow: 0.3s;
+}

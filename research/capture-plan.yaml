@@ -1,0 +1,904 @@
+# Linear capture plan — source of truth for the Playwright capture-agent.
+#
+# Conventions
+# -----------
+# - `id` is a dotted path; first segment matches `area`. Used in filenames and
+#   for the --only filter.
+# - `url` is either absolute (`https://...`) or workspace-relative (`/inbox`),
+#   in which case the runner prefixes `config.workspace_url`.
+# - `nav` is an ordered list of UI steps used when the target state is not
+#   URL-routable (e.g., open a modal). Steps are interpreted by the runner:
+#     - { goto: <url> }
+#     - { click: <selector> } | { click_text: <text> }
+#     - { type: <selector>, text: <text> }
+#     - { press: <key> }                e.g. "Mod+K", "c", "Escape"
+#     - { hover: <selector> }
+#     - { wait_for: <selector> }
+#     - { wait_ms: <number> }
+# - `theme: both` means the runner captures the entry twice (light, dark) and
+#   writes `<id>.light.png` / `<id>.dark.png` etc. `theme: light|dark` captures
+#   only that theme.
+# - `viewport` overrides `defaults.viewport` when set. Use the named presets
+#   under `viewport_presets` (e.g., `viewport: desktop_wide`).
+# - `requires_auth: false` skips the storage state — used for /login etc.
+# - `selectors_of_interest` is an optional list of CSS selectors whose
+#   computed styles are captured into `<id>.styles.json`. Falls back to
+#   `defaults.selectors_of_interest` if omitted.
+
+config:
+  # Resolved at runtime from .auth/linear.json + a one-time prompt. The runner
+  # will write the workspace slug here after first login so subsequent runs
+  # don't need it.
+  workspace_url: https://linear.app/{workspace}
+  # Placeholders the runner substitutes in URLs and selectors. Filled by the
+  # runner after a "discovery" pass during the first authenticated run
+  # (resolved by walking the sidebar). For now, seed values are illustrative.
+  placeholders:
+    workspace: ""        # e.g. "acme"
+    team: ""             # e.g. "ENG"  (identifier prefix)
+    team2: ""            # e.g. "DES"
+    project: ""          # slug or id of a representative project
+    project_in_progress: ""
+    project_completed: ""
+    initiative: ""
+    cycle_current: ""
+    cycle_past: ""
+    issue: ""            # e.g. "ENG-142" — an issue with sub-issues + relations
+    issue_simple: ""     # an issue with no sub-issues
+    document: ""
+
+defaults:
+  viewport: desktop_wide
+  theme: both
+  extra_wait_ms: 700
+  network_idle_timeout_ms: 12000
+  scroll_to_top: true
+  full_page: true
+  # Per-entry artifacts the runner emits when present:
+  #   <id>.<theme>.png            — full-page screenshot
+  #   <id>.<theme>.html           — DOM snapshot
+  #   <id>.<theme>.a11y.json      — accessibility tree
+  #   <id>.<theme>.styles.json    — computed styles for selectors_of_interest
+  #   <id>.<theme>.tokens.json    — all CSS custom properties from :root + body
+  #   <id>.<theme>.animations.json— transition/animation timing for interactive nodes
+  #   <id>.<theme>.video.webm     — short video of the nav steps (animations)
+  capture_video: true
+  video_size: { width: 1440, height: 900 }
+  # For interactive states, we additionally capture per-state PNGs of any
+  # element matching `interactive_selectors` (hover, focus, active, disabled).
+  capture_button_states: true
+  interactive_selectors:
+    - "button"
+    - "a[role=button]"
+    - "[role=menuitem]"
+    - "[role=option]"
+    - "[role=tab]"
+  selectors_of_interest:
+    - "html"
+    - "body"
+    - ":root"
+    - "[class*='sidebar' i]"
+    - "[class*='topbar' i], header"
+    - "main"
+    - "[role=dialog]"
+    - "[role=menu]"
+    - "[role=listbox]"
+    - "[role=tooltip]"
+    - "[class*='button' i]"
+    - "[class*='card' i]"
+    - "[class*='badge' i]"
+    - "[class*='avatar' i]"
+    - "input, textarea, [contenteditable=true]"
+
+viewport_presets:
+  desktop_wide:   { width: 1440, height: 900 }
+  desktop_xl:     { width: 1680, height: 1050 }
+  laptop:         { width: 1280, height: 800 }
+  tablet:         { width: 1024, height: 1366 }
+
+# ============================================================================
+# AREAS
+# ============================================================================
+# Areas group entries by product surface. Each entry under `captures` is one
+# screenshot target.
+
+areas:
+
+  # --------------------------------------------------------------------------
+  # auth — pre-login flows. No storage state used.
+  # --------------------------------------------------------------------------
+  - name: auth
+    captures:
+      - id: auth.login
+        url: https://linear.app/login
+        requires_auth: false
+        theme: both
+      - id: auth.signup
+        url: https://linear.app/signup
+        requires_auth: false
+        theme: both
+      - id: auth.login.email_filled
+        url: https://linear.app/login
+        requires_auth: false
+        theme: dark
+        nav:
+          - { type: "input[type=email]", text: "demo@example.com" }
+      - id: auth.magic_link_sent
+        # Reached after submitting the email form. May 404 in some flows;
+        # capture is best-effort.
+        url: https://linear.app/login
+        requires_auth: false
+        theme: dark
+        retry_optional: true
+        nav:
+          - { type: "input[type=email]", text: "demo@example.com" }
+          - { press: "Enter" }
+          - { wait_ms: 1500 }
+
+  # --------------------------------------------------------------------------
+  # workspace — the workspace landing + global chrome (sidebar, switcher).
+  # --------------------------------------------------------------------------
+  - name: workspace
+    captures:
+      - id: workspace.home
+        url: "/"
+        notes: "First post-login landing surface."
+      - id: workspace.sidebar.expanded
+        url: "/"
+        nav:
+          - { wait_ms: 400 }
+        notes: "Default sidebar — fully expanded with all teams."
+      - id: workspace.switcher.open
+        url: "/"
+        nav:
+          - { click: "[data-testid='workspace-switcher'], [aria-label*='workspace' i]" }
+          - { wait_ms: 300 }
+      - id: workspace.help_menu.open
+        url: "/"
+        nav:
+          - { click_text: "Help" }
+          - { wait_ms: 300 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # inbox — notifications / activity inbox.
+  # --------------------------------------------------------------------------
+  - name: inbox
+    captures:
+      - id: inbox.default
+        url: "/inbox"
+      - id: inbox.unread
+        url: "/inbox?filter=unread"
+      - id: inbox.saved
+        url: "/inbox?filter=saved"
+      - id: inbox.archived
+        url: "/inbox?filter=archived"
+      - id: inbox.item.expanded
+        url: "/inbox"
+        nav:
+          - { click: "[data-testid='inbox-item']:first-of-type, [class*='inbox'] [role='listitem']:first-of-type" }
+          - { wait_ms: 500 }
+      - id: inbox.snooze_menu
+        url: "/inbox"
+        nav:
+          - { hover: "[data-testid='inbox-item']:first-of-type" }
+          - { click: "[data-testid='snooze-button'], [aria-label*='snooze' i]" }
+          - { wait_ms: 300 }
+        retry_optional: true
+      - id: inbox.empty
+        url: "/inbox?filter=archived"
+        notes: "Captures empty state when archive is empty for a fresh workspace."
+
+  # --------------------------------------------------------------------------
+  # my-issues — personal scope (assigned, created, subscribed).
+  # --------------------------------------------------------------------------
+  - name: my-issues
+    captures:
+      - id: my-issues.assigned
+        url: "/my/assigned"
+      - id: my-issues.created
+        url: "/my/created"
+      - id: my-issues.subscribed
+        url: "/my/subscribed"
+      - id: my-issues.activity
+        url: "/my/activity"
+
+  # --------------------------------------------------------------------------
+  # issues — per-team issue views (Active, Backlog, All, board, etc.).
+  # --------------------------------------------------------------------------
+  - name: issues
+    captures:
+      - id: issues.team.active
+        url: "https://linear.app/{workspace}/inbox"
+        nav:
+          - { wait_ms: 1200 }
+          - { goto: "https://linear.app/{workspace}/team/{team}/active" }
+          - { wait_ms: 2000 }
+      - id: issues.team.backlog
+        url: "https://linear.app/{workspace}/inbox"
+        nav:
+          - { wait_ms: 1200 }
+          - { goto: "https://linear.app/{workspace}/team/{team}/backlog" }
+          - { wait_ms: 2000 }
+      - id: issues.team.all
+        url: "https://linear.app/{workspace}/inbox"
+        nav:
+          - { wait_ms: 1200 }
+          - { goto: "https://linear.app/{workspace}/team/{team}/all" }
+          - { wait_ms: 2000 }
+      - id: issues.team.board
+        url: "/team/{team}/active"
+        nav:
+          - { click: "[aria-label='Display options'], [data-testid='display-options']" }
+          - { click_text: "Board" }
+          - { wait_ms: 500 }
+      - id: issues.team.grouped_by_assignee
+        url: "/team/{team}/active"
+        nav:
+          - { click: "[aria-label='Display options'], [data-testid='display-options']" }
+          - { click_text: "Group by" }
+          - { click_text: "Assignee" }
+          - { wait_ms: 400 }
+      - id: issues.team.filter_builder_open
+        url: "/team/{team}/active"
+        nav:
+          - { press: "f" }
+          - { wait_ms: 300 }
+      - id: issues.team.filter_applied
+        url: "/team/{team}/active"
+        nav:
+          - { press: "f" }
+          - { click_text: "Priority" }
+          - { click_text: "Urgent" }
+          - { press: "Escape" }
+          - { wait_ms: 400 }
+      - id: issues.team.multiselect_action_bar
+        url: "/team/{team}/active"
+        nav:
+          - { press: "x" }
+          - { wait_ms: 200 }
+          - { press: "x" }
+          - { wait_ms: 300 }
+      - id: issues.team.empty
+        url: "/team/{team}/all?filter=archived"
+        retry_optional: true
+        notes: "Best-effort empty state when filter yields no rows."
+      - id: issues.team.context_menu
+        url: "/team/{team}/active"
+        nav:
+          - { click: "[data-testid='issue-row']:first-of-type", modifier: "right" }
+          - { wait_ms: 300 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # issue-detail — single issue page + side panels.
+  # --------------------------------------------------------------------------
+  - name: issue-detail
+    captures:
+      - id: issue-detail.full
+        url: "https://linear.app/{workspace}/inbox"
+        notes: "Issue with sub-issues, relations, comments. Warm up at /inbox so the SPA hydrates its team store before navigating to the issue."
+        extra_wait_ms: 2500
+        nav:
+          - { wait_ms: 1500 }
+          - { goto: "https://linear.app/{workspace}/issue/{issue}" }
+          - { wait_ms: 2500 }
+      - id: issue-detail.simple
+        url: "/issue/{issue_simple}"
+      - id: issue-detail.status_picker
+        url: "/issue/{issue}"
+        nav:
+          - { press: "s" }
+          - { wait_ms: 250 }
+      - id: issue-detail.priority_picker
+        url: "/issue/{issue}"
+        nav:
+          - { press: "p" }
+          - { wait_ms: 250 }
+      - id: issue-detail.assignee_picker
+        url: "/issue/{issue}"
+        nav:
+          - { press: "a" }
+          - { wait_ms: 250 }
+      - id: issue-detail.label_picker
+        url: "/issue/{issue}"
+        nav:
+          - { press: "l" }
+          - { wait_ms: 250 }
+      - id: issue-detail.estimate_picker
+        url: "/issue/{issue}"
+        nav:
+          - { press: "e" }
+          - { wait_ms: 250 }
+      - id: issue-detail.due_date_picker
+        url: "/issue/{issue}"
+        nav:
+          - { click: "[data-testid='due-date'], [aria-label*='due date' i]" }
+          - { wait_ms: 300 }
+        retry_optional: true
+      - id: issue-detail.project_picker
+        url: "/issue/{issue}"
+        nav:
+          - { press: "Shift+P" }
+          - { wait_ms: 300 }
+      - id: issue-detail.cycle_picker
+        url: "/issue/{issue}"
+        nav:
+          - { press: "Shift+C" }
+          - { wait_ms: 300 }
+      - id: issue-detail.subissues_expanded
+        url: "/issue/{issue}"
+        nav:
+          - { click_text: "Sub-issues" }
+          - { wait_ms: 300 }
+      - id: issue-detail.relations_panel
+        url: "/issue/{issue}"
+        nav:
+          - { click_text: "Add relation" }
+          - { wait_ms: 300 }
+        retry_optional: true
+      - id: issue-detail.comment_composer_active
+        url: "/issue/{issue}"
+        nav:
+          - { click: "[contenteditable=true][data-testid='comment-composer'], [placeholder*='comment' i]" }
+          - { type: "[contenteditable=true]", text: "Looks good" }
+          - { wait_ms: 200 }
+      - id: issue-detail.slash_menu_open
+        url: "/issue/{issue}"
+        nav:
+          - { click: "[contenteditable=true][data-testid='comment-composer'], [placeholder*='comment' i]" }
+          - { type: "[contenteditable=true]", text: "/" }
+          - { wait_ms: 250 }
+      - id: issue-detail.mention_picker_open
+        url: "/issue/{issue}"
+        nav:
+          - { click: "[contenteditable=true][data-testid='comment-composer'], [placeholder*='comment' i]" }
+          - { type: "[contenteditable=true]", text: "@" }
+          - { wait_ms: 250 }
+      - id: issue-detail.reactions_open
+        url: "/issue/{issue}"
+        nav:
+          - { hover: "[data-testid='comment']:first-of-type" }
+          - { click: "[aria-label*='react' i]" }
+          - { wait_ms: 250 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # issue-create — new issue modal, inline composers, templates.
+  # --------------------------------------------------------------------------
+  - name: issue-create
+    captures:
+      - id: issue-create.modal
+        url: "/team/{team}/active"
+        nav:
+          - { press: "c" }
+          - { wait_ms: 400 }
+      - id: issue-create.modal.filled
+        url: "/team/{team}/active"
+        nav:
+          - { press: "c" }
+          - { wait_ms: 400 }
+          - { type: "[placeholder*='Issue title' i]", text: "Add dark mode polish to settings page" }
+          - { wait_ms: 200 }
+      - id: issue-create.template_picker
+        url: "/team/{team}/active"
+        nav:
+          - { press: "c" }
+          - { click_text: "Template" }
+          - { wait_ms: 300 }
+        retry_optional: true
+      - id: issue-create.inline_top
+        url: "/team/{team}/active"
+        nav:
+          - { hover: "[data-testid='status-group']:first-of-type" }
+          - { click_text: "+" }
+          - { wait_ms: 300 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # triage — per-team triage queue.
+  # --------------------------------------------------------------------------
+  - name: triage
+    captures:
+      - id: triage.inbox
+        url: "/team/{team}/triage"
+      - id: triage.item.open
+        url: "/team/{team}/triage"
+        nav:
+          - { click: "[data-testid='issue-row']:first-of-type" }
+          - { wait_ms: 500 }
+      - id: triage.empty
+        url: "/team/{team2}/triage"
+        retry_optional: true
+        notes: "Use the secondary team if its triage is empty."
+
+  # --------------------------------------------------------------------------
+  # projects — team + workspace projects list.
+  # --------------------------------------------------------------------------
+  - name: projects
+    captures:
+      - id: projects.workspace.all
+        url: "/projects"
+      - id: projects.workspace.active
+        url: "/projects?status=active"
+      - id: projects.workspace.backlog
+        url: "/projects?status=backlog"
+      - id: projects.workspace.completed
+        url: "/projects?status=completed"
+      - id: projects.team
+        url: "/team/{team}/projects"
+      - id: projects.list.grouped_by_status
+        url: "/projects"
+        nav:
+          - { click: "[aria-label='Display options'], [data-testid='display-options']" }
+          - { click_text: "Group by" }
+          - { click_text: "Status" }
+          - { wait_ms: 300 }
+
+  # --------------------------------------------------------------------------
+  # project-detail — single project surfaces.
+  # --------------------------------------------------------------------------
+  - name: project-detail
+    captures:
+      - id: project-detail.overview
+        url: "/project/{project}/overview"
+      - id: project-detail.issues
+        url: "/project/{project}/issues"
+      - id: project-detail.issues.by_milestone
+        url: "/project/{project}/issues"
+        nav:
+          - { click: "[aria-label='Display options'], [data-testid='display-options']" }
+          - { click_text: "Group by" }
+          - { click_text: "Milestone" }
+          - { wait_ms: 300 }
+      - id: project-detail.updates
+        url: "/project/{project}/updates"
+      - id: project-detail.update.composer
+        url: "/project/{project}/updates"
+        nav:
+          - { click_text: "Post update" }
+          - { wait_ms: 400 }
+        retry_optional: true
+      - id: project-detail.documents
+        url: "/project/{project}/documents"
+      - id: project-detail.resources
+        url: "/project/{project}/resources"
+      - id: project-detail.members
+        url: "/project/{project}/members"
+      - id: project-detail.completed
+        url: "/project/{project_completed}/overview"
+      - id: project-detail.milestone_create
+        url: "/project/{project}/overview"
+        nav:
+          - { click_text: "Add milestone" }
+          - { wait_ms: 300 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # initiatives — top-level rollups above projects.
+  # --------------------------------------------------------------------------
+  - name: initiatives
+    captures:
+      - id: initiatives.list
+        url: "/initiatives"
+      - id: initiatives.detail
+        url: "/initiative/{initiative}"
+      - id: initiatives.detail.projects
+        url: "/initiative/{initiative}/projects"
+      - id: initiatives.detail.updates
+        url: "/initiative/{initiative}/updates"
+      - id: initiatives.create_modal
+        url: "/initiatives"
+        nav:
+          - { click_text: "New initiative" }
+          - { wait_ms: 400 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # roadmaps — timeline view across projects.
+  # --------------------------------------------------------------------------
+  - name: roadmaps
+    captures:
+      - id: roadmaps.timeline
+        url: "/roadmaps"
+      - id: roadmaps.timeline.zoom_quarter
+        url: "/roadmaps"
+        nav:
+          - { click_text: "Quarter" }
+          - { wait_ms: 300 }
+        retry_optional: true
+      - id: roadmaps.filter_by_team
+        url: "/roadmaps"
+        nav:
+          - { press: "f" }
+          - { click_text: "Team" }
+          - { wait_ms: 300 }
+
+  # --------------------------------------------------------------------------
+  # cycles — sprint iterations.
+  # --------------------------------------------------------------------------
+  - name: cycles
+    captures:
+      - id: cycles.team.list
+        url: "/team/{team}/cycles"
+      - id: cycles.team.current
+        url: "/team/{team}/cycle/active"
+      - id: cycles.team.upcoming
+        url: "/team/{team}/cycle/next"
+      - id: cycles.team.past
+        url: "/team/{team}/cycle/{cycle_past}"
+      - id: cycles.team.burndown
+        url: "/team/{team}/cycle/active"
+        nav:
+          - { click_text: "Insights" }
+          - { wait_ms: 400 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # views — saved views, filter builder UI.
+  # --------------------------------------------------------------------------
+  - name: views
+    captures:
+      - id: views.list
+        url: "/views"
+      - id: views.favorites
+        url: "/favorites"
+      - id: views.new_view_modal
+        url: "/views"
+        nav:
+          - { click_text: "New view" }
+          - { wait_ms: 400 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # search — global search and Cmd-K palette.
+  # --------------------------------------------------------------------------
+  - name: search
+    captures:
+      - id: search.empty
+        url: "/"
+        nav:
+          - { press: "/" }
+          - { wait_ms: 300 }
+      - id: search.results
+        url: "/"
+        nav:
+          - { press: "/" }
+          - { type: "input[type=search], [role=combobox]", text: "dark mode" }
+          - { wait_ms: 700 }
+      - id: search.filters_panel
+        url: "/"
+        nav:
+          - { press: "/" }
+          - { type: "input[type=search], [role=combobox]", text: "dark mode" }
+          - { click_text: "Filter" }
+          - { wait_ms: 300 }
+        retry_optional: true
+
+  - name: command-palette
+    captures:
+      - id: command-palette.default
+        url: "/"
+        nav:
+          - { press: "Mod+K" }
+          - { wait_ms: 300 }
+      - id: command-palette.search_action
+        url: "/"
+        nav:
+          - { press: "Mod+K" }
+          - { type: "[role=combobox], [role=dialog] input", text: "assign" }
+          - { wait_ms: 300 }
+      - id: command-palette.go_to
+        url: "/"
+        nav:
+          - { press: "Mod+K" }
+          - { type: "[role=combobox], [role=dialog] input", text: "go to inbox" }
+          - { wait_ms: 300 }
+      - id: keyboard.cheatsheet
+        url: "/"
+        nav:
+          - { press: "?" }
+          - { wait_ms: 300 }
+
+  # --------------------------------------------------------------------------
+  # documents — rich-text docs.
+  # --------------------------------------------------------------------------
+  - name: documents
+    captures:
+      - id: documents.list
+        url: "/documents"
+      - id: documents.detail
+        url: "/document/{document}"
+      - id: documents.slash_menu
+        url: "/document/{document}"
+        nav:
+          - { click: "[contenteditable=true]" }
+          - { type: "[contenteditable=true]", text: "/" }
+          - { wait_ms: 250 }
+      - id: documents.comments
+        url: "/document/{document}"
+        nav:
+          - { click_text: "Comments" }
+          - { wait_ms: 400 }
+        retry_optional: true
+      - id: documents.version_history
+        url: "/document/{document}"
+        nav:
+          - { click_text: "Version history" }
+          - { wait_ms: 600 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # templates — issue / project / document templates.
+  # --------------------------------------------------------------------------
+  - name: templates
+    captures:
+      - id: templates.team.issues
+        url: "/team/{team}/templates"
+      - id: templates.team.projects
+        url: "/team/{team}/templates?type=project"
+        retry_optional: true
+      - id: templates.workspace.documents
+        url: "/settings/templates"
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # automations — workflow rules editor.
+  # --------------------------------------------------------------------------
+  - name: automations
+    captures:
+      - id: automations.list
+        url: "/settings/workflows"
+        retry_optional: true
+      - id: automations.rule_builder
+        url: "/settings/workflows"
+        nav:
+          - { click_text: "New rule" }
+          - { wait_ms: 400 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # insights — team analytics dashboard.
+  # --------------------------------------------------------------------------
+  - name: insights
+    captures:
+      - id: insights.team.overview
+        url: "/team/{team}/insights"
+      - id: insights.team.velocity
+        url: "/team/{team}/insights?metric=velocity"
+        retry_optional: true
+      - id: insights.team.lead_time
+        url: "/team/{team}/insights?metric=lead-time"
+        retry_optional: true
+      - id: insights.custom_chart
+        url: "/team/{team}/insights"
+        nav:
+          - { click_text: "New chart" }
+          - { wait_ms: 400 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # customer-requests / Asks.
+  # --------------------------------------------------------------------------
+  - name: customer-requests
+    captures:
+      - id: customer-requests.inbox
+        url: "/asks"
+        retry_optional: true
+      - id: customer-requests.detail
+        url: "/asks"
+        nav:
+          - { click: "[data-testid='ask-row']:first-of-type" }
+          - { wait_ms: 400 }
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # settings — workspace, team, user. Each tab is one capture.
+  # --------------------------------------------------------------------------
+  - name: settings-workspace
+    captures:
+      - id: settings-workspace.general
+        url: "/settings/general"
+      - id: settings-workspace.members
+        url: "/settings/members"
+      - id: settings-workspace.billing
+        url: "/settings/billing"
+      - id: settings-workspace.security
+        url: "/settings/security"
+      - id: settings-workspace.api
+        url: "/settings/api"
+      - id: settings-workspace.integrations
+        url: "/settings/integrations"
+      - id: settings-workspace.import_export
+        url: "/settings/import-export"
+        retry_optional: true
+      - id: settings-workspace.labels
+        url: "/settings/labels"
+      - id: settings-workspace.teams
+        url: "/settings/teams"
+
+  - name: settings-team
+    captures:
+      - id: settings-team.general
+        url: "/settings/teams/{team}/general"
+      - id: settings-team.members
+        url: "/settings/teams/{team}/members"
+      - id: settings-team.workflow_states
+        url: "/settings/teams/{team}/workflow"
+      - id: settings-team.labels
+        url: "/settings/teams/{team}/labels"
+      - id: settings-team.cycles
+        url: "/settings/teams/{team}/cycles"
+      - id: settings-team.estimates
+        url: "/settings/teams/{team}/estimates"
+      - id: settings-team.templates
+        url: "/settings/teams/{team}/templates"
+      - id: settings-team.integrations
+        url: "/settings/teams/{team}/integrations"
+        retry_optional: true
+
+  - name: settings-user
+    captures:
+      - id: settings-user.profile
+        url: "/settings/profile"
+      - id: settings-user.preferences
+        url: "/settings/preferences"
+      - id: settings-user.notifications
+        url: "/settings/notifications"
+      - id: settings-user.api
+        url: "/settings/account/api"
+        retry_optional: true
+      - id: settings-user.connected_accounts
+        url: "/settings/account/connected-accounts"
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # integrations — surfaces inside the product, not the settings panes.
+  # --------------------------------------------------------------------------
+  - name: integrations
+    captures:
+      - id: integrations.github.activity
+        url: "/issue/{issue}"
+        notes: "Captures GitHub PR/branch references in activity feed; depends on seed integration."
+        retry_optional: true
+      - id: integrations.slack.banner
+        url: "/settings/integrations/slack"
+        retry_optional: true
+      - id: integrations.figma.preview
+        url: "/issue/{issue}"
+        notes: "Requires an issue with a Figma URL pasted in the description."
+        retry_optional: true
+
+  # --------------------------------------------------------------------------
+  # design-tokens — explicit token harvest. Runner extracts every CSS custom
+  # property from :root and body, plus a focused element-style sample, so we
+  # can rebuild the palette / spacing / radii / shadow scale exactly.
+  # --------------------------------------------------------------------------
+  - name: design-tokens
+    captures:
+      - id: design-tokens.root
+        url: "/"
+        notes: "Harvest CSS variables for the workspace shell."
+        selectors_of_interest:
+          - ":root"
+          - "body"
+          - "[class*='sidebar' i]"
+          - "[class*='topbar' i], header"
+      - id: design-tokens.issue-detail
+        url: "/issue/{issue}"
+        selectors_of_interest:
+          - ":root"
+          - "[class*='priority' i]"
+          - "[class*='status' i]"
+          - "[class*='label' i]"
+          - "[class*='avatar' i]"
+          - "[role=button]"
+      - id: design-tokens.modal
+        url: "/team/{team}/active"
+        nav:
+          - { press: "c" }
+          - { wait_ms: 400 }
+        selectors_of_interest:
+          - "[role=dialog]"
+          - "[role=dialog] input"
+          - "[role=dialog] button"
+
+  # --------------------------------------------------------------------------
+  # button-states — synthesized states (idle/hover/focus/active/disabled) for
+  # the primary button taxonomy. Runner uses Playwright's force-state APIs:
+  #   - hover: locator.hover()
+  #   - focus: locator.focus()
+  #   - active: page.mouse.down() on the centered point
+  #   - disabled: locate a known disabled instance (e.g., Save in pristine form)
+  # --------------------------------------------------------------------------
+  - name: button-states
+    captures:
+      - id: button-states.primary
+        url: "/team/{team}/active"
+        nav:
+          - { press: "c" }
+          - { wait_ms: 400 }
+        capture_states: ["idle", "hover", "focus", "active", "disabled"]
+        target_selector: "[role=dialog] button:has-text('Create issue'), [role=dialog] [type=submit]"
+      - id: button-states.secondary
+        url: "/team/{team}/active"
+        capture_states: ["idle", "hover", "focus"]
+        target_selector: "header button:not([aria-label*='close' i])"
+      - id: button-states.icon
+        url: "/"
+        capture_states: ["idle", "hover", "focus"]
+        target_selector: "[aria-label*='sidebar' i] button"
+
+  # --------------------------------------------------------------------------
+  # tooltips — text content + position + style for every tooltip we can elicit.
+  # --------------------------------------------------------------------------
+  - name: tooltips
+    captures:
+      - id: tooltips.sidebar.inbox
+        url: "/"
+        nav:
+          - { hover: "[aria-label*='inbox' i]" }
+          - { wait_ms: 800 }
+      - id: tooltips.sidebar.my-issues
+        url: "/"
+        nav:
+          - { hover: "[aria-label*='my issues' i], [aria-label*='assigned' i]" }
+          - { wait_ms: 800 }
+      - id: tooltips.issue.shortcut
+        url: "/issue/{issue}"
+        nav:
+          - { hover: "[aria-label*='priority' i]" }
+          - { wait_ms: 800 }
+
+  # --------------------------------------------------------------------------
+  # toasts — success / error / info notifications.
+  # --------------------------------------------------------------------------
+  - name: toasts
+    captures:
+      - id: toasts.success.issue_created
+        url: "/team/{team}/active"
+        nav:
+          - { press: "c" }
+          - { type: "[placeholder*='Issue title' i]", text: "Capture toast" }
+          - { press: "Mod+Enter" }
+          - { wait_ms: 400 }
+        retry_optional: true
+      - id: toasts.undo
+        url: "/team/{team}/active"
+        nav:
+          - { click: "[data-testid='issue-row']:first-of-type" }
+          - { press: "Backspace" }
+          - { press: "Enter" }
+          - { wait_ms: 400 }
+        retry_optional: true
+
+# ============================================================================
+# CROSS-CUTTING — global states we want regardless of area.
+# ============================================================================
+# Captured by re-using existing entries with the runner's --include-states flag.
+global_states:
+  loading:
+    description: "Skeleton/loading states on first navigation. Captured by overriding network throttling for one pass."
+    applies_to:
+      - inbox.default
+      - issues.team.active
+      - project-detail.overview
+      - my-issues.assigned
+  empty:
+    description: "First-run empty states. Captured against a second 'fresh' workspace."
+    applies_to:
+      - inbox.default
+      - issues.team.active
+      - projects.workspace.all
+      - triage.inbox
+      - documents.list
+  error:
+    description: "404 / forbidden states."
+    captures:
+      - id: error.404
+        url: "/this-page-does-not-exist-{rand}"
+        theme: both
+      - id: error.forbidden
+        url: "/issue/ZZZ-99999"
+        retry_optional: true
+        theme: both

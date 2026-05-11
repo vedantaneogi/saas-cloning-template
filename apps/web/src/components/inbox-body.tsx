@@ -1,0 +1,157 @@
+"use client";
+
+import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Check, MessageSquare, RotateCcw, UserPlus, AtSign, Bell } from "lucide-react";
+import clsx from "clsx";
+import { Avatar } from "@/components/icons";
+import {
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type Notification,
+} from "@/lib/api";
+
+export function InboxBody({
+  workspaceSlug,
+  initial,
+}: {
+  workspaceSlug: string;
+  initial: Notification[];
+}) {
+  const router = useRouter();
+  const [items, setItems] = useState<Notification[]>(initial);
+  const [pending, startTransition] = useTransition();
+
+  // Re-fetch on focus so we don't go stale while the user works in another tab
+  useEffect(() => {
+    function onFocus() {
+      listNotifications(workspaceSlug).then(setItems).catch(() => {});
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [workspaceSlug]);
+
+  function markRead(n: Notification) {
+    if (n.read_at) return;
+    setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x)));
+    markNotificationRead(workspaceSlug, n.id).catch(() => {});
+  }
+
+  function markAll() {
+    startTransition(async () => {
+      try {
+        await markAllNotificationsRead(workspaceSlug);
+        setItems((prev) => prev.map((x) => (x.read_at ? x : { ...x, read_at: new Date().toISOString() })));
+        router.refresh();
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+  const unread = items.filter((n) => !n.read_at);
+
+  return (
+    <>
+      <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border-subtle px-3 text-mini text-text-tertiary">
+        <span>{unread.length} unread</span>
+        <button
+          onClick={markAll}
+          disabled={pending || unread.length === 0}
+          className="rounded-md px-2 py-0.5 hover:bg-row-hover hover:text-text-secondary disabled:opacity-50"
+        >
+          Mark all read
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {items.length === 0 ? (
+          <div className="flex h-full items-center justify-center px-6 py-10 text-center text-small text-text-tertiary">
+            You have no notifications.
+          </div>
+        ) : (
+          items.map((n) => <NotificationRow key={n.id} note={n} workspaceSlug={workspaceSlug} onClick={() => markRead(n)} />)
+        )}
+      </div>
+    </>
+  );
+}
+
+function NotificationRow({
+  note,
+  workspaceSlug,
+  onClick,
+}: {
+  note: Notification;
+  workspaceSlug: string;
+  onClick: () => void;
+}) {
+  const unread = !note.read_at;
+  const href = note.issue_identifier ? `/${workspaceSlug}/issue/${note.issue_identifier}` : "#";
+  const Icon = iconFor(note.kind);
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={clsx(
+        "flex gap-2.5 border-b border-border-subtle px-3 py-2.5 hover:bg-row-hover",
+        unread && "bg-row-selected/30"
+      )}
+    >
+      <span className="relative mt-0.5 shrink-0">
+        {note.actor ? (
+          <Avatar initials={note.actor.initials} color={note.actor.color} size={28} />
+        ) : (
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-pill border border-border-subtle bg-pill">
+            <Icon size={14} className="text-text-tertiary" />
+          </span>
+        )}
+        <span className="absolute -bottom-0.5 -right-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-pill border border-border-default bg-elevated">
+          <Icon size={9} className="text-text-tertiary" />
+        </span>
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-small">
+          {unread && <span className="inline-block h-1.5 w-1.5 rounded-pill bg-accent" />}
+          <span className="truncate font-medium text-text-primary">
+            {note.issue_identifier ? `${note.issue_identifier} ${note.issue_title ?? ""}`.trim() : labelFor(note.kind)}
+          </span>
+          <span className="ml-auto shrink-0 text-mini text-text-tertiary">{relTime(note.created_at)}</span>
+        </span>
+        <span className="mt-0.5 line-clamp-2 text-mini text-text-tertiary">
+          {note.actor?.name ? <span className="text-text-secondary">{note.actor.name}</span> : "System"}{" "}
+          {note.body}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+function iconFor(kind: string) {
+  if (kind === "commented") return MessageSquare;
+  if (kind === "assigned") return UserPlus;
+  if (kind === "status_changed") return RotateCcw;
+  if (kind === "mentioned") return AtSign;
+  return Bell;
+}
+
+function labelFor(kind: string) {
+  if (kind === "commented") return "New comment";
+  if (kind === "assigned") return "Issue assigned";
+  if (kind === "status_changed") return "Status changed";
+  if (kind === "mentioned") return "You were mentioned";
+  return "Notification";
+}
+
+function relTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}

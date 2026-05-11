@@ -200,6 +200,12 @@ research/raw/**
 research/reports/**
 !research/reports/**/.gitkeep
 
+# capture-agent outputs (bulky, regeneratable)
+research/screenshots/**
+!research/screenshots/**/.gitkeep
+research/capture-log.jsonl
+research/.video-tmp/
+
 # ------------------------------------------------------------------------------
 # Generated intermediate artifacts
 # ------------------------------------------------------------------------------

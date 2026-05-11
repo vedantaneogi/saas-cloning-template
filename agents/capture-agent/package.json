@@ -1,0 +1,15 @@
+{
+  "name": "@saas-clone-factory/capture-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/run.mjs",
+    "login": "node src/run.mjs --login",
+    "discover": "node src/run.mjs --discover"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "playwright": "^1.49.0"
+  }
+}
