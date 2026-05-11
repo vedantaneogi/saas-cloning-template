@@ -335,7 +335,7 @@ function OutlookSwatchPicker({
                 aria-label={cell.label}
                 title={cell.label}
                 onClick={() => onPick(cell.color)}
-                className="w-6 h-6 rounded-sm border border-[#D2D0CE] hover:ring-2 hover:ring-[#0078D4] hover:z-10 transition"
+                className="w-6 h-6 rounded-full border border-[#D2D0CE] hover:ring-2 hover:ring-[#0078D4] hover:z-10 transition"
                 style={{ backgroundColor: cell.color }}
               />
             ))}

@@ -171,34 +171,6 @@
     ],
     "messages": [
       {
-        "id": "c132919a-6e36-4679-868b-5654252f279c",
-        "from_address": "alice.johnson@acmecorp.com",
-        "from_name": "Alice Johnson",
-        "to_addresses": [
-          {
-            "email": "frank.miller@acmecorp.com",
-            "name": "Me"
-          }
-        ],
-        "cc_addresses": [
-          {
-            "email": "carol.williams@vendor.com",
-            "name": "Carol Williams"
-          }
-        ],
-        "subject": "Project Alpha update",
-        "body_html": "<p>Hi,</p><p>Project Alpha update. Please let me know your thoughts.</p><p>Best regards,<br>Alice</p>",
-        "body_text": "Hi,\n\nProject Alpha update. Please let me know your thoughts.\n\nBest regards,\nAlice",
-        "is_read": false,
-        "is_flagged": true,
-        "is_draft": false,
-        "importance": "high",
-        "sensitivity": "confidential",
-        "has_attachments": true,
-        "received_at": "2026-05-01T03:56:19.969Z",
-        "folder": "inbox"
-      },
-      {
         "id": "8988b095-0596-467a-9d4e-686881bc12a4",
         "from_address": "bob.smith@acmecorp.com",
         "from_name": "Bob Smith",
@@ -2191,15 +2163,6 @@
     ],
     "attachments": [
       {
-        "id": "c0a13c1a-1111-4111-8111-000000000001",
-        "message_id": "c132919a-6e36-4679-868b-5654252f279c",
-        "filename": "Q4-Sales-Report.xlsx",
-        "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "size_bytes": 0,
-        "is_inline": false,
-        "sample_file": "Q4-Sales-Report.xlsx"
-      },
-      {
         "id": "c0a13c1a-1111-4111-8111-000000000002",
         "message_id": "78a79f40-d8fe-440a-96be-1c4884268fd5",
         "filename": "Project-Brief.pdf",
@@ -2225,24 +2188,6 @@
         "size_bytes": 0,
         "is_inline": false,
         "sample_file": "Status-Memo.docx"
-      },
-      {
-        "id": "c0a13c1a-1111-4111-8111-000000000005",
-        "message_id": "c132919a-6e36-4679-868b-5654252f279c",
-        "filename": "Q4-Review.pptx",
-        "content_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "size_bytes": 0,
-        "is_inline": false,
-        "sample_file": "Q4-Review.pptx"
-      },
-      {
-        "id": "c0a13c1a-1111-4111-8111-000000000006",
-        "message_id": "c132919a-6e36-4679-868b-5654252f279c",
-        "filename": "Q1-Pipeline.csv",
-        "content_type": "text/csv",
-        "size_bytes": 0,
-        "is_inline": false,
-        "sample_file": "Q1-Pipeline.csv"
       }
     ],
     "categories": [
