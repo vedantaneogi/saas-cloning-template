@@ -507,7 +507,7 @@ export function TopToolbar() {
           <div
             className={cn(
               'relative transition-[width] duration-150 ease-out',
-              searchFocused ? 'w-[min(880px,100%)]' : 'w-[280px]'
+              searchFocused ? 'w-[min(880px,100%)]' : 'w-[480px]'
             )}
             ref={searchDropdownRef}
           >
