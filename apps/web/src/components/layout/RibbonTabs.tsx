@@ -318,10 +318,15 @@ function ComposeMessageRibbon() {
 
   // Outlook palette — top row is the "Theme" strip (dark→light tints of the
   // accent), bottom 6×5 grid is the standard color block. Senior asked for
-  // this layout instead of the flat 7-color row we shipped.
+  // this layout instead of the flat 7-color row we shipped. Same shape is
+  // reused for the text-highlight picker so both popovers feel identical.
   const THEME_COLORS = ['#000000', '#FFFFFF', '#E7E6E6', '#44546A', '#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47']
   const STANDARD_COLORS = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0']
-  const HIGHLIGHT_COLORS = ['#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#FFC0CB', '#FFD700', 'transparent']
+  // Highlights use the same 10-cell standard row + a softer pastel theme
+  // row (light tints + neutral grays) to mirror Outlook's "Text Highlight
+  // Color" dropdown.
+  const HIGHLIGHT_THEME = ['#FFFFFF', '#000000', '#FFF2CC', '#FCE4D6', '#DDEBF7', '#E2EFDA', '#FFE699', '#F4B084', '#9DC3E6', '#A9D08E']
+  const HIGHLIGHT_STANDARD = ['#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#0070C0', '#FF0000', '#FFA500', '#7030A0', '#FFC0CB', '#808080']
 
   const FONT_FAMILIES = ['Aptos', 'Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana']
   const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36']
@@ -585,19 +590,57 @@ function ComposeMessageRibbon() {
         </RibbonBtn>
       </div>
       {highlightPickerOpen && (
-        <div ref={highlightRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-2 flex gap-1 animate-fade-in" style={{ top: popupPos.top, left: popupPos.left }}>
-          {HIGHLIGHT_COLORS.map((c) => (
-            <button key={c} type="button" title={c === 'transparent' ? 'No highlight' : c}
+        <div ref={highlightRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-56 animate-fade-in" style={{ top: popupPos.top, left: popupPos.left }}>
+          <p className="text-[11px] font-semibold text-[#605E5C] mb-1">Theme Colors</p>
+          <div className="grid grid-cols-10 gap-0.5 mb-2">
+            {HIGHLIGHT_THEME.map((c) => (
+              <button
+                key={c}
+                type="button"
+                title={c}
+                onClick={() => { run(() => editor!.chain().focus().toggleHighlight({ color: c }).run()); setHighlightPickerOpen(false) }}
+                className="w-4 h-4 rounded-sm border border-[#D2D0CE] hover:ring-1 hover:ring-[#0078D4] transition"
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          <p className="text-[11px] font-semibold text-[#605E5C] mb-1">Standard Colors</p>
+          <div className="grid grid-cols-10 gap-0.5 mb-2">
+            {HIGHLIGHT_STANDARD.map((c) => (
+              <button
+                key={c}
+                type="button"
+                title={c}
+                onClick={() => { run(() => editor!.chain().focus().toggleHighlight({ color: c }).run()); setHighlightPickerOpen(false) }}
+                className="w-4 h-4 rounded-sm border border-[#D2D0CE] hover:ring-1 hover:ring-[#0078D4] transition"
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          <div className="border-t border-[#EDEBE9] pt-1.5 space-y-0.5">
+            <button
+              type="button"
+              onClick={() => { run(() => editor!.chain().focus().unsetHighlight().run()); setHighlightPickerOpen(false) }}
+              className="w-full flex items-center gap-2 text-left text-[12px] text-[#323130] px-1 py-1 hover:bg-[#F3F2F1] rounded"
+            >
+              <span className="w-4 h-4 rounded-sm border border-[#D2D0CE] bg-white flex items-center justify-center text-[#605E5C] text-[10px]">×</span>
+              No Color
+            </button>
+            <button
+              type="button"
               onClick={() => {
-                if (c === 'transparent') run(() => editor!.chain().focus().unsetHighlight().run())
-                else run(() => editor!.chain().focus().toggleHighlight({ color: c }).run())
+                const v = window.prompt('Enter hex highlight color (e.g. #FFFF00)')
+                if (v && /^#?[0-9a-fA-F]{3,8}$/.test(v.trim())) {
+                  const hex = v.trim().startsWith('#') ? v.trim() : `#${v.trim()}`
+                  run(() => editor!.chain().focus().toggleHighlight({ color: hex }).run())
+                }
                 setHighlightPickerOpen(false)
               }}
-              className="w-6 h-6 rounded border border-[#D2D0CE] hover:scale-110 transition-transform"
-              style={{ backgroundColor: c === 'transparent' ? '#fff' : c }}>
-              {c === 'transparent' && <span className="text-[8px] text-[#D13438]">/</span>}
+              className="w-full text-left text-[12px] text-[#323130] px-1 py-1 hover:bg-[#F3F2F1] rounded"
+            >
+              More Colors…
             </button>
-          ))}
+          </div>
         </div>
       )}
 
