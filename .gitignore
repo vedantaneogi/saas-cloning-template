@@ -244,6 +244,15 @@ deployment/environments/**/.env.*
 !deployment/environments/**/.env.example
 !deployment/environments/**/.env.*.example
 
+# E2B deploy bundle (built locally; never committed)
+deployment/e2b/web-bundle.tar.gz
+deployment/e2b/*.tar.gz
+
+# npm lockfiles (we're a pnpm workspace; npm ones get created by the E2B
+# standalone-build workaround and would confuse other contributors)
+package-lock.json
+apps/web/package-lock.json
+
 # ------------------------------------------------------------------------------
 # Docs / export artifacts
 # ------------------------------------------------------------------------------

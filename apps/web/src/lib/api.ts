@@ -1,7 +1,12 @@
-// Server-side API client. Used inside Next.js server components.
-// Configure via NEXT_PUBLIC_API_URL (default: http://127.0.0.1:8000).
+// API client used by both server components (during SSR) and client components (in the browser).
+// - In the browser, we use a *relative* base ("") so requests go to the same origin and are
+//   proxied through Next.js rewrites (see next.config.ts) to the actual API host. That makes
+//   the deployment portable: the public hostname doesn't need to be baked into the build.
+// - In the Node runtime (SSR + RSC), we hit the API directly via API_URL (or the localhost
+//   fallback) so we skip a hop through the Next server.
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || "http://127.0.0.1:8000";
+const isBrowser = typeof window !== "undefined";
+const API_BASE = isBrowser ? "" : (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000");
 
 export type StateGroup = "backlog" | "unstarted" | "started" | "completed" | "canceled";
 
