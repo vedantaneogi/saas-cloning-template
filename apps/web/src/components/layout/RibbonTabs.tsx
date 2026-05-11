@@ -611,9 +611,9 @@ function ComposeMessageRibbon() {
           mountain-shape icon). */}
       <div ref={colorBtnRef}>
         <RibbonBtn large label="Font color" onClick={() => { setPopupPos(getPos(colorBtnRef)); setColorPickerOpen((v) => !v); setHighlightPickerOpen(false) }}>
-          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <text x="10" y="14" textAnchor="middle" fontFamily="Segoe UI, Arial, sans-serif" fontWeight="700" fontSize="13" fill="currentColor">A</text>
-            <rect x="3" y="16.5" width="14" height="2.5" fill={currentColor} rx="0.5" />
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <text x="10" y="15" textAnchor="middle" fontFamily="Segoe UI, Arial, sans-serif" fontWeight="700" fontSize="17" fill="currentColor">A</text>
+            <rect x="2" y="17" width="16" height="2.5" fill={currentColor} rx="0.5" />
           </svg>
         </RibbonBtn>
       </div>
