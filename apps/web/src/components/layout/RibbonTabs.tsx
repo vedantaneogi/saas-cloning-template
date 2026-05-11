@@ -2288,31 +2288,40 @@ function ViewRibbon() {
   const sortOrder = useMailStore((s) => s.sortOrder)
   const setSortOrder = useMailStore((s) => s.setSortOrder)
   const showNotification = useUIStore((s) => s.showNotification)
-  const [catFilterOpen, setCatFilterOpen] = useState(false)
-  const [paneMenuOpen, setPaneMenuOpen] = useState(false)
-  const [densityMenuOpen, setDensityMenuOpen] = useState(false)
-  const [sortMenuOpen, setSortMenuOpen] = useState(false)
-  const catFilterRef = useRef<HTMLDivElement>(null)
-  const paneMenuRef = useRef<HTMLDivElement>(null)
-  const densityMenuRef = useRef<HTMLDivElement>(null)
-  const sortMenuRef = useRef<HTMLDivElement>(null)
+
+  type MenuKind = 'pane' | 'arrange' | 'density' | 'categories' | null
+  const [menu, setMenu] = useState<MenuKind>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const paneBtnRef = useRef<HTMLDivElement>(null)
+  const arrangeBtnRef = useRef<HTMLDivElement>(null)
+  const densityBtnRef = useRef<HTMLDivElement>(null)
+  const catBtnRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const { data: categoryList = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: () => categories.list(),
   })
 
+  // One outside-click handler that closes whichever menu is open.
   useEffect(() => {
+    if (!menu) return
     const handler = (e: MouseEvent) => {
       const t = e.target as Node
-      if (catFilterOpen && catFilterRef.current && !catFilterRef.current.contains(t)) setCatFilterOpen(false)
-      if (paneMenuOpen && paneMenuRef.current && !paneMenuRef.current.contains(t)) setPaneMenuOpen(false)
-      if (densityMenuOpen && densityMenuRef.current && !densityMenuRef.current.contains(t)) setDensityMenuOpen(false)
-      if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(t)) setSortMenuOpen(false)
+      if (menuRef.current?.contains(t)) return
+      const refs = [paneBtnRef, arrangeBtnRef, densityBtnRef, catBtnRef]
+      if (refs.some((r) => r.current?.contains(t))) return
+      setMenu(null)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [catFilterOpen, paneMenuOpen, densityMenuOpen, sortMenuOpen])
+  }, [menu])
+
+  const openMenu = (kind: Exclude<MenuKind, null>, ref: React.RefObject<HTMLDivElement | null>) => {
+    const r = ref.current?.getBoundingClientRect()
+    if (r) setMenuPos({ top: r.bottom + 4, left: r.left })
+    setMenu((prev) => (prev === kind ? null : kind))
+  }
 
   // Persist + apply locally. The server field is `reading_pane_position`
   // (the older code mistakenly sent `reading_pane`, which the API ignored —
@@ -2327,34 +2336,20 @@ function ViewRibbon() {
   const setReadingPane = (pos: 'right' | 'bottom' | 'off') => {
     setReadingPanePosition(pos)
     updateSettingsMutation.mutate({ reading_pane_position: pos })
-    setPaneMenuOpen(false)
+    setMenu(null)
     showNotification(`Reading pane: ${pos === 'off' ? 'Off' : pos === 'right' ? 'Right' : 'Bottom'}`)
   }
 
   return (
     <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto ribbon-scroll" role="toolbar" aria-label="View toolbar">
-      {/* Reading pane — single flyout (matches Outlook's View ribbon). */}
-      <div className="relative" ref={paneMenuRef}>
-        <RibbonBtn label="Reading pane" onClick={() => setPaneMenuOpen((v) => !v)}>
+      {/* Reading pane — flyout. Trigger lives in a relative wrapper but the
+          menu itself is portaled below so the toolbar's overflow-x-auto
+          (which forces overflow-y to clip) can't crop it. */}
+      <div ref={paneBtnRef}>
+        <RibbonBtn label="Reading pane" onClick={() => openMenu('pane', paneBtnRef)}>
           <PanelRight size={15} />
           <span className="flex items-center gap-0.5">Reading pane <ChevronDown size={10} /></span>
         </RibbonBtn>
-        {paneMenuOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
-            <button onClick={() => setReadingPane('right')}
-              className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'right' && 'bg-[#EBF3FB] text-[#0078D4]')}>
-              <PanelRight size={14} /> Right
-            </button>
-            <button onClick={() => setReadingPane('bottom')}
-              className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'bottom' && 'bg-[#EBF3FB] text-[#0078D4]')}>
-              <PanelBottom size={14} /> Bottom
-            </button>
-            <button onClick={() => setReadingPane('off')}
-              className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'off' && 'bg-[#EBF3FB] text-[#0078D4]')}>
-              <PanelLeftClose size={14} /> Off
-            </button>
-          </div>
-        )}
       </div>
 
       <RibbonSep />
@@ -2370,84 +2365,107 @@ function ViewRibbon() {
 
       <RibbonSep />
 
-      {/* Arrange / Sort — order the inbox by date / sender / subject etc.,
-          ascending or descending. Matches the Outlook View > Arrange menu. */}
-      <div className="relative" ref={sortMenuRef}>
-        <RibbonBtn label="Arrange" onClick={() => setSortMenuOpen((v) => !v)}>
+      <div ref={arrangeBtnRef}>
+        <RibbonBtn label="Arrange" onClick={() => openMenu('arrange', arrangeBtnRef)}>
           <Filter size={15} />
           <span className="flex items-center gap-0.5">Arrange <ChevronDown size={10} /></span>
         </RibbonBtn>
-        {sortMenuOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-44 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
-            {[
-              { v: 'date', l: 'Date' },
-              { v: 'from', l: 'From' },
-              { v: 'subject', l: 'Subject' },
-              { v: 'size', l: 'Size' },
-              { v: 'importance', l: 'Importance' },
-            ].map((opt) => (
-              <button key={opt.v}
-                onClick={() => { setSortBy(opt.v as never); setSortMenuOpen(false) }}
-                className={cn('w-full flex items-center justify-between text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]',
-                  sortBy === opt.v && 'bg-[#EBF3FB] text-[#0078D4]')}>
-                {opt.l}{sortBy === opt.v && <Check size={12} />}
-              </button>
-            ))}
-            <div className="h-px bg-[#EDEBE9] my-1" />
-            <button onClick={() => { setSortOrder('desc'); setSortMenuOpen(false) }}
-              className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', sortOrder === 'desc' && 'bg-[#EBF3FB] text-[#0078D4]')}>
-              Newest on top
-            </button>
-            <button onClick={() => { setSortOrder('asc'); setSortMenuOpen(false) }}
-              className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', sortOrder === 'asc' && 'bg-[#EBF3FB] text-[#0078D4]')}>
-              Oldest on top
-            </button>
-          </div>
-        )}
       </div>
 
       <RibbonSep />
 
-      {/* Density — Outlook lets users compact the message list. We persist
-          via the existing settings endpoint so it survives refresh. */}
-      <div className="relative" ref={densityMenuRef}>
-        <RibbonBtn label="Density" onClick={() => setDensityMenuOpen((v) => !v)}>
+      <div ref={densityBtnRef}>
+        <RibbonBtn label="Density" onClick={() => openMenu('density', densityBtnRef)}>
           <AlignJustify size={15} />
           <span className="flex items-center gap-0.5">Density <ChevronDown size={10} /></span>
         </RibbonBtn>
-        {densityMenuOpen && (
-          <div className="absolute left-0 top-full mt-0.5 z-50 w-40 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
-            {(['compact', 'medium', 'comfortable'] as const).map((d) => (
-              <button key={d}
-                onClick={() => {
-                  updateSettingsMutation.mutate({ density: d })
-                  setDensityMenuOpen(false)
-                  showNotification(`Density: ${d}`)
-                }}
-                className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] capitalize">
-                {d}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       <RibbonSep />
 
-      {/* Category filter */}
       {categoryList.length > 0 && (
-        <div className="relative" ref={catFilterRef}>
-          <RibbonBtn label="Filter by category" onClick={() => setCatFilterOpen((v) => !v)}>
+        <div ref={catBtnRef}>
+          <RibbonBtn label="Filter by category" onClick={() => openMenu('categories', catBtnRef)}>
             <Tag size={15} />
             <span className="flex items-center gap-0.5">Categories <ChevronDown size={10} /></span>
           </RibbonBtn>
-          {catFilterOpen && (
-            <div className="absolute left-0 top-full mt-0.5 z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in">
+        </div>
+      )}
+
+      {/* Portal-rendered menu — fixed position escapes the toolbar's
+          overflow clipping so the popover floats above instead of being
+          hidden under the ribbon. */}
+      {menu && typeof window !== 'undefined' && createPortal(
+        <div
+          ref={menuRef}
+          style={{ top: menuPos.top, left: menuPos.left }}
+          className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+        >
+          {menu === 'pane' && (
+            <div className="w-44">
+              <button onClick={() => setReadingPane('right')}
+                className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'right' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+                <PanelRight size={14} /> Right
+              </button>
+              <button onClick={() => setReadingPane('bottom')}
+                className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'bottom' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+                <PanelBottom size={14} /> Bottom
+              </button>
+              <button onClick={() => setReadingPane('off')}
+                className={cn('w-full flex items-center gap-2 text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', readingPanePosition === 'off' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+                <PanelLeftClose size={14} /> Off
+              </button>
+            </div>
+          )}
+          {menu === 'arrange' && (
+            <div className="w-44">
+              {[
+                { v: 'date', l: 'Date' },
+                { v: 'from', l: 'From' },
+                { v: 'subject', l: 'Subject' },
+                { v: 'size', l: 'Size' },
+                { v: 'importance', l: 'Importance' },
+              ].map((opt) => (
+                <button key={opt.v}
+                  onClick={() => { setSortBy(opt.v as never); setMenu(null) }}
+                  className={cn('w-full flex items-center justify-between text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]',
+                    sortBy === opt.v && 'bg-[#EBF3FB] text-[#0078D4]')}>
+                  {opt.l}{sortBy === opt.v && <Check size={12} />}
+                </button>
+              ))}
+              <div className="h-px bg-[#EDEBE9] my-1" />
+              <button onClick={() => { setSortOrder('desc'); setMenu(null) }}
+                className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', sortOrder === 'desc' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+                Newest on top
+              </button>
+              <button onClick={() => { setSortOrder('asc'); setMenu(null) }}
+                className={cn('w-full text-left text-sm px-3 py-1.5 hover:bg-[#F3F2F1]', sortOrder === 'asc' && 'bg-[#EBF3FB] text-[#0078D4]')}>
+                Oldest on top
+              </button>
+            </div>
+          )}
+          {menu === 'density' && (
+            <div className="w-40">
+              {(['compact', 'medium', 'comfortable'] as const).map((d) => (
+                <button key={d}
+                  onClick={() => {
+                    updateSettingsMutation.mutate({ density: d })
+                    setMenu(null)
+                    showNotification(`Density: ${d}`)
+                  }}
+                  className="w-full text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] capitalize">
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
+          {menu === 'categories' && (
+            <div className="w-48">
               {categoryList.map((cat: { id: string; name: string; color: string }) => (
                 <button key={cat.id}
                   onClick={() => {
                     showNotification(`Showing ${cat.name} messages`)
-                    setCatFilterOpen(false)
+                    setMenu(null)
                   }}
                   className="w-full flex items-center gap-2 text-left text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1] transition-colors">
                   <Tag size={14} className="flex-shrink-0" style={{ color: cat.color }} />
@@ -2456,7 +2474,8 @@ function ViewRibbon() {
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
