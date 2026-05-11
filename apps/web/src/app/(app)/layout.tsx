@@ -96,10 +96,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-[#0F6CBD]">
       <TopToolbar />
-      {/* Tiny inset around the work surface — gives the white tab bar a
-          floating look against the blue header (matches Outlook's slight
-          detachment of the file/tab row from the navigation strip). */}
-      <div className="flex flex-1 overflow-hidden mx-1 mb-1 rounded-t bg-white">
+      {/* Inset on all four sides — the parent `bg-[#0F6CBD]` shows through
+          the gaps so the work surface clearly floats over the blue header
+          (matches Outlook's detachment of the file/tab row + ribbon from
+          the navigation strip). Top gap is the most important bit; without
+          it the white was flush against the blue and the ribbon looked
+          attached. */}
+      <div className="flex flex-1 overflow-hidden mx-1.5 mt-1 mb-1.5 rounded-md bg-white shadow-[0_2px_6px_rgba(0,0,0,0.08)]">
         <AppSidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <RibbonTabs />
