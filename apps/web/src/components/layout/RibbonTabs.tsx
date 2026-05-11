@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { usePathname, useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMailStore } from '@/store/mail'
@@ -17,7 +18,7 @@ import {
   Pin, Clock, Tag,
   Paperclip, Link2, Image as ImageIcon, ClipboardPaste, Paintbrush2,
   Heading, Mic, Video, AlignJustify,
-  Search, Filter, RefreshCw, ShieldAlert, Lock,
+  Search, Filter, RefreshCw, ShieldAlert, Lock, Check,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -202,6 +203,95 @@ export function RibbonTabs() {
   )
 }
 
+// ─── Shadcn-style dropdown for font / font-size on the compose ribbon ───────
+// We swapped out native <select> here because the browser-rendered menu
+// clashed with the rest of the ribbon (per senior). Trigger is a button
+// styled like a ribbon control; menu renders fixed-positioned so the
+// toolbar's overflow-x-auto doesn't clip it.
+function FontDropdown({
+  value,
+  options,
+  onChange,
+  title,
+  ariaLabel,
+  width,
+  renderOption,
+}: {
+  value: string
+  options: string[]
+  onChange: (v: string) => void
+  title: string
+  ariaLabel: string
+  width: number
+  renderOption?: (v: string) => React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width })
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (menuRef.current?.contains(t)) return
+      if (btnRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        title={title}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          const r = btnRef.current?.getBoundingClientRect()
+          if (r) setPos({ top: r.bottom + 4, left: r.left, width: Math.max(width, r.width) })
+          setOpen((v) => !v)
+        }}
+        className="flex items-center justify-between text-xs border border-[#D2D0CE] rounded px-2 text-[#323130] bg-white hover:border-[#0078D4] focus:outline-none focus:border-[#0078D4] h-9 mx-0.5"
+        style={{ width }}
+      >
+        <span className="truncate">{value}</span>
+        <ChevronDown size={11} className="ml-1 text-[#605E5C] flex-shrink-0" />
+      </button>
+      {open && typeof window !== 'undefined' && createPortal(
+        <div
+          ref={menuRef}
+          role="listbox"
+          className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 max-h-72 overflow-y-auto outlook-scrollbar"
+          style={{ top: pos.top, left: pos.left, minWidth: pos.width }}
+        >
+          {options.map((o) => (
+            <button
+              key={o}
+              type="button"
+              role="option"
+              aria-selected={o === value}
+              onClick={() => { onChange(o); setOpen(false) }}
+              className={cn(
+                'w-full text-left text-xs px-2 py-1 hover:bg-[#F3F2F1] flex items-center justify-between',
+                o === value && 'bg-[#EBF3FB] text-[#0078D4]',
+              )}
+            >
+              <span className="truncate">{renderOption ? renderOption(o) : o}</span>
+              {o === value && <Check size={12} className="flex-shrink-0" />}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
 // ─── Compose Message Ribbon (shown when composing inline) ────────────────────
 function ComposeMessageRibbon() {
   const editor = useEditorStore((s) => s.editor)
@@ -226,7 +316,11 @@ function ComposeMessageRibbon() {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [popupPos, setPopupPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
 
-  const TEXT_COLORS = ['#000000', '#D13438', '#0078D4', '#107C10', '#8764B8', '#FF8C00', '#605E5C']
+  // Outlook palette — top row is the "Theme" strip (dark→light tints of the
+  // accent), bottom 6×5 grid is the standard color block. Senior asked for
+  // this layout instead of the flat 7-color row we shipped.
+  const THEME_COLORS = ['#000000', '#FFFFFF', '#E7E6E6', '#44546A', '#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47']
+  const STANDARD_COLORS = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0']
   const HIGHLIGHT_COLORS = ['#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#FFC0CB', '#FFD700', 'transparent']
 
   const FONT_FAMILIES = ['Aptos', 'Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana']
@@ -322,7 +416,7 @@ function ComposeMessageRibbon() {
   // (Importance + Discard). Buttons use the `large` size so icons read at
   // the same density as desktop Outlook.
   return (
-    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Compose toolbar">
+    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto ribbon-scroll" role="toolbar" aria-label="Compose toolbar">
       {/* ─── Group: Clipboard ─── */}
       <RibbonBtn large label="Undo (Ctrl+Z)" disabled={!editor?.can().undo()} onClick={() => run(() => editor!.chain().focus().undo().run())}>
         <RotateCcw size={15} />
@@ -344,24 +438,26 @@ function ComposeMessageRibbon() {
       <RibbonSep tall />
 
       {/* ─── Group: Basic Text ─── */}
-      <select
+      {/* Native <select> dropdowns surface as the browser's chrome (looks
+          out of place next to shadcn-style menus). FontDropdown renders a
+          portal-positioned panel matching the rest of the ribbon. */}
+      <FontDropdown
         value={currentFont}
-        onChange={(e) => run(() => editor!.chain().focus().setFontFamily(e.target.value).run())}
-        className="text-xs border border-[#D2D0CE] rounded px-2 py-1 text-[#323130] bg-white focus:outline-none focus:border-[#0078D4] w-28 h-9 mx-0.5"
+        options={FONT_FAMILIES}
         title="Font family"
-        aria-label="Font"
-      >
-        {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
-      </select>
-      <select
-        onChange={(e) => run(() => editor!.chain().focus().setFontSize(`${e.target.value}pt`).run())}
-        className="text-xs border border-[#D2D0CE] rounded px-2 py-1 text-[#323130] bg-white focus:outline-none focus:border-[#0078D4] w-14 h-9 mx-0.5"
+        ariaLabel="Font"
+        width={112}
+        renderOption={(f) => <span style={{ fontFamily: f }}>{f}</span>}
+        onChange={(f) => run(() => editor!.chain().focus().setFontFamily(f).run())}
+      />
+      <FontDropdown
+        value={(editor?.getAttributes('textStyle')?.fontSize as string)?.replace('pt', '') || '12'}
+        options={FONT_SIZES}
         title="Font size"
-        aria-label="Font size"
-        defaultValue="12"
-      >
-        {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
-      </select>
+        ariaLabel="Font size"
+        width={56}
+        onChange={(s) => run(() => editor!.chain().focus().setFontSize(`${s}pt`).run())}
+      />
       <RibbonBtn large label="Bold (Ctrl+B)" active={editor?.isActive('bold')} onClick={() => run(() => editor!.chain().focus().toggleBold().run())}>
         <span className="font-bold text-base leading-none">B</span>
       </RibbonBtn>
@@ -429,15 +525,57 @@ function ComposeMessageRibbon() {
         </RibbonBtn>
       </div>
       {colorPickerOpen && (
-        <div ref={colorRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-2 flex gap-1 animate-fade-in" style={{ top: popupPos.top, left: popupPos.left }}>
-          {TEXT_COLORS.map((c) => (
-            <button key={c} type="button" title={c}
-              onClick={() => { run(() => editor!.chain().focus().setColor(c).run()); setColorPickerOpen(false) }}
-              className="w-6 h-6 rounded border border-[#D2D0CE] hover:scale-110 transition-transform" style={{ backgroundColor: c }} />
-          ))}
-          <button type="button" title="Remove color"
-            onClick={() => { run(() => editor!.chain().focus().unsetColor().run()); setColorPickerOpen(false) }}
-            className="w-6 h-6 rounded border border-[#D2D0CE] hover:scale-110 transition-transform text-[10px] text-[#605E5C]">x</button>
+        <div ref={colorRef} className="fixed z-[200] bg-white border border-[#EDEBE9] rounded shadow-outlook-lg p-3 w-56 animate-fade-in" style={{ top: popupPos.top, left: popupPos.left }}>
+          <p className="text-[11px] font-semibold text-[#605E5C] mb-1">Theme Colors</p>
+          <div className="grid grid-cols-10 gap-0.5 mb-2">
+            {THEME_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                title={c}
+                onClick={() => { run(() => editor!.chain().focus().setColor(c).run()); setColorPickerOpen(false) }}
+                className="w-4 h-4 rounded-sm border border-[#D2D0CE] hover:ring-1 hover:ring-[#0078D4] transition"
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          <p className="text-[11px] font-semibold text-[#605E5C] mb-1">Standard Colors</p>
+          <div className="grid grid-cols-10 gap-0.5 mb-2">
+            {STANDARD_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                title={c}
+                onClick={() => { run(() => editor!.chain().focus().setColor(c).run()); setColorPickerOpen(false) }}
+                className="w-4 h-4 rounded-sm border border-[#D2D0CE] hover:ring-1 hover:ring-[#0078D4] transition"
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          <div className="border-t border-[#EDEBE9] pt-1.5 space-y-0.5">
+            <button
+              type="button"
+              onClick={() => { run(() => editor!.chain().focus().unsetColor().run()); setColorPickerOpen(false) }}
+              className="w-full flex items-center gap-2 text-left text-[12px] text-[#323130] px-1 py-1 hover:bg-[#F3F2F1] rounded"
+            >
+              <span className="w-4 h-4 rounded-sm border border-[#D2D0CE] bg-white flex items-center justify-center text-[#605E5C] text-[10px]">×</span>
+              Automatic
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const v = window.prompt('Enter hex color (e.g. #FF8800)')
+                if (v && /^#?[0-9a-fA-F]{3,8}$/.test(v.trim())) {
+                  const hex = v.trim().startsWith('#') ? v.trim() : `#${v.trim()}`
+                  run(() => editor!.chain().focus().setColor(hex).run())
+                }
+                setColorPickerOpen(false)
+              }}
+              className="w-full text-left text-[12px] text-[#323130] px-1 py-1 hover:bg-[#F3F2F1] rounded"
+            >
+              More Colors…
+            </button>
+          </div>
         </div>
       )}
 
@@ -1412,7 +1550,7 @@ function HomeRibbon() {
   const hasMsg = !!selectedMessageId || selectedMessageIds.size > 0
 
   return (
-    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Home toolbar">
+    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto ribbon-scroll" role="toolbar" aria-label="Home toolbar">
       {/* ─── Group: New ─── */}
       <div className="flex items-center mr-1 flex-shrink-0">
         <button onClick={() => openComposer()} aria-label="New mail"
@@ -2170,7 +2308,7 @@ function ViewRibbon() {
   })
 
   return (
-    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="View toolbar">
+    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto ribbon-scroll" role="toolbar" aria-label="View toolbar">
       {/* Reading pane position */}
       <RibbonBtn label="Reading pane on right" onClick={() => updateSettingsMutation.mutate({ reading_pane: 'right' })}>
         <PanelRight size={15} /><span>Right</span>
@@ -2282,7 +2420,7 @@ function CalendarHomeRibbon() {
   }, [filterOpen])
 
   return (
-    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Calendar toolbar">
+    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto ribbon-scroll" role="toolbar" aria-label="Calendar toolbar">
       {/* New event */}
       <div className="flex items-center mr-1 flex-shrink-0">
         <button onClick={() => window.dispatchEvent(new CustomEvent('outlook:new-event'))} aria-label="New event"
@@ -2426,7 +2564,7 @@ function ContactsHomeRibbon() {
   }
 
   return (
-    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Contacts toolbar">
+    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto ribbon-scroll" role="toolbar" aria-label="Contacts toolbar">
       <div className="flex items-center mr-1 flex-shrink-0">
         <button onClick={handleNewContact} aria-label="New contact"
           className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors">
@@ -2487,7 +2625,7 @@ function TasksHomeRibbon() {
   }
 
   return (
-    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto" role="toolbar" aria-label="Tasks toolbar">
+    <div className="flex items-center h-11 px-2 gap-0.5 border-b border-[#EDEBE9] bg-white flex-shrink-0 overflow-x-auto ribbon-scroll" role="toolbar" aria-label="Tasks toolbar">
       <div className="flex items-center mr-1 flex-shrink-0">
         <button onClick={handleNewTask} aria-label="New task"
           className="flex items-center gap-1.5 bg-[#0078D4] hover:bg-[#106EBE] text-white text-xs font-medium pl-3 pr-2 h-7 rounded-l transition-colors">

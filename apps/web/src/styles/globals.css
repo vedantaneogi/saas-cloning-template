@@ -120,6 +120,17 @@
     background-color: #a19f9d;
   }
 
+  /* Ribbon toolbars scroll horizontally but the visible scrollbar is
+     hidden — Outlook scrolls the ribbon silently with the wheel/drag and
+     the senior asked us to drop the chunky default scrollbar. */
+  .ribbon-scroll {
+    scrollbar-width: none;
+  }
+  .ribbon-scroll::-webkit-scrollbar {
+    height: 0;
+    width: 0;
+  }
+
   .tiptap-editor .ProseMirror {
     outline: none;
     min-height: 200px;

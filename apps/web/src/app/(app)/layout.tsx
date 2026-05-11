@@ -94,9 +94,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (hydrated && !token) return null
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden bg-[#0F6CBD]">
       <TopToolbar />
-      <div className="flex flex-1 overflow-hidden">
+      {/* Tiny inset around the work surface — gives the white tab bar a
+          floating look against the blue header (matches Outlook's slight
+          detachment of the file/tab row from the navigation strip). */}
+      <div className="flex flex-1 overflow-hidden mx-1 mb-1 rounded-t bg-white">
         <AppSidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <RibbonTabs />

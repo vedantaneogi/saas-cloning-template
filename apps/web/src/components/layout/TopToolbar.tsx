@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
-  Search, Bell, HelpCircle, Check, X, UserPlus, Settings, ArrowLeft, SlidersHorizontal, ChevronDown,
+  Bell, HelpCircle, Check, X, UserPlus, Settings, ArrowLeft, Filter,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { useMailStore } from '@/store/mail'
@@ -14,14 +14,29 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { messages, auth, contacts } from '@/lib/api'
 
 // ─── Waffle Icon (Microsoft 365 app launcher) ──────────────────────────────
+// Matches the Fluent waffle used on the real Outlook web UI: a 2×2 cluster
+// of colored tiles (blue/red/green/yellow) instead of the plain white grid we
+// shipped earlier. Senior asked for the same icon as Microsoft 365 / Outlook.
 function WaffleIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      {[0, 6.5, 13].map((y) =>
-        [0, 6.5, 13].map((x) => (
-          <rect key={`${x}-${y}`} x={x} y={y} width="4.5" height="4.5" rx="0.8" fill="white" opacity="0.9" />
-        ))
-      )}
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="7.5" height="7.5" rx="0.6" fill="#F25022" />
+      <rect x="11" y="1.5" width="7.5" height="7.5" rx="0.6" fill="#7FBA00" />
+      <rect x="1.5" y="11" width="7.5" height="7.5" rx="0.6" fill="#00A4EF" />
+      <rect x="11" y="11" width="7.5" height="7.5" rx="0.6" fill="#FFB900" />
+    </svg>
+  )
+}
+
+// ─── Outlook-style search glyph ────────────────────────────────────────────
+// Outlook's search icon is a slightly thicker magnifying glass than the
+// lucide default. Stroked with currentColor so it inherits the surrounding
+// text color (gray when idle, blue on focus).
+function OutlookSearchIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M13.5 13.5L17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   )
 }
@@ -453,8 +468,10 @@ export function TopToolbar() {
           </button>
         </div>
 
-        {/* Search — Outlook style with All folders + filter icon */}
-        <div className="flex-1 flex justify-start">
+        {/* Search — Outlook style with All folders + filter icon. Fixed
+            width band (senior didn't want the bar to jump on focus); only
+            the suggestions dropdown appears below when typing. */}
+        <div className="flex-1 flex justify-center">
           <div className="relative w-full max-w-2xl" ref={searchDropdownRef}>
             <form onSubmit={handleSearch} role="search">
               <div className="flex items-center bg-white rounded border border-transparent focus-within:border-[#0078D4] transition-colors">
@@ -484,7 +501,9 @@ export function TopToolbar() {
                 {/* Search input */}
                 <div className="flex-1 relative">
                   {!searchFocused && (
-                    <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#605E5C]" />
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#605E5C]">
+                      <OutlookSearchIcon size={14} />
+                    </span>
                   )}
                   <input
                     ref={searchInputRef}
@@ -510,12 +529,38 @@ export function TopToolbar() {
                     </button>
                   )}
                   <button type="button"
+                    aria-label="Search filters"
                     onClick={() => setShowSearchFilters((v) => !v)}
                     className={cn('p-1 rounded transition-colors', showSearchFilters ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:text-[#323130]')}>
-                    <SlidersHorizontal size={14} />
+                    <Filter size={14} />
                   </button>
-                  <button type="submit" className="p-1 text-[#605E5C] hover:text-[#0078D4] rounded">
-                    <Search size={14} />
+                  {/* Magnifier button is fully functional now — clicking it
+                      runs the same search-page navigation as pressing Enter
+                      so the icon isn't decorative. With an empty query +
+                      filter panel open, it kicks off the filter-only
+                      advanced search. */}
+                  <button
+                    type="button"
+                    aria-label="Run search"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      const q = search.trim()
+                      if (!q && showSearchFilters) {
+                        handleAdvancedSearch()
+                        return
+                      }
+                      if (q) {
+                        addRecentSearch(q)
+                        setSearchQuery(q)
+                        router.push(`/mail/search?q=${encodeURIComponent(q)}`)
+                        setSearchFocused(false)
+                      } else {
+                        searchInputRef.current?.focus()
+                      }
+                    }}
+                    className="p-1 text-[#605E5C] hover:text-[#0078D4] rounded"
+                  >
+                    <OutlookSearchIcon size={14} />
                   </button>
                 </div>
               </div>
