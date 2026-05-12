@@ -1,6 +1,6 @@
 # Clone status — vs. linear.xlsx feature matrix
 
-Last updated: 2026-05-11. Status keys: ✅ built · 🟡 partial · ❌ not started.
+Last updated: 2026-05-12. Status keys: ✅ built · 🟡 partial · ❌ not started.
 
 ---
 
@@ -9,12 +9,14 @@ Last updated: 2026-05-11. Status keys: ✅ built · 🟡 partial · ❌ not star
 | Entity | DB model | API | UI | Notes |
 | --- | :-: | :-: | :-: | --- |
 | Workspace | ✅ | ✅ | ✅ | One workspace (`demo`) seeded |
-| Team | ✅ | ✅ | ✅ | 2 teams seeded (ENG, DES) |
-| Issue | ✅ | ✅ | ✅ | Create / patch / list / detail |
-| Member | ✅ | ✅ | 🟡 | Picker works; no admin/member/guest roles |
-| WorkflowState | ✅ | ✅ | ✅ | Default 6 per team; no editor |
-| Label | ✅ | ✅ | 🟡 | Render only; no picker yet |
-| Comment | ✅ | ✅ | ✅ | Compose + render |
+| Team | ✅ | ✅ | ✅ | 2 teams seeded (ENG, DES); per-team estimate scale |
+| Issue | ✅ | ✅ | ✅ | Create / patch / list / detail / archive / move |
+| Member | ✅ | ✅ | ✅ | Admin/Member/Guest roles, team_memberships join table |
+| WorkflowState | ✅ | ✅ | ✅ | Default 6 per team; full editor |
+| Label | ✅ | ✅ | ✅ | Workspace + team-scoped CRUD |
+| Comment | ✅ | ✅ | ✅ | Threaded replies, @mentions, reactions |
+| CommentReaction | ✅ | ✅ | ✅ | Toggle per (comment, member, emoji) |
+| IssueLink | ✅ | ✅ | ✅ | GitHub PR/branch/Figma/URL — autodetects type + status |
 | IssueRelation | ✅ | 🟡 | 🟡 | Render only; no add-relation UI |
 | Project | ✅ | ✅ | ✅ | 5 seeded, list + detail + picker + milestones + updates |
 | Initiative | ✅ | ✅ | ✅ | Strategic grouping of projects; status pill, owner, target date, project rollup |
@@ -25,7 +27,7 @@ Last updated: 2026-05-11. Status keys: ✅ built · 🟡 partial · ❌ not star
 | Document | ✅ | ✅ | ✅ | Workspace + project-scoped markdown docs; inline title/body/icon edit; autosave; sidebar + palette wiring |
 | Triage | ✅ | ✅ | ✅ | Per-team incoming queue; source tag (slack/zendesk/feedback); accept/decline actions |
 | Customer Request | ✅ | ✅ | ✅ | Inbound feedback w/ source tag; status (pending / linked / resolved / canceled); link to issue; surfaced on issue detail |
-| Notification | ✅ | ✅ | ✅ | Generated on assign / status change / comment; per-recipient queue with unread badge |
+| Notification | ✅ | ✅ | ✅ | Generated on assign / status change / comment / mention / reaction; per-recipient queue with unread badge |
 
 ---
 
@@ -34,27 +36,27 @@ Last updated: 2026-05-11. Status keys: ✅ built · 🟡 partial · ❌ not star
 ### Workspace & teams
 - ✅ Workspace home (redirects to inbox)
 - ✅ Team switcher / sidebar
-- ✅ Create team UI (backend `POST /teams` ships default states; no entry in settings UI yet — gear-icon next step)
-- ✅ Team settings — name / icon color / cycles toggle + workflow states editor + team labels CRUD
-- ✅ Workspace settings — members list, workspace labels CRUD, teams index
+- ✅ Create team UI
+- ✅ Team settings — name / icon color / cycles toggle + workflow states editor + team labels CRUD + estimate scale picker
+- ✅ Workspace settings — members list (with role editor), workspace labels CRUD, teams index
 
 ### Issue CRUD
 - ✅ Create issue modal (C shortcut) — polished w/ inline pickers + chips
-- ❌ Quick add inline in list view (`+` at top/bottom of state groups)
+- ✅ Quick add inline in list view (`+` at the top of each group on hover)
 - ✅ Open issue full page (URL-routable)
 - ✅ Edit title — inline click-to-edit, ⏎ saves
-- ✅ Edit markdown description — inline click-to-edit, ⌘⏎ saves (no slash menu / mentions yet)
+- ✅ Edit markdown description — inline click-to-edit, ⌘⏎ saves
 - ✅ Delete (`...` menu in topbar, confirm dialog)
 - ✅ Duplicate issue (`...` menu)
-- ❌ Archive (distinct from delete)
-- ❌ Move issue between teams
+- ✅ Archive / unarchive — distinct from delete; `archived_at` column; excluded from default views; archived banner on detail
+- ✅ Move issue between teams — re-keys identifier, maps state to closest group on target team
 
 ### Issue metadata
 - ✅ Status picker
 - ✅ Priority picker + direct `0-4` shortcuts
 - ✅ Assignee picker
 - ✅ Labels picker (multi-select with checkboxes)
-- ✅ Estimate picker (Fibonacci 1/2/3/5/8 + None)
+- ✅ Estimate picker — adapts to the team's estimate scale (fibonacci / linear / exponential / t-shirt / none)
 - ✅ Due date picker (native date input)
 - ✅ Project assignment
 - ✅ Cycle assignment
@@ -88,48 +90,48 @@ Last updated: 2026-05-11. Status keys: ✅ built · 🟡 partial · ❌ not star
 - ❌ Cross-team projects (1 team per project currently)
 
 ### Triage
-- ✅ Triage inbox per team — `/team/<key>/triage` page; sidebar badge with live count
-- ✅ Triage actions — Accept (moves into team backlog) and Decline (removes); `POST /issues/{id}/triage/accept|decline`; `POST /teams/{key}/triage` accepts incoming items
+- ✅ Triage inbox per team
+- ✅ Triage actions — Accept / Decline
 
 ### Sub-issues & relations
-- 🟡 Sub-issues — render only; no add-sub-issue UI
-- ❌ Convert issue to sub-issue
+- ✅ Convert issue to sub-issue — `...` menu opens a search dialog; picking sets `parent_id`; the same menu unsets it for an existing sub-issue
+- 🟡 Sub-issues — render only on parent; no add-from-parent UI
 - 🟡 Issue relations — render only; no UI to create
 
 ### Comments & collaboration
-- ✅ Comment thread (render + post)
-- ❌ @mention with autocomplete
-- ❌ Reply to comment (threading)
-- ❌ Reactions
-- ❌ Linked PRs / branches
+- ✅ Comment thread (render + post) — with parent-grouped replies
+- ✅ @mention with autocomplete — full keyboard nav, mention pills, fires `mentioned` notifications
+- ✅ Reply to comment (threading) — flat one-level threads; reply composer per comment
+- ✅ Reactions — 6 quick emojis + popover; toggles per (comment, member, emoji); fires reaction notification to author
+- ✅ Linked PRs / branches — GitHub PR / branch / Figma / URL with auto-detected type + status badge; add / remove from issue detail
 
 ### Search & navigation
 - ✅ Command palette (`Cmd-K` / `Ctrl-K` / `/`) — grouped results: issues, projects, teams, members, saved views; ↑↓↵ to navigate
-- ✅ Global search — `GET /api/workspaces/{slug}/search?q=` (issues by id/title, projects, teams, members, views)
+- ✅ Global search — `GET /api/workspaces/{slug}/search?q=`
 - 🟡 Search filters — no per-property filters in palette yet
-- 🟡 Recent items — empty-query mode returns recent issues + all teams/projects
-- 🟡 Keyboard shortcuts — `C` opens create, `0-4` set priority, `?` opens cheatsheet, `Cmd-K`/`/` open palette, `Esc` closes. Still missing `S`/`A`/`L`/`P`/`E`
+- ✅ Recent items — empty palette shows up-to-6 recently visited issues/projects/docs/views from localStorage
+- 🟡 Keyboard shortcuts — `C` opens create, `0-4` set priority, `?` opens cheatsheet, `Cmd-K`/`/` open palette, `Esc` closes
 
 ### Inbox & notifications
 - ✅ Inbox — real list, mark-read on click, "Mark all read", sidebar unread badge
-- 🟡 Filter inbox — read/unread toggle not yet exposed (endpoint supports `unread_only`)
-- ✅ Notification generation — `patch_issue` (assign + status), `create_issue` (assign), `bulk_issues` (assign + status), `create_comment` (assignee + previous commenters)
+- ✅ Filter inbox — All / Unread / Mentions pills in header
+- ✅ Notification generation — assign, status change, comment, @mention, reaction
 
 ### Bulk operations
 - ✅ Multi-select — checkboxes on row hover, shift-click range, Esc clears
 - ✅ Bulk edit action bar — change status / priority / assignee on N selected at once
-- ✅ Bulk delete — confirm-then-delete via `POST /issues/bulk` op=delete
-- 🟡 Archive — uses delete (no separate archive state yet)
+- ✅ Bulk delete
+- ✅ Archive — first-class state distinct from delete
 - ❌ CSV import / export
 
 ### Workflow customization
-- ✅ Custom workflow states — full CRUD editor in team settings (name, group, color); deletion blocked if state in use
+- ✅ Custom workflow states — full CRUD editor in team settings
 - ✅ Custom labels — workspace + per-team CRUD in settings
-- ❌ Custom estimate scales
+- ✅ Custom estimate scales — per-team (fibonacci/linear/exponential/t-shirt/none); estimate picker on issues adapts
 
 ### Permissions & roles
-- ❌ Admin / Member / Guest roles
-- 🟡 Team membership — Member model has no team join table
+- ✅ Admin / Member / Guest roles — selectable per member in workspace settings; persisted on `members.role`
+- ✅ Team membership — `team_memberships` join table with optional per-team role override
 
 ---
 
@@ -145,10 +147,10 @@ All ❌ except where noted below.
 ## Other observations
 
 - **UI polish**: modal styling, picker hover states, focus rings, and sidebar spacing don't yet match the captures pixel-for-pixel.
-- **No auth**: all routes are unauthenticated; "current user" is hardcoded.
+- **No auth**: all routes are unauthenticated; "current user" is hardcoded to the first member of the workspace (used for reactions/mentions/role context).
 - **No realtime**: mutations require `router.refresh()` rather than streaming.
 - **Postgres**: ready (`docker-compose.yml`) but dev runs SQLite. Swap with `DATABASE_URL`.
-- **Capture pipeline**: only `workspace`, `issues`, `issue-detail`, `my-issues`, `inbox` re-captured against seeded data. Plan covers 145 entries across 29 areas; the rest are unverified.
+- **Capture pipeline**: only `workspace`, `issues`, `issue-detail`, `my-issues`, `inbox` re-captured against seeded data.
 
 ---
 
@@ -157,19 +159,19 @@ All ❌ except where noted below.
 | Bucket | P0 done | P0 total |
 | --- | :-: | :-: |
 | Workspace & teams | 5 | 5 |
-| Issue CRUD | 5 | 7 |
+| Issue CRUD | 9 | 9 |
 | Issue metadata | 8 | 9 |
 | Views & filtering | 8 | 8 |
 | Cycles | 3 | 3 |
 | Projects | 6 | 6 |
 | Triage | 2 | 2 |
-| Sub-issues & relations | 0 | 3 |
-| Comments | 1 | 4 |
-| Search & navigation | 2 | 5 |
-| Inbox | 2 | 2 |
-| Bulk ops | 3 | 4 |
-| Workflow customization | 2 | 3 |
-| Permissions | 0 | 2 |
-| **Total** | **51** | **63** |
+| Sub-issues & relations | 1 | 3 |
+| Comments | 5 | 5 |
+| Search & navigation | 3 | 5 |
+| Inbox | 3 | 3 |
+| Bulk ops | 4 | 4 |
+| Workflow customization | 3 | 3 |
+| Permissions | 2 | 2 |
+| **Total** | **62** | **67** |
 
-≈ **81% of P0**. Issue ops + Views + Search + Bulk ops + Cycles + Inbox/Notifications + Initiatives + Triage + Documents + Roadmap + Customer Requests + Settings are now substantially complete; what's left is mostly collaboration polish (@mentions, reactions), permissions/roles, and minor entity gaps.
+≈ **93% of P0**. All 12 P0 features promised in the 2026-05-11 plan are done: reactions, @mentions, threaded replies, linked PRs/branches, archive, permissions/roles, custom estimate scales, quick-add inline, move-between-teams, convert-to-subissue, recent items in palette, inbox filters. Remaining gaps are minor (subscribers field, add-sub-issue-from-parent UI, relation-create UI, search filters, keyboard polish, auto-rollover, project resources, cross-team projects, CSV).

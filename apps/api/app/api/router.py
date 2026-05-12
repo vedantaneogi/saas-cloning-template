@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -11,16 +13,22 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import get_db, get_workspace
 from app.db.models import (
     Comment,
+    CommentReaction,
     CustomerRequest,
     CustomerRequestStatus,
     Cycle,
     Document,
+    EstimateScale,
     Initiative,
     InitiativeStatus,
     Issue,
+    IssueLink,
+    IssueLinkStatus,
+    IssueLinkType,
     IssueRelation,
     Label,
     Member,
+    MemberRole,
     Notification,
     NotificationKind,
     Project,
@@ -30,6 +38,7 @@ from app.db.models import (
     SavedView,
     StateGroup,
     Team,
+    TeamMembership,
     UpdateHealth,
     Workspace,
     WorkflowState,
@@ -37,7 +46,10 @@ from app.db.models import (
 from app.services import notifications as notif
 from app.schemas import (
     CommentCreateIn,
+    CommentMentionOut,
     CommentOut,
+    ReactionGroupOut,
+    ReactionToggleIn,
     CustomerRequestCreateIn,
     CustomerRequestLinkIn,
     CustomerRequestOut,
@@ -48,8 +60,12 @@ from app.schemas import (
     DocumentCreateIn,
     DocumentOut,
     DocumentPatchIn,
+    IssueLinkCreateIn,
+    IssueLinkOut,
+    IssueMoveIn,
     LabelCreateIn,
     LabelPatchIn,
+    MemberRolePatchIn,
     TeamCreateIn,
     TeamPatchIn,
     WorkflowStateCreateIn,
@@ -128,8 +144,65 @@ def _issue_dict(issue: Issue, child_counts: dict[str, tuple[int, int]] | None = 
         "cycle_number": issue.cycle.number if issue.cycle else None,
         "is_triage": bool(issue.is_triage),
         "triage_source": issue.triage_source,
+        "archived_at": issue.archived_at,
         "child_count": cc[0] if cc else 0,
         "child_done_count": cc[1] if cc else 0,
+    }
+
+
+# --- Comment helpers ----------------------------------------------------
+
+_MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_-]{0,40})\b")
+
+
+def _resolve_mentions(db: Session, workspace_id: str, body: str) -> list[Member]:
+    """Match `@Name` tokens in `body` against members in this workspace.
+    Resolves on first-name (case-insensitive) and falls back to full-name."""
+    tokens = {m.group(1).lower() for m in _MENTION_RE.finditer(body or "")}
+    if not tokens:
+        return []
+    members = db.query(Member).filter_by(workspace_id=workspace_id).all()
+    out: list[Member] = []
+    seen: set[str] = set()
+    for m in members:
+        first = (m.name.split()[0] if m.name else "").lower()
+        full = (m.name or "").lower().replace(" ", "")
+        if (first in tokens or full in tokens) and m.id not in seen:
+            out.append(m)
+            seen.add(m.id)
+    return out
+
+
+def _reactions_for(c: Comment, current_member_id: str | None) -> list[dict]:
+    by_emoji: dict[str, list[CommentReaction]] = defaultdict(list)
+    for r in c.reactions:
+        by_emoji[r.emoji].append(r)
+    return [
+        {
+            "emoji": emoji,
+            "count": len(rows),
+            "member_ids": [r.member_id for r in rows],
+            "member_names": [r.member.name for r in rows if r.member is not None],
+            "reacted": bool(current_member_id and any(r.member_id == current_member_id for r in rows)),
+        }
+        for emoji, rows in by_emoji.items()
+    ]
+
+
+def _comment_dict(db: Session, c: Comment, workspace_id: str, current_member_id: str | None) -> dict:
+    mentions = [
+        {"member_id": m.id, "name": m.name}
+        for m in _resolve_mentions(db, workspace_id, c.body)
+    ]
+    return {
+        "id": c.id,
+        "body": c.body,
+        "author": MemberOut.model_validate(c.author) if c.author else None,
+        "created_at": c.created_at,
+        "parent_id": c.parent_id,
+        "reactions": _reactions_for(c, current_member_id),
+        "mentions": mentions,
+        "replies": [],
     }
 
 
@@ -196,6 +269,7 @@ def list_team_issues(
     state: str | None = Query(None),
     project: str | None = Query(None),
     sort: str = Query("default"),
+    archived: bool = Query(False),
     ws: Workspace = Depends(get_workspace),
     db: Session = Depends(get_db),
 ) -> list[dict]:
@@ -210,6 +284,9 @@ def list_team_issues(
         group_filter = (StateGroup.backlog,)
     elif view == "all":
         group_filter = tuple(StateGroup)
+    elif view == "archived":
+        group_filter = tuple(StateGroup)
+        archived = True
     else:
         raise HTTPException(400, f"unknown view: {view}")
 
@@ -221,6 +298,7 @@ def list_team_issues(
             WorkflowState.group.in_(group_filter),
             Issue.parent_id.is_(None),
             Issue.is_triage.is_(False),
+            Issue.archived_at.is_(None) if not archived else Issue.archived_at.isnot(None),
         )
         .options(*_issue_query(db))
     )
@@ -517,7 +595,12 @@ def get_issue(
         db.query(Issue)
         .join(Team, Issue.team_id == Team.id)
         .filter(Team.workspace_id == ws.id, Issue.identifier == identifier)
-        .options(*_issue_query(db), selectinload(Issue.comments).selectinload(Comment.author))
+        .options(
+            *_issue_query(db),
+            selectinload(Issue.comments).selectinload(Comment.author),
+            selectinload(Issue.comments).selectinload(Comment.reactions).selectinload(CommentReaction.member),
+            selectinload(Issue.links),
+        )
         .first()
     )
     if not issue:
@@ -552,14 +635,33 @@ def get_issue(
         for r in relations
         if r.target_id in targets
     ]
-    body["comments"] = [
+
+    # Default current-user = first member in workspace (used for `reacted` flag).
+    current = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
+    current_id = current.id if current else None
+
+    # Group comments by thread: top-level comments hold their replies.
+    by_id: dict[str, dict] = {}
+    roots: list[dict] = []
+    for c in issue.comments:
+        d = _comment_dict(db, c, ws.id, current_id)
+        by_id[c.id] = d
+        if c.parent_id and c.parent_id in by_id:
+            by_id[c.parent_id]["replies"].append(d)
+        else:
+            roots.append(d)
+    body["comments"] = roots
+
+    body["links"] = [
         {
-            "id": c.id,
-            "body": c.body,
-            "author": MemberOut.model_validate(c.author) if c.author else None,
-            "created_at": c.created_at,
+            "id": ln.id,
+            "url": ln.url,
+            "title": ln.title or ln.url,
+            "type": ln.type.value if hasattr(ln.type, "value") else ln.type,
+            "status": ln.status.value if (ln.status and hasattr(ln.status, "value")) else (ln.status or None),
+            "created_at": ln.created_at,
         }
-        for c in issue.comments
+        for ln in issue.links
     ]
     return body
 
@@ -775,6 +877,21 @@ def patch_issue(
     if body.label_ids is not None:
         labels = db.query(Label).filter(Label.id.in_(body.label_ids)).all() if body.label_ids else []
         issue.labels = labels
+    if body.clear_parent:
+        issue.parent_id = None
+    elif body.parent_identifier is not None:
+        if not body.parent_identifier:
+            issue.parent_id = None
+        else:
+            parent = (
+                db.query(Issue)
+                .join(Team, Issue.team_id == Team.id)
+                .filter(Team.workspace_id == ws.id, Issue.identifier == body.parent_identifier)
+                .first()
+            )
+            if not parent or parent.id == issue.id:
+                raise HTTPException(400, "invalid parent_identifier")
+            issue.parent_id = parent.id
 
     db.flush()
     # Emit notifications (actor unresolved for now — uses None; future: pull from auth)
@@ -1042,15 +1159,22 @@ def create_comment(
 
     author_id = body.author_id
     if not author_id:
-        # Default to first member as a stand-in for the current user
         first_member = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
         author_id = first_member.id if first_member else None
 
-    comment = Comment(issue_id=issue.id, author_id=author_id, body=body.body)
+    parent_id = body.parent_id or None
+    if parent_id:
+        parent = db.query(Comment).filter_by(id=parent_id, issue_id=issue.id).first()
+        if not parent:
+            raise HTTPException(400, "parent comment not found on this issue")
+        # Flatten threading: only allow replies one level deep.
+        if parent.parent_id:
+            parent_id = parent.parent_id
+
+    comment = Comment(issue_id=issue.id, author_id=author_id, body=body.body, parent_id=parent_id)
     db.add(comment)
     db.flush()
 
-    # Reload the issue with assignee + previous comments so notifications can target them
     issue_full = (
         db.query(Issue)
         .options(selectinload(Issue.comments), selectinload(Issue.team))
@@ -1059,16 +1183,279 @@ def create_comment(
     )
     if issue_full:
         notif.issue_commented(db, issue=issue_full, comment=comment, actor_id=author_id)
+        # @mention notifications
+        for mention in _resolve_mentions(db, ws.id, body.body):
+            if mention.id != author_id:
+                notif.comment_mentioned(
+                    db, issue=issue_full, comment=comment, mentioned_id=mention.id, actor_id=author_id
+                )
 
     db.commit()
     db.refresh(comment)
 
+    return _comment_dict(db, comment, ws.id, author_id)
+
+
+# --- Comment reactions --------------------------------------------------
+
+@router.post("/workspaces/{slug}/comments/{comment_id}/reactions", response_model=list[ReactionGroupOut])
+def toggle_reaction(
+    comment_id: str,
+    body: ReactionToggleIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    comment = (
+        db.query(Comment)
+        .join(Issue, Comment.issue_id == Issue.id)
+        .join(Team, Issue.team_id == Team.id)
+        .filter(Team.workspace_id == ws.id, Comment.id == comment_id)
+        .options(selectinload(Comment.reactions).selectinload(CommentReaction.member))
+        .first()
+    )
+    if not comment:
+        raise HTTPException(404, "comment not found")
+
+    member_id = body.member_id
+    if not member_id:
+        first = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
+        member_id = first.id if first else None
+    if not member_id:
+        raise HTTPException(400, "no workspace members to attribute reaction")
+
+    emoji = body.emoji.strip()
+    if not emoji:
+        raise HTTPException(400, "emoji is required")
+
+    existing = (
+        db.query(CommentReaction)
+        .filter_by(comment_id=comment.id, member_id=member_id, emoji=emoji)
+        .first()
+    )
+    if existing:
+        db.delete(existing)
+    else:
+        db.add(CommentReaction(comment_id=comment.id, member_id=member_id, emoji=emoji))
+        issue = db.query(Issue).filter_by(id=comment.issue_id).first()
+        if issue and comment.author_id and comment.author_id != member_id:
+            notif.comment_reacted(db, issue=issue, comment=comment, emoji=emoji, actor_id=member_id)
+
+    db.commit()
+    db.refresh(comment)
+    return _reactions_for(comment, member_id)
+
+
+# --- Issue links --------------------------------------------------------
+
+def _infer_link_type_and_status(url: str) -> tuple[IssueLinkType, IssueLinkStatus | None]:
+    u = (url or "").lower()
+    if "github.com" in u and "/pull/" in u:
+        return IssueLinkType.github_pr, IssueLinkStatus.open
+    if "github.com" in u and ("/tree/" in u or "/compare/" in u):
+        return IssueLinkType.github_branch, None
+    if "figma.com" in u:
+        return IssueLinkType.figma, None
+    return IssueLinkType.url, None
+
+
+@router.post("/workspaces/{slug}/issues/{identifier}/links", response_model=IssueLinkOut)
+def create_issue_link(
+    identifier: str,
+    body: IssueLinkCreateIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    issue = (
+        db.query(Issue)
+        .join(Team, Issue.team_id == Team.id)
+        .filter(Team.workspace_id == ws.id, Issue.identifier == identifier)
+        .first()
+    )
+    if not issue:
+        raise HTTPException(404, f"issue not found: {identifier}")
+
+    inferred_type, inferred_status = _infer_link_type_and_status(body.url)
+    type_ = IssueLinkType(body.type) if body.type else inferred_type
+    status_: IssueLinkStatus | None
+    if body.status:
+        status_ = IssueLinkStatus(body.status)
+    else:
+        status_ = inferred_status
+
+    title = (body.title or "").strip() or _derive_link_title(body.url, type_)
+    link = IssueLink(
+        issue_id=issue.id,
+        url=body.url,
+        title=title,
+        type=type_,
+        status=status_,
+    )
+    db.add(link)
+    db.commit()
+    db.refresh(link)
     return {
-        "id": comment.id,
-        "body": comment.body,
-        "author": MemberOut.model_validate(comment.author).model_dump() if comment.author else None,
-        "created_at": comment.created_at,
+        "id": link.id,
+        "url": link.url,
+        "title": link.title or link.url,
+        "type": link.type.value,
+        "status": link.status.value if link.status else None,
+        "created_at": link.created_at,
     }
+
+
+def _derive_link_title(url: str, type_: IssueLinkType) -> str:
+    if type_ == IssueLinkType.github_pr:
+        m = re.search(r"/([^/]+)/([^/]+)/pull/(\d+)", url)
+        if m:
+            return f"{m.group(1)}/{m.group(2)}#{m.group(3)}"
+    if type_ == IssueLinkType.github_branch:
+        m = re.search(r"/([^/]+)/([^/]+)/(?:tree|compare)/([^/?]+)", url)
+        if m:
+            return f"{m.group(1)}/{m.group(2)} · {m.group(3)}"
+    return url
+
+
+@router.delete("/workspaces/{slug}/issues/{identifier}/links/{link_id}", status_code=204)
+def delete_issue_link(
+    identifier: str,
+    link_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> None:
+    issue = (
+        db.query(Issue)
+        .join(Team, Issue.team_id == Team.id)
+        .filter(Team.workspace_id == ws.id, Issue.identifier == identifier)
+        .first()
+    )
+    if not issue:
+        raise HTTPException(404, f"issue not found: {identifier}")
+    link = db.query(IssueLink).filter_by(id=link_id, issue_id=issue.id).first()
+    if not link:
+        raise HTTPException(404, "link not found")
+    db.delete(link)
+    db.commit()
+
+
+# --- Archive / unarchive ------------------------------------------------
+
+@router.post("/workspaces/{slug}/issues/{identifier}/archive", response_model=IssueOut)
+def archive_issue(
+    identifier: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    issue = (
+        db.query(Issue)
+        .join(Team, Issue.team_id == Team.id)
+        .filter(Team.workspace_id == ws.id, Issue.identifier == identifier)
+        .options(*_issue_query(db))
+        .first()
+    )
+    if not issue:
+        raise HTTPException(404, f"issue not found: {identifier}")
+    issue.archived_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(issue)
+    return _issue_dict(issue, _child_counts(db, [issue.id]))
+
+
+@router.post("/workspaces/{slug}/issues/{identifier}/unarchive", response_model=IssueOut)
+def unarchive_issue(
+    identifier: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    issue = (
+        db.query(Issue)
+        .join(Team, Issue.team_id == Team.id)
+        .filter(Team.workspace_id == ws.id, Issue.identifier == identifier)
+        .options(*_issue_query(db))
+        .first()
+    )
+    if not issue:
+        raise HTTPException(404, f"issue not found: {identifier}")
+    issue.archived_at = None
+    db.commit()
+    db.refresh(issue)
+    return _issue_dict(issue, _child_counts(db, [issue.id]))
+
+
+# --- Move between teams -------------------------------------------------
+
+@router.post("/workspaces/{slug}/issues/{identifier}/move", response_model=IssueOut)
+def move_issue(
+    identifier: str,
+    body: IssueMoveIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    issue = (
+        db.query(Issue)
+        .join(Team, Issue.team_id == Team.id)
+        .filter(Team.workspace_id == ws.id, Issue.identifier == identifier)
+        .options(*_issue_query(db))
+        .first()
+    )
+    if not issue:
+        raise HTTPException(404, f"issue not found: {identifier}")
+    new_team = db.query(Team).filter_by(workspace_id=ws.id, key=body.team_key).first()
+    if not new_team:
+        raise HTTPException(404, f"team not found: {body.team_key}")
+    if new_team.id == issue.team_id:
+        return _issue_dict(issue, _child_counts(db, [issue.id]))
+
+    # Pick a workflow state on the target team matching the current group.
+    src_group = issue.state.group
+    target_state = (
+        db.query(WorkflowState)
+        .filter(WorkflowState.team_id == new_team.id, WorkflowState.group == src_group)
+        .order_by(WorkflowState.position)
+        .first()
+    )
+    if target_state is None:
+        target_state = (
+            db.query(WorkflowState)
+            .filter(WorkflowState.team_id == new_team.id)
+            .order_by(WorkflowState.position)
+            .first()
+        )
+    if target_state is None:
+        raise HTTPException(400, f"target team {new_team.key} has no workflow states")
+
+    issue.team_id = new_team.id
+    issue.state_id = target_state.id
+    issue.identifier = f"{new_team.key}-{new_team.next_issue_number}"
+    new_team.next_issue_number += 1
+    # Moving across teams drops team-scoped artifacts.
+    issue.cycle_id = None
+    # Labels stay attached, but team-scoped labels become foreign — drop them.
+    issue.labels = [l for l in issue.labels if l.workspace_id is not None or l.team_id == new_team.id]
+
+    db.commit()
+    db.refresh(issue)
+    return _issue_dict(issue, _child_counts(db, [issue.id]))
+
+
+# --- Member role --------------------------------------------------------
+
+@router.patch("/workspaces/{slug}/members/{member_id}", response_model=MemberOut)
+def patch_member_role(
+    member_id: str,
+    body: MemberRolePatchIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    member = db.query(Member).filter_by(id=member_id, workspace_id=ws.id).first()
+    if not member:
+        raise HTTPException(404, "member not found")
+    try:
+        member.role = MemberRole(body.role)
+    except ValueError:
+        raise HTTPException(400, f"unknown role: {body.role}")
+    db.commit()
+    db.refresh(member)
+    return MemberOut.model_validate(member).model_dump()
 
 
 # --- Initiatives --------------------------------------------------------
@@ -2215,6 +2602,11 @@ def patch_team(
         team.icon_color = body.icon_color
     if body.cycles_enabled is not None:
         team.cycles_enabled = body.cycles_enabled
+    if body.estimate_scale is not None:
+        try:
+            team.estimate_scale = EstimateScale(body.estimate_scale)
+        except ValueError:
+            raise HTTPException(400, f"unknown estimate scale: {body.estimate_scale}")
     db.commit()
     db.refresh(team)
     return team
@@ -2229,12 +2621,17 @@ def create_team(
     existing = db.query(Team).filter_by(workspace_id=ws.id, key=body.key).first()
     if existing:
         raise HTTPException(409, f"team key already in use: {body.key}")
+    try:
+        scale = EstimateScale(body.estimate_scale)
+    except ValueError:
+        raise HTTPException(400, f"unknown estimate scale: {body.estimate_scale}")
     team = Team(
         workspace_id=ws.id,
         key=body.key,
         name=body.name,
         icon_color=body.icon_color,
         cycles_enabled=body.cycles_enabled,
+        estimate_scale=scale,
     )
     db.add(team)
     db.flush()

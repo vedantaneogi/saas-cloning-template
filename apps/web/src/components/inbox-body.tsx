@@ -13,6 +13,8 @@ import {
   type Notification,
 } from "@/lib/api";
 
+type InboxFilter = "all" | "unread" | "mentions";
+
 export function InboxBody({
   workspaceSlug,
   initial,
@@ -22,9 +24,9 @@ export function InboxBody({
 }) {
   const router = useRouter();
   const [items, setItems] = useState<Notification[]>(initial);
+  const [filter, setFilter] = useState<InboxFilter>("all");
   const [pending, startTransition] = useTransition();
 
-  // Re-fetch on focus so we don't go stale while the user works in another tab
   useEffect(() => {
     function onFocus() {
       listNotifications(workspaceSlug).then(setItems).catch(() => {});
@@ -52,29 +54,57 @@ export function InboxBody({
   }
 
   const unread = items.filter((n) => !n.read_at);
+  const visible = items.filter((n) => {
+    if (filter === "unread") return !n.read_at;
+    if (filter === "mentions") return n.kind === "mentioned";
+    return true;
+  });
 
   return (
     <>
-      <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border-subtle px-3 text-mini text-text-tertiary">
-        <span>{unread.length} unread</span>
+      <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border-subtle px-3 text-mini text-text-tertiary">
+        <FilterPill active={filter === "all"} onClick={() => setFilter("all")}>
+          All <span className="text-text-quaternary">{items.length}</span>
+        </FilterPill>
+        <FilterPill active={filter === "unread"} onClick={() => setFilter("unread")}>
+          Unread <span className="text-text-quaternary">{unread.length}</span>
+        </FilterPill>
+        <FilterPill active={filter === "mentions"} onClick={() => setFilter("mentions")}>
+          <AtSign size={11} className="mr-0.5" />
+          Mentions
+        </FilterPill>
         <button
           onClick={markAll}
           disabled={pending || unread.length === 0}
-          className="rounded-md px-2 py-0.5 hover:bg-row-hover hover:text-text-secondary disabled:opacity-50"
+          className="ml-auto rounded-md px-2 py-0.5 hover:bg-row-hover hover:text-text-secondary disabled:opacity-50"
         >
           Mark all read
         </button>
       </div>
       <div className="flex-1 overflow-y-auto">
-        {items.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="flex h-full items-center justify-center px-6 py-10 text-center text-small text-text-tertiary">
-            You have no notifications.
+            {filter === "unread" ? "No unread notifications." : filter === "mentions" ? "No mentions." : "You have no notifications."}
           </div>
         ) : (
-          items.map((n) => <NotificationRow key={n.id} note={n} workspaceSlug={workspaceSlug} onClick={() => markRead(n)} />)
+          visible.map((n) => <NotificationRow key={n.id} note={n} workspaceSlug={workspaceSlug} onClick={() => markRead(n)} />)
         )}
       </div>
     </>
+  );
+}
+
+function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        "flex items-center gap-1 rounded-pill px-2 py-0.5",
+        active ? "bg-row-selected text-text-primary" : "hover:bg-row-hover hover:text-text-secondary"
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -15,6 +15,8 @@ class MemberOut(BaseModel):
     name: str
     initials: str
     color: str
+    role: str = "member"
+    email: str | None = None
 
 
 class WorkflowStateOut(BaseModel):
@@ -40,6 +42,7 @@ class TeamOut(BaseModel):
     name: str
     icon_color: str
     cycles_enabled: bool
+    estimate_scale: str = "fibonacci"
 
 
 class WorkspaceOut(BaseModel):
@@ -60,12 +63,58 @@ class IssueRelationOut(BaseModel):
     target_priority: int = 0
 
 
+class ReactionGroupOut(BaseModel):
+    """One entry per distinct emoji on a comment. `reacted` is true if the
+    current user is among `member_ids`."""
+
+    emoji: str
+    count: int
+    member_ids: list[str] = []
+    member_names: list[str] = []
+    reacted: bool = False
+
+
+class CommentMentionOut(BaseModel):
+    """A member resolved from an @mention in the comment body."""
+
+    member_id: str
+    name: str
+
+
 class CommentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     body: str
     author: MemberOut | None
     created_at: datetime
+    parent_id: str | None = None
+    reactions: list[ReactionGroupOut] = []
+    mentions: list[CommentMentionOut] = []
+    replies: list["CommentOut"] = []
+
+
+class ReactionToggleIn(BaseModel):
+    emoji: str
+    member_id: str | None = None
+
+
+# --- Issue links --------------------------------------------------------
+
+class IssueLinkOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    url: str
+    title: str
+    type: str
+    status: str | None = None
+    created_at: datetime
+
+
+class IssueLinkCreateIn(BaseModel):
+    url: str
+    title: str | None = None
+    type: str | None = None
+    status: str | None = None
 
 
 class IssueOut(BaseModel):
@@ -90,6 +139,7 @@ class IssueOut(BaseModel):
     cycle_number: int | None = None
     is_triage: bool = False
     triage_source: str | None = None
+    archived_at: datetime | None = None
     child_count: int = 0
     child_done_count: int = 0
 
@@ -98,6 +148,11 @@ class IssueDetailOut(IssueOut):
     sub_issues: list[IssueOut] = []
     relations: list[IssueRelationOut] = []
     comments: list[CommentOut] = []
+    links: list[IssueLinkOut] = []
+
+
+class IssueMoveIn(BaseModel):
+    team_key: str
 
 
 # --- Project schemas ----------------------------------------------------
@@ -380,6 +435,7 @@ class TeamPatchIn(BaseModel):
     name: str | None = None
     icon_color: str | None = None
     cycles_enabled: bool | None = None
+    estimate_scale: str | None = None
 
 
 class TeamCreateIn(BaseModel):
@@ -387,6 +443,11 @@ class TeamCreateIn(BaseModel):
     name: str
     icon_color: str = "#22c55e"
     cycles_enabled: bool = False
+    estimate_scale: str = "fibonacci"
+
+
+class MemberRolePatchIn(BaseModel):
+    role: str
 
 
 class IssuePatchIn(BaseModel):
@@ -401,16 +462,19 @@ class IssuePatchIn(BaseModel):
     label_ids: list[str] | None = None
     estimate: int | None = None
     due_date: datetime | None = None
+    parent_identifier: str | None = None
     clear_due_date: bool = False
     clear_estimate: bool = False
     clear_project: bool = False
     clear_milestone: bool = False
     clear_cycle: bool = False
+    clear_parent: bool = False
 
 
 class CommentCreateIn(BaseModel):
     body: str
     author_id: str | None = None
+    parent_id: str | None = None
 
 
 # --- Saved views --------------------------------------------------------

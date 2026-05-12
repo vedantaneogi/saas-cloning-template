@@ -23,7 +23,14 @@ import {
 
 const PRIORITY_LABELS = ["No priority", "Urgent", "High", "Medium", "Low"] as const;
 const PRIORITIES = [0, 1, 2, 3, 4] as const;
-const ESTIMATES = [1, 2, 3, 5, 8] as const;
+
+const ESTIMATE_SCALES = {
+  fibonacci: [{ v: 1, l: "1" }, { v: 2, l: "2" }, { v: 3, l: "3" }, { v: 5, l: "5" }, { v: 8, l: "8" }],
+  linear: [{ v: 1, l: "1" }, { v: 2, l: "2" }, { v: 3, l: "3" }, { v: 4, l: "4" }, { v: 5, l: "5" }],
+  exponential: [{ v: 1, l: "1" }, { v: 2, l: "2" }, { v: 4, l: "4" }, { v: 8, l: "8" }, { v: 16, l: "16" }],
+  tshirt: [{ v: 1, l: "XS" }, { v: 2, l: "S" }, { v: 3, l: "M" }, { v: 5, l: "L" }, { v: 8, l: "XL" }],
+  none: [] as { v: number; l: string }[],
+} as const;
 
 export function IssueProperties({ workspaceSlug, issue }: { workspaceSlug: string; issue: IssueDetail }) {
   const router = useRouter();
@@ -203,46 +210,54 @@ export function IssueProperties({ workspaceSlug, issue }: { workspaceSlug: strin
           </Popover>
         </Row>
 
-        <Row label="Estimate">
-          <Popover
-            trigger={({ toggle }) => (
-              <button onClick={toggle} className="flex items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-row-hover">
-                <BarChart3 size={12} className="text-text-tertiary" />
-                <span>{estimate ?? <span className="text-text-tertiary">No estimate</span>}</span>
-              </button>
-            )}
-            width={160}
-          >
-            {({ close }) => (
-              <PopoverList>
-                <PopoverItem
-                  active={estimate === null}
-                  onClick={async () => {
-                    setEstimate(null);
-                    close();
-                    await update({ clear_estimate: true });
-                  }}
-                >
-                  <span className="text-text-tertiary">No estimate</span>
-                </PopoverItem>
-                {ESTIMATES.map((e) => (
-                  <PopoverItem
-                    key={e}
-                    active={estimate === e}
-                    onClick={async () => {
-                      setEstimate(e);
-                      close();
-                      await update({ estimate: e });
-                    }}
-                  >
+        {(() => {
+          const scaleKey = (issue.team.estimate_scale ?? "fibonacci") as keyof typeof ESTIMATE_SCALES;
+          const scale = ESTIMATE_SCALES[scaleKey] ?? ESTIMATE_SCALES.fibonacci;
+          if (scale.length === 0) return null;
+          const currentLabel = scale.find((e) => e.v === estimate)?.l;
+          return (
+            <Row label="Estimate">
+              <Popover
+                trigger={({ toggle }) => (
+                  <button onClick={toggle} className="flex items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-row-hover">
                     <BarChart3 size={12} className="text-text-tertiary" />
-                    {e} {e === 1 ? "point" : "points"}
-                  </PopoverItem>
-                ))}
-              </PopoverList>
-            )}
-          </Popover>
-        </Row>
+                    <span>{currentLabel ?? <span className="text-text-tertiary">No estimate</span>}</span>
+                  </button>
+                )}
+                width={160}
+              >
+                {({ close }) => (
+                  <PopoverList>
+                    <PopoverItem
+                      active={estimate === null}
+                      onClick={async () => {
+                        setEstimate(null);
+                        close();
+                        await update({ clear_estimate: true });
+                      }}
+                    >
+                      <span className="text-text-tertiary">No estimate</span>
+                    </PopoverItem>
+                    {scale.map((e) => (
+                      <PopoverItem
+                        key={e.v}
+                        active={estimate === e.v}
+                        onClick={async () => {
+                          setEstimate(e.v);
+                          close();
+                          await update({ estimate: e.v });
+                        }}
+                      >
+                        <BarChart3 size={12} className="text-text-tertiary" />
+                        {e.l}
+                      </PopoverItem>
+                    ))}
+                  </PopoverList>
+                )}
+              </Popover>
+            </Row>
+          );
+        })()}
 
         <Row label="Due date">
           <DueDatePicker

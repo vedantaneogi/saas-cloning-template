@@ -97,6 +97,34 @@ class CustomerRequestStatus(str, enum.Enum):
     canceled = "canceled"
 
 
+class MemberRole(str, enum.Enum):
+    admin = "admin"
+    member = "member"
+    guest = "guest"
+
+
+class EstimateScale(str, enum.Enum):
+    none = "none"
+    linear = "linear"        # 1..5
+    fibonacci = "fibonacci"  # 1,2,3,5,8
+    exponential = "exponential"  # 1,2,4,8,16
+    tshirt = "tshirt"        # XS..XL → 1,2,3,5,8
+
+
+class IssueLinkType(str, enum.Enum):
+    github_pr = "github_pr"
+    github_branch = "github_branch"
+    figma = "figma"
+    url = "url"
+
+
+class IssueLinkStatus(str, enum.Enum):
+    open = "open"
+    merged = "merged"
+    closed = "closed"
+    draft = "draft"
+
+
 class Workspace(Base):
     __tablename__ = "workspaces"
 
@@ -120,8 +148,14 @@ class Member(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     initials: Mapped[str] = mapped_column(String(4), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#5e6ad2")
+    role: Mapped[MemberRole] = mapped_column(
+        Enum(MemberRole, name="member_role"), default=MemberRole.member, nullable=False
+    )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="members")
+    team_memberships: Mapped[list["TeamMembership"]] = relationship(
+        back_populates="member", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (UniqueConstraint("workspace_id", "email", name="uq_members_workspace_id_email"),)
 
@@ -136,14 +170,38 @@ class Team(Base):
     icon_color: Mapped[str] = mapped_column(String(16), default="#22c55e")
     cycles_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     next_issue_number: Mapped[int] = mapped_column(Integer, default=1)
+    estimate_scale: Mapped[EstimateScale] = mapped_column(
+        Enum(EstimateScale, name="estimate_scale"), default=EstimateScale.fibonacci, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     workspace: Mapped["Workspace"] = relationship(back_populates="teams")
     states: Mapped[list["WorkflowState"]] = relationship(back_populates="team", cascade="all, delete-orphan")
     labels: Mapped[list["Label"]] = relationship(back_populates="team", cascade="all, delete-orphan")
     issues: Mapped[list["Issue"]] = relationship(back_populates="team", cascade="all, delete-orphan")
+    memberships: Mapped[list["TeamMembership"]] = relationship(
+        back_populates="team", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (UniqueConstraint("workspace_id", "key", name="uq_teams_workspace_id_key"),)
+
+
+class TeamMembership(Base):
+    """Join row binding a Member to a Team (with a per-team role override).
+    A workspace-level role lives on Member.role; per-team role is optional."""
+
+    __tablename__ = "team_memberships"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("members.id", ondelete="CASCADE"), nullable=False, index=True)
+    role: Mapped[MemberRole | None] = mapped_column(Enum(MemberRole, name="team_member_role"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    team: Mapped["Team"] = relationship(back_populates="memberships")
+    member: Mapped["Member"] = relationship(back_populates="team_memberships")
+
+    __table_args__ = (UniqueConstraint("team_id", "member_id", name="uq_team_memberships_team_member"),)
 
 
 class WorkflowState(Base):
@@ -203,6 +261,7 @@ class Issue(Base):
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_triage: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     triage_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -221,6 +280,29 @@ class Issue(Base):
     outgoing_relations: Mapped[list["IssueRelation"]] = relationship(
         back_populates="source", foreign_keys="IssueRelation.source_id", cascade="all, delete-orphan"
     )
+    links: Mapped[list["IssueLink"]] = relationship(
+        back_populates="issue", cascade="all, delete-orphan", order_by="IssueLink.created_at"
+    )
+
+
+class IssueLink(Base):
+    """External link attached to an issue — GitHub PR, branch, Figma, or generic URL."""
+
+    __tablename__ = "issue_links"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    issue_id: Mapped[str] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    type: Mapped[IssueLinkType] = mapped_column(
+        Enum(IssueLinkType, name="issue_link_type"), default=IssueLinkType.url, nullable=False
+    )
+    status: Mapped[IssueLinkStatus | None] = mapped_column(
+        Enum(IssueLinkStatus, name="issue_link_status"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    issue: Mapped["Issue"] = relationship(back_populates="links")
 
 
 class Cycle(Base):
@@ -390,11 +472,40 @@ class Comment(Base):
     id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
     issue_id: Mapped[str] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
     author_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     issue: Mapped["Issue"] = relationship(back_populates="comments")
     author: Mapped["Member | None"] = relationship()
+    parent: Mapped["Comment | None"] = relationship(remote_side="Comment.id", back_populates="replies")
+    replies: Mapped[list["Comment"]] = relationship(
+        back_populates="parent", cascade="all, delete-orphan", order_by="Comment.created_at"
+    )
+    reactions: Mapped[list["CommentReaction"]] = relationship(
+        back_populates="comment", cascade="all, delete-orphan", order_by="CommentReaction.created_at"
+    )
+
+
+class CommentReaction(Base):
+    """One row per (comment, member, emoji). Toggling re-adds or removes."""
+
+    __tablename__ = "comment_reactions"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    comment_id: Mapped[str] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"), nullable=False, index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("members.id", ondelete="CASCADE"), nullable=False, index=True)
+    emoji: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    comment: Mapped["Comment"] = relationship(back_populates="reactions")
+    member: Mapped["Member"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("comment_id", "member_id", "emoji", name="uq_comment_reactions_unique"),
+    )
 
 
 class Notification(Base):

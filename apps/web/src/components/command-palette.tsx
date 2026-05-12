@@ -103,8 +103,25 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
     [query, workspaceSlug]
   );
 
+  // Recent items: refreshed each time palette opens.
+  const [recents, setRecents] = useState<RecentEntry[]>([]);
+  useEffect(() => {
+    if (open && !query.trim()) {
+      setRecents(loadRecents(workspaceSlug));
+    }
+  }, [open, query, workspaceSlug]);
+
   const groups = useMemo<{ title: string; items: AnyItem[] }[]>(() => {
     const out: { title: string; items: AnyItem[] }[] = [];
+    if (!query.trim() && recents.length > 0) {
+      out.push({
+        title: "Recent",
+        items: recents.map((r) => ({
+          kind: "action",
+          data: { id: `recent:${r.href}`, label: r.label, href: r.href, icon: <span className="text-text-tertiary">{r.icon ?? "↻"}</span> },
+        })),
+      });
+    }
     if (actions.length) out.push({ title: "Navigate", items: actions });
     if (results) {
       if (results.issues.length) out.push({ title: "Issues", items: results.issues.map((d) => ({ kind: "issue", data: d })) });
@@ -116,7 +133,7 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
       if (results.members.length) out.push({ title: "Members", items: results.members.map((d) => ({ kind: "member", data: d })) });
     }
     return out;
-  }, [results, actions]);
+  }, [results, actions, recents, query]);
 
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 
@@ -124,6 +141,10 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
     (item: AnyItem) => {
       const href = hrefFor(item, workspaceSlug);
       if (href) {
+        const label = labelFor(item);
+        if (label && !href.startsWith("/" + workspaceSlug + "/inbox") && item.kind !== "action") {
+          pushRecent(workspaceSlug, { href, label, icon: iconCharFor(item) });
+        }
         setOpen(false);
         router.push(href);
       }
@@ -321,4 +342,77 @@ function hrefFor(item: AnyItem, workspaceSlug: string): string | null {
 function idKey(item: AnyItem): string {
   if (item.kind === "action") return item.data.id;
   return (item.data as { id: string }).id;
+}
+
+// --- Recents: small localStorage MRU per workspace ----------------------
+
+type RecentEntry = { href: string; label: string; icon?: string };
+
+function recentsKey(workspaceSlug: string) {
+  return `linear-clone:recents:${workspaceSlug}`;
+}
+
+export function loadRecents(workspaceSlug: string): RecentEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(recentsKey(workspaceSlug));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as RecentEntry[];
+    return parsed.slice(0, 6);
+  } catch {
+    return [];
+  }
+}
+
+export function pushRecent(workspaceSlug: string, entry: RecentEntry) {
+  if (typeof window === "undefined") return;
+  try {
+    const cur = loadRecents(workspaceSlug);
+    const next = [entry, ...cur.filter((r) => r.href !== entry.href)].slice(0, 6);
+    window.localStorage.setItem(recentsKey(workspaceSlug), JSON.stringify(next));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function labelFor(item: AnyItem): string | null {
+  switch (item.kind) {
+    case "issue":
+      return `${item.data.identifier} ${item.data.title}`;
+    case "project":
+      return `Project · ${item.data.name}`;
+    case "team":
+      return `${item.data.name} (${item.data.key})`;
+    case "view":
+      return `View · ${item.data.name}`;
+    case "initiative":
+      return `Initiative · ${item.data.name}`;
+    case "document":
+      return `${item.data.icon} ${item.data.title}`;
+    case "member":
+      return `${item.data.name}`;
+    case "action":
+      return item.data.label;
+  }
+}
+
+function iconCharFor(item: AnyItem): string {
+  switch (item.kind) {
+    case "issue":
+      return "#";
+    case "project":
+      return "▢";
+    case "team":
+      return "•";
+    case "view":
+      return "⌘";
+    case "initiative":
+      return "⌖";
+    case "document":
+      return item.data.icon || "📄";
+    case "member":
+      return "@";
+    default:
+      return "↻";
+  }
 }

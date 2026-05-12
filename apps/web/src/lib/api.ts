@@ -10,11 +10,15 @@ const API_BASE = isBrowser ? "" : (process.env.API_URL || process.env.NEXT_PUBLI
 
 export type StateGroup = "backlog" | "unstarted" | "started" | "completed" | "canceled";
 
+export type MemberRole = "admin" | "member" | "guest";
+
 export interface Member {
   id: string;
   name: string;
   initials: string;
   color: string;
+  role?: MemberRole;
+  email?: string | null;
 }
 
 export interface WorkflowState {
@@ -31,12 +35,15 @@ export interface Label {
   color: string;
 }
 
+export type EstimateScale = "none" | "linear" | "fibonacci" | "exponential" | "tshirt";
+
 export interface Team {
   id: string;
   key: string;
   name: string;
   icon_color: string;
   cycles_enabled: boolean;
+  estimate_scale?: EstimateScale;
 }
 
 export interface Workspace {
@@ -55,10 +62,39 @@ export interface IssueRelation {
   target_priority: 0 | 1 | 2 | 3 | 4;
 }
 
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  member_ids: string[];
+  member_names: string[];
+  reacted: boolean;
+}
+
+export interface CommentMention {
+  member_id: string;
+  name: string;
+}
+
 export interface Comment {
   id: string;
   body: string;
   author: Member | null;
+  created_at: string;
+  parent_id?: string | null;
+  reactions?: ReactionGroup[];
+  mentions?: CommentMention[];
+  replies?: Comment[];
+}
+
+export type IssueLinkType = "github_pr" | "github_branch" | "figma" | "url";
+export type IssueLinkStatus = "open" | "merged" | "closed" | "draft";
+
+export interface IssueLink {
+  id: string;
+  url: string;
+  title: string;
+  type: IssueLinkType;
+  status: IssueLinkStatus | null;
   created_at: string;
 }
 
@@ -83,6 +119,7 @@ export interface Issue {
   cycle_number: number | null;
   is_triage: boolean;
   triage_source: string | null;
+  archived_at: string | null;
   child_count: number;
   child_done_count: number;
 }
@@ -91,6 +128,7 @@ export interface IssueDetail extends Issue {
   sub_issues: Issue[];
   relations: IssueRelation[];
   comments: Comment[];
+  links: IssueLink[];
 }
 
 export type ProjectState = "planned" | "started" | "paused" | "completed" | "canceled";
@@ -261,7 +299,7 @@ export async function deleteWorkflowState(slug: string, teamKey: string, stateId
   if (!res.ok && res.status !== 204) throw new Error(`API ${res.status} ${url}`);
 }
 
-export function patchTeam(slug: string, teamKey: string, body: Partial<{ name: string; icon_color: string; cycles_enabled: boolean }>): Promise<Team> {
+export function patchTeam(slug: string, teamKey: string, body: Partial<{ name: string; icon_color: string; cycles_enabled: boolean; estimate_scale: EstimateScale }>): Promise<Team> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -293,11 +331,13 @@ export interface IssuePatchInput {
   label_ids?: string[];
   estimate?: number;
   due_date?: string;
+  parent_identifier?: string | null;
   clear_due_date?: boolean;
   clear_estimate?: boolean;
   clear_project?: boolean;
   clear_milestone?: boolean;
   clear_cycle?: boolean;
+  clear_parent?: boolean;
 }
 
 export function createIssue(slug: string, teamKey: string, body: IssueCreateInput): Promise<Issue> {
@@ -316,11 +356,63 @@ export function patchIssue(slug: string, identifier: string, body: IssuePatchInp
   });
 }
 
-export function postComment(slug: string, identifier: string, body: string): Promise<Comment> {
+export function postComment(slug: string, identifier: string, body: string, parentId?: string | null): Promise<Comment> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify({ body, parent_id: parentId ?? null }),
+  });
+}
+
+export function toggleReaction(slug: string, commentId: string, emoji: string, memberId?: string): Promise<ReactionGroup[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/comments/${encodeURIComponent(commentId)}/reactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ emoji, member_id: memberId ?? null }),
+  });
+}
+
+export function createIssueLink(slug: string, identifier: string, body: { url: string; title?: string; type?: IssueLinkType; status?: IssueLinkStatus }): Promise<IssueLink> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/links`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteIssueLink(slug: string, identifier: string, linkId: string): Promise<void> {
+  const url = `${API_BASE.replace(/\/$/, "")}/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/links/${encodeURIComponent(linkId)}`;
+  const res = await fetch(url, { method: "DELETE", cache: "no-store" });
+  if (!res.ok && res.status !== 204) throw new Error(`API ${res.status} ${url}`);
+}
+
+export function archiveIssue(slug: string, identifier: string): Promise<Issue> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/archive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function unarchiveIssue(slug: string, identifier: string): Promise<Issue> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/unarchive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function moveIssue(slug: string, identifier: string, teamKey: string): Promise<Issue> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/move`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ team_key: teamKey }),
+  });
+}
+
+export function patchMemberRole(slug: string, memberId: string, role: MemberRole): Promise<Member> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/members/${encodeURIComponent(memberId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
   });
 }
 

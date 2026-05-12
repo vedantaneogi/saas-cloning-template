@@ -17,7 +17,7 @@ export function IssueListBody({
 }) {
   return (
     <SelectionProvider>
-      <ListInner groups={groups} workspaceSlug={workspaceSlug} />
+      <ListInner groups={groups} workspaceSlug={workspaceSlug} teamKey={teamKey} />
       <BulkActionBar workspaceSlug={workspaceSlug} teamKey={teamKey} />
     </SelectionProvider>
   );
@@ -26,9 +26,11 @@ export function IssueListBody({
 function ListInner({
   groups,
   workspaceSlug,
+  teamKey,
 }: {
   groups: { name: string; group: StateGroup; issues: Issue[] }[];
   workspaceSlug: string;
+  teamKey: string;
 }) {
   const sel = useSelection();
   const flat = groups.flatMap((g) => g.issues.map((i) => i.identifier));
@@ -47,16 +49,22 @@ function ListInner({
   }
   return (
     <>
-      {groups.map((g) => (
-        <IssueGroup
-          key={g.name}
-          title={g.name}
-          group={g.group}
-          count={g.issues.length}
-          issues={g.issues}
-          workspaceSlug={workspaceSlug}
-        />
-      ))}
+      {groups.map((g) => {
+        const stateId = g.issues[0]?.state.id;
+        return (
+          <IssueGroup
+            key={g.name}
+            title={g.name}
+            group={g.group}
+            count={g.issues.length}
+            issues={g.issues}
+            workspaceSlug={workspaceSlug}
+            teamKey={teamKey}
+            stateId={stateId}
+            stateName={g.issues[0]?.state.name}
+          />
+        );
+      })}
     </>
   );
 }

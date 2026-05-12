@@ -1,19 +1,25 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, Paperclip, Link2, GitBranch, MoreHorizontal, Users } from "lucide-react";
+import { ChevronDown, Paperclip, Link2, GitBranch, MoreHorizontal, Users, Archive } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Avatar, PriorityIcon, StatusIcon, SubIssueProgress } from "@/components/icons";
 import { IssueProperties } from "@/components/issue-properties";
 import { IssueTitle, IssueDescription } from "@/components/issue-title";
 import { IssueActions } from "@/components/issue-actions";
-import { CommentComposer } from "@/components/comment-composer";
+import { CommentThread } from "@/components/comment-thread";
+import { IssueLinksPanel } from "@/components/issue-links-panel";
 import {
   getIssue,
+  getWorkspace,
   listIssueCustomerRequests,
+  listMembers,
   NotFoundError,
   type CustomerRequest,
   type IssueDetail,
+  type Member,
+  type Team,
 } from "@/lib/api";
+import { IssueActionsWithConvert } from "@/components/issue-actions-with-convert";
 
 export default async function IssueDetailPage({ params }: { params: Promise<{ workspace: string; identifier: string }> }) {
   const { workspace, identifier } = await params;
@@ -24,21 +30,42 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ wo
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
-  const customerRequests = await listIssueCustomerRequests(workspace, identifier).catch(() => [] as CustomerRequest[]);
-  return <IssueView workspace={workspace} issue={issue} customerRequests={customerRequests} />;
+  const [customerRequests, members, ws] = await Promise.all([
+    listIssueCustomerRequests(workspace, identifier).catch(() => [] as CustomerRequest[]),
+    listMembers(workspace).catch(() => [] as Member[]),
+    getWorkspace(workspace).catch(() => null),
+  ]);
+  const teams: Team[] = ws?.teams ?? [];
+  return <IssueView workspace={workspace} issue={issue} customerRequests={customerRequests} members={members} teams={teams} />;
 }
 
-function IssueView({ workspace, issue, customerRequests }: { workspace: string; issue: IssueDetail; customerRequests: CustomerRequest[] }) {
+function IssueView({ workspace, issue, customerRequests, members, teams }: { workspace: string; issue: IssueDetail; customerRequests: CustomerRequest[]; members: Member[]; teams: Team[] }) {
   return (
     <>
       <Topbar
         title={issue.identifier + " " + truncate(issue.title, 80)}
         icon={<StatusIcon group={issue.state.group} />}
-        trailing={<IssueActions workspaceSlug={workspace} identifier={issue.identifier} />}
+        trailing={
+          <IssueActionsWithConvert
+            workspaceSlug={workspace}
+            identifier={issue.identifier}
+            isArchived={!!issue.archived_at}
+            currentTeamKey={issue.team.key}
+            teams={teams}
+            parentIdentifier={issue.parent_identifier}
+          />
+        }
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-y-auto px-12 py-10">
           <div className="mx-auto max-w-[760px]">
+            {issue.archived_at && (
+              <div className="mb-3 flex items-center gap-2 rounded-md border border-border-strong bg-pill px-3 py-2 text-mini text-text-tertiary">
+                <Archive size={12} />
+                <span>This issue is archived.</span>
+              </div>
+            )}
+
             <IssueTitle workspaceSlug={workspace} identifier={issue.identifier} initial={issue.title} />
 
             <IssueDescription
@@ -47,10 +74,7 @@ function IssueView({ workspace, issue, customerRequests }: { workspace: string; 
               initial={issue.description}
             />
 
-            <div className="mt-6 flex items-center gap-3 text-mini text-text-tertiary">
-              <Paperclip size={14} />
-              <Link2 size={14} />
-            </div>
+            <IssueLinksPanel workspaceSlug={workspace} identifier={issue.identifier} links={issue.links} />
 
             {customerRequests.length > 0 && (
               <section className="mt-8 rounded-md border border-border-subtle">
@@ -142,24 +166,12 @@ function IssueView({ workspace, issue, customerRequests }: { workspace: string; 
                 ))}
               </ul>
 
-              {issue.comments.map((c) => (
-                <div key={c.id} className="mt-5 flex gap-3">
-                  <Avatar
-                    initials={c.author?.initials ?? "?"}
-                    color={c.author?.color ?? "#5e6ad2"}
-                    size={24}
-                  />
-                  <div className="flex-1 rounded-md border border-border-subtle bg-elevated p-3">
-                    <header className="flex items-center gap-2 text-mini text-text-tertiary">
-                      <span className="text-small font-medium text-text-primary">{c.author?.name ?? "Unknown"}</span>
-                      <span>11min ago</span>
-                    </header>
-                    <p className="mt-1 text-small text-text-secondary">{c.body}</p>
-                  </div>
-                </div>
-              ))}
-
-              <CommentComposer workspaceSlug={workspace} identifier={issue.identifier} />
+              <CommentThread
+                workspaceSlug={workspace}
+                identifier={issue.identifier}
+                comments={issue.comments}
+                members={members}
+              />
             </section>
           </div>
         </div>

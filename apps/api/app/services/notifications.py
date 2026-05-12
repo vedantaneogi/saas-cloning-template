@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     Comment,
+    CommentReaction,
     Issue,
     Member,
     Notification,
@@ -64,6 +65,39 @@ def issue_status_changed(db: Session, *, issue: Issue, previous_state_name: str 
         kind=NotificationKind.status_changed,
         issue_id=issue.id,
         body=f"changed status of {issue.identifier} from {previous_state_name or '—'} to {new_state_name or '—'}",
+    )
+
+
+def comment_mentioned(db: Session, *, issue: Issue, comment: Comment, mentioned_id: str, actor_id: str | None) -> None:
+    """Recipient was @-mentioned in `comment`. Skip if recipient is actor."""
+    if not mentioned_id:
+        return
+    snippet = (comment.body or "")[:140]
+    _add(
+        db,
+        workspace_id=_workspace_id_for_issue(issue),
+        recipient_id=mentioned_id,
+        actor_id=actor_id,
+        kind=NotificationKind.mentioned,
+        issue_id=issue.id,
+        comment_id=comment.id,
+        body=f"mentioned you in {issue.identifier}: {snippet}",
+    )
+
+
+def comment_reacted(db: Session, *, issue: Issue, comment: Comment, emoji: str, actor_id: str | None) -> None:
+    """Comment author was reacted to. Skip self-reactions."""
+    if not comment.author_id:
+        return
+    _add(
+        db,
+        workspace_id=_workspace_id_for_issue(issue),
+        recipient_id=comment.author_id,
+        actor_id=actor_id,
+        kind=NotificationKind.commented,
+        issue_id=issue.id,
+        comment_id=comment.id,
+        body=f"reacted {emoji} to your comment on {issue.identifier}",
     )
 
 
