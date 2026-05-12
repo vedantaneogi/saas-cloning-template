@@ -149,10 +149,40 @@ class IssueDetailOut(IssueOut):
     relations: list[IssueRelationOut] = []
     comments: list[CommentOut] = []
     links: list[IssueLinkOut] = []
+    subscribers: list[MemberOut] = []
+    subscribed: bool = False
 
 
 class IssueMoveIn(BaseModel):
     team_key: str
+
+
+class IssueRelationCreateIn(BaseModel):
+    type: str  # blocks | blocked_by | related | duplicate
+    target_identifier: str
+
+
+class IssueSubscribeIn(BaseModel):
+    member_id: str | None = None
+
+
+class ProjectResourceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    url: str
+    title: str
+    icon: str
+    created_at: datetime
+
+
+class ProjectResourceCreateIn(BaseModel):
+    url: str
+    title: str | None = None
+    icon: str | None = None
+
+
+class CycleCompleteIn(BaseModel):
+    rollover_to: str | None = None  # next cycle id; defaults to next upcoming cycle on same team
 
 
 # --- Project schemas ----------------------------------------------------
@@ -197,6 +227,8 @@ class ProjectDetailOut(ProjectOut):
     milestones: list[ProjectMilestoneOut] = []
     updates: list[ProjectUpdateOut] = []
     members: list[MemberOut] = []
+    resources: list["ProjectResourceOut"] = []
+    teams: list[TeamOut] = []
 
 
 class ProjectCreateIn(BaseModel):
@@ -219,6 +251,7 @@ class ProjectPatchIn(BaseModel):
     initiative_id: str | None = None
     target_date: datetime | None = None
     start_date: datetime | None = None
+    team_ids: list[str] | None = None
     clear_target_date: bool = False
     clear_lead: bool = False
     clear_initiative: bool = False

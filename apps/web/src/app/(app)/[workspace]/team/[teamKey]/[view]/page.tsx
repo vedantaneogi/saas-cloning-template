@@ -6,6 +6,7 @@ import { BoardView } from "@/components/board-view";
 import { DisplayOptions } from "@/components/display-options";
 import { FilterBar, FilterTrigger } from "@/components/filter-bar";
 import { SaveViewButton } from "@/components/save-view-button";
+import { TeamCsvActions } from "@/components/team-csv-actions";
 import { listTeamIssues, NotFoundError, type Issue, type StateGroup } from "@/lib/api";
 
 const VIEWS = {
@@ -68,6 +69,7 @@ export default async function TeamIssuesPage({
           <>
             <SaveViewButton workspaceSlug={workspace} teamKey={teamKey} base={view as "active" | "backlog" | "all"} />
             <FilterTrigger workspaceSlug={workspace} teamKey={teamKey} />
+            <TeamCsvActions workspaceSlug={workspace} teamKey={teamKey} />
           </>
         }
         filters={<DisplayOptions />}
@@ -75,7 +77,7 @@ export default async function TeamIssuesPage({
       <FilterBar workspaceSlug={workspace} teamKey={teamKey} />
       {display === "board" ? (
         <div className="flex-1 overflow-hidden">
-          <BoardView groups={groups} workspaceSlug={workspace} />
+          <BoardView groups={groups} workspaceSlug={workspace} teamKey={teamKey} />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">

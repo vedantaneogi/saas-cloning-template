@@ -55,6 +55,7 @@ export interface Workspace {
 }
 
 export interface IssueRelation {
+  id?: string;
   type: string;
   target_identifier: string;
   target_title: string;
@@ -129,7 +130,11 @@ export interface IssueDetail extends Issue {
   relations: IssueRelation[];
   comments: Comment[];
   links: IssueLink[];
+  subscribers?: Member[];
+  subscribed?: boolean;
 }
+
+export type RelationKind = "blocks" | "blocked_by" | "related" | "duplicate";
 
 export type ProjectState = "planned" | "started" | "paused" | "completed" | "canceled";
 export type UpdateHealth = "onTrack" | "atRisk" | "offTrack";
@@ -171,6 +176,8 @@ export interface ProjectDetail extends Project {
   milestones: ProjectMilestone[];
   updates: ProjectUpdate[];
   members: Member[];
+  resources?: ProjectResource[];
+  teams?: Team[];
 }
 
 export type InitiativeStatus = "planned" | "active" | "completed" | "canceled";
@@ -201,6 +208,9 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.json();
 }
+
+// Same as fetchJson but exported for client components that need an ad-hoc call.
+export const fetchJsonForClient = fetchJson;
 
 export class NotFoundError extends Error {
   constructor(url: string) {
@@ -414,6 +424,82 @@ export function patchMemberRole(slug: string, memberId: string, role: MemberRole
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ role }),
   });
+}
+
+export function subscribeIssue(slug: string, identifier: string, memberId?: string): Promise<Member[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/subscribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ member_id: memberId ?? null }),
+  });
+}
+
+export function unsubscribeIssue(slug: string, identifier: string, memberId?: string): Promise<Member[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/unsubscribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ member_id: memberId ?? null }),
+  });
+}
+
+export function createIssueRelation(
+  slug: string,
+  identifier: string,
+  body: { type: RelationKind; target_identifier: string }
+): Promise<IssueRelation> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/relations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteIssueRelation(slug: string, identifier: string, relationId: string): Promise<void> {
+  const url = `${API_BASE.replace(/\/$/, "")}/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}/relations/${encodeURIComponent(relationId)}`;
+  const res = await fetch(url, { method: "DELETE", cache: "no-store" });
+  if (!res.ok && res.status !== 204) throw new Error(`API ${res.status} ${url}`);
+}
+
+export interface ProjectResource {
+  id: string;
+  url: string;
+  title: string;
+  icon: string;
+  created_at: string;
+}
+
+export function createProjectResource(slug: string, projectSlug: string, body: { url: string; title?: string; icon?: string }): Promise<ProjectResource> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects/${encodeURIComponent(projectSlug)}/resources`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteProjectResource(slug: string, projectSlug: string, resourceId: string): Promise<void> {
+  const url = `${API_BASE.replace(/\/$/, "")}/api/workspaces/${encodeURIComponent(slug)}/projects/${encodeURIComponent(projectSlug)}/resources/${encodeURIComponent(resourceId)}`;
+  const res = await fetch(url, { method: "DELETE", cache: "no-store" });
+  if (!res.ok && res.status !== 204) throw new Error(`API ${res.status} ${url}`);
+}
+
+export function completeCycle(slug: string, cycleId: string, rolloverTo?: string | null): Promise<Cycle> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/cycles/${encodeURIComponent(cycleId)}/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rollover_to: rolloverTo ?? null }),
+  });
+}
+
+export async function importTeamCsv(slug: string, teamKey: string, csv: string): Promise<{ created: number; identifiers: string[] }> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}/issues/import-csv`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ csv }),
+  });
+}
+
+export function teamCsvExportUrl(slug: string, teamKey: string): string {
+  return `/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}/issues.csv`;
 }
 
 export async function deleteIssue(slug: string, identifier: string): Promise<void> {

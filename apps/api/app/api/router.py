@@ -33,8 +33,10 @@ from app.db.models import (
     NotificationKind,
     Project,
     ProjectMilestone,
+    ProjectResource,
     ProjectState,
     ProjectUpdate as ProjectUpdateModel,
+    RelationType,
     SavedView,
     StateGroup,
     Team,
@@ -54,6 +56,7 @@ from app.schemas import (
     CustomerRequestLinkIn,
     CustomerRequestOut,
     CustomerRequestPatchIn,
+    CycleCompleteIn,
     CycleCreateIn,
     CycleOut,
     CyclePatchIn,
@@ -63,9 +66,13 @@ from app.schemas import (
     IssueLinkCreateIn,
     IssueLinkOut,
     IssueMoveIn,
+    IssueRelationCreateIn,
+    IssueSubscribeIn,
     LabelCreateIn,
     LabelPatchIn,
     MemberRolePatchIn,
+    ProjectResourceCreateIn,
+    ProjectResourceOut,
     TeamCreateIn,
     TeamPatchIn,
     WorkflowStateCreateIn,
@@ -393,7 +400,14 @@ def get_project(
         db.query(Project)
         .filter(Project.workspace_id == ws.id)
         .filter((Project.slug_id == slug_id) | (Project.slug_id.like(f"%-{suffix}")))
-        .options(selectinload(Project.lead), selectinload(Project.initiative), selectinload(Project.milestones), selectinload(Project.updates).selectinload(ProjectUpdateModel.author))
+        .options(
+            selectinload(Project.lead),
+            selectinload(Project.initiative),
+            selectinload(Project.milestones),
+            selectinload(Project.updates).selectinload(ProjectUpdateModel.author),
+            selectinload(Project.resources),
+            selectinload(Project.teams),
+        )
         .first()
     )
     if not p:
@@ -414,6 +428,8 @@ def get_project(
         for u in p.updates
     ]
     base["members"] = [MemberOut.model_validate(m).model_dump() for m in members]
+    base["resources"] = [ProjectResourceOut.model_validate(r).model_dump() for r in p.resources]
+    base["teams"] = [TeamOut.model_validate(t).model_dump() for t in p.teams]
     return base
 
 
@@ -522,6 +538,9 @@ def patch_project(
         if not ini:
             raise HTTPException(400, "initiative does not belong to workspace")
         p.initiative_id = ini.id
+    if body.team_ids is not None:
+        teams = db.query(Team).filter(Team.workspace_id == ws.id, Team.id.in_(body.team_ids)).all()
+        p.teams = teams
     db.commit()
     db.refresh(p)
     return _project_dict(p, db=db)
@@ -600,6 +619,7 @@ def get_issue(
             selectinload(Issue.comments).selectinload(Comment.author),
             selectinload(Issue.comments).selectinload(Comment.reactions).selectinload(CommentReaction.member),
             selectinload(Issue.links),
+            selectinload(Issue.subscribers),
         )
         .first()
     )
@@ -663,6 +683,8 @@ def get_issue(
         }
         for ln in issue.links
     ]
+    body["subscribers"] = [MemberOut.model_validate(m).model_dump() for m in issue.subscribers]
+    body["subscribed"] = bool(current_id and any(s.id == current_id for s in issue.subscribers))
     return body
 
 
@@ -1175,9 +1197,26 @@ def create_comment(
     db.add(comment)
     db.flush()
 
+    # Auto-subscribe the commenter so they get future replies.
+    if author_id:
+        author = db.query(Member).filter_by(id=author_id).first()
+        if author:
+            issue_sub = (
+                db.query(Issue)
+                .options(selectinload(Issue.subscribers))
+                .filter_by(id=issue.id)
+                .first()
+            )
+            if issue_sub is not None and author not in issue_sub.subscribers:
+                issue_sub.subscribers.append(author)
+
     issue_full = (
         db.query(Issue)
-        .options(selectinload(Issue.comments), selectinload(Issue.team))
+        .options(
+            selectinload(Issue.comments),
+            selectinload(Issue.team),
+            selectinload(Issue.subscribers),
+        )
         .filter(Issue.id == issue.id)
         .first()
     )
@@ -1456,6 +1495,336 @@ def patch_member_role(
     db.commit()
     db.refresh(member)
     return MemberOut.model_validate(member).model_dump()
+
+
+# --- Subscribe / unsubscribe -------------------------------------------
+
+def _resolve_current_member(db: Session, ws: Workspace, member_id: str | None) -> Member:
+    if member_id:
+        m = db.query(Member).filter_by(id=member_id, workspace_id=ws.id).first()
+        if not m:
+            raise HTTPException(404, "member not found")
+        return m
+    m = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
+    if not m:
+        raise HTTPException(400, "workspace has no members")
+    return m
+
+
+def _load_issue(db: Session, ws: Workspace, identifier: str, *, with_subs: bool = False) -> Issue:
+    q = (
+        db.query(Issue)
+        .join(Team, Issue.team_id == Team.id)
+        .filter(Team.workspace_id == ws.id, Issue.identifier == identifier)
+    )
+    if with_subs:
+        q = q.options(selectinload(Issue.subscribers))
+    issue = q.first()
+    if not issue:
+        raise HTTPException(404, f"issue not found: {identifier}")
+    return issue
+
+
+@router.post("/workspaces/{slug}/issues/{identifier}/subscribe", response_model=list[MemberOut])
+def subscribe_issue(
+    identifier: str,
+    body: IssueSubscribeIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    issue = _load_issue(db, ws, identifier, with_subs=True)
+    member = _resolve_current_member(db, ws, body.member_id)
+    if member not in issue.subscribers:
+        issue.subscribers.append(member)
+        db.commit()
+        db.refresh(issue)
+    return [MemberOut.model_validate(m).model_dump() for m in issue.subscribers]
+
+
+@router.post("/workspaces/{slug}/issues/{identifier}/unsubscribe", response_model=list[MemberOut])
+def unsubscribe_issue(
+    identifier: str,
+    body: IssueSubscribeIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    issue = _load_issue(db, ws, identifier, with_subs=True)
+    member = _resolve_current_member(db, ws, body.member_id)
+    issue.subscribers = [m for m in issue.subscribers if m.id != member.id]
+    db.commit()
+    db.refresh(issue)
+    return [MemberOut.model_validate(m).model_dump() for m in issue.subscribers]
+
+
+# --- Issue relations CRUD ----------------------------------------------
+
+@router.post("/workspaces/{slug}/issues/{identifier}/relations", response_model=IssueRelationOut)
+def create_relation(
+    identifier: str,
+    body: IssueRelationCreateIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    source = _load_issue(db, ws, identifier)
+    target = _load_issue(db, ws, body.target_identifier)
+    if source.id == target.id:
+        raise HTTPException(400, "cannot relate an issue to itself")
+    try:
+        rt = RelationType(body.type)
+    except ValueError:
+        raise HTTPException(400, f"unknown relation type: {body.type}")
+
+    existing = db.query(IssueRelation).filter_by(source_id=source.id, target_id=target.id, type=rt).first()
+    if existing:
+        rel = existing
+    else:
+        rel = IssueRelation(source_id=source.id, target_id=target.id, type=rt)
+        db.add(rel)
+        # Add the inverse for blocks/blocked_by so both sides surface it.
+        inverse = None
+        if rt == RelationType.blocks:
+            inverse = RelationType.blocked_by
+        elif rt == RelationType.blocked_by:
+            inverse = RelationType.blocks
+        elif rt == RelationType.related:
+            inverse = RelationType.related
+        if inverse and not db.query(IssueRelation).filter_by(source_id=target.id, target_id=source.id, type=inverse).first():
+            db.add(IssueRelation(source_id=target.id, target_id=source.id, type=inverse))
+        db.commit()
+        db.refresh(rel)
+
+    target_state = target.state
+    return {
+        "type": rt.value,
+        "target_identifier": target.identifier,
+        "target_title": target.title,
+        "target_state_group": target_state.group.value if hasattr(target_state.group, "value") else target_state.group,
+        "target_priority": target.priority,
+    }
+
+
+@router.delete("/workspaces/{slug}/issues/{identifier}/relations/{relation_id}", status_code=204)
+def delete_relation(
+    identifier: str,
+    relation_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> None:
+    source = _load_issue(db, ws, identifier)
+    rel = db.query(IssueRelation).filter_by(id=relation_id, source_id=source.id).first()
+    if not rel:
+        raise HTTPException(404, "relation not found")
+    # Best-effort symmetric cleanup
+    inverse = None
+    if rel.type == RelationType.blocks:
+        inverse = RelationType.blocked_by
+    elif rel.type == RelationType.blocked_by:
+        inverse = RelationType.blocks
+    elif rel.type == RelationType.related:
+        inverse = RelationType.related
+    if inverse:
+        twin = db.query(IssueRelation).filter_by(source_id=rel.target_id, target_id=source.id, type=inverse).first()
+        if twin:
+            db.delete(twin)
+    db.delete(rel)
+    db.commit()
+
+
+# --- Project resources -------------------------------------------------
+
+@router.post("/workspaces/{slug}/projects/{project_slug}/resources", response_model=ProjectResourceOut)
+def create_project_resource(
+    project_slug: str,
+    body: ProjectResourceCreateIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = db.query(Project).filter_by(workspace_id=ws.id, slug_id=project_slug).first()
+    if not project:
+        raise HTTPException(404, "project not found")
+    res = ProjectResource(
+        project_id=project.id,
+        url=body.url,
+        title=(body.title or "").strip() or body.url,
+        icon=(body.icon or "🔗")[:8],
+    )
+    db.add(res)
+    db.commit()
+    db.refresh(res)
+    return ProjectResourceOut.model_validate(res).model_dump()
+
+
+@router.delete("/workspaces/{slug}/projects/{project_slug}/resources/{resource_id}", status_code=204)
+def delete_project_resource(
+    project_slug: str,
+    resource_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> None:
+    project = db.query(Project).filter_by(workspace_id=ws.id, slug_id=project_slug).first()
+    if not project:
+        raise HTTPException(404, "project not found")
+    res = db.query(ProjectResource).filter_by(id=resource_id, project_id=project.id).first()
+    if not res:
+        raise HTTPException(404, "resource not found")
+    db.delete(res)
+    db.commit()
+
+
+# --- Cycle complete + rollover -----------------------------------------
+
+@router.post("/workspaces/{slug}/cycles/{cycle_id}/complete", response_model=CycleOut)
+def complete_cycle(
+    cycle_id: str,
+    body: CycleCompleteIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    cycle = (
+        db.query(Cycle)
+        .join(Team, Cycle.team_id == Team.id)
+        .filter(Team.workspace_id == ws.id, Cycle.id == cycle_id)
+        .first()
+    )
+    if not cycle:
+        raise HTTPException(404, "cycle not found")
+
+    target_id = body.rollover_to
+    if not target_id:
+        nxt = (
+            db.query(Cycle)
+            .filter(Cycle.team_id == cycle.team_id, Cycle.number > cycle.number)
+            .order_by(Cycle.number)
+            .first()
+        )
+        target_id = nxt.id if nxt else None
+
+    if target_id:
+        rolled = (
+            db.query(Issue)
+            .join(WorkflowState, Issue.state_id == WorkflowState.id)
+            .filter(
+                Issue.cycle_id == cycle.id,
+                WorkflowState.group.notin_((StateGroup.completed, StateGroup.canceled)),
+            )
+            .all()
+        )
+        for i in rolled:
+            i.cycle_id = target_id
+
+    cycle.completed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(cycle)
+
+    return _cycle_dict(cycle, db)
+
+
+# --- CSV import / export -----------------------------------------------
+
+@router.get("/workspaces/{slug}/teams/{team_key}/issues.csv")
+def export_team_csv(
+    team_key: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+):
+    import csv
+    import io
+    from fastapi.responses import Response
+
+    team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
+    if not team:
+        raise HTTPException(404, f"team not found: {team_key}")
+
+    issues = (
+        db.query(Issue)
+        .filter(Issue.team_id == team.id)
+        .options(*_issue_query(db))
+        .order_by(Issue.created_at)
+        .all()
+    )
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["identifier", "title", "description", "priority", "state", "assignee", "estimate", "due_date", "labels"])
+    for i in issues:
+        w.writerow([
+            i.identifier,
+            i.title,
+            (i.description or "").replace("\n", " "),
+            i.priority,
+            i.state.name if i.state else "",
+            i.assignee.name if i.assignee else "",
+            i.estimate or "",
+            i.due_date.isoformat() if i.due_date else "",
+            ";".join(l.name for l in i.labels),
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{team_key}-issues.csv"'},
+    )
+
+
+@router.post("/workspaces/{slug}/teams/{team_key}/issues/import-csv")
+def import_team_csv(
+    team_key: str,
+    payload: dict,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    import csv as _csv
+    import io as _io
+
+    csv_text = payload.get("csv") or ""
+    if not csv_text.strip():
+        raise HTTPException(400, "csv body is empty")
+    team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
+    if not team:
+        raise HTTPException(404, f"team not found: {team_key}")
+    default_state = (
+        db.query(WorkflowState)
+        .filter_by(team_id=team.id)
+        .order_by(WorkflowState.position)
+        .first()
+    )
+    if not default_state:
+        raise HTTPException(400, "team has no workflow states")
+
+    rdr = _csv.DictReader(_io.StringIO(csv_text))
+    created: list[str] = []
+    for row in rdr:
+        title = (row.get("title") or "").strip()
+        if not title:
+            continue
+        last_num = (
+            db.query(Issue)
+            .filter(Issue.team_id == team.id, Issue.identifier.startswith(f"{team.key}-"))
+            .count()
+        )
+        identifier = f"{team.key}-{last_num + 1}"
+        priority = 0
+        try:
+            priority = int(row.get("priority") or 0)
+        except ValueError:
+            priority = 0
+        estimate_raw = (row.get("estimate") or "").strip()
+        estimate: int | None
+        try:
+            estimate = int(estimate_raw) if estimate_raw else None
+        except ValueError:
+            estimate = None
+        issue = Issue(
+            identifier=identifier,
+            team_id=team.id,
+            state_id=default_state.id,
+            title=title,
+            description=row.get("description") or None,
+            priority=priority,
+            estimate=estimate,
+        )
+        db.add(issue)
+        created.append(identifier)
+    db.commit()
+    return {"created": len(created), "identifiers": created}
 
 
 # --- Initiatives --------------------------------------------------------

@@ -11,6 +11,7 @@ import {
   type Member,
   type ReactionGroup,
 } from "@/lib/api";
+import { relTime } from "@/lib/time";
 
 const QUICK_EMOJIS = ["👍", "❤️", "🎉", "🚀", "👀", "😄"];
 
@@ -251,7 +252,7 @@ function CommentRow({
         <div className="flex-1 rounded-md border border-border-subtle bg-elevated p-3">
           <header className="flex items-center gap-2 text-mini text-text-tertiary">
             <span className="text-small font-medium text-text-primary">{comment.author?.name ?? "Unknown"}</span>
-            <span>11min ago</span>
+            <span>{relTime(comment.created_at) || "now"}</span>
           </header>
           <p className="mt-1 text-small text-text-secondary">
             {renderBody(comment.body, comment.mentions)}

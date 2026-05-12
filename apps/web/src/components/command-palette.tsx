@@ -72,20 +72,22 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
     }
   }, [open]);
 
-  // Debounced search
+  // Debounced search. Supports inline filters like `in:issues foo`,
+  // `in:projects bar`, `team:ENG`, `@alex`.
+  const parsed = useMemo(() => parseQuery(query), [query]);
   useEffect(() => {
     if (!open) return;
     const handle = setTimeout(async () => {
       try {
-        const r = await workspaceSearch(workspaceSlug, query);
-        setResults(r);
+        const r = await workspaceSearch(workspaceSlug, parsed.term);
+        setResults(filterResults(r, parsed));
         setSelected(0);
       } catch {
         setResults(null);
       }
     }, 120);
     return () => clearTimeout(handle);
-  }, [query, workspaceSlug, open]);
+  }, [parsed, workspaceSlug, open]);
 
   const actions: AnyItem[] = useMemo(
     () =>
@@ -394,6 +396,47 @@ function labelFor(item: AnyItem): string | null {
     case "action":
       return item.data.label;
   }
+}
+
+type ParsedQuery = { term: string; only?: string; team?: string; member?: string };
+
+function parseQuery(raw: string): ParsedQuery {
+  const parts = (raw || "").split(/\s+/).filter(Boolean);
+  let only: string | undefined;
+  let team: string | undefined;
+  let member: string | undefined;
+  const remainder: string[] = [];
+  for (const p of parts) {
+    const low = p.toLowerCase();
+    if (low.startsWith("in:")) only = low.slice(3);
+    else if (low.startsWith("team:")) team = low.slice(5).toUpperCase();
+    else if (p.startsWith("@")) member = p.slice(1).toLowerCase();
+    else remainder.push(p);
+  }
+  return { term: remainder.join(" "), only, team, member };
+}
+
+function filterResults(r: import("@/lib/api").SearchResults, q: ParsedQuery): import("@/lib/api").SearchResults {
+  let out = { ...r };
+  if (q.only) {
+    out = {
+      issues: q.only.startsWith("issue") ? r.issues : [],
+      projects: q.only.startsWith("project") ? r.projects : [],
+      teams: q.only.startsWith("team") ? r.teams : [],
+      members: q.only.startsWith("member") || q.only === "people" ? r.members : [],
+      views: q.only === "view" || q.only === "views" ? r.views : [],
+      initiatives: q.only === "initiative" || q.only === "initiatives" ? r.initiatives : [],
+      documents: q.only === "doc" || q.only === "docs" || q.only === "documents" ? r.documents : [],
+    };
+  }
+  if (q.team) {
+    out = { ...out, issues: out.issues.filter((i) => i.team_key === q.team) };
+  }
+  if (q.member) {
+    const matches = (name: string) => name.toLowerCase().includes(q.member!);
+    out = { ...out, members: out.members.filter((m) => matches(m.name)) };
+  }
+  return out;
 }
 
 function iconCharFor(item: AnyItem): string {

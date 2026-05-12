@@ -102,13 +102,15 @@ def comment_reacted(db: Session, *, issue: Issue, comment: Comment, emoji: str, 
 
 
 def issue_commented(db: Session, *, issue: Issue, comment: Comment, actor_id: str | None) -> None:
-    # Notify assignee + everyone who previously commented (deduped, minus actor).
+    # Notify assignee + previous commenters + explicit subscribers (deduped, minus actor).
     recipients: set[str] = set()
     if issue.assignee_id:
         recipients.add(issue.assignee_id)
     for c in issue.comments:
         if c.author_id and c.id != comment.id:
             recipients.add(c.author_id)
+    for sub in getattr(issue, "subscribers", []) or []:
+        recipients.add(sub.id)
     workspace_id = _workspace_id_for_issue(issue)
     snippet = (comment.body or "")[:140]
     for r in recipients:

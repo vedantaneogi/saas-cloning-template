@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Folders, Target, Calendar, Compass } from "lucide-react";
+import { Folders, Calendar, Compass } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Avatar } from "@/components/icons";
 import {
@@ -10,9 +10,13 @@ import {
   PROJECT_STATE_LABELS,
 } from "@/components/project-icons";
 import { IssueGroup } from "@/components/issue-group";
+import { MilestonesPanel } from "@/components/milestones-panel";
+import { ProjectResourcesPanel } from "@/components/project-resources-panel";
+import { ProjectTeamsPanel } from "@/components/project-teams-panel";
 import { FileText } from "lucide-react";
 import {
   getProject,
+  getWorkspace,
   listDocuments,
   listProjectIssues,
   NotFoundError,
@@ -32,7 +36,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
-  const docs: Document[] = await listDocuments(workspace, project.id).catch(() => []);
+  const [docs, ws] = await Promise.all([
+    listDocuments(workspace, project.id).catch(() => [] as Document[]),
+    getWorkspace(workspace).catch(() => null),
+  ]);
+  const allTeams = ws?.teams ?? [];
 
   const byStateName = new Map<string, { name: string; group: StateGroup; position: number; issues: Issue[] }>();
   for (const issue of issues) {
@@ -94,33 +102,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <span className="text-text-tertiary">
                 {project.completed_issue_count}/{project.issue_count} issues complete
               </span>
+              <ProjectTeamsPanel
+                workspaceSlug={workspace}
+                projectSlug={project.slug_id}
+                initial={project.teams ?? []}
+                allTeams={allTeams}
+              />
             </div>
 
-            {/* Milestones */}
-            {project.milestones.length > 0 && (
-              <section className="mb-8">
-                <header className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-wider text-text-tertiary">
-                  <Target size={12} />
-                  <span>Milestones</span>
-                </header>
-                <ul className="space-y-1.5">
-                  {project.milestones.map((m) => (
-                    <li
-                      key={m.id}
-                      className="flex items-center gap-2 rounded-md border border-border-subtle px-3 py-2 text-small"
-                    >
-                      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-pill border border-border-strong" />
-                      <span className="flex-1 text-text-primary">{m.name}</span>
-                      {m.target_date && (
-                        <span className="text-mini text-text-tertiary">
-                          {new Date(m.target_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
+            <MilestonesPanel workspaceSlug={workspace} projectSlug={project.slug_id} initial={project.milestones} />
+
+            <ProjectResourcesPanel workspaceSlug={workspace} projectSlug={project.slug_id} initial={project.resources ?? []} />
 
             {/* Documents */}
             {docs.length > 0 && (

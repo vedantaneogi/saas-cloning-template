@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, BarChart3, Calendar, Folders, Target } from "lucide-react";
+import { BarChart3, Calendar, Folders, Target } from "lucide-react";
 import { Avatar, PriorityIcon, StatusIcon } from "@/components/icons";
 import { Popover, PopoverItem, PopoverList } from "@/components/popover";
 import { ProjectIconBlock } from "@/components/project-icons";
@@ -69,18 +69,34 @@ export function IssueProperties({ workspaceSlug, issue }: { workspaceSlug: strin
     router.refresh();
   }
 
-  // Direct priority shortcuts (0-4)
+  // Direct priority shortcuts (0-4) + open-picker shortcuts (S/A/L/P/E).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
       const typing = target.matches("input, textarea, [contenteditable=true]");
       if (typing) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (!/^[0-4]$/.test(e.key)) return;
-      e.preventDefault();
-      const p = Number(e.key) as 0 | 1 | 2 | 3 | 4;
-      setPriority(p);
-      update({ priority: p });
+      if (/^[0-4]$/.test(e.key)) {
+        e.preventDefault();
+        const p = Number(e.key) as 0 | 1 | 2 | 3 | 4;
+        setPriority(p);
+        update({ priority: p });
+        return;
+      }
+      const propMap: Record<string, string> = {
+        s: "status",
+        a: "assignee",
+        l: "labels",
+        p: "priority",
+        e: "estimate",
+      };
+      const prop = propMap[e.key.toLowerCase()];
+      if (!prop) return;
+      const btn = document.querySelector<HTMLButtonElement>(`[data-issue-prop="${prop}"] button`);
+      if (btn) {
+        e.preventDefault();
+        btn.click();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -473,18 +489,18 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (v
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <button className="mb-1 flex w-full items-center justify-between text-mini text-text-tertiary">
+      <div className="mb-1 flex w-full items-center justify-between text-mini text-text-tertiary">
         <span>{title}</span>
-        <MoreHorizontal size={12} />
-      </button>
+      </div>
       <div className="space-y-1.5">{children}</div>
     </div>
   );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  const prop = label.toLowerCase().replace(/\s+/g, "-");
   return (
-    <div className="flex items-center text-small">
+    <div className="flex items-center text-small" data-issue-prop={prop}>
       <span className="w-16 shrink-0 text-text-tertiary">{label}</span>
       <span className="flex items-center text-text-secondary">{children}</span>
     </div>

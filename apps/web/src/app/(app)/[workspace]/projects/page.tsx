@@ -6,13 +6,17 @@ import {
   ProjectStateIcon,
   PROJECT_STATE_LABELS,
 } from "@/components/project-icons";
-import { listProjects, type Project, type ProjectState } from "@/lib/api";
+import { listMembers, listProjects, type Project, type ProjectState } from "@/lib/api";
+import { NewProjectButton } from "@/components/new-project-button";
 
 const STATE_ORDER: ProjectState[] = ["started", "planned", "paused", "completed", "canceled"];
 
 export default async function ProjectsListPage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
-  const projects = await listProjects(workspace);
+  const [projects, members] = await Promise.all([
+    listProjects(workspace),
+    listMembers(workspace).catch(() => []),
+  ]);
   const byState = new Map<ProjectState, Project[]>();
   for (const p of projects) {
     if (!byState.has(p.state)) byState.set(p.state, []);
@@ -21,7 +25,11 @@ export default async function ProjectsListPage({ params }: { params: Promise<{ w
 
   return (
     <>
-      <Topbar title="Projects" icon={<Folders size={15} />} />
+      <Topbar
+        title="Projects"
+        icon={<Folders size={15} />}
+        trailing={<NewProjectButton workspaceSlug={workspace} members={members} />}
+      />
       <div className="flex-1 overflow-y-auto">
         {STATE_ORDER.filter((s) => byState.get(s)?.length).map((state) => (
           <section key={state} className="border-b border-border-subtle last:border-b-0">

@@ -11,7 +11,6 @@ import {
   Folders,
   Tag,
   Paperclip,
-  Maximize2,
 } from "lucide-react";
 import { createIssue, listMembers, listTeamLabels, type Label, type Member, type Team } from "@/lib/api";
 import { StatusIcon, PriorityIcon, Avatar } from "@/components/icons";
@@ -162,9 +161,6 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
           <ChevronRight size={12} className="text-text-tertiary" />
           <span className="text-mini text-text-tertiary">New issue</span>
           <div className="ml-auto flex items-center gap-1 text-text-tertiary">
-            <button type="button" className="rounded-md p-1 hover:bg-row-hover hover:text-text-secondary" aria-label="Expand">
-              <Maximize2 size={12} />
-            </button>
             <button
               type="button"
               onClick={() => setOpen(false)}

@@ -242,6 +242,22 @@ issue_labels = Table(
 )
 
 
+issue_subscribers = Table(
+    "issue_subscribers",
+    Base.metadata,
+    Column("issue_id", ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True),
+    Column("member_id", ForeignKey("members.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+project_teams = Table(
+    "project_teams",
+    Base.metadata,
+    Column("project_id", ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
+    Column("team_id", ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Issue(Base):
     __tablename__ = "issues"
 
@@ -276,6 +292,7 @@ class Issue(Base):
     parent: Mapped["Issue | None"] = relationship(remote_side="Issue.id", back_populates="children")
     children: Mapped[list["Issue"]] = relationship(back_populates="parent")
     labels: Mapped[list["Label"]] = relationship(secondary=issue_labels)
+    subscribers: Mapped[list["Member"]] = relationship(secondary=issue_subscribers)
     comments: Mapped[list["Comment"]] = relationship(back_populates="issue", cascade="all, delete-orphan", order_by="Comment.created_at")
     outgoing_relations: Mapped[list["IssueRelation"]] = relationship(
         back_populates="source", foreign_keys="IssueRelation.source_id", cascade="all, delete-orphan"
@@ -374,6 +391,25 @@ class Project(Base):
     updates: Mapped[list["ProjectUpdate"]] = relationship(
         back_populates="project", cascade="all, delete-orphan", order_by="ProjectUpdate.created_at.desc()"
     )
+    resources: Mapped[list["ProjectResource"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan", order_by="ProjectResource.created_at"
+    )
+    teams: Mapped[list["Team"]] = relationship(secondary=project_teams)
+
+
+class ProjectResource(Base):
+    """External link attached to a project (doc, dashboard, etc.)."""
+
+    __tablename__ = "project_resources"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    icon: Mapped[str] = mapped_column(String(8), default="🔗")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    project: Mapped["Project"] = relationship(back_populates="resources")
 
 
 class ProjectMilestone(Base):

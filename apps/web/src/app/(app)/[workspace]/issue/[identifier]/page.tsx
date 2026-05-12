@@ -1,13 +1,15 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, Paperclip, Link2, GitBranch, MoreHorizontal, Users, Archive } from "lucide-react";
+import { GitBranch, MoreHorizontal, Users, Archive, Copy, Link as LinkIconLucide } from "lucide-react";
 import { Topbar } from "@/components/topbar";
-import { Avatar, PriorityIcon, StatusIcon, SubIssueProgress } from "@/components/icons";
+import { Avatar, PriorityIcon, StatusIcon } from "@/components/icons";
 import { IssueProperties } from "@/components/issue-properties";
 import { IssueTitle, IssueDescription } from "@/components/issue-title";
-import { IssueActions } from "@/components/issue-actions";
 import { CommentThread } from "@/components/comment-thread";
 import { IssueLinksPanel } from "@/components/issue-links-panel";
+import { SubIssuesPanel } from "@/components/sub-issues-panel";
+import { RelationsPanel } from "@/components/relations-panel";
+import { SubscribeButton } from "@/components/subscribe-button";
 import {
   getIssue,
   getWorkspace,
@@ -20,6 +22,7 @@ import {
   type Team,
 } from "@/lib/api";
 import { IssueActionsWithConvert } from "@/components/issue-actions-with-convert";
+import { relTime } from "@/lib/time";
 
 export default async function IssueDetailPage({ params }: { params: Promise<{ workspace: string; identifier: string }> }) {
   const { workspace, identifier } = await params;
@@ -37,6 +40,13 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ wo
   ]);
   const teams: Team[] = ws?.teams ?? [];
   return <IssueView workspace={workspace} issue={issue} customerRequests={customerRequests} members={members} teams={teams} />;
+}
+
+function relationVerb(t: string) {
+  if (t === "blocks") return "is blocking";
+  if (t === "blocked_by") return "is blocked by";
+  if (t === "duplicate") return "duplicates";
+  return "relates to";
 }
 
 function IssueView({ workspace, issue, customerRequests, members, teams }: { workspace: string; issue: IssueDetail; customerRequests: CustomerRequest[]; members: Member[]; teams: Team[] }) {
@@ -63,6 +73,15 @@ function IssueView({ workspace, issue, customerRequests, members, teams }: { wor
               <div className="mb-3 flex items-center gap-2 rounded-md border border-border-strong bg-pill px-3 py-2 text-mini text-text-tertiary">
                 <Archive size={12} />
                 <span>This issue is archived.</span>
+              </div>
+            )}
+
+            {issue.parent_identifier && (
+              <div className="mb-2 text-mini text-text-tertiary">
+                Sub-issue of{" "}
+                <Link href={`/${workspace}/issue/${issue.parent_identifier}`} className="text-text-secondary hover:underline">
+                  {issue.parent_identifier}
+                </Link>
               </div>
             )}
 
@@ -101,67 +120,45 @@ function IssueView({ workspace, issue, customerRequests, members, teams }: { wor
               </section>
             )}
 
-            {issue.sub_issues.length > 0 && (
-              <section className="mt-8 rounded-md border border-border-subtle">
-                <header className="flex items-center gap-2 px-3 py-2 text-mini text-text-tertiary">
-                  <ChevronDown size={12} />
-                  <span className="font-medium text-text-secondary">Sub-issues</span>
-                  <span className="flex items-center gap-1">
-                    <SubIssueProgress
-                      done={issue.sub_issues.filter((s) => s.state.group === "completed").length}
-                      total={issue.sub_issues.length}
-                    />
-                    <span>
-                      {issue.sub_issues.filter((s) => s.state.group === "completed").length}/{issue.sub_issues.length}
-                    </span>
-                  </span>
-                </header>
-                <ul>
-                  {issue.sub_issues.map((s) => (
-                    <li key={s.identifier}>
-                      <Link
-                        href={`/${workspace}/issue/${s.identifier}`}
-                        className="flex h-[34px] items-center gap-2 border-t border-border-subtle pl-3 pr-3 text-small hover:bg-row-hover"
-                      >
-                        <PriorityIcon value={s.priority} />
-                        <span className="w-14 shrink-0 font-mono text-mini text-text-tertiary">{s.identifier}</span>
-                        <StatusIcon group={s.state.group} />
-                        <span className="flex-1 truncate text-text-primary">{s.title}</span>
-                        {s.assignee ? (
-                          <Avatar initials={s.assignee.initials} color={s.assignee.color} size={18} />
-                        ) : (
-                          <span className="inline-block h-[18px] w-[18px] rounded-pill border border-dashed border-border-strong" />
-                        )}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
+            <SubIssuesPanel
+              workspaceSlug={workspace}
+              parentIdentifier={issue.identifier}
+              teamKey={issue.team.key}
+              subIssues={issue.sub_issues}
+            />
 
             <section className="mt-10">
               <header className="flex items-center justify-between text-mini text-text-tertiary">
                 <span className="font-medium text-text-secondary">Activity</span>
-                <button className="hover:text-text-secondary">Unsubscribe</button>
+                <SubscribeButton
+                  workspaceSlug={workspace}
+                  identifier={issue.identifier}
+                  initialSubscribed={!!issue.subscribed}
+                />
               </header>
               <ul className="mt-3 space-y-3 text-small">
                 {issue.assignee && (
                   <li className="flex items-center gap-2 text-text-tertiary">
                     <Avatar initials={issue.assignee.initials} color={issue.assignee.color} size={18} />
                     <span className="text-text-secondary">{issue.assignee.name}</span>
-                    <span>created the issue · 12min ago</span>
+                    <span>created the issue · {relTime(issue.updated_at)} ago</span>
                   </li>
                 )}
                 {issue.relations.map((r, i) => (
-                  <li key={i} className="flex items-center gap-2 text-text-tertiary">
-                    <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-pill bg-priority-urgent/15">
-                      <GitBranch size={12} className="text-priority-urgent" />
+                  <li key={`${r.type}-${r.target_identifier}-${i}`} className="flex items-center gap-2 text-text-tertiary">
+                    <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-pill bg-row-hover">
+                      {r.type === "blocks" || r.type === "blocked_by" ? (
+                        <GitBranch size={12} className="text-priority-urgent" />
+                      ) : r.type === "duplicate" ? (
+                        <Copy size={12} className="text-text-tertiary" />
+                      ) : (
+                        <LinkIconLucide size={12} className="text-text-tertiary" />
+                      )}
                     </span>
-                    <span>marked this issue as {r.type === "blocks" ? "blocking" : r.type}</span>
+                    <span>{relationVerb(r.type)}</span>
                     <Link href={`/${workspace}/issue/${r.target_identifier}`} className="text-text-secondary hover:underline">
                       {r.target_identifier} {r.target_title}
                     </Link>
-                    <span>· 11min ago</span>
                   </li>
                 ))}
               </ul>
@@ -179,20 +176,22 @@ function IssueView({ workspace, issue, customerRequests, members, teams }: { wor
         <aside className="w-[260px] shrink-0 border-l border-border-subtle p-4 text-small">
           <IssueProperties workspaceSlug={workspace} issue={issue} />
 
-          {issue.relations.length > 0 && (
-            <Section title="Relations">
-              <div className="text-mini text-text-tertiary">Blocking</div>
-              {issue.relations.map((r) => (
-                <Link
-                  key={r.target_identifier}
-                  href={`/${workspace}/issue/${r.target_identifier}`}
-                  className="flex items-center gap-1.5 truncate rounded-md px-1 py-1 hover:bg-row-hover"
-                >
-                  <PriorityIcon value={r.target_priority} />
-                  <StatusIcon group={r.target_state_group} />
-                  <span className="truncate">{r.target_title}</span>
-                </Link>
-              ))}
+          <RelationsPanel
+            workspaceSlug={workspace}
+            identifier={issue.identifier}
+            relations={issue.relations}
+          />
+
+          {(issue.subscribers && issue.subscribers.length > 0) && (
+            <Section title={`Subscribers · ${issue.subscribers.length}`}>
+              <div className="flex flex-wrap gap-1.5">
+                {issue.subscribers.map((s) => (
+                  <span key={s.id} className="flex items-center gap-1 rounded-pill bg-pill px-1.5 py-0.5 text-mini text-text-secondary">
+                    <Avatar initials={s.initials} color={s.color} size={14} />
+                    {s.name}
+                  </span>
+                ))}
+              </div>
             </Section>
           )}
         </aside>
@@ -204,10 +203,10 @@ function IssueView({ workspace, issue, customerRequests, members, teams }: { wor
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <button className="mb-1 flex w-full items-center justify-between text-mini text-text-tertiary">
+      <div className="mb-1 flex w-full items-center justify-between text-mini text-text-tertiary">
         <span>{title}</span>
         <MoreHorizontal size={12} />
-      </button>
+      </div>
       <div className="space-y-1.5">{children}</div>
     </div>
   );

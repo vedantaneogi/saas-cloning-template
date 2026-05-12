@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Target } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { IssueListBody } from "@/components/issue-list-body";
+import { CompleteCycleButton } from "@/components/complete-cycle-button";
 import { getCycle, listCycleIssues, NotFoundError, type Issue, type StateGroup } from "@/lib/api";
 
 export default async function CyclePage({
@@ -26,7 +27,19 @@ export default async function CyclePage({
 
   return (
     <>
-      <Topbar title={cycle.name} icon={<Target size={15} />} />
+      <Topbar
+        title={cycle.name}
+        icon={<Target size={15} />}
+        trailing={
+          cycle.status === "active" ? (
+            <CompleteCycleButton
+              workspaceSlug={workspace}
+              cycleId={cycle.id}
+              remaining={cycle.issue_count - cycle.completed_issue_count}
+            />
+          ) : null
+        }
+      />
       <div className="flex shrink-0 items-center gap-4 border-b border-border-subtle px-5 py-3 text-mini text-text-tertiary">
         <span>{formatRange(cycle.starts_at, cycle.ends_at)}</span>
         <span className="flex items-center gap-1.5">
