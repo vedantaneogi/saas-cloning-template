@@ -7,17 +7,33 @@ import {
   ChevronRight,
   Calendar,
   BarChart3,
-  Folders,
   Tag,
   Paperclip,
-  Eye,
-  Pencil,
   FileText,
+  Maximize2,
+  Minimize2,
+  Box,
+  CircleDashed,
+  CircleDot,
+  MoreHorizontal,
 } from "lucide-react";
-import { createIssue, listMembers, listTeamLabels, listTemplates, type IssueTemplateBody, type Label, type Member, type Team, type Template } from "@/lib/api";
+import {
+  createIssue,
+  listCycles,
+  listMembers,
+  listProjects,
+  listTeamLabels,
+  listTemplates,
+  type Cycle,
+  type IssueTemplateBody,
+  type Label,
+  type Member,
+  type Project,
+  type Team,
+  type Template,
+} from "@/lib/api";
 import { StatusIcon, PriorityIcon, Avatar } from "@/components/icons";
 import { Popover, PopoverItem, PopoverList } from "@/components/popover";
-import { MarkdownView } from "@/components/markdown-view";
 
 const PRIORITY_LABELS = ["No priority", "Urgent", "High", "Medium", "Low"] as const;
 const PRIORITIES = [0, 1, 2, 3, 4] as const;
@@ -32,17 +48,25 @@ const STATES = [
 
 export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: string; teams: Team[] }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [descMode, setDescMode] = useState<"write" | "preview">("write");
   const [priority, setPriority] = useState<0 | 1 | 2 | 3 | 4>(0);
-  const [stateName, setStateName] = useState("Todo");
+  const [stateName, setStateName] = useState("Backlog");
   const [teamKey, setTeamKey] = useState<string>(teams[0]?.key ?? "");
   const [assignee, setAssignee] = useState<Member | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
+  const [cycle, setCycle] = useState<Cycle | null>(null);
+  const [dueDate, setDueDate] = useState<string>(""); // yyyy-mm-dd
+  const [estimate, setEstimate] = useState<number | null>(null);
   const [labels, setLabels] = useState<Label[]>([]);
+
   const [members, setMembers] = useState<Member[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [cycles, setCycles] = useState<Cycle[]>([]);
   const [teamLabels, setTeamLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
@@ -51,9 +75,13 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
 
   useEffect(() => {
     if (!open) return;
-    listMembers(workspaceSlug).then(setMembers);
-    listTeamLabels(workspaceSlug, teamKey).then(setTeamLabels);
-    listTemplates(workspaceSlug, { kind: "issue", teamKey }).then(setTemplates).catch(() => setTemplates([]));
+    listMembers(workspaceSlug).then(setMembers).catch(() => {});
+    listProjects(workspaceSlug).then(setProjects).catch(() => setProjects([]));
+    if (teamKey) {
+      listTeamLabels(workspaceSlug, teamKey).then(setTeamLabels).catch(() => setTeamLabels([]));
+      listCycles(workspaceSlug, teamKey).then(setCycles).catch(() => setCycles([]));
+      listTemplates(workspaceSlug, { kind: "issue", teamKey }).then(setTemplates).catch(() => setTemplates([]));
+    }
   }, [open, workspaceSlug, teamKey]);
 
   function applyTemplate(t: Template) {
@@ -92,14 +120,12 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
     if (open) titleRef.current?.focus();
   }, [open]);
 
-  // Auto-grow description textarea.
   useEffect(() => {
-    if (descMode !== "write") return;
     const ta = descRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = Math.max(160, ta.scrollHeight) + "px";
-  }, [description, descMode, open]);
+    ta.style.height = Math.max(60, ta.scrollHeight) + "px";
+  }, [description, open, expanded]);
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -113,6 +139,10 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
         state_name: stateName,
         assignee_id: assignee?.id,
         label_ids: labels.map((l) => l.id),
+        project_id: project?.id,
+        cycle_id: cycle?.id,
+        due_date: dueDate || undefined,
+        estimate: estimate ?? undefined,
       });
       reset();
       if (!createMore) {
@@ -132,19 +162,23 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
     setDescription("");
     setPriority(0);
     setAssignee(null);
+    setProject(null);
+    setCycle(null);
+    setDueDate("");
+    setEstimate(null);
     setLabels([]);
-    setStateName("Todo");
-    setDescMode("write");
+    setStateName("Backlog");
   }
 
   if (!open) return null;
 
-  const stateGroup = STATES.find((s) => s.name === stateName)?.group ?? "unstarted";
+  const stateGroup = STATES.find((s) => s.name === stateName)?.group ?? "backlog";
   const teamObj = teams.find((t) => t.key === teamKey);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/65 pt-[14vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/65 transition-opacity"
+      style={{ paddingTop: expanded ? "4vh" : "12vh" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}
@@ -157,7 +191,12 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             submit();
           }
         }}
-        className="flex max-h-[78vh] w-[760px] max-w-[92vw] flex-col rounded-xl bg-elevated text-text-primary shadow-popover"
+        className="flex flex-col overflow-hidden rounded-xl bg-elevated text-text-primary shadow-popover transition-[width,height] duration-300 ease-out"
+        style={
+          expanded
+            ? { width: "min(1100px, 94vw)", height: "88vh" }
+            : { width: "min(720px, 92vw)", height: "min(560px, 78vh)" }
+        }
       >
         {/* header */}
         <header className="flex items-center gap-1.5 px-3.5 pt-3 pb-1.5">
@@ -194,7 +233,8 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             )}
           </Popover>
           <ChevronRight size={12} className="text-text-tertiary" />
-          <span className="text-mini text-text-tertiary">New issue</span>
+          <span className="text-small font-medium text-text-primary">New issue</span>
+
           {templates.length > 0 && (
             <Popover
               trigger={({ toggle }) => (
@@ -229,7 +269,17 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
               )}
             </Popover>
           )}
+
           <div className="ml-auto flex items-center gap-1 text-text-tertiary">
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="rounded-md p-1 hover:bg-row-hover hover:text-text-secondary"
+              aria-label={expanded ? "Minimize" : "Expand"}
+              title={expanded ? "Minimize" : "Expand"}
+            >
+              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -242,7 +292,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
         </header>
 
         {/* scrollable body */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 pt-1">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 pt-2">
           <textarea
             ref={titleRef}
             value={title}
@@ -251,47 +301,14 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             rows={1}
             className="w-full resize-none bg-transparent text-large font-semibold leading-snug text-text-primary outline-none placeholder:text-text-quaternary"
           />
-
-          <div className="mt-1 flex items-center gap-1 text-mini text-text-tertiary">
-            <button
-              type="button"
-              onClick={() => setDescMode("write")}
-              className={
-                "flex items-center gap-1 rounded-sm px-1.5 py-0.5 " +
-                (descMode === "write" ? "bg-pill text-text-secondary" : "hover:bg-row-hover")
-              }
-            >
-              <Pencil size={10} /> Write
-            </button>
-            <button
-              type="button"
-              onClick={() => setDescMode("preview")}
-              disabled={!description.trim()}
-              className={
-                "flex items-center gap-1 rounded-sm px-1.5 py-0.5 " +
-                (descMode === "preview" ? "bg-pill text-text-secondary" : "hover:bg-row-hover") +
-                " disabled:opacity-40 disabled:hover:bg-transparent"
-              }
-            >
-              <Eye size={10} /> Preview
-            </button>
-            <span className="ml-auto text-text-quaternary">Markdown supported · ⌘⏎ to submit</span>
-          </div>
-
-          {descMode === "write" ? (
-            <textarea
-              ref={descRef}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add description… (supports **bold**, # headings, - lists, ```code```)"
-              className="mt-1 w-full resize-none bg-transparent text-default leading-relaxed text-text-secondary outline-none placeholder:text-text-tertiary"
-              style={{ minHeight: 160 }}
-            />
-          ) : (
-            <div className="mt-1 min-h-[160px]">
-              <MarkdownView source={description} />
-            </div>
-          )}
+          <textarea
+            ref={descRef}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Add description…"
+            className="mt-2 w-full resize-none bg-transparent text-default leading-relaxed text-text-secondary outline-none placeholder:text-text-tertiary"
+            style={{ minHeight: expanded ? 360 : 60 }}
+          />
         </div>
 
         {/* property chips */}
@@ -328,7 +345,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             trigger={({ toggle }) => (
               <Chip onClick={toggle}>
                 <PriorityIcon value={priority} />
-                <span>{PRIORITY_LABELS[priority]}</span>
+                <span>{priority === 0 ? "Priority" : PRIORITY_LABELS[priority]}</span>
               </Chip>
             )}
             width={200}
@@ -362,13 +379,13 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                   </>
                 ) : (
                   <>
-                    <span className="inline-block h-3.5 w-3.5 rounded-pill border border-dashed border-border-strong" />
+                    <CircleDashed size={12} />
                     <span>Assignee</span>
                   </>
                 )}
               </Chip>
             )}
-            width={220}
+            width={240}
           >
             {({ close }) => (
               <PopoverList>
@@ -379,7 +396,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                     close();
                   }}
                 >
-                  <span className="inline-block h-[18px] w-[18px] rounded-pill border border-dashed border-border-strong" />
+                  <CircleDashed size={14} className="text-text-tertiary" />
                   <span className="text-text-tertiary">Unassigned</span>
                 </PopoverItem>
                 {members.map((m) => (
@@ -399,10 +416,47 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             )}
           </Popover>
 
-          <Chip disabled>
-            <Folders size={12} />
-            <span>Project</span>
-          </Chip>
+          <Popover
+            trigger={({ toggle }) => (
+              <Chip onClick={toggle}>
+                <Box size={12} />
+                <span>{project ? project.name : "Project"}</span>
+              </Chip>
+            )}
+            width={280}
+          >
+            {({ close }) => (
+              <PopoverList>
+                <PopoverItem
+                  active={!project}
+                  onClick={() => {
+                    setProject(null);
+                    close();
+                  }}
+                >
+                  <CircleDashed size={14} className="text-text-tertiary" />
+                  <span className="text-text-tertiary">No project</span>
+                </PopoverItem>
+                {projects.length === 0 ? (
+                  <li className="px-2.5 py-2 text-mini text-text-tertiary">No projects yet.</li>
+                ) : (
+                  projects.map((p) => (
+                    <PopoverItem
+                      key={p.id}
+                      active={project?.id === p.id}
+                      onClick={() => {
+                        setProject(p);
+                        close();
+                      }}
+                    >
+                      <span className="h-3 w-3 rounded-sm" style={{ background: p.icon_color }} />
+                      <span className="truncate">{p.name}</span>
+                    </PopoverItem>
+                  ))
+                )}
+              </PopoverList>
+            )}
+          </Popover>
 
           <Popover
             trigger={({ toggle }) => (
@@ -424,7 +478,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                 )}
               </Chip>
             )}
-            width={220}
+            width={240}
           >
             {() => (
               <PopoverList>
@@ -455,21 +509,94 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             )}
           </Popover>
 
-          <Chip disabled>
-            <BarChart3 size={12} />
-            <span>Estimate</span>
-          </Chip>
+          {/* Cycle chip — visible only when team has cycles */}
+          {cycles.length > 0 && (
+            <Popover
+              trigger={({ toggle }) => (
+                <Chip onClick={toggle}>
+                  <CircleDot size={12} />
+                  <span>{cycle ? `Cycle ${cycle.number}` : "Cycle"}</span>
+                </Chip>
+              )}
+              width={240}
+            >
+              {({ close }) => (
+                <PopoverList>
+                  <PopoverItem
+                    active={!cycle}
+                    onClick={() => {
+                      setCycle(null);
+                      close();
+                    }}
+                  >
+                    <CircleDashed size={14} className="text-text-tertiary" />
+                    <span className="text-text-tertiary">No cycle</span>
+                  </PopoverItem>
+                  {cycles.map((c) => (
+                    <PopoverItem
+                      key={c.id}
+                      active={cycle?.id === c.id}
+                      onClick={() => {
+                        setCycle(c);
+                        close();
+                      }}
+                    >
+                      <CircleDot size={12} className="text-text-tertiary" />
+                      <span>Cycle {c.number}</span>
+                      {c.name && <span className="ml-auto text-text-tertiary">{c.name}</span>}
+                    </PopoverItem>
+                  ))}
+                </PopoverList>
+              )}
+            </Popover>
+          )}
 
-          <Chip disabled>
-            <Calendar size={12} />
-            <span>Due date</span>
-          </Chip>
+          {/* More menu: due date + estimate + parent */}
+          <Popover
+            trigger={({ toggle }) => (
+              <Chip onClick={toggle} ariaLabel="More properties">
+                <MoreHorizontal size={12} />
+              </Chip>
+            )}
+            width={280}
+          >
+            {() => (
+              <div className="space-y-2 p-2">
+                <label className="flex items-center gap-2 text-mini">
+                  <Calendar size={12} className="text-text-tertiary" />
+                  <span className="text-text-tertiary">Due date</span>
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="ml-auto rounded-md bg-app px-2 py-1 text-mini text-text-primary outline-none focus:ring-1 focus:ring-accent"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-mini">
+                  <BarChart3 size={12} className="text-text-tertiary" />
+                  <span className="text-text-tertiary">Estimate</span>
+                  <input
+                    type="number"
+                    value={estimate ?? ""}
+                    onChange={(e) => setEstimate(e.target.value ? Number(e.target.value) : null)}
+                    placeholder="—"
+                    min={0}
+                    max={99}
+                    className="ml-auto w-16 rounded-md bg-app px-2 py-1 text-mini text-text-primary outline-none focus:ring-1 focus:ring-accent"
+                  />
+                </label>
+                <div className="border-t border-border-subtle pt-2 text-mini text-text-quaternary">
+                  Set parent issue from the issue detail page after creating.
+                </div>
+              </div>
+            )}
+          </Popover>
         </div>
 
-        <footer className="flex items-center justify-between px-3 py-2 text-mini">
+        <footer className="flex items-center justify-between border-t border-border-subtle/0 px-3 py-2 text-mini">
           <button
             type="button"
-            className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
+            className="rounded-md bg-pill p-1.5 text-text-tertiary hover:bg-elevated-hover hover:text-text-secondary"
             aria-label="Attach"
           >
             <Paperclip size={13} />
@@ -481,14 +608,14 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                 aria-checked={createMore}
                 onClick={() => setCreateMore((v) => !v)}
                 className={
-                  "relative inline-flex h-3.5 w-6 cursor-pointer items-center rounded-pill transition " +
+                  "relative inline-flex h-4 w-7 cursor-pointer items-center rounded-pill transition " +
                   (createMore ? "bg-accent" : "bg-pill")
                 }
               >
                 <span
                   className={
-                    "absolute h-2.5 w-2.5 rounded-pill bg-white transition-transform " +
-                    (createMore ? "translate-x-3" : "translate-x-0.5")
+                    "absolute h-3 w-3 rounded-pill bg-white transition-transform " +
+                    (createMore ? "translate-x-3.5" : "translate-x-0.5")
                   }
                 />
               </span>
@@ -497,7 +624,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             <button
               type="submit"
               disabled={!title.trim() || submitting}
-              className="rounded-md bg-accent px-3 py-1 text-small font-medium text-white shadow-button transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-accent px-3 py-1.5 text-small font-medium text-white shadow-button transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "Creating…" : "Create issue"}
             </button>
@@ -512,16 +639,19 @@ function Chip({
   children,
   onClick,
   disabled,
+  ariaLabel,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={ariaLabel}
       className="inline-flex items-center gap-1.5 rounded-md bg-pill px-2 py-1 text-mini text-text-secondary transition hover:bg-elevated-hover disabled:cursor-default disabled:opacity-60 disabled:hover:bg-pill"
     >
       {children}

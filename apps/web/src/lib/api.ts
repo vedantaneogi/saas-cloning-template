@@ -360,6 +360,9 @@ export interface IssueCreateInput {
   label_ids?: string[];
   estimate?: number;
   parent_identifier?: string;
+  project_id?: string;
+  cycle_id?: string;
+  due_date?: string;
 }
 
 export interface IssuePatchInput {

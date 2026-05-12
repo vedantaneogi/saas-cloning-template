@@ -364,6 +364,8 @@ class IssueCreateIn(BaseModel):
     state_name: str | None = None
     assignee_id: str | None = None
     project_id: str | None = None
+    cycle_id: str | None = None
+    due_date: datetime | None = None
     label_ids: list[str] = []
     estimate: int | None = None
     parent_identifier: str | None = None

@@ -875,6 +875,12 @@ def create_issue(
         parent = db.query(Issue).filter_by(identifier=body.parent_identifier).first()
         parent_id = parent.id if parent else None
 
+    cycle_id = None
+    if body.cycle_id:
+        cyc = db.query(Cycle).filter_by(id=body.cycle_id, team_id=team.id).first()
+        if not cyc:
+            raise HTTPException(400, "cycle does not belong to issue's team")
+        cycle_id = cyc.id
     issue = Issue(
         identifier=identifier,
         team_id=team.id,
@@ -882,6 +888,8 @@ def create_issue(
         parent_id=parent_id,
         assignee_id=body.assignee_id,
         project_id=body.project_id,
+        cycle_id=cycle_id,
+        due_date=body.due_date,
         title=body.title,
         description=body.description,
         priority=body.priority,
