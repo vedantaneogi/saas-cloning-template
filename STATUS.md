@@ -146,10 +146,70 @@ Last updated: 2026-05-12. Status keys: ✅ built · 🟡 partial · ❌ not star
 
 ---
 
-## Out of scope
+## P1 backlog (from linear.xlsx)
+
+Tracking every P1 row in `linear.xlsx`. Items not yet started below; everything shipped is captured under the existing "P1+ polish" section above or in the entity matrix at the top.
+
+### Cycles / projects analytics
+- ❌ Cycle progress chart (burndown)
+- ❌ Cycle insights (velocity, throughput, scope changes)
+- ❌ Project completion charts (scope vs completion over time, risk indicators)
+- ❌ Team insights dashboard (velocity, lead time, cycle time)
+- ❌ Custom charts (build chart from any saved view)
+- ❌ Roadmap filter / group (by team / lead / status; group by initiative)
+
+### Triage / SLA
+- ❌ Triage responsibility rotation (weekly owner)
+- ❌ SLA / aging indicators (highlight items waiting > N days)
+- ❌ SLA / due-date escalation notifications
+
+### Issue niceties
+- ❌ Auto-close on duplicate (merge activity)
+- ❌ Parent progress rollup (sub-issue completion ratio on parent)
+
+### Notifications
+- ❌ Snooze notification
+- ❌ Email digest (daily / weekly)
+- ❌ Per-team / per-project subscription preferences
+
+### Documents (basic CRUD ✅; rich features missing)
+- ❌ Slash menu (headings, lists, code, embeds, issue links)
+- ❌ Inline issue links with hover preview
+- ❌ Comments on documents
+- ❌ Version history (view / restore)
+
+### Templates
+- ❌ Issue templates per team
+- ❌ Project templates
+- ❌ Document templates (PRD, RFC, retro, postmortem)
+
+### Automations & rules
+- ❌ Workflow automation rules (trigger → action)
+- ❌ Auto-assign on triage (rotation)
+- ❌ Auto-close stale issues
+- ❌ SLA / due-date escalation (see Triage / SLA above)
+
+### Integrations (real ones)
+- 🟡 GitHub — `IssueLink` autodetects PR / branch / commit URLs; no live API sync (no PR status on merge, no magic-word auto-link from PR title)
+- ❌ Slack notifications
+- ❌ Linear Asks (Slack → issue intake; weighted request linking)
+- 🟡 Figma — link autodetect ✅; embed previews ❌
+
+### Shipped P1 (already in matrix above)
+- ✅ Project documents · Project resources · Cross-team projects
+- ✅ Initiative create/edit · Initiative project rollup · Roadmap timeline view
+- ✅ Linked PRs / branches inline (autodetect, status badge)
+- ✅ Reactions on comments · Reply-to-comment threading
+- ✅ Customer request inbox · Request → issue linking
+
+**Most impactful 5** to do next: GitHub live sync, workflow automation rules, issue/project templates, parent progress rollup, cycle burndown + team insights.
+
+---
+
+## Out of scope (infra, not P1)
 
 - No realtime (router.refresh after mutations)
-- Postgres-ready (docker-compose) but dev runs SQLite
+- Dev runs SQLite; staging deploy on the VM uses Postgres 16 (docker-compose)
 - Capture/Playwright golden screenshots not re-run on each slice
 - Email delivery: invite links are generated locally; no SMTP wired (copy the link from the invite dialog)
 
@@ -175,7 +235,26 @@ The app is now a real multi-user product:
 
 ## Coverage
 
-All P0 features and the immediate P1 polish list are ✅. The matrix above no longer carries 🟡 partials on flagship surfaces.
+All P0 features and the immediate P1 polish list are ✅. The matrix above no longer carries 🟡 partials on flagship surfaces. The full P1 backlog from `linear.xlsx` is enumerated below — most P1 rows are still ❌.
+
+---
+
+## Deploy (done 2026-05-12)
+
+Live at **https://linear.techbrig.co** on the staging VM (142.93.203.175) behind Cloudflare + host Caddy.
+
+- `docker-compose.staging.yml` at repo root: Postgres 16 + FastAPI + Next.js standalone
+- Containers `linear-clone-{db,api,web}-1` on `linear-clone_default` network
+- Web bound to `127.0.0.1:3003`; host `/etc/caddy/Caddyfile` reverse-proxies `linear.techbrig.co → 127.0.0.1:3003`
+- API stays internal to the docker network; Next.js rewrites `/api/*` to `http://api:8000` (baked at build time via `API_URL` build arg)
+- `AUTH_SECRET` + `POSTGRES_PASSWORD` generated on VM, kept in `/root/linear-clone/.env`
+- Migrations run on api container startup (`alembic upgrade head` then uvicorn)
+- Demo seed loaded via `SEED_PATH=/app/seed.json`
+
+Postgres revealed three SQLite-tolerated issues that the deploy commit fixed:
+- `sa.text('0')` → `sa.false()` for boolean `server_default`
+- `member_role` / `estimate_scale` PG ENUM types pre-created before `op.add_column`
+- `Project.slug_id` (16 → 128) and `Initiative.slug_id` (32 → 128) widened — slugs are `{name}-{12-hex}` and overflowed real names
 
 ---
 
