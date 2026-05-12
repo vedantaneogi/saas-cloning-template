@@ -60,10 +60,11 @@ export function NewProjectButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-mini text-white shadow-button hover:opacity-90"
+        className="flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
+        aria-label="New project"
+        title="New project"
       >
-        <Plus size={12} />
-        New project
+        <Plus size={14} />
       </button>
       {open && (
         <div
