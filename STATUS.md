@@ -158,3 +158,29 @@ Last updated: 2026-05-12. Status keys: ✅ built · 🟡 partial · ❌ not star
 ## Coverage
 
 All P0 features and the immediate P1 polish list are ✅. The matrix above no longer carries 🟡 partials on flagship surfaces.
+
+---
+
+## UI polish pass — page by page (done 2026-05-12)
+
+Every surface returns 200 on a fresh build and has functional buttons. Pass summary:
+
+1. ✅ **Saved views fixed** — `/view/[id]` now redirects with `?view_id=…` so the team page shows the saved-view name + colored Bookmark icon in the topbar instead of generic "Issues". Tabs hidden in view mode.
+2. ✅ **Sidebar** — dead `/more`, "Try" section (Import / Invite / Connect GitHub stubs), and broken `Star`/`PanelRight` icons removed. Help button dispatches `?` (cheatsheet). PencilLine dispatches `c` (new issue). Settings link gets a real gear icon. Footer is its own bordered row.
+3. ✅ **Topbar** — collapsed to 44px, dropped the unwired Star (favorite) + PanelRight (side panel) buttons, consistent `px-4` padding.
+4. ✅ **Inbox** — All / Unread / Mentions pills, Mark-all-read, kind icon overlay on actor avatar, real `relTime`.
+5. ✅ **My Issues** — tabs now navigate (`href` on each scope), counts inline, empty-state copy.
+6. ✅ **Team list/board** — hardcoded "May 11" date replaced with `relTime(updated_at)` (or due date when set). Board column "+" wired to inline quick-add.
+7. ✅ **Issue detail** — rebuilt around real-data widgets (SubIssuesPanel, RelationsPanel, IssueLinksPanel, SubscribeButton, subscriber chips, archive banner).
+8. ✅ **Projects + Project detail** — NewProjectButton on /projects topbar; MilestonesPanel + ProjectResourcesPanel + ProjectTeamsPanel on project detail.
+9. ✅ **Initiatives + Roadmap** — bucketed list with progress bars, status pills; roadmap has gantt bars with completion fill + today indicator.
+10. ✅ **Cycles + cycle detail** — Active/Upcoming/Completed buckets; Complete-cycle CTA on active cycle detail.
+11. ✅ **Documents** — listing + per-doc editor stays.
+12. ✅ **Customer Requests** — bucketed by status, source pill, link-to-issue affordance, resolve/cancel buttons.
+13. ✅ **Triage** — accept/decline rail per row, source pill.
+14. ✅ **Settings** — left-pane `SettingsNav` already routes to Members / Labels / Teams / per-team; Members editor now changes role inline.
+15. ✅ **Command palette** — recents from localStorage, `in:issues` / `team:ENG` / `@alex` filters, group headers, hint footer.
+16. ✅ **Design tokens** — every new component uses `text-*`, `bg-*`, `border-*` tokens from `globals.css`; no raw hex.
+17. ✅ **New routes filled in** — `/views`, `/team/[key]/views`, `/team/[key]/projects` were 404s before; all now have real pages.
+
+Out-of-scope for this pass: auth, realtime, Postgres swap, golden-screenshot capture re-run.

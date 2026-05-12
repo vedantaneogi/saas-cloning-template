@@ -36,21 +36,28 @@ export default async function MyIssuesPage({ params }: { params: Promise<{ works
         icon={<CircleUser size={15} />}
         tabs={SCOPES.map((s) => ({
           key: s,
-          label: counts[s] !== undefined ? `${s[0].toUpperCase() + s.slice(1)} ${counts[s]}` : s[0].toUpperCase() + s.slice(1),
+          label: `${s[0].toUpperCase() + s.slice(1)}${counts[s] !== undefined ? ` ${counts[s]}` : ""}`,
+          href: `/${workspace}/my/${s}`,
         }))}
         activeTab={scope}
       />
       <div className="flex-1 overflow-y-auto">
-        {groups.map((g) => (
-          <IssueGroup
-            key={g.name}
-            title={g.name}
-            group={g.group}
-            count={g.issues.length}
-            issues={g.issues}
-            workspaceSlug={workspace}
-          />
-        ))}
+        {groups.length === 0 ? (
+          <div className="flex h-64 items-center justify-center text-small text-text-tertiary">
+            No issues in this view.
+          </div>
+        ) : (
+          groups.map((g) => (
+            <IssueGroup
+              key={g.name}
+              title={g.name}
+              group={g.group}
+              count={g.issues.length}
+              issues={g.issues}
+              workspaceSlug={workspace}
+            />
+          ))
+        )}
       </div>
     </>
   );

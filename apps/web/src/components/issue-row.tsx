@@ -6,6 +6,12 @@ import { GripVertical, Check } from "lucide-react";
 import type { Issue } from "@/lib/api";
 import { Avatar, PriorityIcon, StatusIcon, SubIssueProgress } from "@/components/icons";
 import { useSelection } from "@/components/selection-context";
+import { relTime } from "@/lib/time";
+
+function shortDate(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 export function IssueRow({
   issue,
@@ -85,7 +91,9 @@ export function IssueRow({
         </span>
       )}
 
-      <span className="w-12 text-right text-mini text-text-tertiary">May 11</span>
+      <span className="w-12 text-right text-mini text-text-tertiary" title={issue.due_date ? `Due ${new Date(issue.due_date).toLocaleString()}` : `Updated ${relTime(issue.updated_at)} ago`}>
+        {issue.due_date ? shortDate(issue.due_date) : relTime(issue.updated_at)}
+      </span>
       <span className="ml-1">
         {issue.assignee ? (
           <Avatar initials={issue.assignee.initials} color={issue.assignee.color} size={18} />

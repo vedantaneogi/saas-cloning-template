@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, MessageSquare, RotateCcw, UserPlus, AtSign, Bell } from "lucide-react";
+import { MessageSquare, RotateCcw, UserPlus, AtSign, Bell } from "lucide-react";
 import clsx from "clsx";
 import { Avatar } from "@/components/icons";
 import {

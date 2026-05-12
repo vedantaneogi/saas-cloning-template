@@ -15,9 +15,10 @@ export default async function SavedViewPage({
     throw e;
   }
   if (!view.team_key) {
-    // Workspace-scoped saved views aren't shown anywhere yet; bounce to projects.
     redirect(`/${workspace}/projects`);
   }
-  const qs = view.query ? `?${view.query}` : "";
-  redirect(`/${workspace}/team/${view.team_key}/${view.base}${qs}`);
+  const usp = new URLSearchParams(view.query || "");
+  usp.set("view_id", view.id);
+  const qs = usp.toString();
+  redirect(`/${workspace}/team/${view.team_key}/${view.base}${qs ? `?${qs}` : ""}`);
 }

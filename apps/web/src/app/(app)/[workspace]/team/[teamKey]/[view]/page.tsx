@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Layers } from "lucide-react";
+import { Bookmark, Layers } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { IssueListBody } from "@/components/issue-list-body";
 import { BoardView } from "@/components/board-view";
@@ -7,7 +7,7 @@ import { DisplayOptions } from "@/components/display-options";
 import { FilterBar, FilterTrigger } from "@/components/filter-bar";
 import { SaveViewButton } from "@/components/save-view-button";
 import { TeamCsvActions } from "@/components/team-csv-actions";
-import { listTeamIssues, NotFoundError, type Issue, type StateGroup } from "@/lib/api";
+import { getSavedView, listTeamIssues, NotFoundError, type Issue, type SavedView, type StateGroup } from "@/lib/api";
 
 const VIEWS = {
   active: { label: "Active" },
@@ -32,6 +32,12 @@ export default async function TeamIssuesPage({
   const display = (sp.display as string) || "list";
   const group = (sp.group as string) || "state";
   const sort = (sp.sort as string) || "default";
+  const viewId = typeof sp.view_id === "string" ? sp.view_id : null;
+
+  let savedView: SavedView | null = null;
+  if (viewId) {
+    savedView = await getSavedView(workspace, viewId).catch(() => null);
+  }
 
   const buildFilters = () => {
     const fetchParams: any = { view: view as ViewKey };
@@ -52,19 +58,30 @@ export default async function TeamIssuesPage({
 
   const groups = groupIssues(issues, group);
 
-  const tabs = [
-    { key: "all", label: "All issues", href: makeHref(`/${workspace}/team/${teamKey}/all`, sp) },
-    { key: "active", label: "Active", href: makeHref(`/${workspace}/team/${teamKey}/active`, sp) },
-    { key: "backlog", label: "Backlog", href: makeHref(`/${workspace}/team/${teamKey}/backlog`, sp) },
-  ];
+  const tabs = savedView
+    ? undefined
+    : [
+        { key: "all", label: "All issues", href: makeHref(`/${workspace}/team/${teamKey}/all`, sp) },
+        { key: "active", label: "Active", href: makeHref(`/${workspace}/team/${teamKey}/active`, sp) },
+        { key: "backlog", label: "Backlog", href: makeHref(`/${workspace}/team/${teamKey}/backlog`, sp) },
+      ];
+
+  const title = savedView ? savedView.name : "Issues";
+  const icon = savedView ? (
+    <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm" style={{ background: savedView.icon_color }}>
+      <Bookmark size={10} className="text-white/90" />
+    </span>
+  ) : (
+    <Layers size={15} />
+  );
 
   return (
     <>
       <Topbar
-        title="Issues"
-        icon={<Layers size={15} />}
+        title={title}
+        icon={icon}
         tabs={tabs}
-        activeTab={view}
+        activeTab={savedView ? undefined : view}
         trailing={
           <>
             <SaveViewButton workspaceSlug={workspace} teamKey={teamKey} base={view as "active" | "backlog" | "all"} />

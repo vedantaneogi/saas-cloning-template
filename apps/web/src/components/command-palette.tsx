@@ -230,6 +230,19 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
             </div>
           ))}
         </div>
+        <footer className="flex items-center gap-2 border-t border-border-subtle px-3.5 py-1.5 text-micro text-text-tertiary">
+          <span className="flex items-center gap-1">
+            <kbd className="rounded-sm border border-border-subtle bg-pill px-1 text-text-secondary">↑↓</kbd>
+            <span>navigate</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded-sm border border-border-subtle bg-pill px-1 text-text-secondary">↵</kbd>
+            <span>open</span>
+          </span>
+          <span className="ml-auto truncate text-text-quaternary">
+            Try <code className="text-text-secondary">in:issues</code> · <code className="text-text-secondary">team:ENG</code> · <code className="text-text-secondary">@alex</code>
+          </span>
+        </footer>
       </div>
     </div>
   );

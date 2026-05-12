@@ -10,13 +10,11 @@ import {
   PencilLine,
   Folders,
   Layers,
-  MoreHorizontal,
+  Settings,
   Target,
-  Github,
   HelpCircle,
   CircleUser,
   Compass,
-  PlusCircle,
   Star,
   AlertOctagon,
   FileText,
@@ -29,7 +27,7 @@ import { getActiveCycle, getTriageCount, getUnreadCount, listSavedViews, patchSa
 
 const VIEWER = { initials: "NM", color: "#5e6ad2" };
 
-type Sections = "favorites" | "workspace" | "teams" | "try";
+type Sections = "favorites" | "workspace" | "teams";
 
 export function Sidebar({ workspace }: { workspace: Workspace }) {
   const pathname = usePathname();
@@ -39,7 +37,6 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     favorites: true,
     workspace: true,
     teams: true,
-    try: true,
   });
   const [teamOpen, setTeamOpen] = useState<Record<string, boolean>>(
     Object.fromEntries(workspace.teams.map((t) => [t.key, true]))
@@ -105,10 +102,19 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           onClick={() => window.dispatchEvent(new CustomEvent("command-palette:open"))}
           className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
           aria-label="Search"
+          title="Search (⌘K)"
         >
           <Search size={15} />
         </button>
-        <button className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary" aria-label="New issue">
+        <button
+          onClick={() => {
+            const ev = new KeyboardEvent("keydown", { key: "c", bubbles: true });
+            window.dispatchEvent(ev);
+          }}
+          className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
+          aria-label="New issue"
+          title="New issue (C)"
+        >
           <PencilLine size={15} />
         </button>
       </div>
@@ -188,7 +194,6 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               label="Customer requests"
               active={pathname.endsWith("/customer-requests")}
             />
-            <NavItem href={`/${wsSlug}/more`} icon={<MoreHorizontal size={14} />} label="More" />
           </div>
         )}
 
@@ -218,37 +223,34 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           </div>
         )}
 
-        <SectionHeader
-          title="Try"
-          open={sectionOpen.try}
-          onToggle={() => setSectionOpen((s) => ({ ...s, try: !s.try }))}
-          muted
-        />
-        {sectionOpen.try && (
-          <div>
-            <NavItem href="#" icon={<Layers size={14} />} label="Import issues" />
-            <NavItem href="#" icon={<PlusCircle size={14} />} label="Invite people" />
-            <NavItem href="#" icon={<Github size={14} />} label="Connect GitHub" />
-          </div>
-        )}
       </nav>
 
-      <div className="flex items-center justify-between gap-2 px-3 py-2 text-micro text-text-tertiary">
-        <button className="rounded-md p-1 hover:bg-row-hover" aria-label="Help">
+      <div className="flex items-center gap-1 border-t border-border-subtle px-3 py-2 text-micro text-text-tertiary">
+        <button
+          onClick={() => {
+            const ev = new KeyboardEvent("keydown", { key: "?", bubbles: true });
+            window.dispatchEvent(ev);
+          }}
+          className="rounded-md p-1 hover:bg-row-hover hover:text-text-secondary"
+          aria-label="Help"
+          title="Keyboard shortcuts (?)"
+        >
           <HelpCircle size={14} />
         </button>
         <Link
           href={`/${wsSlug}/settings`}
           className={clsx(
-            "ml-auto rounded-md p-1",
+            "rounded-md p-1",
             pathname.includes("/settings") ? "bg-row-selected text-text-primary" : "text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
           )}
           aria-label="Settings"
           title="Settings"
         >
-          <MoreHorizontal size={14} />
+          <Settings size={14} />
         </Link>
-        <Avatar initials={VIEWER.initials} color={VIEWER.color} size={20} />
+        <span className="ml-auto">
+          <Avatar initials={VIEWER.initials} color={VIEWER.color} size={20} />
+        </span>
       </div>
     </aside>
   );
