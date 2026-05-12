@@ -1125,3 +1125,125 @@ export interface TeamInsights {
 export async function getTeamInsights(slug: string, teamKey: string, days = 30): Promise<TeamInsights> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}/insights?days=${days}`);
 }
+
+// --- templates -------------------------------------------------------------
+
+export type TemplateKind = "issue" | "project" | "document";
+
+export interface IssueTemplateBody {
+  title?: string;
+  description?: string;
+  priority?: 0 | 1 | 2 | 3 | 4;
+  label_ids?: string[];
+  estimate?: number | null;
+  state_id?: string | null;
+}
+export interface ProjectMilestoneTemplate {
+  name: string;
+  target_date_offset_days?: number | null;
+}
+export interface ProjectTemplateBody {
+  name?: string;
+  description?: string;
+  icon_color?: string;
+  milestones?: ProjectMilestoneTemplate[];
+}
+export interface DocumentTemplateBody {
+  title?: string;
+  body?: string;
+  icon?: string | null;
+}
+
+export interface Template {
+  id: string;
+  kind: TemplateKind;
+  name: string;
+  description: string | null;
+  team_id: string | null;
+  team_key: string | null;
+  body: IssueTemplateBody | ProjectTemplateBody | DocumentTemplateBody;
+  created_at: string;
+}
+
+export async function listTemplates(slug: string, opts: { kind?: TemplateKind; teamKey?: string } = {}): Promise<Template[]> {
+  const params = new URLSearchParams();
+  if (opts.kind) params.set("kind", opts.kind);
+  if (opts.teamKey) params.set("team_key", opts.teamKey);
+  const qs = params.toString();
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/templates${qs ? `?${qs}` : ""}`);
+}
+
+export async function createTemplate(slug: string, input: { kind: TemplateKind; name: string; description?: string; team_key?: string; body: Record<string, unknown> }): Promise<Template> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/templates`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateTemplate(slug: string, id: string, patch: { name?: string; description?: string; body?: Record<string, unknown> }): Promise<Template> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/templates/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteTemplate(slug: string, id: string): Promise<void> {
+  await fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// --- automations -----------------------------------------------------------
+
+export type AutomationTrigger = "on_issue_create" | "on_status_change" | "on_label_added" | "on_cycle_end" | "stale_in_state";
+export type AutomationAction = "move_to_state" | "assign_to_member" | "add_label" | "add_comment" | "archive" | "set_priority" | "rotate_assign";
+
+export interface Automation {
+  id: string;
+  name: string;
+  enabled: boolean;
+  team_id: string | null;
+  team_key: string | null;
+  trigger: AutomationTrigger;
+  trigger_config: Record<string, unknown>;
+  action: AutomationAction;
+  action_config: Record<string, unknown>;
+  created_at: string;
+}
+
+export async function listAutomations(slug: string): Promise<Automation[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/automations`);
+}
+
+export async function createAutomation(slug: string, body: {
+  name: string;
+  team_key?: string;
+  trigger: AutomationTrigger;
+  trigger_config?: Record<string, unknown>;
+  action: AutomationAction;
+  action_config?: Record<string, unknown>;
+  enabled?: boolean;
+}): Promise<Automation> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/automations`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateAutomation(slug: string, id: string, patch: {
+  name?: string;
+  enabled?: boolean;
+  trigger_config?: Record<string, unknown>;
+  action_config?: Record<string, unknown>;
+}): Promise<Automation> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/automations/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteAutomation(slug: string, id: string): Promise<void> {
+  await fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/automations/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function runScheduledAutomations(slug: string): Promise<{ applied: number; by_rule: Record<string, number> }> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/automations/run-scheduled`, { method: "POST" });
+}

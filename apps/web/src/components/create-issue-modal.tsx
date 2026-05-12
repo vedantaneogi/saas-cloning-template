@@ -12,8 +12,9 @@ import {
   Paperclip,
   Eye,
   Pencil,
+  FileText,
 } from "lucide-react";
-import { createIssue, listMembers, listTeamLabels, type Label, type Member, type Team } from "@/lib/api";
+import { createIssue, listMembers, listTeamLabels, listTemplates, type IssueTemplateBody, type Label, type Member, type Team, type Template } from "@/lib/api";
 import { StatusIcon, PriorityIcon, Avatar } from "@/components/icons";
 import { Popover, PopoverItem, PopoverList } from "@/components/popover";
 import { MarkdownView } from "@/components/markdown-view";
@@ -41,6 +42,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
   const [labels, setLabels] = useState<Label[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [teamLabels, setTeamLabels] = useState<Label[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
@@ -51,7 +53,19 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
     if (!open) return;
     listMembers(workspaceSlug).then(setMembers);
     listTeamLabels(workspaceSlug, teamKey).then(setTeamLabels);
+    listTemplates(workspaceSlug, { kind: "issue", teamKey }).then(setTemplates).catch(() => setTemplates([]));
   }, [open, workspaceSlug, teamKey]);
+
+  function applyTemplate(t: Template) {
+    const body = t.body as IssueTemplateBody;
+    if (body.title && !title.trim()) setTitle(body.title);
+    if (body.description) setDescription(body.description);
+    if (typeof body.priority === "number") setPriority(body.priority);
+    if (Array.isArray(body.label_ids) && body.label_ids.length) {
+      const matched = teamLabels.filter((l) => body.label_ids!.includes(l.id));
+      setLabels(matched);
+    }
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -181,6 +195,40 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
           </Popover>
           <ChevronRight size={12} className="text-text-tertiary" />
           <span className="text-mini text-text-tertiary">New issue</span>
+          {templates.length > 0 && (
+            <Popover
+              trigger={({ toggle }) => (
+                <button
+                  type="button"
+                  onClick={toggle}
+                  className="ml-2 flex items-center gap-1 rounded-md bg-pill px-1.5 py-0.5 text-mini text-text-secondary hover:bg-elevated-hover"
+                  title="Apply a template"
+                >
+                  <FileText size={11} />
+                  Template
+                </button>
+              )}
+              width={260}
+            >
+              {({ close }) => (
+                <PopoverList>
+                  {templates.map((t) => (
+                    <PopoverItem
+                      key={t.id}
+                      onClick={() => {
+                        applyTemplate(t);
+                        close();
+                      }}
+                    >
+                      <FileText size={11} className="text-text-tertiary" />
+                      <span className="truncate">{t.name}</span>
+                      {t.team_key && <span className="ml-auto text-text-tertiary">{t.team_key}</span>}
+                    </PopoverItem>
+                  ))}
+                </PopoverList>
+              )}
+            </Popover>
+          )}
           <div className="ml-auto flex items-center gap-1 text-text-tertiary">
             <button
               type="button"

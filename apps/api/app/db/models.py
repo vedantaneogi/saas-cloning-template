@@ -628,3 +628,85 @@ class SavedView(Base):
 
     workspace: Mapped["Workspace"] = relationship()
     team: Mapped["Team | None"] = relationship()
+
+
+class TemplateKind(str, enum.Enum):
+    issue = "issue"
+    project = "project"
+    document = "document"
+
+
+class AutomationTrigger(str, enum.Enum):
+    on_issue_create = "on_issue_create"
+    on_status_change = "on_status_change"
+    on_label_added = "on_label_added"
+    on_cycle_end = "on_cycle_end"
+    stale_in_state = "stale_in_state"  # scheduled
+
+
+class AutomationAction(str, enum.Enum):
+    move_to_state = "move_to_state"
+    assign_to_member = "assign_to_member"
+    add_label = "add_label"
+    add_comment = "add_comment"
+    archive = "archive"
+    set_priority = "set_priority"
+    rotate_assign = "rotate_assign"  # round-robin among configured members
+
+
+class Automation(Base):
+    """Workflow rule. team_id null means workspace-wide.
+
+    `trigger_config` shape varies by trigger:
+      on_status_change: {to_state_group: "completed", from_state_group: null}
+      on_label_added:   {label_id: "..."}
+      stale_in_state:   {state_group: "started", days: 14}
+    `action_config`:
+      move_to_state:    {state_group: "canceled"}
+      assign_to_member: {member_id: "..."}
+      add_label:        {label_id: "..."}
+      add_comment:      {body: "..."}
+      set_priority:     {priority: 2}
+      rotate_assign:    {member_ids: ["..", ".."], cursor: 0}
+    """
+
+    __tablename__ = "automations"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    trigger: Mapped[AutomationTrigger] = mapped_column(Enum(AutomationTrigger, name="automation_trigger"), nullable=False)
+    trigger_config: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    action: Mapped[AutomationAction] = mapped_column(Enum(AutomationAction, name="automation_action"), nullable=False)
+    action_config: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    workspace: Mapped["Workspace"] = relationship()
+    team: Mapped["Team | None"] = relationship()
+
+
+class Template(Base):
+    """Reusable issue / project / document scaffold.
+
+    `body` is a JSON-encoded string (`Text` for portability) interpreted per
+    kind:
+      - issue:    {title, description, priority, label_ids, estimate, state_id}
+      - project:  {name, description, icon_color, milestones: [{name, target_date_offset_days}]}
+      - document: {title, body, icon}
+    """
+
+    __tablename__ = "templates"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True)
+    kind: Mapped[TemplateKind] = mapped_column(Enum(TemplateKind, name="template_kind"), nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    workspace: Mapped["Workspace"] = relationship()
+    team: Mapped["Team | None"] = relationship()

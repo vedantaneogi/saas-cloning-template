@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -39,10 +40,15 @@ from app.db.models import (
     ProjectState,
     ProjectUpdate as ProjectUpdateModel,
     RelationType,
+    Automation,
+    AutomationAction,
+    AutomationTrigger,
     SavedView,
     StateGroup,
     Team,
     TeamMembership,
+    Template,
+    TemplateKind,
     UpdateHealth,
     User,
     Workspace,
@@ -849,6 +855,10 @@ def create_issue(
         labels = db.query(Label).filter(Label.id.in_(body.label_ids)).all()
         issue.labels = labels
     notif.issue_assigned(db, issue=issue, previous_assignee_id=None, actor_id=None)
+    # Run on_issue_create automations (may mutate the issue further).
+    from app.services.automations import run_event as _auto_run
+    from app.db.models import AutomationTrigger as _AT
+    _auto_run(db, workspace_id=ws.id, issue=issue, event=_AT.on_issue_create)
     db.commit()
     db.refresh(issue)
     return _issue_dict(issue)
@@ -938,6 +948,18 @@ def patch_issue(
     # Emit notifications (actor unresolved for now — uses None; future: pull from auth)
     notif.issue_assigned(db, issue=issue, previous_assignee_id=prev_assignee_id, actor_id=None)
     notif.issue_status_changed(db, issue=issue, previous_state_name=prev_state_name, new_state_name=new_state_name, actor_id=None)
+    # Run on_status_change automations when the state actually moved.
+    if prev_state_name != new_state_name:
+        from app.services.automations import run_event as _auto_run
+        from app.db.models import AutomationTrigger as _AT
+        prev_group = None
+        new_group = None
+        if prev_state_name:
+            prev_state = db.query(WorkflowState).filter_by(team_id=issue.team_id, name=prev_state_name).first()
+            prev_group = prev_state.group.value if prev_state else None
+        new_state = db.query(WorkflowState).filter_by(id=issue.state_id).first()
+        new_group = new_state.group.value if new_state else None
+        _auto_run(db, workspace_id=ws.id, issue=issue, event=_AT.on_status_change, payload={"from_state_group": prev_group, "to_state_group": new_group})
     db.commit()
     db.refresh(issue)
     return _issue_dict(issue, _child_counts(db, [issue.id]))
@@ -3527,3 +3549,257 @@ def team_insights(
         "open_issues": open_issues,
         "per_cycle_velocity": per_cycle,
     }
+
+
+# ============================================================================
+# Templates — reusable issue / project / document scaffolds
+# ============================================================================
+
+class _TemplateIn(BaseModel):
+    kind: str
+    name: str
+    description: str | None = None
+    team_key: str | None = None
+    body: dict = {}
+
+
+def _template_dict(t: Template) -> dict:
+    try:
+        body = json.loads(t.body) if t.body else {}
+    except json.JSONDecodeError:
+        body = {}
+    return {
+        "id": t.id,
+        "kind": t.kind.value,
+        "name": t.name,
+        "description": t.description,
+        "team_id": t.team_id,
+        "team_key": t.team.key if t.team else None,
+        "body": body,
+        "created_at": t.created_at,
+    }
+
+
+@router.get("/workspaces/{slug}/templates")
+def list_templates(
+    kind: str | None = Query(None),
+    team_key: str | None = Query(None),
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    q = db.query(Template).filter(Template.workspace_id == ws.id)
+    if kind:
+        try:
+            q = q.filter(Template.kind == TemplateKind(kind))
+        except ValueError:
+            raise HTTPException(400, f"unknown template kind: {kind}")
+    if team_key:
+        team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
+        if not team:
+            raise HTTPException(404, f"team not found: {team_key}")
+        # Include templates scoped to this team OR workspace-wide (team_id is null).
+        q = q.filter((Template.team_id == team.id) | (Template.team_id.is_(None)))
+    q = q.options(selectinload(Template.team)).order_by(Template.name.asc())
+    return [_template_dict(t) for t in q.all()]
+
+
+@router.post("/workspaces/{slug}/templates")
+def create_template(
+    body: _TemplateIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        kind = TemplateKind(body.kind)
+    except ValueError:
+        raise HTTPException(400, f"unknown template kind: {body.kind}")
+    team_id = None
+    if body.team_key:
+        team = db.query(Team).filter_by(workspace_id=ws.id, key=body.team_key).first()
+        if not team:
+            raise HTTPException(404, f"team not found: {body.team_key}")
+        team_id = team.id
+    t = Template(
+        workspace_id=ws.id,
+        team_id=team_id,
+        kind=kind,
+        name=body.name.strip()[:160] or "Untitled template",
+        description=body.description,
+        body=json.dumps(body.body or {}),
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return _template_dict(t)
+
+
+class _TemplatePatchIn(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    body: dict | None = None
+
+
+@router.patch("/workspaces/{slug}/templates/{template_id}")
+def patch_template(
+    template_id: str,
+    body: _TemplatePatchIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    t = db.query(Template).filter_by(id=template_id, workspace_id=ws.id).first()
+    if not t:
+        raise HTTPException(404, "template not found")
+    if body.name is not None:
+        t.name = body.name.strip()[:160] or t.name
+    if body.description is not None:
+        t.description = body.description
+    if body.body is not None:
+        t.body = json.dumps(body.body)
+    db.commit()
+    db.refresh(t)
+    return _template_dict(t)
+
+
+@router.delete("/workspaces/{slug}/templates/{template_id}", status_code=204)
+def delete_template(
+    template_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> None:
+    t = db.query(Template).filter_by(id=template_id, workspace_id=ws.id).first()
+    if not t:
+        raise HTTPException(404, "template not found")
+    db.delete(t)
+    db.commit()
+
+
+# ============================================================================
+# Automations
+# ============================================================================
+
+class _AutomationIn(BaseModel):
+    name: str
+    team_key: str | None = None
+    trigger: str
+    trigger_config: dict = {}
+    action: str
+    action_config: dict = {}
+    enabled: bool = True
+
+
+def _automation_dict(a: Automation) -> dict:
+    return {
+        "id": a.id,
+        "name": a.name,
+        "enabled": a.enabled,
+        "team_id": a.team_id,
+        "team_key": a.team.key if a.team else None,
+        "trigger": a.trigger.value,
+        "trigger_config": json.loads(a.trigger_config or "{}"),
+        "action": a.action.value,
+        "action_config": json.loads(a.action_config or "{}"),
+        "created_at": a.created_at,
+    }
+
+
+@router.get("/workspaces/{slug}/automations")
+def list_automations(
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = (
+        db.query(Automation)
+        .filter(Automation.workspace_id == ws.id)
+        .options(selectinload(Automation.team))
+        .order_by(Automation.created_at.desc())
+        .all()
+    )
+    return [_automation_dict(r) for r in rows]
+
+
+@router.post("/workspaces/{slug}/automations")
+def create_automation(
+    body: _AutomationIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        trig = AutomationTrigger(body.trigger)
+        act = AutomationAction(body.action)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    team_id = None
+    if body.team_key:
+        team = db.query(Team).filter_by(workspace_id=ws.id, key=body.team_key).first()
+        if not team:
+            raise HTTPException(404, f"team not found: {body.team_key}")
+        team_id = team.id
+    a = Automation(
+        workspace_id=ws.id,
+        team_id=team_id,
+        name=body.name.strip()[:160] or "Untitled rule",
+        enabled=body.enabled,
+        trigger=trig,
+        trigger_config=json.dumps(body.trigger_config or {}),
+        action=act,
+        action_config=json.dumps(body.action_config or {}),
+    )
+    db.add(a)
+    db.commit()
+    db.refresh(a)
+    return _automation_dict(a)
+
+
+class _AutomationPatchIn(BaseModel):
+    name: str | None = None
+    enabled: bool | None = None
+    trigger_config: dict | None = None
+    action_config: dict | None = None
+
+
+@router.patch("/workspaces/{slug}/automations/{rule_id}")
+def patch_automation(
+    rule_id: str,
+    body: _AutomationPatchIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    a = db.query(Automation).filter_by(id=rule_id, workspace_id=ws.id).first()
+    if not a:
+        raise HTTPException(404, "automation not found")
+    if body.name is not None:
+        a.name = body.name.strip()[:160] or a.name
+    if body.enabled is not None:
+        a.enabled = body.enabled
+    if body.trigger_config is not None:
+        a.trigger_config = json.dumps(body.trigger_config)
+    if body.action_config is not None:
+        a.action_config = json.dumps(body.action_config)
+    db.commit()
+    db.refresh(a)
+    return _automation_dict(a)
+
+
+@router.delete("/workspaces/{slug}/automations/{rule_id}", status_code=204)
+def delete_automation(
+    rule_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> None:
+    a = db.query(Automation).filter_by(id=rule_id, workspace_id=ws.id).first()
+    if not a:
+        raise HTTPException(404, "automation not found")
+    db.delete(a)
+    db.commit()
+
+
+@router.post("/workspaces/{slug}/automations/run-scheduled")
+def run_scheduled_automations(
+    ws: Workspace = Depends(get_workspace),
+    admin: Member = Depends(require_role(MemberRole.admin)),
+    db: Session = Depends(get_db),
+) -> dict:
+    from app.services.automations import run_scheduled
+    summary = run_scheduled(db, workspace_id=ws.id)
+    db.commit()
+    return summary
