@@ -934,6 +934,7 @@ export interface Notification {
   kind: NotificationKind;
   body: string | null;
   read_at: string | null;
+  snoozed_until?: string | null;
   created_at: string;
   actor: Member | null;
   issue_identifier: string | null;
@@ -1246,4 +1247,50 @@ export async function deleteAutomation(slug: string, id: string): Promise<void> 
 
 export async function runScheduledAutomations(slug: string): Promise<{ applied: number; by_rule: Record<string, number> }> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/automations/run-scheduled`, { method: "POST" });
+}
+
+// --- notifications: snooze + prefs + digest -------------------------------
+
+export async function snoozeNotification(slug: string, id: string, minutes: number): Promise<{ id: string; snoozed_until: string }> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/notifications/${encodeURIComponent(id)}/snooze`, {
+    method: "POST",
+    body: JSON.stringify({ minutes }),
+  });
+}
+
+export async function unsnoozeNotification(slug: string, id: string): Promise<void> {
+  await fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/notifications/${encodeURIComponent(id)}/unsnooze`, { method: "POST" });
+}
+
+export interface NotificationPreference {
+  id: string;
+  scope_type: "team" | "project" | "workspace";
+  scope_id: string;
+  muted: boolean;
+}
+
+export async function listNotificationPrefs(slug: string): Promise<NotificationPreference[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/notification-preferences`);
+}
+
+export async function upsertNotificationPref(slug: string, body: { scope_type: "team" | "project" | "workspace"; scope_id: string; muted: boolean }): Promise<NotificationPreference> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/notification-preferences`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteNotificationPref(slug: string, id: string): Promise<void> {
+  await fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/notification-preferences/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export interface NotificationDigest {
+  period: "daily" | "weekly";
+  count: number;
+  html: string;
+  items: unknown[];
+}
+
+export async function getDigest(slug: string, period: "daily" | "weekly" = "daily"): Promise<NotificationDigest> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/notifications/digest?period=${period}`);
 }

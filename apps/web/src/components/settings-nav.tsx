@@ -19,6 +19,7 @@ export function SettingsNav({ workspaceSlug, teams }: { workspaceSlug: string; t
       <NavLink href={`${base}/teams`} label="Teams" pathname={pathname} />
       <NavLink href={`${base}/templates`} label="Templates" pathname={pathname} />
       <NavLink href={`${base}/automations`} label="Automations" pathname={pathname} />
+      <NavLink href={`${base}/notifications`} label="Notifications" pathname={pathname} />
 
       <h2 className="mb-3 mt-5 px-1 text-mini font-medium uppercase tracking-wider text-text-tertiary">
         Per-team

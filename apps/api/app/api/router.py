@@ -34,6 +34,7 @@ from app.db.models import (
     MemberRole,
     Notification,
     NotificationKind,
+    NotificationPreference,
     Project,
     ProjectMilestone,
     ProjectResource,
@@ -2643,6 +2644,7 @@ def _notification_dict(n: Notification) -> dict:
         "kind": n.kind.value if hasattr(n.kind, "value") else n.kind,
         "body": n.body,
         "read_at": n.read_at,
+        "snoozed_until": n.snoozed_until,
         "created_at": n.created_at,
         "actor": MemberOut.model_validate(n.actor).model_dump() if n.actor else None,
         "issue_identifier": n.issue.identifier if n.issue else None,
@@ -2669,6 +2671,9 @@ def list_notifications(
     )
     if unread_only:
         q = q.filter(Notification.read_at.is_(None))
+    # Hide notifications currently snoozed (snoozed_until > now).
+    now = datetime.now(timezone.utc)
+    q = q.filter((Notification.snoozed_until.is_(None)) | (Notification.snoozed_until <= now))
     notes = q.order_by(Notification.created_at.desc()).limit(limit).all()
     return [_notification_dict(n) for n in notes]
 
@@ -2683,9 +2688,11 @@ def unread_count(
     rid = member_id or _default_member_id(db, ws, user)
     if not rid:
         return {"unread": 0}
+    now = datetime.now(timezone.utc)
     n = (
         db.query(Notification)
         .filter(Notification.workspace_id == ws.id, Notification.recipient_id == rid, Notification.read_at.is_(None))
+        .filter((Notification.snoozed_until.is_(None)) | (Notification.snoozed_until <= now))
         .count()
     )
     return {"unread": n}
@@ -3803,3 +3810,145 @@ def run_scheduled_automations(
     summary = run_scheduled(db, workspace_id=ws.id)
     db.commit()
     return summary
+
+
+# ============================================================================
+# Notification snooze + preferences + digest
+# ============================================================================
+
+class _SnoozeIn(BaseModel):
+    minutes: int = 60
+
+
+@router.post("/workspaces/{slug}/notifications/{notification_id}/snooze", response_model=None)
+def snooze_notification(
+    notification_id: str,
+    body: _SnoozeIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    n = db.query(Notification).filter_by(id=notification_id, workspace_id=ws.id).first()
+    if not n:
+        raise HTTPException(404, "notification not found")
+    mins = max(1, min(int(body.minutes or 60), 60 * 24 * 30))
+    n.snoozed_until = datetime.now(timezone.utc) + timedelta(minutes=mins)
+    db.commit()
+    return {"id": n.id, "snoozed_until": n.snoozed_until}
+
+
+@router.post("/workspaces/{slug}/notifications/{notification_id}/unsnooze", status_code=204)
+def unsnooze_notification(
+    notification_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> None:
+    n = db.query(Notification).filter_by(id=notification_id, workspace_id=ws.id).first()
+    if not n:
+        raise HTTPException(404, "notification not found")
+    n.snoozed_until = None
+    db.commit()
+
+
+class _PrefIn(BaseModel):
+    scope_type: str  # team | project | workspace
+    scope_id: str
+    muted: bool = True
+
+
+@router.get("/workspaces/{slug}/notification-preferences")
+def list_prefs(
+    ws: Workspace = Depends(get_workspace),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = db.query(NotificationPreference).filter_by(member_id=member.id).all()
+    return [{"id": r.id, "scope_type": r.scope_type, "scope_id": r.scope_id, "muted": r.muted} for r in rows]
+
+
+@router.post("/workspaces/{slug}/notification-preferences")
+def upsert_pref(
+    body: _PrefIn,
+    ws: Workspace = Depends(get_workspace),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    if body.scope_type not in ("team", "project", "workspace"):
+        raise HTTPException(400, "scope_type must be team|project|workspace")
+    row = (
+        db.query(NotificationPreference)
+        .filter_by(member_id=member.id, scope_type=body.scope_type, scope_id=body.scope_id)
+        .first()
+    )
+    if row:
+        row.muted = body.muted
+    else:
+        row = NotificationPreference(
+            member_id=member.id, scope_type=body.scope_type, scope_id=body.scope_id, muted=body.muted
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "scope_type": row.scope_type, "scope_id": row.scope_id, "muted": row.muted}
+
+
+@router.delete("/workspaces/{slug}/notification-preferences/{pref_id}", status_code=204)
+def delete_pref(
+    pref_id: str,
+    ws: Workspace = Depends(get_workspace),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> None:
+    row = db.query(NotificationPreference).filter_by(id=pref_id, member_id=member.id).first()
+    if not row:
+        raise HTTPException(404, "preference not found")
+    db.delete(row)
+    db.commit()
+
+
+@router.get("/workspaces/{slug}/notifications/digest")
+def notification_digest(
+    period: str = Query("daily"),  # daily|weekly
+    ws: Workspace = Depends(get_workspace),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Render an HTML digest of the current user's recent notifications.
+
+    No SMTP wired — clients can render the HTML, copy, or paste into a mail
+    client until delivery infrastructure is in place.
+    """
+    days = 1 if period == "daily" else 7
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    notes = (
+        db.query(Notification)
+        .filter(Notification.workspace_id == ws.id, Notification.recipient_id == member.id)
+        .filter(Notification.created_at >= since)
+        .options(selectinload(Notification.actor), selectinload(Notification.issue))
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+    items = [_notification_dict(n) for n in notes]
+    by_kind: dict[str, list[dict]] = defaultdict(list)
+    for it in items:
+        by_kind[it["kind"]].append(it)
+
+    sections = []
+    for kind, group in by_kind.items():
+        rows = "".join(
+            f"<li><strong>{(it['actor'] or {}).get('name', 'Someone')}</strong> "
+            f"{it['body'] or ''}"
+            f"{f' — <em>{it[\"issue_identifier\"]}</em>' if it['issue_identifier'] else ''}"
+            f"</li>"
+            for it in group
+        )
+        sections.append(f"<h3 style='margin:14px 0 4px 0;font-size:13px'>{kind.replace('_', ' ').title()}</h3><ul style='margin:0 0 8px 0;padding-left:18px'>{rows}</ul>")
+    body_html = "\n".join(sections) or "<p>No new activity.</p>"
+    html = (
+        f"<div style='font-family:-apple-system,system-ui,sans-serif;max-width:560px;color:#1f2328'>"
+        f"<h2 style='margin:0 0 4px 0;font-size:16px'>Your {period} digest</h2>"
+        f"<p style='margin:0 0 12px 0;color:#6e7781;font-size:12px'>"
+        f"Workspace: {ws.name} · {len(items)} update{'s' if len(items) != 1 else ''}</p>"
+        f"{body_html}"
+        f"</div>"
+    )
+    return {"period": period, "count": len(items), "html": html, "items": items}

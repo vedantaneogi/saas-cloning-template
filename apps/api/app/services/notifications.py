@@ -13,6 +13,7 @@ from app.db.models import (
     Member,
     Notification,
     NotificationKind,
+    NotificationPreference,
     Team,
     Workspace,
     WorkflowState,
@@ -23,11 +24,37 @@ def _workspace_id_for_issue(issue: Issue) -> str:
     return issue.team.workspace_id if issue.team else ""
 
 
-def _add(db: Session, *, workspace_id: str, recipient_id: str, actor_id: str | None, kind: NotificationKind, issue_id: str | None = None, comment_id: str | None = None, body: str | None = None) -> None:
+def _is_muted_for(db: Session, member_id: str, issue: Issue) -> bool:
+    """Return True if this recipient has muted the team/project/workspace
+    that owns the issue."""
+    scopes: list[tuple[str, str]] = []
+    if issue.team_id:
+        scopes.append(("team", issue.team_id))
+    if issue.project_id:
+        scopes.append(("project", issue.project_id))
+    if issue.team:
+        scopes.append(("workspace", issue.team.workspace_id))
+    if not scopes:
+        return False
+    q = (
+        db.query(NotificationPreference)
+        .filter(NotificationPreference.member_id == member_id, NotificationPreference.muted.is_(True))
+    )
+    # Build OR conditions across scope tuples
+    from sqlalchemy import or_, and_
+    conds = [and_(NotificationPreference.scope_type == st, NotificationPreference.scope_id == sid) for st, sid in scopes]
+    if conds:
+        q = q.filter(or_(*conds))
+    return db.query(q.exists()).scalar()
+
+
+def _add(db: Session, *, workspace_id: str, recipient_id: str, actor_id: str | None, kind: NotificationKind, issue_id: str | None = None, comment_id: str | None = None, body: str | None = None, issue: Issue | None = None) -> None:
     if not recipient_id:
         return
     if actor_id and actor_id == recipient_id:
         # Don't notify yourself about your own actions
+        return
+    if issue is not None and _is_muted_for(db, recipient_id, issue):
         return
     db.add(Notification(
         workspace_id=workspace_id,
@@ -46,6 +73,7 @@ def issue_assigned(db: Session, *, issue: Issue, previous_assignee_id: str | Non
     _add(
         db,
         workspace_id=_workspace_id_for_issue(issue),
+        issue=issue,
         recipient_id=issue.assignee_id,
         actor_id=actor_id,
         kind=NotificationKind.assigned,
@@ -60,6 +88,7 @@ def issue_status_changed(db: Session, *, issue: Issue, previous_state_name: str 
     _add(
         db,
         workspace_id=_workspace_id_for_issue(issue),
+        issue=issue,
         recipient_id=issue.assignee_id,
         actor_id=actor_id,
         kind=NotificationKind.status_changed,
@@ -76,6 +105,7 @@ def comment_mentioned(db: Session, *, issue: Issue, comment: Comment, mentioned_
     _add(
         db,
         workspace_id=_workspace_id_for_issue(issue),
+        issue=issue,
         recipient_id=mentioned_id,
         actor_id=actor_id,
         kind=NotificationKind.mentioned,
@@ -92,6 +122,7 @@ def comment_reacted(db: Session, *, issue: Issue, comment: Comment, emoji: str, 
     _add(
         db,
         workspace_id=_workspace_id_for_issue(issue),
+        issue=issue,
         recipient_id=comment.author_id,
         actor_id=actor_id,
         kind=NotificationKind.commented,
@@ -117,6 +148,7 @@ def issue_commented(db: Session, *, issue: Issue, comment: Comment, actor_id: st
         _add(
             db,
             workspace_id=workspace_id,
+            issue=issue,
             recipient_id=r,
             actor_id=actor_id,
             kind=NotificationKind.commented,

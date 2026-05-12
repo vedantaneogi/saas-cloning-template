@@ -3,13 +3,15 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MessageSquare, RotateCcw, UserPlus, AtSign, Bell } from "lucide-react";
+import { MessageSquare, RotateCcw, UserPlus, AtSign, Bell, Clock, BellOff } from "lucide-react";
 import clsx from "clsx";
 import { Avatar } from "@/components/icons";
 import {
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  snoozeNotification,
+  unsnoozeNotification,
   type Notification,
 } from "@/lib/api";
 import { relTime } from "@/lib/time";
@@ -40,6 +42,11 @@ export function InboxBody({
     if (n.read_at) return;
     setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x)));
     markNotificationRead(workspaceSlug, n.id).catch(() => {});
+  }
+
+  function snooze(n: Notification, minutes: number) {
+    setItems((prev) => prev.filter((x) => x.id !== n.id));
+    snoozeNotification(workspaceSlug, n.id, minutes).catch(() => {});
   }
 
   function markAll() {
@@ -88,7 +95,15 @@ export function InboxBody({
             {filter === "unread" ? "No unread notifications." : filter === "mentions" ? "No mentions." : "You have no notifications."}
           </div>
         ) : (
-          visible.map((n) => <NotificationRow key={n.id} note={n} workspaceSlug={workspaceSlug} onClick={() => markRead(n)} />)
+          visible.map((n) => (
+            <NotificationRow
+              key={n.id}
+              note={n}
+              workspaceSlug={workspaceSlug}
+              onClick={() => markRead(n)}
+              onSnooze={(mins) => snooze(n, mins)}
+            />
+          ))
         )}
       </div>
     </>
@@ -113,22 +128,25 @@ function NotificationRow({
   note,
   workspaceSlug,
   onClick,
+  onSnooze,
 }: {
   note: Notification;
   workspaceSlug: string;
   onClick: () => void;
+  onSnooze: (minutes: number) => void;
 }) {
   const unread = !note.read_at;
   const href = note.issue_identifier ? `/${workspaceSlug}/issue/${note.issue_identifier}` : "#";
   const Icon = iconFor(note.kind);
   return (
+    <div className={clsx(
+      "group relative flex gap-2.5 border-b border-border-subtle hover:bg-row-hover",
+      unread && "bg-row-selected/30"
+    )}>
     <Link
       href={href}
       onClick={onClick}
-      className={clsx(
-        "flex gap-2.5 border-b border-border-subtle px-3 py-2.5 hover:bg-row-hover",
-        unread && "bg-row-selected/30"
-      )}
+      className="flex flex-1 gap-2.5 px-3 py-2.5"
     >
       <span className="relative mt-0.5 shrink-0">
         {note.actor ? (
@@ -156,6 +174,25 @@ function NotificationRow({
         </span>
       </span>
     </Link>
+    <div className="absolute right-2 top-2 hidden items-center gap-1 group-hover:flex">
+      <button
+        type="button"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSnooze(60); }}
+        className="rounded-md bg-elevated px-1.5 py-0.5 text-mini text-text-tertiary shadow-button hover:text-text-secondary"
+        title="Snooze 1h"
+      >
+        <Clock size={11} /> 1h
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSnooze(60 * 24); }}
+        className="rounded-md bg-elevated px-1.5 py-0.5 text-mini text-text-tertiary shadow-button hover:text-text-secondary"
+        title="Snooze 1 day"
+      >
+        <BellOff size={11} /> 1d
+      </button>
+    </div>
+    </div>
   );
 }
 
