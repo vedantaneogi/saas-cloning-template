@@ -526,6 +526,40 @@ class Document(Base):
     creator: Mapped["Member | None"] = relationship()
 
 
+class DocumentComment(Base):
+    """Threaded comment on a document. Flat one-level threads via parent_id."""
+
+    __tablename__ = "document_comments"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("document_comments.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    document: Mapped["Document"] = relationship()
+    author: Mapped["Member | None"] = relationship()
+
+
+class DocumentVersion(Base):
+    """Append-only snapshot of a document's body. Captured on save when body
+    actually changed; provides a basic version history."""
+
+    __tablename__ = "document_versions"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    author_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    document: Mapped["Document"] = relationship()
+    author: Mapped["Member | None"] = relationship()
+
+
 class IssueRelation(Base):
     __tablename__ = "issue_relations"
 

@@ -1294,3 +1294,45 @@ export interface NotificationDigest {
 export async function getDigest(slug: string, period: "daily" | "weekly" = "daily"): Promise<NotificationDigest> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/notifications/digest?period=${period}`);
 }
+
+// --- document comments + versions -----------------------------------------
+
+export interface DocumentComment {
+  id: string;
+  body: string;
+  parent_id: string | null;
+  created_at: string;
+  author: Member | null;
+}
+
+export async function listDocComments(slug: string, docSlug: string): Promise<DocumentComment[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/documents/${encodeURIComponent(docSlug)}/comments`);
+}
+
+export async function createDocComment(slug: string, docSlug: string, body: { body: string; parent_id?: string }): Promise<DocumentComment> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/documents/${encodeURIComponent(docSlug)}/comments`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteDocComment(slug: string, docSlug: string, commentId: string): Promise<void> {
+  await fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/documents/${encodeURIComponent(docSlug)}/comments/${encodeURIComponent(commentId)}`, { method: "DELETE" });
+}
+
+export interface DocumentVersion {
+  id: string;
+  version: number;
+  title: string;
+  body: string;
+  created_at: string;
+  author: Member | null;
+}
+
+export async function listDocVersions(slug: string, docSlug: string): Promise<DocumentVersion[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/documents/${encodeURIComponent(docSlug)}/versions`);
+}
+
+export async function restoreDocVersion(slug: string, docSlug: string, versionId: string): Promise<Document> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/documents/${encodeURIComponent(docSlug)}/versions/${encodeURIComponent(versionId)}/restore`, { method: "POST" });
+}

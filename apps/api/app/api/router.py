@@ -21,6 +21,8 @@ from app.db.models import (
     CustomerRequestStatus,
     Cycle,
     Document,
+    DocumentComment,
+    DocumentVersion,
     EstimateScale,
     Initiative,
     InitiativeStatus,
@@ -2478,6 +2480,24 @@ def patch_document(
     d = _find_document(db, ws, slug_id)
     if not d:
         raise HTTPException(404, f"document not found: {slug_id}")
+    # Snapshot the *previous* state into a new version when body changes.
+    # Skip when the document is brand-new and unchanged to avoid noisy v1.
+    body_changed = body.body is not None and body.body != d.body
+    if body_changed:
+        last_version = (
+            db.query(DocumentVersion)
+            .filter_by(document_id=d.id)
+            .order_by(DocumentVersion.version.desc())
+            .first()
+        )
+        next_version = (last_version.version if last_version else 0) + 1
+        db.add(DocumentVersion(
+            document_id=d.id,
+            version=next_version,
+            title=d.title,
+            body=d.body,
+            author_id=None,
+        ))
     if body.title is not None:
         d.title = body.title
     if body.icon is not None:
@@ -3952,3 +3972,145 @@ def notification_digest(
         f"</div>"
     )
     return {"period": period, "count": len(items), "html": html, "items": items}
+
+
+# ============================================================================
+# Document comments + versions
+# ============================================================================
+
+def _doc_comment_dict(c: DocumentComment) -> dict:
+    return {
+        "id": c.id,
+        "body": c.body,
+        "parent_id": c.parent_id,
+        "created_at": c.created_at,
+        "author": MemberOut.model_validate(c.author).model_dump() if c.author else None,
+    }
+
+
+class _DocCommentIn(BaseModel):
+    body: str
+    parent_id: str | None = None
+
+
+@router.get("/workspaces/{slug}/documents/{slug_id}/comments")
+def list_doc_comments(
+    slug_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    d = _find_document(db, ws, slug_id)
+    if not d:
+        raise HTTPException(404, f"document not found: {slug_id}")
+    rows = (
+        db.query(DocumentComment)
+        .filter_by(document_id=d.id)
+        .options(selectinload(DocumentComment.author))
+        .order_by(DocumentComment.created_at.asc())
+        .all()
+    )
+    return [_doc_comment_dict(c) for c in rows]
+
+
+@router.post("/workspaces/{slug}/documents/{slug_id}/comments")
+def create_doc_comment(
+    slug_id: str,
+    body: _DocCommentIn,
+    ws: Workspace = Depends(get_workspace),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    d = _find_document(db, ws, slug_id)
+    if not d:
+        raise HTTPException(404, f"document not found: {slug_id}")
+    c = DocumentComment(
+        document_id=d.id,
+        author_id=member.id,
+        body=body.body[:8000],
+        parent_id=body.parent_id,
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return _doc_comment_dict(c)
+
+
+@router.delete("/workspaces/{slug}/documents/{slug_id}/comments/{comment_id}", status_code=204)
+def delete_doc_comment(
+    slug_id: str,
+    comment_id: str,
+    ws: Workspace = Depends(get_workspace),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> None:
+    d = _find_document(db, ws, slug_id)
+    if not d:
+        raise HTTPException(404, f"document not found: {slug_id}")
+    c = db.query(DocumentComment).filter_by(id=comment_id, document_id=d.id).first()
+    if not c:
+        raise HTTPException(404, "comment not found")
+    if c.author_id and c.author_id != member.id and member.role != MemberRole.admin:
+        raise HTTPException(403, "not your comment")
+    db.delete(c)
+    db.commit()
+
+
+@router.get("/workspaces/{slug}/documents/{slug_id}/versions")
+def list_doc_versions(
+    slug_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    d = _find_document(db, ws, slug_id)
+    if not d:
+        raise HTTPException(404, f"document not found: {slug_id}")
+    rows = (
+        db.query(DocumentVersion)
+        .filter_by(document_id=d.id)
+        .options(selectinload(DocumentVersion.author))
+        .order_by(DocumentVersion.version.desc())
+        .all()
+    )
+    return [
+        {
+            "id": v.id,
+            "version": v.version,
+            "title": v.title,
+            "body": v.body,
+            "created_at": v.created_at,
+            "author": MemberOut.model_validate(v.author).model_dump() if v.author else None,
+        }
+        for v in rows
+    ]
+
+
+@router.post("/workspaces/{slug}/documents/{slug_id}/versions/{version_id}/restore")
+def restore_doc_version(
+    slug_id: str,
+    version_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    d = _find_document(db, ws, slug_id)
+    if not d:
+        raise HTTPException(404, f"document not found: {slug_id}")
+    v = db.query(DocumentVersion).filter_by(id=version_id, document_id=d.id).first()
+    if not v:
+        raise HTTPException(404, "version not found")
+    # Snapshot current state first, then restore.
+    last_version = (
+        db.query(DocumentVersion).filter_by(document_id=d.id).order_by(DocumentVersion.version.desc()).first()
+    )
+    next_version = (last_version.version if last_version else 0) + 1
+    db.add(DocumentVersion(
+        document_id=d.id,
+        version=next_version,
+        title=d.title,
+        body=d.body,
+        author_id=None,
+    ))
+    d.title = v.title or d.title
+    d.body = v.body
+    db.commit()
+    db.refresh(d)
+    return _document_dict(d)

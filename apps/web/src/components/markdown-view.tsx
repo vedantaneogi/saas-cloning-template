@@ -1,15 +1,20 @@
+"use client";
+
 // Lightweight markdown renderer used by the issue description, create modal preview, etc.
 // Supports: # / ## / ### headings, **bold**, *italic*, `inline code`, - bullet, 1. ordered list,
 // - [ ] / - [x] checklist, > blockquote, ``` fenced code, --- hr, [text](url) links.
+// Plus: inline issue mentions like `[ENG-12]` rendered as a hover-previewable link
+// when a workspaceSlug is provided.
 
 import { Fragment } from "react";
+import { IssueRefLink } from "@/components/issue-ref-link";
 
-export function MarkdownView({ source }: { source: string }) {
+export function MarkdownView({ source, workspaceSlug }: { source: string; workspaceSlug?: string }) {
   const blocks = parseBlocks(source || "");
   return (
     <div className="space-y-3 text-default text-text-secondary">
       {blocks.map((b, i) => (
-        <Fragment key={i}>{renderBlock(b)}</Fragment>
+        <Fragment key={i}>{renderBlock(b, workspaceSlug)}</Fragment>
       ))}
     </div>
   );
@@ -119,17 +124,17 @@ function parseBlocks(src: string): Block[] {
   return out;
 }
 
-function renderBlock(b: Block) {
+function renderBlock(b: Block, ws?: string) {
   switch (b.kind) {
     case "h":
-      if (b.level === 1) return <h1 className="text-title3 font-semibold text-text-primary">{inline(b.text)}</h1>;
-      if (b.level === 2) return <h2 className="text-default font-semibold text-text-primary">{inline(b.text)}</h2>;
-      return <h3 className="text-small font-semibold text-text-primary">{inline(b.text)}</h3>;
+      if (b.level === 1) return <h1 className="text-title3 font-semibold text-text-primary">{inline(b.text, ws)}</h1>;
+      if (b.level === 2) return <h2 className="text-default font-semibold text-text-primary">{inline(b.text, ws)}</h2>;
+      return <h3 className="text-small font-semibold text-text-primary">{inline(b.text, ws)}</h3>;
     case "ul":
       return (
         <ul className="ml-5 list-disc space-y-1">
           {b.items.map((it, i) => (
-            <li key={i}>{inline(it)}</li>
+            <li key={i}>{inline(it, ws)}</li>
           ))}
         </ul>
       );
@@ -137,7 +142,7 @@ function renderBlock(b: Block) {
       return (
         <ol className="ml-5 list-decimal space-y-1">
           {b.items.map((it, i) => (
-            <li key={i}>{inline(it)}</li>
+            <li key={i}>{inline(it, ws)}</li>
           ))}
         </ol>
       );
@@ -147,7 +152,7 @@ function renderBlock(b: Block) {
           {b.items.map((it, i) => (
             <li key={i} className="flex items-center gap-2">
               <input type="checkbox" defaultChecked={it.done} readOnly className="h-3.5 w-3.5 rounded-sm border-border-strong bg-input" />
-              <span className={it.done ? "text-text-tertiary line-through" : undefined}>{inline(it.text)}</span>
+              <span className={it.done ? "text-text-tertiary line-through" : undefined}>{inline(it.text, ws)}</span>
             </li>
           ))}
         </ul>
@@ -159,16 +164,16 @@ function renderBlock(b: Block) {
         </pre>
       );
     case "quote":
-      return <blockquote className="border-l-2 border-border-strong pl-3 text-text-tertiary">{inline(b.text)}</blockquote>;
+      return <blockquote className="border-l-2 border-border-strong pl-3 text-text-tertiary">{inline(b.text, ws)}</blockquote>;
     case "hr":
       return <hr className="border-border-subtle" />;
     case "p":
     default:
-      return <p>{inline((b as { text: string }).text)}</p>;
+      return <p>{inline((b as { text: string }).text, ws)}</p>;
   }
 }
 
-function inline(text: string): React.ReactNode {
+function inline(text: string, workspaceSlug?: string): React.ReactNode {
   // Order matters: code first so its contents don't trigger bold/italic.
   const tokens: React.ReactNode[] = [];
   let rest = text;
@@ -178,6 +183,14 @@ function inline(text: string): React.ReactNode {
     { re: /\*\*([^*]+)\*\*/, build: (m) => <strong key={key++} className="font-semibold text-text-primary">{m[1]}</strong> },
     { re: /(?<!\*)\*([^*]+)\*(?!\*)/, build: (m) => <em key={key++}>{m[1]}</em> },
     { re: /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/, build: (m) => <a key={key++} href={m[2]} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{m[1]}</a> },
+    // Inline issue mention: [ENG-12] or just ENG-12 (bracketed only, to avoid noise)
+    {
+      re: /\[([A-Z][A-Z0-9]{0,8}-\d+)\]/,
+      build: (m) =>
+        workspaceSlug
+          ? <IssueRefLink key={key++} workspaceSlug={workspaceSlug} identifier={m[1]} />
+          : <code key={key++} className="rounded-sm bg-pill px-1 py-0.5 font-mono text-mini text-text-primary">{m[1]}</code>,
+    },
   ];
   while (rest.length > 0) {
     let bestIdx = Infinity;
