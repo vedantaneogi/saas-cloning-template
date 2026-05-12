@@ -108,6 +108,7 @@ function TriageRow({
               {issue.triage_source}
             </span>
           )}
+          <AgeChip createdAt={issue.created_at} />
         </div>
         {issue.description && (
           <p className="mt-1 line-clamp-2 text-mini text-text-tertiary">{issue.description}</p>
@@ -138,6 +139,24 @@ function TriageRow({
         </button>
       </div>
     </div>
+  );
+}
+
+function AgeChip({ createdAt }: { createdAt: string | null }) {
+  if (!createdAt) return null;
+  const days = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000));
+  if (days < 1) return null;
+  const label = days === 1 ? "1 day waiting" : `${days} days waiting`;
+  const tone =
+    days >= 7
+      ? "bg-priority-urgent/15 text-priority-urgent"
+      : days >= 3
+        ? "bg-priority-high/15 text-priority-high"
+        : "bg-pill text-text-tertiary";
+  return (
+    <span className={`rounded-sm px-1.5 py-0.5 text-micro ${tone}`} title={`Awaiting triage since ${new Date(createdAt).toLocaleDateString()}`}>
+      {label}
+    </span>
   );
 }
 

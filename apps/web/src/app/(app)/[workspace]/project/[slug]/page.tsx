@@ -16,15 +16,18 @@ import { ProjectTeamsPanel } from "@/components/project-teams-panel";
 import { FileText } from "lucide-react";
 import {
   getProject,
+  getProjectCompletion,
   getWorkspace,
   listDocuments,
   listProjectIssues,
   NotFoundError,
   type Document,
   type Issue,
+  type ProjectCompletion,
   type ProjectDetail,
   type StateGroup,
 } from "@/lib/api";
+import { CompletionChart } from "@/components/charts";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ workspace: string; slug: string }> }) {
   const { workspace, slug } = await params;
@@ -36,9 +39,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
-  const [docs, ws] = await Promise.all([
+  const [docs, ws, completion] = await Promise.all([
     listDocuments(workspace, project.id).catch(() => [] as Document[]),
     getWorkspace(workspace).catch(() => null),
+    getProjectCompletion(workspace, slug).catch(() => null as ProjectCompletion | null),
   ]);
   const allTeams = ws?.teams ?? [];
 
@@ -109,6 +113,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 allTeams={allTeams}
               />
             </div>
+
+            {completion && completion.points.length > 0 && (
+              <section className="mb-8">
+                <header className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-wider text-text-tertiary">
+                  <span>Completion over time</span>
+                </header>
+                <CompletionChart data={completion} />
+              </section>
+            )}
 
             <MilestonesPanel workspaceSlug={workspace} projectSlug={project.slug_id} initial={project.milestones} />
 

@@ -20,6 +20,7 @@ import {
   FileText,
   Map as MapIcon,
   Users,
+  BarChart3,
 } from "lucide-react";
 import clsx from "clsx";
 import { Avatar } from "@/components/icons";
@@ -440,6 +441,7 @@ function TeamGroup({
             </>
           )}
           <NavItem href={`${base}/projects`} icon={<Folders size={13} />} label="Projects" />
+          <NavItem href={`${base}/insights`} icon={<BarChart3 size={13} />} label="Insights" active={pathname === `${base}/insights`} />
           <NavItem href={`${base}/views`} icon={<Compass size={13} />} label="Views" />
           {savedViews.map((v) => (
             <SavedViewRow

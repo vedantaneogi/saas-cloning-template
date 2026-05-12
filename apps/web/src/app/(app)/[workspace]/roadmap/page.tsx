@@ -1,22 +1,57 @@
 import Link from "next/link";
-import { Map as MapIcon, Compass, Folders } from "lucide-react";
+import { Map as MapIcon, Compass, Folders, Users as TeamIcon } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { ProjectIconBlock } from "@/components/project-icons";
-import { listInitiatives, listProjects, type Initiative, type Project } from "@/lib/api";
+import { RoadmapFilters } from "@/components/roadmap-filters";
+import { getWorkspace, listInitiatives, listProjects, type Initiative, type Project } from "@/lib/api";
 
-export default async function RoadmapPage({ params }: { params: Promise<{ workspace: string }> }) {
+export default async function RoadmapPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ workspace: string }>;
+  searchParams: Promise<{ status?: string; team?: string; group?: string }>;
+}) {
   const { workspace } = await params;
-  const [initiatives, projects] = await Promise.all([
+  const sp = await searchParams;
+  const status = sp.status ?? "all";
+  const teamFilter = sp.team ?? "all";
+  const groupBy: "initiative" | "team" = sp.group === "team" ? "team" : "initiative";
+
+  const [initiatives, projectsRaw, ws] = await Promise.all([
     listInitiatives(workspace).catch(() => [] as Initiative[]),
     listProjects(workspace).catch(() => [] as Project[]),
+    getWorkspace(workspace).catch(() => null),
   ]);
+  const teams = ws?.teams ?? [];
 
-  // Build initiative buckets (plus an "Unassigned" bucket for projects without one)
-  const projectsByInitiative = new Map<string | null, Project[]>();
-  for (const p of projects) {
-    const key = p.initiative_id ?? null;
-    if (!projectsByInitiative.has(key)) projectsByInitiative.set(key, []);
-    projectsByInitiative.get(key)!.push(p);
+  const projects = projectsRaw.filter((p) => {
+    if (status !== "all" && p.state !== status) return false;
+    if (teamFilter !== "all" && !(p.team_keys ?? []).includes(teamFilter)) return false;
+    return true;
+  });
+
+  // Build buckets (initiative or team)
+  const buckets = new Map<string | null, Project[]>();
+  if (groupBy === "team") {
+    for (const p of projects) {
+      const keys = (p.team_keys ?? []);
+      if (keys.length === 0) {
+        if (!buckets.has(null)) buckets.set(null, []);
+        buckets.get(null)!.push(p);
+      } else {
+        for (const k of keys) {
+          if (!buckets.has(k)) buckets.set(k, []);
+          buckets.get(k)!.push(p);
+        }
+      }
+    }
+  } else {
+    for (const p of projects) {
+      const key = p.initiative_id ?? null;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key)!.push(p);
+    }
   }
 
   // Compute month range: from earliest start to latest target (with 1 month padding)
@@ -29,8 +64,9 @@ export default async function RoadmapPage({ params }: { params: Promise<{ worksp
     return (
       <>
         <Topbar title="Roadmap" icon={<MapIcon size={15} />} />
+        <RoadmapFilters teams={teams} status={status} team={teamFilter} groupBy={groupBy} />
         <div className="flex h-64 items-center justify-center text-small text-text-tertiary">
-          No projects with dates yet.
+          No projects match these filters.
         </div>
       </>
     );
@@ -53,15 +89,25 @@ export default async function RoadmapPage({ params }: { params: Promise<{ worksp
     return { left, width };
   }
 
-  // Order: known initiatives first (by created order), then unassigned
-  const orderedInitiatives: (Initiative | null)[] = [
-    ...initiatives.filter((i) => projectsByInitiative.has(i.id)),
-    ...(projectsByInitiative.has(null) ? [null] : []),
-  ];
+  // Order rows. For initiative group: known initiatives first, then unassigned.
+  // For team group: team keys alphabetically, then unassigned.
+  type BucketKey = { id: string | null; label: string; icon: "initiative" | "team"; iniColor?: string; iniSlug?: string };
+  let orderedKeys: BucketKey[];
+  if (groupBy === "team") {
+    const teamKeys = [...buckets.keys()].filter((k): k is string => k !== null).sort();
+    orderedKeys = teamKeys.map((k) => ({ id: k, label: k, icon: "team" }));
+    if (buckets.has(null)) orderedKeys.push({ id: null, label: "No team", icon: "team" });
+  } else {
+    orderedKeys = initiatives
+      .filter((i) => buckets.has(i.id))
+      .map<BucketKey>((i) => ({ id: i.id, label: i.name, icon: "initiative", iniColor: i.icon_color, iniSlug: i.slug_id }));
+    if (buckets.has(null)) orderedKeys.push({ id: null, label: "No initiative", icon: "initiative" });
+  }
 
   return (
     <>
       <Topbar title="Roadmap" icon={<MapIcon size={15} />} />
+      <RoadmapFilters teams={teams} status={status} team={teamFilter} groupBy={groupBy} />
       <div className="flex-1 overflow-auto">
         {/* Month header (sticky) */}
         <div className="sticky top-0 z-10 grid border-b border-border-subtle bg-app" style={gridStyle(months.length)}>
@@ -79,29 +125,37 @@ export default async function RoadmapPage({ params }: { params: Promise<{ worksp
           ))}
         </div>
 
-        {orderedInitiatives.map((ini) => {
-          const projs = projectsByInitiative.get(ini?.id ?? null) || [];
+        {orderedKeys.map((k) => {
+          const projs = buckets.get(k.id) || [];
           return (
-            <section key={ini?.id ?? "_none"} className="border-b border-border-subtle">
+            <section key={k.id ?? `_none_${k.icon}`} className="border-b border-border-subtle">
               <header className="grid items-center bg-elevated/60" style={gridStyle(months.length)}>
                 <div className="flex items-center gap-2 border-r border-border-subtle px-3 py-2 text-small">
-                  {ini ? (
+                  {k.icon === "initiative" && k.iniColor && k.iniSlug ? (
                     <>
                       <span
                         className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm"
-                        style={{ background: ini.icon_color }}
+                        style={{ background: k.iniColor }}
                       >
                         <Compass size={9} className="text-white/80" />
                       </span>
-                      <Link href={`/${workspace}/initiative/${ini.slug_id}`} className="font-medium text-text-primary hover:underline">
-                        {ini.name}
+                      <Link href={`/${workspace}/initiative/${k.iniSlug}`} className="font-medium text-text-primary hover:underline">
+                        {k.label}
+                      </Link>
+                      <span className="text-text-tertiary">{projs.length}</span>
+                    </>
+                  ) : k.icon === "team" && k.id ? (
+                    <>
+                      <TeamIcon size={13} className="text-text-tertiary" />
+                      <Link href={`/${workspace}/team/${k.id}/projects`} className="font-medium text-text-primary hover:underline">
+                        {k.label}
                       </Link>
                       <span className="text-text-tertiary">{projs.length}</span>
                     </>
                   ) : (
                     <>
                       <Folders size={13} className="text-text-tertiary" />
-                      <span className="font-medium text-text-secondary">No initiative</span>
+                      <span className="font-medium text-text-secondary">{k.label}</span>
                       <span className="text-text-tertiary">{projs.length}</span>
                     </>
                   )}

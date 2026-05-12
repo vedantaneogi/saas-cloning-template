@@ -126,6 +126,7 @@ class IssueOut(BaseModel):
     priority: int
     estimate: int | None
     due_date: datetime | None
+    created_at: datetime | None = None
     updated_at: datetime
     state: WorkflowStateOut
     team: TeamOut

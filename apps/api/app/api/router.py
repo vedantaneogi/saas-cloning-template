@@ -142,6 +142,7 @@ def _issue_dict(issue: Issue, child_counts: dict[str, tuple[int, int]] | None = 
         "priority": issue.priority,
         "estimate": issue.estimate,
         "due_date": issue.due_date,
+        "created_at": issue.created_at,
         "updated_at": issue.updated_at,
         "state": WorkflowStateOut.model_validate(issue.state),
         "team": TeamOut.model_validate(issue.team),
@@ -243,6 +244,7 @@ def _project_dict(p: Project, *, with_counts: bool = True, db: Session | None = 
         "initiative_id": p.initiative.id if p.initiative else None,
         "initiative_name": p.initiative.name if p.initiative else None,
         "initiative_slug_id": p.initiative.slug_id if p.initiative else None,
+        "team_keys": [t.key for t in (p.teams or [])] if hasattr(p, "teams") else [],
     }
 
 
@@ -1615,6 +1617,24 @@ def create_relation(
             inverse = RelationType.related
         if inverse and not db.query(IssueRelation).filter_by(source_id=target.id, target_id=source.id, type=inverse).first():
             db.add(IssueRelation(source_id=target.id, target_id=source.id, type=inverse))
+
+        # Auto-close on duplicate — transition the source to the team's first
+        # canceled-group state and drop a comment pointing at the canonical.
+        if rt == RelationType.duplicate and source.state.group != StateGroup.canceled:
+            canceled = (
+                db.query(WorkflowState)
+                .filter_by(team_id=source.team_id, group=StateGroup.canceled)
+                .order_by(WorkflowState.position.asc())
+                .first()
+            )
+            if canceled is not None:
+                source.state_id = canceled.id
+                db.add(Comment(
+                    issue_id=source.id,
+                    author_id=None,
+                    body=f"Marked as duplicate of {target.identifier}.",
+                ))
+
         db.commit()
         db.refresh(rel)
 
@@ -3244,3 +3264,266 @@ def revoke_invite(
         raise HTTPException(404, "invite not found")
     db.delete(inv)
     db.commit()
+
+
+# ============================================================================
+# Analytics — burndowns, insights, completion charts
+# ============================================================================
+#
+# Notes:
+# - We don't have a state-transition log, so "completed at" is approximated
+#   from the issue's `updated_at` once it's in a completed/canceled group.
+#   This is exact for issues that don't churn after closing and good-enough
+#   for the rest. Documented limitation, not a bug.
+
+def _day_floor(d: datetime) -> datetime:
+    return d.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _iter_days(start: datetime, end: datetime):
+    cur = _day_floor(start)
+    last = _day_floor(end)
+    while cur <= last:
+        yield cur
+        cur = cur + timedelta(days=1)
+
+
+@router.get("/workspaces/{slug}/teams/{team_key}/cycles/{number}/burndown")
+def cycle_burndown(
+    team_key: str,
+    number: int,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
+    if not team:
+        raise HTTPException(404, f"team not found: {team_key}")
+    cycle = db.query(Cycle).filter_by(team_id=team.id, number=number).first()
+    if not cycle:
+        raise HTTPException(404, f"cycle not found: {number}")
+
+    rows = (
+        db.query(Issue.id, Issue.created_at, Issue.updated_at, Issue.estimate, WorkflowState.group)
+        .join(WorkflowState, Issue.state_id == WorkflowState.id)
+        .filter(Issue.cycle_id == cycle.id)
+        .all()
+    )
+
+    today = datetime.now(timezone.utc)
+    end = min(cycle.ends_at or today, today)
+    start = cycle.starts_at or (end - timedelta(days=14))
+    total_estimate = sum((r.estimate or 1) for r in rows)
+    days = list(_iter_days(start, end))
+
+    points = []
+    for day in days:
+        day_end = day + timedelta(days=1) - timedelta(seconds=1)
+        scope = sum((r.estimate or 1) for r in rows if (r.created_at or start) <= day_end)
+        done = sum(
+            (r.estimate or 1)
+            for r in rows
+            if r.group in (StateGroup.completed, StateGroup.canceled)
+            and (r.updated_at or day_end) <= day_end
+            and (r.created_at or start) <= day_end
+        )
+        points.append({"date": day.date().isoformat(), "scope": scope, "done": done, "remaining": max(0, scope - done)})
+
+    ideal = []
+    if days and total_estimate > 0:
+        for i, day in enumerate(days):
+            frac = 1 - (i / max(1, len(days) - 1)) if len(days) > 1 else 0
+            ideal.append({"date": day.date().isoformat(), "remaining": round(total_estimate * frac, 2)})
+
+    return {
+        "cycle_number": cycle.number,
+        "cycle_name": cycle.name,
+        "starts_at": cycle.starts_at,
+        "ends_at": cycle.ends_at,
+        "total_estimate": total_estimate,
+        "points": points,
+        "ideal": ideal,
+    }
+
+
+@router.get("/workspaces/{slug}/teams/{team_key}/cycles/{number}/insights")
+def cycle_insights(
+    team_key: str,
+    number: int,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
+    if not team:
+        raise HTTPException(404, f"team not found: {team_key}")
+    cycle = db.query(Cycle).filter_by(team_id=team.id, number=number).first()
+    if not cycle:
+        raise HTTPException(404, f"cycle not found: {number}")
+
+    rows = (
+        db.query(Issue.id, Issue.created_at, Issue.updated_at, Issue.estimate, WorkflowState.group)
+        .join(WorkflowState, Issue.state_id == WorkflowState.id)
+        .filter(Issue.cycle_id == cycle.id)
+        .all()
+    )
+    total = len(rows)
+    completed = [r for r in rows if r.group in (StateGroup.completed, StateGroup.canceled)]
+    velocity = sum((r.estimate or 1) for r in completed)
+    scope_estimate = sum((r.estimate or 1) for r in rows)
+    completion_rate = round(len(completed) / total, 3) if total else 0.0
+
+    # Scope changes: issues created after cycle start
+    after_start = [
+        r for r in rows
+        if cycle.starts_at and r.created_at and r.created_at > cycle.starts_at
+    ]
+    scope_changes = len(after_start)
+
+    return {
+        "cycle_number": cycle.number,
+        "issues_total": total,
+        "issues_completed": len(completed),
+        "completion_rate": completion_rate,
+        "velocity": velocity,
+        "scope_estimate": scope_estimate,
+        "scope_changes": scope_changes,
+    }
+
+
+@router.get("/workspaces/{slug}/projects/{slug_id}/completion")
+def project_completion(
+    slug_id: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    suffix = slug_id.rsplit("-", 1)[-1] if "-" in slug_id else slug_id
+    project = (
+        db.query(Project)
+        .filter(Project.workspace_id == ws.id)
+        .filter((Project.slug_id == slug_id) | (Project.slug_id.like(f"%-{suffix}")))
+        .first()
+    )
+    if not project:
+        raise HTTPException(404, f"project not found: {slug_id}")
+
+    rows = (
+        db.query(Issue.id, Issue.created_at, Issue.updated_at, WorkflowState.group)
+        .join(WorkflowState, Issue.state_id == WorkflowState.id)
+        .filter(Issue.project_id == project.id)
+        .all()
+    )
+    if not rows:
+        return {"project_id": project.id, "points": [], "total": 0, "done": 0, "health": "onTrack"}
+
+    today = datetime.now(timezone.utc)
+    start = project.start_date or min((r.created_at for r in rows if r.created_at), default=today - timedelta(days=14))
+    end = project.target_date or today
+    if end < today:
+        end = today
+
+    # Cap to 60-day window for readability
+    if (end - start).days > 60:
+        start = end - timedelta(days=60)
+
+    points = []
+    for day in _iter_days(start, end):
+        day_end = day + timedelta(days=1) - timedelta(seconds=1)
+        total = sum(1 for r in rows if (r.created_at or start) <= day_end)
+        done = sum(
+            1 for r in rows
+            if r.group in (StateGroup.completed, StateGroup.canceled)
+            and (r.updated_at or day_end) <= day_end
+        )
+        points.append({"date": day.date().isoformat(), "total": total, "done": done})
+
+    total = len(rows)
+    done = sum(1 for r in rows if r.group in (StateGroup.completed, StateGroup.canceled))
+    # Health: > 50% done by target -> onTrack; 25-50% -> atRisk; <25% -> offTrack
+    if project.target_date and total > 0:
+        ratio = done / total
+        days_to_target = (project.target_date - today).days
+        if days_to_target < 0 and ratio < 1:
+            health = "offTrack"
+        elif ratio >= 0.5:
+            health = "onTrack"
+        elif ratio >= 0.25:
+            health = "atRisk"
+        else:
+            health = "offTrack"
+    else:
+        health = "onTrack"
+
+    return {
+        "project_id": project.id,
+        "points": points,
+        "total": total,
+        "done": done,
+        "health": health,
+    }
+
+
+@router.get("/workspaces/{slug}/teams/{team_key}/insights")
+def team_insights(
+    team_key: str,
+    days: int = Query(30, ge=7, le=180),
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
+    if not team:
+        raise HTTPException(404, f"team not found: {team_key}")
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+
+    completed = (
+        db.query(Issue.id, Issue.created_at, Issue.updated_at, Issue.estimate)
+        .join(WorkflowState, Issue.state_id == WorkflowState.id)
+        .filter(Issue.team_id == team.id)
+        .filter(WorkflowState.group.in_((StateGroup.completed, StateGroup.canceled)))
+        .filter(Issue.updated_at >= since)
+        .all()
+    )
+    open_issues = (
+        db.query(Issue.id)
+        .join(WorkflowState, Issue.state_id == WorkflowState.id)
+        .filter(Issue.team_id == team.id, Issue.archived_at.is_(None))
+        .filter(WorkflowState.group.notin_((StateGroup.completed, StateGroup.canceled)))
+        .count()
+    )
+
+    throughput = len(completed)
+    velocity_points = sum((r.estimate or 1) for r in completed)
+    lead_times_sec = [
+        (r.updated_at - r.created_at).total_seconds()
+        for r in completed
+        if r.created_at and r.updated_at
+    ]
+    avg_lead_days = round((sum(lead_times_sec) / len(lead_times_sec)) / 86400, 2) if lead_times_sec else 0.0
+
+    # Cycle velocity over last 6 cycles
+    cycles = (
+        db.query(Cycle)
+        .filter(Cycle.team_id == team.id)
+        .order_by(Cycle.number.desc())
+        .limit(6)
+        .all()
+    )
+    per_cycle = []
+    for c in reversed(cycles):
+        rows = (
+            db.query(Issue.estimate, WorkflowState.group)
+            .join(WorkflowState, Issue.state_id == WorkflowState.id)
+            .filter(Issue.cycle_id == c.id)
+            .all()
+        )
+        v = sum((r.estimate or 1) for r in rows if r.group in (StateGroup.completed, StateGroup.canceled))
+        per_cycle.append({"cycle_number": c.number, "name": c.name, "velocity": v})
+
+    return {
+        "window_days": days,
+        "throughput": throughput,
+        "velocity_points": velocity_points,
+        "avg_lead_time_days": avg_lead_days,
+        "open_issues": open_issues,
+        "per_cycle_velocity": per_cycle,
+    }

@@ -3,7 +3,8 @@ import { Target } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { IssueListBody } from "@/components/issue-list-body";
 import { CompleteCycleButton } from "@/components/complete-cycle-button";
-import { getCycle, listCycleIssues, NotFoundError, type Issue, type StateGroup } from "@/lib/api";
+import { getCycle, getCycleBurndown, getCycleInsights, listCycleIssues, NotFoundError, type Issue, type StateGroup } from "@/lib/api";
+import { BurndownChart, MetricCard } from "@/components/charts";
 
 export default async function CyclePage({
   params,
@@ -21,6 +22,11 @@ export default async function CyclePage({
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
+
+  const [burndown, insights] = await Promise.all([
+    getCycleBurndown(workspace, cycle.team_key, cycle.number).catch(() => null),
+    getCycleInsights(workspace, cycle.team_key, cycle.number).catch(() => null),
+  ]);
 
   const groups = groupByStateName(issues);
   const pct = cycle.issue_count > 0 ? Math.round((cycle.completed_issue_count / cycle.issue_count) * 100) : 0;
@@ -54,6 +60,19 @@ export default async function CyclePage({
         <span className="ml-auto">Team {cycle.team_key}</span>
       </div>
       <div className="flex-1 overflow-y-auto">
+        {(burndown || insights) && (
+          <div className="border-b border-border-subtle px-5 py-4">
+            {insights && (
+              <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+                <MetricCard label="Velocity" value={insights.velocity} hint="points completed" />
+                <MetricCard label="Completion" value={`${Math.round(insights.completion_rate * 100)}%`} hint={`${insights.issues_completed}/${insights.issues_total} issues`} />
+                <MetricCard label="Scope" value={insights.scope_estimate} hint="points planned" />
+                <MetricCard label="Scope changes" value={insights.scope_changes} hint="added mid-cycle" />
+              </div>
+            )}
+            {burndown && <BurndownChart points={burndown.points} ideal={burndown.ideal} />}
+          </div>
+        )}
         <IssueListBody groups={groups} workspaceSlug={workspace} teamKey={cycle.team_key} />
       </div>
     </>

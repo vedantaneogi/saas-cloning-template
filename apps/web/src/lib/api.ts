@@ -107,6 +107,7 @@ export interface Issue {
   priority: 0 | 1 | 2 | 3 | 4;
   estimate: number | null;
   due_date: string | null;
+  created_at: string | null;
   updated_at: string;
   state: WorkflowState;
   team: Team;
@@ -170,6 +171,7 @@ export interface Project {
   initiative_id: string | null;
   initiative_name: string | null;
   initiative_slug_id: string | null;
+  team_keys?: string[];
 }
 
 export interface ProjectDetail extends Project {
@@ -1065,4 +1067,61 @@ export function createInvite(slug: string, body: { email: string; role: MemberRo
 
 export async function revokeInvite(slug: string, inviteId: string): Promise<void> {
   await fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/invites/${encodeURIComponent(inviteId)}`, { method: "DELETE" });
+}
+
+// --- analytics -------------------------------------------------------------
+
+export interface BurndownPoint { date: string; scope: number; done: number; remaining: number }
+export interface BurndownIdealPoint { date: string; remaining: number }
+export interface CycleBurndown {
+  cycle_number: number;
+  cycle_name: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  total_estimate: number;
+  points: BurndownPoint[];
+  ideal: BurndownIdealPoint[];
+}
+
+export async function getCycleBurndown(slug: string, teamKey: string, number: number): Promise<CycleBurndown> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}/cycles/${number}/burndown`);
+}
+
+export interface CycleInsights {
+  cycle_number: number;
+  issues_total: number;
+  issues_completed: number;
+  completion_rate: number;
+  velocity: number;
+  scope_estimate: number;
+  scope_changes: number;
+}
+
+export async function getCycleInsights(slug: string, teamKey: string, number: number): Promise<CycleInsights> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}/cycles/${number}/insights`);
+}
+
+export interface ProjectCompletion {
+  project_id: string;
+  points: { date: string; total: number; done: number }[];
+  total: number;
+  done: number;
+  health: "onTrack" | "atRisk" | "offTrack";
+}
+
+export async function getProjectCompletion(slug: string, projectSlug: string): Promise<ProjectCompletion> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects/${encodeURIComponent(projectSlug)}/completion`);
+}
+
+export interface TeamInsights {
+  window_days: number;
+  throughput: number;
+  velocity_points: number;
+  avg_lead_time_days: number;
+  open_issues: number;
+  per_cycle_velocity: { cycle_number: number; name: string | null; velocity: number }[];
+}
+
+export async function getTeamInsights(slug: string, teamKey: string, days = 30): Promise<TeamInsights> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}/insights?days=${days}`);
 }
