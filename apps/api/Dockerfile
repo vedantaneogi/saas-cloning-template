@@ -13,12 +13,10 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first so this layer is cached unless pyproject/uv.lock change.
 COPY apps/api/pyproject.toml apps/api/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
-# Now copy the app source and install the project itself into the venv.
 COPY apps/api/ ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
@@ -31,6 +29,8 @@ FROM python:3.12-slim-bookworm AS runtime
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app /app
 
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -39,4 +39,6 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run migrations before booting uvicorn. If seed_path is set in env, the
+# FastAPI startup hook will apply it from inside the running app.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]

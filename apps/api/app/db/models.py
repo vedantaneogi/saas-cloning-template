@@ -391,7 +391,7 @@ class Initiative(Base):
 
     id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
-    slug_id: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
+    slug_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     icon_color: Mapped[str] = mapped_column(String(16), default="#bb87fc")
@@ -410,7 +410,7 @@ class Project(Base):
 
     id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
-    slug_id: Mapped[str] = mapped_column(String(16), nullable=False, unique=True, index=True)
+    slug_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     icon_color: Mapped[str] = mapped_column(String(16), default="#5e6ad2")

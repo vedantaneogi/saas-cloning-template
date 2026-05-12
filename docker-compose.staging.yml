@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-linear}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-linear}
+      POSTGRES_DB: ${POSTGRES_DB:-linear}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-linear} -d ${POSTGRES_DB:-linear}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-linear}:${POSTGRES_PASSWORD:-linear}@db:5432/${POSTGRES_DB:-linear}
+      CORS_ORIGINS: '["https://linear.techbrig.co"]'
+      SEED_PATH: ${SEED_PATH:-/app/seed.json}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET must be set in .env}
+      AUTH_COOKIE_NAME: lc_session
+      AUTH_SESSION_DAYS: 30
+      AUTH_COOKIE_SECURE: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: http://api:8000
+      NEXT_PUBLIC_API_URL: ""
+    ports:
+      - "127.0.0.1:3003:3000"
+
+volumes:
+  pgdata:

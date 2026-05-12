@@ -11,6 +11,7 @@ from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -21,6 +22,13 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Enums used via op.add_column (rather than op.create_table) are NOT
+    # auto-created by SQLAlchemy on Postgres — pre-create them.
+    bind = op.get_bind()
+    if bind.dialect.name == 'postgresql':
+        postgresql.ENUM('admin', 'member', 'guest', name='member_role').create(bind, checkfirst=True)
+        postgresql.ENUM('none', 'linear', 'fibonacci', 'exponential', 'tshirt', name='estimate_scale').create(bind, checkfirst=True)
+
     op.create_table(
         'team_memberships',
         sa.Column('id', sa.String(length=36), nullable=False),
