@@ -191,11 +191,11 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             submit();
           }
         }}
-        className="flex flex-col overflow-hidden rounded-xl bg-elevated text-text-primary shadow-popover transition-[width,height] duration-300 ease-out"
+        className="flex flex-col rounded-xl bg-elevated text-text-primary shadow-popover transition-[width,height] duration-300 ease-out"
         style={
           expanded
-            ? { width: "min(1100px, 94vw)", height: "88vh" }
-            : { width: "min(720px, 92vw)", height: "min(560px, 78vh)" }
+            ? { width: "min(1060px, 94vw)", height: "min(820px, 88vh)" }
+            : { width: "min(720px, 92vw)", height: "min(320px, 70vh)" }
         }
       >
         {/* header */}
@@ -321,6 +321,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
               </Chip>
             )}
             width={200}
+            placement="up"
           >
             {({ close }) => (
               <PopoverList>
@@ -349,6 +350,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
               </Chip>
             )}
             width={200}
+            placement="up"
           >
             {({ close }) => (
               <PopoverList>
@@ -386,6 +388,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
               </Chip>
             )}
             width={240}
+            placement="up"
           >
             {({ close }) => (
               <PopoverList>
@@ -424,6 +427,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
               </Chip>
             )}
             width={280}
+            placement="up"
           >
             {({ close }) => (
               <PopoverList>
@@ -479,6 +483,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
               </Chip>
             )}
             width={240}
+            placement="up"
           >
             {() => (
               <PopoverList>
@@ -519,6 +524,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                 </Chip>
               )}
               width={240}
+              placement="up"
             >
               {({ close }) => (
                 <PopoverList>
@@ -559,6 +565,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
               </Chip>
             )}
             width={280}
+            placement="up"
           >
             {() => (
               <div className="space-y-2 p-2">
@@ -593,7 +600,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
           </Popover>
         </div>
 
-        <footer className="flex items-center justify-between border-t border-border-subtle/0 px-3 py-2 text-mini">
+        <footer className="flex items-center justify-between px-3 py-2 text-mini">
           <button
             type="button"
             className="rounded-md bg-pill p-1.5 text-text-tertiary hover:bg-elevated-hover hover:text-text-secondary"

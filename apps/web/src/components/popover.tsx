@@ -8,14 +8,22 @@ export function Popover({
   children,
   align = "start",
   width,
+  placement,
 }: {
   trigger: (props: { open: boolean; toggle: () => void; close: () => void }) => ReactNode;
   children: (api: { close: () => void }) => ReactNode;
   align?: "start" | "end";
   width?: number;
+  /**
+   * Forces a placement direction. Without it, the popover auto-flips based on
+   * available viewport space — which can be wrong when the trigger lives at
+   * the bottom of a modal (plenty of viewport space below, but the popover
+   * appears disconnected outside the modal). Set "up" to anchor above.
+   */
+  placement?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
-  const [drop, setDrop] = useState<"down" | "up">("down");
+  const [drop, setDrop] = useState<"down" | "up">(placement ?? "down");
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -36,9 +44,14 @@ export function Popover({
     };
   }, [open]);
 
-  // Flip up when there's not enough room below the trigger.
+  // Flip up when there's not enough room below the trigger, OR when the
+  // caller has forced a direction via `placement`.
   useLayoutEffect(() => {
     if (!open) return;
+    if (placement) {
+      setDrop(placement);
+      return;
+    }
     const t = triggerRef.current;
     const p = popRef.current;
     if (!t || !p) return;
@@ -47,7 +60,7 @@ export function Popover({
     const spaceBelow = window.innerHeight - tr.bottom;
     const spaceAbove = tr.top;
     setDrop(spaceBelow < ph + 16 && spaceAbove > spaceBelow ? "up" : "down");
-  }, [open]);
+  }, [open, placement]);
 
   return (
     <div className="relative inline-block" ref={ref}>
