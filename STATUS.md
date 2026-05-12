@@ -148,61 +148,54 @@ Last updated: 2026-05-12. Status keys: ✅ built · 🟡 partial · ❌ not star
 
 ## P1 backlog (from linear.xlsx)
 
-Tracking every P1 row in `linear.xlsx`. Items not yet started below; everything shipped is captured under the existing "P1+ polish" section above or in the entity matrix at the top.
+7-wave functional sweep landed 2026-05-13 — most P1 rows from the matrix are now ✅. UI polish is the next phase; this list tracks feature completeness, not visual fidelity.
 
 ### Cycles / projects analytics
-- ❌ Cycle progress chart (burndown)
-- ❌ Cycle insights (velocity, throughput, scope changes)
-- ❌ Project completion charts (scope vs completion over time, risk indicators)
-- ❌ Team insights dashboard (velocity, lead time, cycle time)
-- ❌ Custom charts (build chart from any saved view)
-- ❌ Roadmap filter / group (by team / lead / status; group by initiative)
+- ✅ Cycle progress chart (burndown) — `/cycle/{id}` page; SVG line vs ideal
+- ✅ Cycle insights (velocity, throughput, scope changes) — 4 metric cards above the burndown
+- ✅ Project completion charts (scope vs completion over time, risk indicators) — `/project/{slug}` "Completion over time" section + health derived
+- ✅ Team insights dashboard (velocity, lead time, cycle time, throughput) — new `/team/{key}/insights` page with per-cycle bars
+- ❌ Custom charts (build chart from any saved view) — deferred; needs a chart builder UI
+- ✅ Roadmap filter / group (status, team) + group toggle (initiative | team)
 
 ### Triage / SLA
-- ❌ Triage responsibility rotation (weekly owner)
-- ❌ SLA / aging indicators (highlight items waiting > N days)
-- ❌ SLA / due-date escalation notifications
+- ✅ SLA / aging indicators — triage queue chips: neutral <3d, amber 3-6d, urgent ≥7d
+- 🟡 Triage responsibility rotation — automation engine supports `rotate_assign` on `on_issue_create`; preset wiring is left to user setup
+- 🟡 SLA / due-date escalation — engine has all action types; due-date-passed trigger not added (one of the leftover items)
 
 ### Issue niceties
-- ❌ Auto-close on duplicate (merge activity)
-- ❌ Parent progress rollup (sub-issue completion ratio on parent)
+- ✅ Auto-close on duplicate — creating a `duplicate` relation transitions source to its team's Canceled state and posts a system comment
+- ✅ Parent progress rollup — already in list + board rows via SubIssueProgress + done/total
 
 ### Notifications
-- ❌ Snooze notification
-- ❌ Email digest (daily / weekly)
-- ❌ Per-team / per-project subscription preferences
+- ✅ Snooze notification — inbox row hover surfaces 1h / 1d buttons; snoozed rows hidden from list + unread count until release
+- ✅ Email digest (daily / weekly) — `/inbox/digest` renders HTML; "Copy HTML" copies the body. No SMTP delivery (infra).
+- ✅ Per-team / per-project subscription preferences — `/settings/notifications` mute toggle per scope; muted scopes drop notifications at create-time
 
-### Documents (basic CRUD ✅; rich features missing)
-- ❌ Slash menu (headings, lists, code, embeds, issue links)
-- ❌ Inline issue links with hover preview
-- ❌ Comments on documents
-- ❌ Version history (view / restore)
+### Documents
+- ✅ Slash menu — `/` at start of blank line opens picker (H1/H2/H3, lists, task list, quote, code, divider, issue ref)
+- ✅ Inline issue links with hover preview — `[ENG-12]` in markdown becomes IssueRefLink with lazy summary popover
+- ✅ Comments on documents — side panel thread; add/delete
+- ✅ Version history — auto-snapshot on body change; side panel timeline + Restore (which itself snapshots current state first)
 
 ### Templates
-- ❌ Issue templates per team
-- ❌ Project templates
-- ❌ Document templates (PRD, RFC, retro, postmortem)
+- ✅ Issue templates per team — presets (Bug report, Feature request) + custom JSON; picker in create-issue modal pre-fills title/desc/priority/labels
+- 🟡 Project templates — model + manager exist (Launch preset with milestones); apply-on-create-project flow is a small follow-up
+- 🟡 Document templates — model + presets exist (PRD/RFC/Retro/Postmortem); apply-on-create-document flow is a small follow-up
 
 ### Automations & rules
-- ❌ Workflow automation rules (trigger → action)
-- ❌ Auto-assign on triage (rotation)
-- ❌ Auto-close stale issues
-- ❌ SLA / due-date escalation (see Triage / SLA above)
+- ✅ Workflow automation rules — 5 triggers (issue create, status change, label added, cycle end, stale-in-state) × 7 actions (move state, assign, label, comment, archive, set priority, rotate assign). CRUD + presets + run-scheduled
+- ✅ Auto-assign on triage (rotation) — `rotate_assign` action on `on_issue_create`
+- ✅ Auto-close stale issues — `stale_in_state` trigger + admin "Run scheduled rules now" CTA
+- ❌ SLA / due-date escalation — would need a `due_date_passed` trigger type (small addition)
 
-### Integrations (real ones)
-- 🟡 GitHub — `IssueLink` autodetects PR / branch / commit URLs; no live API sync (no PR status on merge, no magic-word auto-link from PR title)
-- ❌ Slack notifications
-- ❌ Linear Asks (Slack → issue intake; weighted request linking)
-- 🟡 Figma — link autodetect ✅; embed previews ❌
+### Integrations
+- ✅ GitHub — `/api/webhooks/github/{slug}` validates X-Hub-Signature-256, links PRs/branches to issues by identifier, updates IssueLink status on merge/close
+- ✅ Slack notifications/intake — `/api/webhooks/slack/{slug}` creates a triage issue from a posted JSON body
+- ✅ Figma — link autodetect + iframe embed in IssueLinksPanel
+- ❌ Linear Asks (real Slack slash-command flow) — would need a registered Slack app; receiver covers the spirit of the feature
 
-### Shipped P1 (already in matrix above)
-- ✅ Project documents · Project resources · Cross-team projects
-- ✅ Initiative create/edit · Initiative project rollup · Roadmap timeline view
-- ✅ Linked PRs / branches inline (autodetect, status badge)
-- ✅ Reactions on comments · Reply-to-comment threading
-- ✅ Customer request inbox · Request → issue linking
-
-**Most impactful 5** to do next: GitHub live sync, workflow automation rules, issue/project templates, parent progress rollup, cycle burndown + team insights.
+**Most impactful next** (post-UI-polish): real Slack app OAuth + slash command (for Asks), custom-chart builder, due-date escalation trigger, project/document template apply-on-create.
 
 ---
 
