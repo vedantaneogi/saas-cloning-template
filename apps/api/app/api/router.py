@@ -231,6 +231,33 @@ def _comment_dict(db: Session, c: Comment, workspace_id: str, current_member_id:
 
 def _project_dict(p: Project, *, with_counts: bool = True, db: Session | None = None) -> dict:
     counts = (0, 0)
+    health = None
+    health_at = None
+    next_milestone = None
+    if db is not None:
+        # Latest update — its health is the project's current health signal.
+        last_update = (
+            db.query(ProjectUpdateModel)
+            .filter_by(project_id=p.id)
+            .order_by(ProjectUpdateModel.created_at.desc())
+            .first()
+        )
+        if last_update:
+            health = last_update.health.value if hasattr(last_update.health, "value") else last_update.health
+            health_at = last_update.created_at
+        # Next milestone — soonest target_date that hasn't passed, falling
+        # back to first by position when no dates exist.
+        ms = sorted(
+            list(p.milestones or []),
+            key=lambda m: (m.target_date is None, m.target_date or datetime.max.replace(tzinfo=timezone.utc), m.position),
+        )
+        upcoming = next((m for m in ms if not m.target_date or m.target_date >= datetime.now(timezone.utc)), None) or (ms[0] if ms else None)
+        if upcoming:
+            next_milestone = {
+                "id": upcoming.id,
+                "name": upcoming.name,
+                "target_date": upcoming.target_date,
+            }
     if with_counts and db is not None:
         rows = (
             db.query(Issue.id, WorkflowState.group)
@@ -256,6 +283,9 @@ def _project_dict(p: Project, *, with_counts: bool = True, db: Session | None = 
         "initiative_name": p.initiative.name if p.initiative else None,
         "initiative_slug_id": p.initiative.slug_id if p.initiative else None,
         "team_keys": [t.key for t in (p.teams or [])] if hasattr(p, "teams") else [],
+        "health": health,
+        "health_updated_at": health_at,
+        "next_milestone": next_milestone,
     }
 
 
@@ -395,7 +425,12 @@ def list_projects(
     ws: Workspace = Depends(get_workspace),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    q = db.query(Project).filter_by(workspace_id=ws.id).options(selectinload(Project.lead), selectinload(Project.initiative))
+    q = db.query(Project).filter_by(workspace_id=ws.id).options(
+        selectinload(Project.lead),
+        selectinload(Project.initiative),
+        selectinload(Project.milestones),
+        selectinload(Project.updates),
+    )
     if state:
         try:
             q = q.filter(Project.state == ProjectState(state))

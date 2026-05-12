@@ -172,6 +172,9 @@ export interface Project {
   initiative_name: string | null;
   initiative_slug_id: string | null;
   team_keys?: string[];
+  health?: "onTrack" | "atRisk" | "offTrack" | null;
+  health_updated_at?: string | null;
+  next_milestone?: { id: string; name: string; target_date: string | null } | null;
 }
 
 export interface ProjectDetail extends Project {

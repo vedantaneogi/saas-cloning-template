@@ -222,6 +222,17 @@ class ProjectOut(BaseModel):
     initiative_id: str | None = None
     initiative_name: str | None = None
     initiative_slug_id: str | None = None
+    team_keys: list[str] = []
+    health: str | None = None
+    health_updated_at: datetime | None = None
+    next_milestone: "NextMilestoneSummary | None" = None
+
+
+class NextMilestoneSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    name: str
+    target_date: datetime | None = None
 
 
 class ProjectDetailOut(ProjectOut):
