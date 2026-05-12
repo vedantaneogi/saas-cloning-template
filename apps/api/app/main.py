@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import router
+from app.api.webhooks import router as webhooks_router
 from app.auth.routes import router as auth_router
 from app.core.config import get_settings
 from app.db.session import SessionLocal
@@ -56,3 +57,4 @@ def maybe_seed_from_file() -> None:
 
 app.include_router(auth_router)
 app.include_router(router)
+app.include_router(webhooks_router)

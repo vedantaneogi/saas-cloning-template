@@ -695,6 +695,34 @@ class TemplateKind(str, enum.Enum):
     document = "document"
 
 
+class IntegrationKind(str, enum.Enum):
+    github = "github"
+    slack = "slack"
+    figma = "figma"
+
+
+class WorkspaceIntegration(Base):
+    """One row per workspace × integration kind.
+
+    `config` is JSON: stores the inbound webhook secret + per-integration
+    knobs (e.g., default Slack team_id for triage routing).
+    """
+
+    __tablename__ = "workspace_integrations"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "kind", name="uq_workspace_integrations"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[IntegrationKind] = mapped_column(Enum(IntegrationKind, name="integration_kind"), nullable=False)
+    config: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    workspace: Mapped["Workspace"] = relationship()
+
+
 class AutomationTrigger(str, enum.Enum):
     on_issue_create = "on_issue_create"
     on_status_change = "on_status_change"

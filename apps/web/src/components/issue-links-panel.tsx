@@ -95,32 +95,51 @@ export function IssueLinksPanel({
       {links.length > 0 && (
         <ul className="mt-2 space-y-1">
           {links.map((ln) => (
-            <li
-              key={ln.id}
-              className="group flex items-center gap-2 rounded-md border border-border-subtle bg-elevated px-2 py-1.5 text-small"
-            >
-              <span className="text-text-tertiary">{iconFor(ln.type)}</span>
-              <a
-                href={ln.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 truncate text-text-primary hover:underline"
+            <li key={ln.id} className="space-y-1">
+              <div
+                className="group flex items-center gap-2 rounded-md border border-border-subtle bg-elevated px-2 py-1.5 text-small"
               >
-                {ln.title}
-              </a>
-              {statusBadge(ln.status)}
-              <button
-                type="button"
-                onClick={() => remove(ln.id)}
-                className="opacity-0 transition group-hover:opacity-100 text-text-tertiary hover:text-text-primary"
-                title="Remove link"
-              >
-                <X size={12} />
-              </button>
+                <span className="text-text-tertiary">{iconFor(ln.type)}</span>
+                <a
+                  href={ln.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 truncate text-text-primary hover:underline"
+                >
+                  {ln.title}
+                </a>
+                {statusBadge(ln.status)}
+                <button
+                  type="button"
+                  onClick={() => remove(ln.id)}
+                  className="opacity-0 transition group-hover:opacity-100 text-text-tertiary hover:text-text-primary"
+                  title="Remove link"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              {ln.type === "figma" && (
+                <FigmaEmbed url={ln.url} />
+              )}
             </li>
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function FigmaEmbed({ url }: { url: string }) {
+  // Figma embed wants the source url passed as a query param.
+  const embedSrc = `https://www.figma.com/embed?embed_host=clone&url=${encodeURIComponent(url)}`;
+  return (
+    <div className="overflow-hidden rounded-md border border-border-subtle bg-elevated">
+      <iframe
+        src={embedSrc}
+        title="Figma preview"
+        className="h-64 w-full"
+        allowFullScreen
+      />
     </div>
   );
 }

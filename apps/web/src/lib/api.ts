@@ -1336,3 +1336,30 @@ export async function listDocVersions(slug: string, docSlug: string): Promise<Do
 export async function restoreDocVersion(slug: string, docSlug: string, versionId: string): Promise<Document> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/documents/${encodeURIComponent(docSlug)}/versions/${encodeURIComponent(versionId)}/restore`, { method: "POST" });
 }
+
+// --- workspace integrations ----------------------------------------------
+
+export type IntegrationKind = "github" | "slack" | "figma";
+
+export interface Integration {
+  id: string;
+  kind: IntegrationKind;
+  enabled: boolean;
+  config: Record<string, string | null>;
+  created_at: string;
+}
+
+export async function listIntegrations(slug: string): Promise<Integration[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/integrations`);
+}
+
+export async function upsertIntegration(slug: string, body: { kind: IntegrationKind; config?: Record<string, unknown>; enabled?: boolean }): Promise<Integration> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/integrations`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteIntegration(slug: string, id: string): Promise<void> {
+  await fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/integrations/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

@@ -26,6 +26,8 @@ from app.db.models import (
     EstimateScale,
     Initiative,
     InitiativeStatus,
+    IntegrationKind,
+    WorkspaceIntegration,
     Issue,
     IssueLink,
     IssueLinkStatus,
@@ -4114,3 +4116,80 @@ def restore_doc_version(
     db.commit()
     db.refresh(d)
     return _document_dict(d)
+
+
+# ============================================================================
+# Workspace integrations (GitHub / Slack / Figma) — connect-by-secret only
+# ============================================================================
+
+def _integration_dict(i: WorkspaceIntegration, *, reveal_secret: bool = False) -> dict:
+    try:
+        cfg = json.loads(i.config or "{}")
+    except json.JSONDecodeError:
+        cfg = {}
+    if not reveal_secret and "secret" in cfg:
+        cfg = {**cfg, "secret": "•" * 8}
+    return {
+        "id": i.id,
+        "kind": i.kind.value,
+        "enabled": i.enabled,
+        "config": cfg,
+        "created_at": i.created_at,
+    }
+
+
+class _IntegrationIn(BaseModel):
+    kind: str
+    config: dict = {}
+    enabled: bool = True
+
+
+@router.get("/workspaces/{slug}/integrations")
+def list_integrations(
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = db.query(WorkspaceIntegration).filter_by(workspace_id=ws.id).all()
+    return [_integration_dict(i) for i in rows]
+
+
+@router.post("/workspaces/{slug}/integrations")
+def upsert_integration(
+    body: _IntegrationIn,
+    ws: Workspace = Depends(get_workspace),
+    admin: Member = Depends(require_role(MemberRole.admin)),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        kind = IntegrationKind(body.kind)
+    except ValueError:
+        raise HTTPException(400, f"unknown kind: {body.kind}")
+    row = db.query(WorkspaceIntegration).filter_by(workspace_id=ws.id, kind=kind).first()
+    if row:
+        row.config = json.dumps(body.config or {})
+        row.enabled = body.enabled
+    else:
+        row = WorkspaceIntegration(
+            workspace_id=ws.id,
+            kind=kind,
+            config=json.dumps(body.config or {}),
+            enabled=body.enabled,
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _integration_dict(row, reveal_secret=True)
+
+
+@router.delete("/workspaces/{slug}/integrations/{integration_id}", status_code=204)
+def delete_integration(
+    integration_id: str,
+    ws: Workspace = Depends(get_workspace),
+    admin: Member = Depends(require_role(MemberRole.admin)),
+    db: Session = Depends(get_db),
+) -> None:
+    row = db.query(WorkspaceIntegration).filter_by(id=integration_id, workspace_id=ws.id).first()
+    if not row:
+        raise HTTPException(404, "integration not found")
+    db.delete(row)
+    db.commit()
