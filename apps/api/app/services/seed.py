@@ -66,6 +66,7 @@ from app.db.models import (
     IssueRelation,
     Label,
     Member,
+    MemberRole,
     Project,
     ProjectMilestone,
     ProjectState,
@@ -74,9 +75,11 @@ from app.db.models import (
     StateGroup,
     Team,
     UpdateHealth,
+    User,
     Workspace,
     WorkflowState,
 )
+from app.auth.security import hash_password
 
 
 def _make_slug(name: str) -> str:
@@ -262,19 +265,48 @@ def _upsert_member(db: Session, ws: Workspace, m: dict) -> Member:
     mem = None
     if email:
         mem = db.query(Member).filter_by(workspace_id=ws.id, email=email).first()
+
+    # Ensure a User row exists for this email so seeded members are loginable.
+    user_id: str | None = None
+    if email:
+        user = db.query(User).filter_by(email=email.lower()).first()
+        if not user:
+            password = m.get("password") or "demo"
+            user = User(
+                email=email.lower(),
+                password_hash=hash_password(password),
+                name=m["name"],
+                initials=m.get("initials", m["name"][:2].upper()),
+                color=m.get("color", "#5e6ad2"),
+            )
+            db.add(user)
+            db.flush()
+        user_id = user.id
+
+    role_str = (m.get("role") or "member").lower()
+    try:
+        role = MemberRole(role_str)
+    except ValueError:
+        role = MemberRole.member
+
     if not mem:
         mem = Member(
             workspace_id=ws.id,
+            user_id=user_id,
             name=m["name"],
             email=email,
             initials=m.get("initials", m["name"][:2].upper()),
             color=m.get("color", "#5e6ad2"),
+            role=role,
         )
         db.add(mem)
     else:
         mem.name = m["name"]
         mem.initials = m.get("initials", mem.initials)
         mem.color = m.get("color", mem.color)
+        if mem.user_id is None and user_id is not None:
+            mem.user_id = user_id
+        mem.role = role
     db.flush()
     return mem
 

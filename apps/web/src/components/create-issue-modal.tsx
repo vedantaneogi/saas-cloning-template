@@ -4,17 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   X,
-  ChevronDown,
   ChevronRight,
   Calendar,
   BarChart3,
   Folders,
   Tag,
   Paperclip,
+  Eye,
+  Pencil,
 } from "lucide-react";
 import { createIssue, listMembers, listTeamLabels, type Label, type Member, type Team } from "@/lib/api";
 import { StatusIcon, PriorityIcon, Avatar } from "@/components/icons";
 import { Popover, PopoverItem, PopoverList } from "@/components/popover";
+import { MarkdownView } from "@/components/markdown-view";
 
 const PRIORITY_LABELS = ["No priority", "Urgent", "High", "Medium", "Low"] as const;
 const PRIORITIES = [0, 1, 2, 3, 4] as const;
@@ -31,6 +33,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [descMode, setDescMode] = useState<"write" | "preview">("write");
   const [priority, setPriority] = useState<0 | 1 | 2 | 3 | 4>(0);
   const [stateName, setStateName] = useState("Todo");
   const [teamKey, setTeamKey] = useState<string>(teams[0]?.key ?? "");
@@ -41,7 +44,8 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -51,21 +55,37 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const target = e.target as HTMLElement;
-      const typing = target.matches("input, textarea, [contenteditable=true]");
+      const target = e.target as HTMLElement | null;
+      const typing = target?.matches?.("input, textarea, [contenteditable=true]") ?? false;
       if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing) {
         e.preventDefault();
         setOpen(true);
       }
       if (e.key === "Escape" && open) setOpen(false);
     }
+    function onOpenEvent() {
+      setOpen(true);
+    }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("create-issue:open", onOpenEvent);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("create-issue:open", onOpenEvent);
+    };
   }, [open]);
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
+    if (open) titleRef.current?.focus();
   }, [open]);
+
+  // Auto-grow description textarea.
+  useEffect(() => {
+    if (descMode !== "write") return;
+    const ta = descRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = Math.max(160, ta.scrollHeight) + "px";
+  }, [description, descMode, open]);
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -85,7 +105,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
         setOpen(false);
         router.push(`/${workspaceSlug}/issue/${created.identifier}`);
       } else {
-        inputRef.current?.focus();
+        titleRef.current?.focus();
         router.refresh();
       }
     } finally {
@@ -100,6 +120,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
     setAssignee(null);
     setLabels([]);
     setStateName("Todo");
+    setDescMode("write");
   }
 
   if (!open) return null;
@@ -122,7 +143,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             submit();
           }
         }}
-        className="w-[740px] max-w-[92vw] overflow-hidden rounded-lg border border-border-default bg-elevated text-text-primary shadow-popover"
+        className="flex max-h-[78vh] w-[760px] max-w-[92vw] flex-col rounded-xl bg-elevated text-text-primary shadow-popover"
       >
         {/* header */}
         <header className="flex items-center gap-1.5 px-3.5 pt-3 pb-1.5">
@@ -137,7 +158,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                 <span className="font-medium">{teamObj?.key ?? teamKey}</span>
               </button>
             )}
-            width={200}
+            width={220}
           >
             {({ close }) => (
               <PopoverList>
@@ -172,28 +193,61 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
           </div>
         </header>
 
-        {/* body */}
-        <div className="px-4 pb-1 pt-1">
+        {/* scrollable body */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 pt-1">
           <textarea
-            ref={inputRef}
+            ref={titleRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Issue title"
             rows={1}
             className="w-full resize-none bg-transparent text-large font-semibold leading-snug text-text-primary outline-none placeholder:text-text-quaternary"
           />
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add description…"
-            rows={2}
-            className="mt-0.5 w-full resize-none bg-transparent text-small text-text-secondary outline-none placeholder:text-text-tertiary"
-          />
+
+          <div className="mt-1 flex items-center gap-1 text-mini text-text-tertiary">
+            <button
+              type="button"
+              onClick={() => setDescMode("write")}
+              className={
+                "flex items-center gap-1 rounded-sm px-1.5 py-0.5 " +
+                (descMode === "write" ? "bg-pill text-text-secondary" : "hover:bg-row-hover")
+              }
+            >
+              <Pencil size={10} /> Write
+            </button>
+            <button
+              type="button"
+              onClick={() => setDescMode("preview")}
+              disabled={!description.trim()}
+              className={
+                "flex items-center gap-1 rounded-sm px-1.5 py-0.5 " +
+                (descMode === "preview" ? "bg-pill text-text-secondary" : "hover:bg-row-hover") +
+                " disabled:opacity-40 disabled:hover:bg-transparent"
+              }
+            >
+              <Eye size={10} /> Preview
+            </button>
+            <span className="ml-auto text-text-quaternary">Markdown supported · ⌘⏎ to submit</span>
+          </div>
+
+          {descMode === "write" ? (
+            <textarea
+              ref={descRef}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add description… (supports **bold**, # headings, - lists, ```code```)"
+              className="mt-1 w-full resize-none bg-transparent text-default leading-relaxed text-text-secondary outline-none placeholder:text-text-tertiary"
+              style={{ minHeight: 160 }}
+            />
+          ) : (
+            <div className="mt-1 min-h-[160px]">
+              <MarkdownView source={description} />
+            </div>
+          )}
         </div>
 
         {/* property chips */}
-        <div className="flex flex-wrap items-center gap-1.5 px-3.5 pb-3 pt-1">
-          {/* status */}
+        <div className="flex flex-wrap items-center gap-1.5 px-3.5 py-2">
           <Popover
             trigger={({ toggle }) => (
               <Chip onClick={toggle}>
@@ -201,7 +255,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                 <span>{stateName}</span>
               </Chip>
             )}
-            width={180}
+            width={200}
           >
             {({ close }) => (
               <PopoverList>
@@ -222,7 +276,6 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             )}
           </Popover>
 
-          {/* priority */}
           <Popover
             trigger={({ toggle }) => (
               <Chip onClick={toggle}>
@@ -230,7 +283,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                 <span>{PRIORITY_LABELS[priority]}</span>
               </Chip>
             )}
-            width={180}
+            width={200}
           >
             {({ close }) => (
               <PopoverList>
@@ -251,7 +304,6 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             )}
           </Popover>
 
-          {/* assignee */}
           <Popover
             trigger={({ toggle }) => (
               <Chip onClick={toggle}>
@@ -299,13 +351,11 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             )}
           </Popover>
 
-          {/* project placeholder */}
           <Chip disabled>
             <Folders size={12} />
             <span>Project</span>
           </Chip>
 
-          {/* labels */}
           <Popover
             trigger={({ toggle }) => (
               <Chip onClick={toggle}>
@@ -357,20 +407,18 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             )}
           </Popover>
 
-          {/* estimate placeholder */}
           <Chip disabled>
             <BarChart3 size={12} />
             <span>Estimate</span>
           </Chip>
 
-          {/* due date placeholder */}
           <Chip disabled>
             <Calendar size={12} />
             <span>Due date</span>
           </Chip>
         </div>
 
-        <footer className="flex items-center justify-between border-t border-border-subtle px-3 py-2 text-mini">
+        <footer className="flex items-center justify-between px-3 py-2 text-mini">
           <button
             type="button"
             className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
@@ -426,7 +474,7 @@ function Chip({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-pill px-2 py-1 text-mini text-text-secondary transition hover:border-border-strong hover:bg-elevated-hover disabled:cursor-default disabled:opacity-60 disabled:hover:bg-pill"
+      className="inline-flex items-center gap-1.5 rounded-md bg-pill px-2 py-1 text-mini text-text-secondary transition hover:bg-elevated-hover disabled:cursor-default disabled:opacity-60 disabled:hover:bg-pill"
     >
       {children}
     </button>

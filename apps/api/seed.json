@@ -6,9 +6,9 @@
       "name": "Demo Workspace",
       "icon_color": "#f59e0b",
       "members": [
-        { "name": "Navtesh Maken", "email": "nm@example.com", "initials": "NM", "color": "#5e6ad2" },
-        { "name": "Alex Park", "email": "ap@example.com", "initials": "AP", "color": "#26b5ce" },
-        { "name": "Sam Rivera", "email": "sr@example.com", "initials": "SR", "color": "#f2994a" }
+        { "name": "Navtesh Maken", "email": "nm@example.com", "initials": "NM", "color": "#5e6ad2", "role": "admin", "password": "demo" },
+        { "name": "Alex Park", "email": "ap@example.com", "initials": "AP", "color": "#26b5ce", "role": "member", "password": "demo" },
+        { "name": "Sam Rivera", "email": "sr@example.com", "initials": "SR", "color": "#f2994a", "role": "member", "password": "demo" }
       ],
       "workspace_labels": [
         { "name": "Bug", "color": "#eb5757" },

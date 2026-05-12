@@ -125,6 +125,22 @@ class IssueLinkStatus(str, enum.Enum):
     draft = "draft"
 
 
+class User(Base):
+    """Authentication identity. One User can be a Member in many workspaces."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    initials: Mapped[str] = mapped_column(String(4), nullable=False)
+    color: Mapped[str] = mapped_column(String(16), default="#5e6ad2")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    members: Mapped[list["Member"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
 class Workspace(Base):
     __tablename__ = "workspaces"
 
@@ -137,6 +153,7 @@ class Workspace(Base):
     teams: Mapped[list["Team"]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
     members: Mapped[list["Member"]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
     labels: Mapped[list["Label"]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
+    invites: Mapped[list["WorkspaceInvite"]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
 
 
 class Member(Base):
@@ -144,6 +161,7 @@ class Member(Base):
 
     id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     initials: Mapped[str] = mapped_column(String(4), nullable=False)
@@ -153,11 +171,33 @@ class Member(Base):
     )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="members")
+    user: Mapped["User | None"] = relationship(back_populates="members")
     team_memberships: Mapped[list["TeamMembership"]] = relationship(
         back_populates="member", cascade="all, delete-orphan"
     )
 
     __table_args__ = (UniqueConstraint("workspace_id", "email", name="uq_members_workspace_id_email"),)
+
+
+class WorkspaceInvite(Base):
+    """Pending invitation to join a workspace. Consumed when the invitee accepts."""
+
+    __tablename__ = "workspace_invites"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    role: Mapped[MemberRole] = mapped_column(
+        Enum(MemberRole, name="invite_role"), default=MemberRole.member, nullable=False
+    )
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    invited_by_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    workspace: Mapped["Workspace"] = relationship(back_populates="invites")
+    invited_by: Mapped["Member | None"] = relationship()
 
 
 class Team(Base):

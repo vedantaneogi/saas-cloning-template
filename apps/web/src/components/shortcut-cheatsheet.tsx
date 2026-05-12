@@ -49,8 +49,15 @@ export function ShortcutCheatsheet() {
       }
       if (e.key === "Escape" && open) setOpen(false);
     }
+    function onOpenEvent() {
+      setOpen(true);
+    }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("shortcuts:open", onOpenEvent);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("shortcuts:open", onOpenEvent);
+    };
   }, [open]);
 
   if (!open) return null;

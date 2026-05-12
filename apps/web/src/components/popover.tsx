@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
 
 export function Popover({
@@ -15,7 +15,10 @@ export function Popover({
   width?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [drop, setDrop] = useState<"down" | "up">("down");
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -33,14 +36,31 @@ export function Popover({
     };
   }, [open]);
 
+  // Flip up when there's not enough room below the trigger.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const t = triggerRef.current;
+    const p = popRef.current;
+    if (!t || !p) return;
+    const tr = t.getBoundingClientRect();
+    const ph = p.offsetHeight;
+    const spaceBelow = window.innerHeight - tr.bottom;
+    const spaceAbove = tr.top;
+    setDrop(spaceBelow < ph + 16 && spaceAbove > spaceBelow ? "up" : "down");
+  }, [open]);
+
   return (
     <div className="relative inline-block" ref={ref}>
-      {trigger({ open, toggle: () => setOpen((o) => !o), close: () => setOpen(false) })}
+      <div ref={triggerRef}>
+        {trigger({ open, toggle: () => setOpen((o) => !o), close: () => setOpen(false) })}
+      </div>
       {open && (
         <div
+          ref={popRef}
           className={clsx(
-            "absolute z-40 mt-1 overflow-hidden rounded-md border border-border-default bg-elevated text-small shadow-popover",
-            align === "end" ? "right-0" : "left-0"
+            "absolute z-40 overflow-hidden rounded-md border border-border-default bg-elevated text-small shadow-popover",
+            align === "end" ? "right-0" : "left-0",
+            drop === "up" ? "bottom-full mb-1" : "mt-1"
           )}
           style={{ width }}
         >

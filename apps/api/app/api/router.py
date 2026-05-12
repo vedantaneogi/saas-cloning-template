@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_db, get_workspace
+from app.api.deps import get_current_member, get_current_user, get_db, get_optional_user, get_workspace, require_role
 from app.db.models import (
     Comment,
     CommentReaction,
@@ -42,8 +44,10 @@ from app.db.models import (
     Team,
     TeamMembership,
     UpdateHealth,
+    User,
     Workspace,
     WorkflowState,
+    WorkspaceInvite,
 )
 from app.services import notifications as notif
 from app.schemas import (
@@ -575,6 +579,7 @@ def create_project_update(
     slug_id: str,
     body: UpdateCreateIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     suffix = slug_id.rsplit("-", 1)[-1] if "-" in slug_id else slug_id
@@ -590,8 +595,7 @@ def create_project_update(
         health = UpdateHealth(body.health)
     except ValueError:
         raise HTTPException(400, f"unknown health: {body.health}")
-    first_member = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
-    u = ProjectUpdateModel(project_id=p.id, body=body.body, health=health, author_id=first_member.id if first_member else None)
+    u = ProjectUpdateModel(project_id=p.id, body=body.body, health=health, author_id=current_member.id)
     db.add(u)
     db.commit()
     db.refresh(u)
@@ -608,6 +612,7 @@ def create_project_update(
 def get_issue(
     identifier: str,
     ws: Workspace = Depends(get_workspace),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ) -> dict:
     issue = (
@@ -656,9 +661,11 @@ def get_issue(
         if r.target_id in targets
     ]
 
-    # Default current-user = first member in workspace (used for `reacted` flag).
-    current = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
-    current_id = current.id if current else None
+    # Resolve current member in this workspace (used for `reacted` and `subscribed` flags).
+    current_id: str | None = None
+    if user is not None:
+        cm = db.query(Member).filter_by(workspace_id=ws.id, user_id=user.id).first()
+        current_id = cm.id if cm else None
 
     # Group comments by thread: top-level comments hold their replies.
     by_id: dict[str, dict] = {}
@@ -692,13 +699,18 @@ def get_issue(
 def my_issue_counts(
     member_id: str | None = Query(None),
     ws: Workspace = Depends(get_workspace),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ) -> dict:
     if not member_id:
-        first_member = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
-        if not first_member:
+        cm = (
+            db.query(Member).filter_by(workspace_id=ws.id, user_id=user.id).first()
+            if user
+            else None
+        )
+        if not cm:
             return {"assigned": 0, "created": 0, "subscribed": 0, "activity": 0}
-        member_id = first_member.id
+        member_id = cm.id
     base = (
         db.query(Issue)
         .join(Team, Issue.team_id == Team.id)
@@ -713,12 +725,17 @@ def my_issues(
     scope: str,
     member_id: str | None = Query(None),
     ws: Workspace = Depends(get_workspace),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     if scope not in {"assigned", "created", "subscribed", "activity"}:
         raise HTTPException(400, f"unknown scope: {scope}")
     if not member_id:
-        member = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
+        member = (
+            db.query(Member).filter_by(workspace_id=ws.id, user_id=user.id).first()
+            if user
+            else None
+        )
         if not member:
             return []
         member_id = member.id
@@ -1168,6 +1185,7 @@ def create_comment(
     identifier: str,
     body: CommentCreateIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     issue = (
@@ -1179,10 +1197,7 @@ def create_comment(
     if not issue:
         raise HTTPException(404, f"issue not found: {identifier}")
 
-    author_id = body.author_id
-    if not author_id:
-        first_member = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
-        author_id = first_member.id if first_member else None
+    author_id = body.author_id or current_member.id
 
     parent_id = body.parent_id or None
     if parent_id:
@@ -1242,6 +1257,7 @@ def toggle_reaction(
     comment_id: str,
     body: ReactionToggleIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     comment = (
@@ -1255,12 +1271,7 @@ def toggle_reaction(
     if not comment:
         raise HTTPException(404, "comment not found")
 
-    member_id = body.member_id
-    if not member_id:
-        first = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
-        member_id = first.id if first else None
-    if not member_id:
-        raise HTTPException(400, "no workspace members to attribute reaction")
+    member_id = body.member_id or current_member.id
 
     emoji = body.emoji.strip()
     if not emoji:
@@ -1530,10 +1541,17 @@ def subscribe_issue(
     identifier: str,
     body: IssueSubscribeIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     issue = _load_issue(db, ws, identifier, with_subs=True)
-    member = _resolve_current_member(db, ws, body.member_id)
+    member = (
+        db.query(Member).filter_by(id=body.member_id, workspace_id=ws.id).first()
+        if body.member_id
+        else current_member
+    )
+    if not member:
+        raise HTTPException(404, "member not found")
     if member not in issue.subscribers:
         issue.subscribers.append(member)
         db.commit()
@@ -1546,10 +1564,17 @@ def unsubscribe_issue(
     identifier: str,
     body: IssueSubscribeIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     issue = _load_issue(db, ws, identifier, with_subs=True)
-    member = _resolve_current_member(db, ws, body.member_id)
+    member = (
+        db.query(Member).filter_by(id=body.member_id, workspace_id=ws.id).first()
+        if body.member_id
+        else current_member
+    )
+    if not member:
+        raise HTTPException(404, "member not found")
     issue.subscribers = [m for m in issue.subscribers if m.id != member.id]
     db.commit()
     db.refresh(issue)
@@ -2377,16 +2402,14 @@ def get_document(
 def create_document(
     body: DocumentCreateIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     if body.project_id:
         proj = db.query(Project).filter_by(id=body.project_id, workspace_id=ws.id).first()
         if not proj:
             raise HTTPException(400, "project does not belong to workspace")
-    creator_id = body.creator_id
-    if not creator_id:
-        first = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
-        creator_id = first.id if first else None
+    creator_id = body.creator_id or current_member.id
     d = Document(
         workspace_id=ws.id,
         project_id=body.project_id,
@@ -2564,9 +2587,12 @@ def get_saved_view(
 
 # --- Notifications ------------------------------------------------------
 
-def _default_member_id(db: Session, ws: Workspace) -> str | None:
-    m = db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).first()
-    return m.id if m else None
+def _default_member_id(db: Session, ws: Workspace, user: User | None) -> str | None:
+    if user is not None:
+        m = db.query(Member).filter_by(workspace_id=ws.id, user_id=user.id).first()
+        if m:
+            return m.id
+    return None
 
 
 def _notification_dict(n: Notification) -> dict:
@@ -2588,9 +2614,10 @@ def list_notifications(
     unread_only: bool = Query(False),
     limit: int = Query(100, ge=1, le=500),
     ws: Workspace = Depends(get_workspace),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    rid = member_id or _default_member_id(db, ws)
+    rid = member_id or _default_member_id(db, ws, user)
     if not rid:
         return []
     q = (
@@ -2608,9 +2635,10 @@ def list_notifications(
 def unread_count(
     member_id: str | None = Query(None),
     ws: Workspace = Depends(get_workspace),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    rid = member_id or _default_member_id(db, ws)
+    rid = member_id or _default_member_id(db, ws, user)
     if not rid:
         return {"unread": 0}
     n = (
@@ -2640,10 +2668,10 @@ def mark_read(
 def mark_all_read(
     member_id: str | None = Query(None),
     ws: Workspace = Depends(get_workspace),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ) -> None:
-    from datetime import datetime, timezone
-    rid = member_id or _default_member_id(db, ws)
+    rid = member_id or _default_member_id(db, ws, user)
     if not rid:
         return
     now = datetime.now(timezone.utc)
@@ -3023,3 +3051,196 @@ def create_team(
 @router.post("/seed", status_code=200)
 def seed_route(body: SeedRequest, db: Session = Depends(get_db)) -> dict:
     return apply_seed(db, body.model_dump(by_alias=False))
+
+
+# --- Workspace creation (authenticated) -------------------------------------
+
+class WorkspaceCreateIn(BaseModel):
+    name: str
+    slug: str | None = None
+    icon_color: str = "#f59e0b"
+    team_key: str = "GEN"
+    team_name: str | None = None
+
+
+def _slugify(name: str) -> str:
+    out = "".join(c if c.isalnum() else "-" for c in name.lower()).strip("-")
+    while "--" in out:
+        out = out.replace("--", "-")
+    return out or "workspace"
+
+
+@router.post("/workspaces", response_model=WorkspaceOut)
+def create_workspace(
+    body: WorkspaceCreateIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Workspace:
+    slug = body.slug or _slugify(body.name)
+    base = slug
+    i = 1
+    while db.query(Workspace).filter_by(slug=slug).first():
+        i += 1
+        slug = f"{base}-{i}"
+    ws = Workspace(slug=slug, name=body.name, icon_color=body.icon_color)
+    db.add(ws)
+    db.flush()
+
+    member = Member(
+        workspace_id=ws.id,
+        user_id=user.id,
+        name=user.name,
+        email=user.email,
+        initials=user.initials,
+        color=user.color,
+        role=MemberRole.admin,
+    )
+    db.add(member)
+    db.flush()
+
+    team_key = (body.team_key or _slugify(body.name).upper())[:8].upper() or "GEN"
+    # Uniquify team key within the workspace
+    existing_keys = {t.key for t in db.query(Team).filter_by(workspace_id=ws.id).all()}
+    j = 1
+    while team_key in existing_keys:
+        j += 1
+        team_key = f"{team_key}{j}"
+    team = Team(
+        workspace_id=ws.id,
+        key=team_key,
+        name=body.team_name or body.name,
+        icon_color="#22c55e",
+    )
+    db.add(team)
+    db.flush()
+    defaults = [
+        ("Backlog", StateGroup.backlog, 0, "#95a2b3"),
+        ("Todo", StateGroup.unstarted, 1, "#e2e2e2"),
+        ("In Progress", StateGroup.started, 2, "#f2c94c"),
+        ("In Review", StateGroup.started, 3, "#26b5ce"),
+        ("Done", StateGroup.completed, 4, "#5e6ad2"),
+        ("Canceled", StateGroup.canceled, 5, "#95a2b3"),
+    ]
+    for n, g, pos, color in defaults:
+        db.add(WorkflowState(team_id=team.id, name=n, group=g, position=pos, color=color))
+    db.commit()
+    db.refresh(ws)
+    return ws
+
+
+# --- Invite create + list ---------------------------------------------------
+
+class InviteCreateIn(BaseModel):
+    email: str
+    role: str = "member"
+
+
+class InvitePublicOut(BaseModel):
+    id: str
+    email: str
+    role: str
+    token: str
+    accept_url: str
+    expires_at: datetime
+    created_at: datetime
+
+
+def _accept_url(token: str) -> str:
+    return f"/accept-invite/{token}"
+
+
+@router.get("/workspaces/{slug}/invites", response_model=list[InvitePublicOut])
+def list_invites(
+    ws: Workspace = Depends(get_workspace),
+    admin: Member = Depends(require_role(MemberRole.admin)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = (
+        db.query(WorkspaceInvite)
+        .filter(WorkspaceInvite.workspace_id == ws.id, WorkspaceInvite.accepted_at.is_(None))
+        .order_by(WorkspaceInvite.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "email": r.email,
+            "role": r.role.value,
+            "token": r.token,
+            "accept_url": _accept_url(r.token),
+            "expires_at": r.expires_at,
+            "created_at": r.created_at,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/workspaces/{slug}/invites", response_model=InvitePublicOut)
+def create_invite(
+    body: InviteCreateIn,
+    ws: Workspace = Depends(get_workspace),
+    admin: Member = Depends(require_role(MemberRole.admin)),
+    db: Session = Depends(get_db),
+) -> dict:
+    email = body.email.lower().strip()
+    if not email or "@" not in email:
+        raise HTTPException(400, "invalid email")
+    try:
+        role = MemberRole(body.role)
+    except ValueError:
+        raise HTTPException(400, f"unknown role: {body.role}")
+
+    # Already a member?
+    if db.query(Member).filter_by(workspace_id=ws.id, email=email).first():
+        raise HTTPException(409, detail="this email is already a member")
+
+    # Reuse pending invite if one exists.
+    existing = (
+        db.query(WorkspaceInvite)
+        .filter_by(workspace_id=ws.id, email=email, accepted_at=None)
+        .first()
+    )
+    if existing:
+        existing.role = role
+        existing.expires_at = datetime.now(timezone.utc) + timedelta(days=14)
+        db.commit()
+        db.refresh(existing)
+        inv = existing
+    else:
+        from app.auth.security import random_token
+
+        inv = WorkspaceInvite(
+            workspace_id=ws.id,
+            email=email,
+            role=role,
+            token=random_token(),
+            invited_by_id=admin.id,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=14),
+        )
+        db.add(inv)
+        db.commit()
+        db.refresh(inv)
+
+    return {
+        "id": inv.id,
+        "email": inv.email,
+        "role": inv.role.value,
+        "token": inv.token,
+        "accept_url": _accept_url(inv.token),
+        "expires_at": inv.expires_at,
+        "created_at": inv.created_at,
+    }
+
+
+@router.delete("/workspaces/{slug}/invites/{invite_id}", status_code=204)
+def revoke_invite(
+    invite_id: str,
+    ws: Workspace = Depends(get_workspace),
+    admin: Member = Depends(require_role(MemberRole.admin)),
+    db: Session = Depends(get_db),
+) -> None:
+    inv = db.query(WorkspaceInvite).filter_by(id=invite_id, workspace_id=ws.id).first()
+    if not inv:
+        raise HTTPException(404, "invite not found")
+    db.delete(inv)
+    db.commit()

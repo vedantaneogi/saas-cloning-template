@@ -148,10 +148,28 @@ Last updated: 2026-05-12. Status keys: ✅ built · 🟡 partial · ❌ not star
 
 ## Out of scope
 
-- No auth (current user defaults to first member)
 - No realtime (router.refresh after mutations)
 - Postgres-ready (docker-compose) but dev runs SQLite
 - Capture/Playwright golden screenshots not re-run on each slice
+- Email delivery: invite links are generated locally; no SMTP wired (copy the link from the invite dialog)
+
+---
+
+## Auth + multi-workspace + invites (done 2026-05-12)
+
+The app is now a real multi-user product:
+
+- **User model** with email + bcrypt password; one User can be Member of many workspaces.
+- **JWT session in httpOnly cookie** (`lc_session`, SameSite=Lax, 30d). `AUTH_SECRET` in env; defaults to a dev-insecure literal.
+- **`/api/auth`** endpoints: `signup`, `login`, `logout`, `me`, `invites/{token}`, `invites/{token}/accept`.
+- **Auth pages** under `/(auth)`: `/login`, `/signup`, `/accept-invite/[token]`. Shared frame with the app brand mark.
+- **Middleware** gates every `/(app)` route — no cookie → 307 to `/login`; logged in but visiting `/login` → 307 home.
+- **Workspace switcher** in the sidebar header popover lists every workspace the user belongs to, with role chip; "Create workspace" + "Sign out" actions.
+- **Workspace creation** at `/new-workspace` — name, team prefix, color → new workspace seeded with the default 6 workflow states and a starter team.
+- **Member invitations**: admins on `/settings/members` click "Invite member" → email + role → modal generates an invite URL to copy. Pending invites are listed in the dialog with revoke. Accepting the link runs the signup flow if the email is new or login+accept if the user exists.
+- **Role enforcement**: `require_role(MemberRole.admin)` guards invite create/list/revoke. Membership is enforced workspace-wide via `get_current_member` (403 if you're not in the workspace).
+- **Demo accounts**: `nm@example.com` (admin), `ap@example.com`, `sr@example.com`, all with password `demo` (seeded automatically). Seed file gained a `role` + `password` field per member.
+- **API client** forwards cookies on SSR (via `next/headers`) and `credentials: "include"` on the browser. Every endpoint that used "first member of workspace" now resolves the current user from the session cookie.
 
 ---
 

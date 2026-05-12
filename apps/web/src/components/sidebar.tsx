@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   ChevronRight,
@@ -23,15 +23,16 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { Avatar } from "@/components/icons";
-import { getActiveCycle, getTriageCount, getUnreadCount, listSavedViews, patchSavedView, type Cycle, type SavedView, type Workspace, type Team } from "@/lib/api";
-
-const VIEWER = { initials: "NM", color: "#5e6ad2" };
+import { getActiveCycle, getTriageCount, getUnreadCount, listSavedViews, patchSavedView, logout, type Cycle, type Me, type SavedView, type Workspace, type Team } from "@/lib/api";
 
 type Sections = "favorites" | "workspace" | "teams";
 
-export function Sidebar({ workspace }: { workspace: Workspace }) {
+export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
   const pathname = usePathname();
   const wsSlug = workspace.slug;
+  const router = useRouter();
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const [sectionOpen, setSectionOpen] = useState<Record<Sections, boolean>>({
     favorites: true,
@@ -92,12 +93,59 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
 
   return (
     <aside className="flex h-screen w-sidebar shrink-0 select-none flex-col bg-sidebar text-small text-text-secondary">
-      <div className="flex h-[44px] items-center gap-1 px-2.5">
-        <button className="flex flex-1 items-center gap-2 truncate rounded-md px-1.5 py-1 text-default font-semibold text-text-primary hover:bg-row-hover">
+      <div className="relative flex h-[44px] items-center gap-1 px-2.5">
+        <button
+          onClick={() => setSwitcherOpen((v) => !v)}
+          className="flex flex-1 items-center gap-2 truncate rounded-md px-1.5 py-1 text-default font-semibold text-text-primary hover:bg-row-hover"
+        >
           <Avatar initials={initialsFor(workspace.name)} color={workspace.icon_color} size={20} />
-          <span className="truncate">{workspace.name.split(" ")[0]}</span>
+          <span className="truncate">{workspace.name}</span>
           <ChevronRight size={12} className="ml-auto rotate-90 text-text-tertiary" />
         </button>
+        {switcherOpen && (
+          <div
+            className="absolute left-2.5 top-[44px] z-30 w-[228px] rounded-md bg-elevated shadow-popover"
+            onMouseLeave={() => setSwitcherOpen(false)}
+          >
+            <div className="px-2 py-1 text-micro font-medium uppercase tracking-wider text-text-tertiary">Workspaces</div>
+            {me.workspaces.map((w) => (
+              <Link
+                key={w.id}
+                href={`/${w.slug}/inbox`}
+                onClick={() => setSwitcherOpen(false)}
+                className={clsx(
+                  "flex items-center gap-2 rounded-sm px-2 py-1.5 text-small",
+                  w.slug === wsSlug ? "bg-row-selected text-text-primary" : "text-text-secondary hover:bg-row-hover"
+                )}
+              >
+                <Avatar initials={initialsFor(w.name)} color={w.icon_color} size={18} />
+                <span className="flex-1 truncate">{w.name}</span>
+                <span className="text-text-quaternary">{w.role}</span>
+              </Link>
+            ))}
+            <hr className="my-1 border-border-subtle" />
+            <Link
+              href="/new-workspace"
+              onClick={() => setSwitcherOpen(false)}
+              className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-small text-text-secondary hover:bg-row-hover"
+            >
+              <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-pill border border-dashed border-border-strong text-text-tertiary">+</span>
+              <span>Create workspace</span>
+            </Link>
+            <button
+              onClick={async () => {
+                setSwitcherOpen(false);
+                await logout();
+                router.push("/login");
+                router.refresh();
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-small text-text-secondary hover:bg-row-hover"
+            >
+              <span className="inline-flex h-[18px] w-[18px] items-center justify-center text-text-tertiary">⇥</span>
+              <span>Sign out</span>
+            </button>
+          </div>
+        )}
         <button
           onClick={() => window.dispatchEvent(new CustomEvent("command-palette:open"))}
           className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
@@ -107,10 +155,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           <Search size={15} />
         </button>
         <button
-          onClick={() => {
-            const ev = new KeyboardEvent("keydown", { key: "c", bubbles: true });
-            window.dispatchEvent(ev);
-          }}
+          onClick={() => window.dispatchEvent(new CustomEvent("create-issue:open"))}
           className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
           aria-label="New issue"
           title="New issue (C)"
@@ -227,10 +272,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
 
       <div className="flex items-center gap-1 border-t border-border-subtle px-3 py-2 text-micro text-text-tertiary">
         <button
-          onClick={() => {
-            const ev = new KeyboardEvent("keydown", { key: "?", bubbles: true });
-            window.dispatchEvent(ev);
-          }}
+          onClick={() => window.dispatchEvent(new CustomEvent("shortcuts:open"))}
           className="rounded-md p-1 hover:bg-row-hover hover:text-text-secondary"
           aria-label="Help"
           title="Keyboard shortcuts (?)"
@@ -249,7 +291,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           <Settings size={14} />
         </Link>
         <span className="ml-auto">
-          <Avatar initials={VIEWER.initials} color={VIEWER.color} size={20} />
+          <Avatar initials={me.user.initials} color={me.user.color} size={20} />
         </span>
       </div>
     </aside>

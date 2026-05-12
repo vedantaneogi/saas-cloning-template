@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { patchIssue } from "@/lib/api";
+import { MarkdownView } from "@/components/markdown-view";
 
 export function IssueTitle({
   workspaceSlug,
@@ -115,11 +116,9 @@ export function IssueDescription({
     return (
       <div
         onClick={() => setEditing(true)}
-        className="mt-5 cursor-text space-y-3 rounded-md text-default text-text-secondary hover:bg-row-hover/40"
+        className="mt-5 cursor-text rounded-md hover:bg-row-hover/40"
       >
-        {initial.split("\n").map((line, i) => (
-          <Paragraph key={i} line={line} />
-        ))}
+        <MarkdownView source={initial} />
       </div>
     );
   }
@@ -146,24 +145,3 @@ export function IssueDescription({
   );
 }
 
-function Paragraph({ line }: { line: string }) {
-  if (!line.trim()) return <div className="h-2" />;
-  if (line.startsWith("**") && line.endsWith("**")) {
-    return <p className="font-semibold text-text-primary">{line.replace(/\*\*/g, "")}</p>;
-  }
-  if (line.startsWith("- [ ]") || line.startsWith("- [x]")) {
-    const done = line.startsWith("- [x]");
-    return (
-      <label className="flex items-center gap-2 text-text-secondary">
-        <input
-          type="checkbox"
-          defaultChecked={done}
-          className="h-3.5 w-3.5 rounded-sm border-border-strong bg-input"
-          readOnly
-        />
-        <span>{line.slice(5).trim()}</span>
-      </label>
-    );
-  }
-  return <p>{line}</p>;
-}

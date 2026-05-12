@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     seed_path: str | None = Field(default=None, alias="SEED_PATH")
     api_log_sql: bool = Field(default=False, alias="API_LOG_SQL")
 
+    # Auth — JWT secret + cookie name. Override in production.
+    auth_secret: str = Field(default="dev-insecure-change-me", alias="AUTH_SECRET")
+    auth_cookie_name: str = Field(default="lc_session", alias="AUTH_COOKIE_NAME")
+    auth_session_days: int = Field(default=30, alias="AUTH_SESSION_DAYS")
+    auth_cookie_secure: bool = Field(default=False, alias="AUTH_COOKIE_SECURE")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

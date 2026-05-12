@@ -199,14 +199,42 @@ export interface InitiativeDetail extends Initiative {
   projects: Project[];
 }
 
+async function ssrCookieHeader(): Promise<string | null> {
+  // Forward the inbound request's cookies to the backend during SSR/RSC.
+  if (isBrowser) return null;
+  try {
+    const { cookies } = await import("next/headers");
+    const jar = await cookies();
+    const pairs = jar.getAll().map((c) => `${c.name}=${c.value}`);
+    return pairs.length ? pairs.join("; ") : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const url = API_BASE.replace(/\/$/, "") + path;
-  const res = await fetch(url, { cache: "no-store", ...init });
+  const baseInit: RequestInit = { cache: "no-store", credentials: "include", ...init };
+  if (!isBrowser) {
+    const cookieHeader = await ssrCookieHeader();
+    if (cookieHeader) {
+      baseInit.headers = { ...(baseInit.headers as Record<string, string> | undefined), Cookie: cookieHeader };
+    }
+  }
+  const res = await fetch(url, baseInit);
   if (!res.ok) {
+    if (res.status === 401) throw new UnauthorizedError(url);
     if (res.status === 404) throw new NotFoundError(url);
     throw new Error(`API ${res.status} ${url}`);
   }
+  if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+export class UnauthorizedError extends Error {
+  constructor(url: string) {
+    super(`Unauthorized: ${url}`);
+  }
 }
 
 // Same as fetchJson but exported for client components that need an ad-hoc call.
@@ -931,6 +959,110 @@ export async function markNotificationRead(slug: string, id: string): Promise<vo
 
 export async function markAllNotificationsRead(slug: string): Promise<void> {
   const url = `${API_BASE.replace(/\/$/, "")}/api/workspaces/${encodeURIComponent(slug)}/notifications/read-all`;
-  const res = await fetch(url, { method: "POST", cache: "no-store" });
+  const res = await fetch(url, { method: "POST", cache: "no-store", credentials: "include" });
   if (!res.ok && res.status !== 204) throw new Error(`API ${res.status} ${url}`);
+}
+
+// --- Auth ---------------------------------------------------------------
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  name: string;
+  initials: string;
+  color: string;
+}
+
+export interface WorkspaceMembership {
+  id: string;
+  slug: string;
+  name: string;
+  icon_color: string;
+  role: MemberRole;
+}
+
+export interface Me {
+  user: CurrentUser;
+  workspaces: WorkspaceMembership[];
+}
+
+export function getMe(): Promise<Me> {
+  return fetchJson(`/api/auth/me`);
+}
+
+export function login(email: string, password: string): Promise<Me> {
+  return fetchJson(`/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function signup(body: { email: string; password: string; name: string; workspace_name?: string }): Promise<Me> {
+  return fetchJson(`/api/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function logout(): Promise<void> {
+  await fetchJson(`/api/auth/logout`, { method: "POST" });
+}
+
+export interface InviteSummary {
+  workspace_name: string;
+  workspace_slug: string;
+  email: string;
+  role: string;
+  expires_at: string;
+  needs_signup: boolean;
+}
+
+export function getInviteSummary(token: string): Promise<InviteSummary> {
+  return fetchJson(`/api/auth/invites/${encodeURIComponent(token)}`);
+}
+
+export function acceptInvite(token: string, body?: { email: string; password: string; name: string }): Promise<Me> {
+  return fetchJson(`/api/auth/invites/${encodeURIComponent(token)}/accept`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : "null",
+  });
+}
+
+// --- Workspace creation + invite management ------------------------------
+
+export function createWorkspace(body: { name: string; slug?: string; icon_color?: string; team_key?: string; team_name?: string }): Promise<Workspace> {
+  return fetchJson(`/api/workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export interface PendingInvite {
+  id: string;
+  email: string;
+  role: string;
+  token: string;
+  accept_url: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export function listInvites(slug: string): Promise<PendingInvite[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/invites`);
+}
+
+export function createInvite(slug: string, body: { email: string; role: MemberRole }): Promise<PendingInvite> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/invites`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function revokeInvite(slug: string, inviteId: string): Promise<void> {
+  await fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/invites/${encodeURIComponent(inviteId)}`, { method: "DELETE" });
 }
