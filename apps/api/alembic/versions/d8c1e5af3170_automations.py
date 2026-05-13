@@ -29,8 +29,15 @@ ACTION_VALUES = ('move_to_state', 'assign_to_member', 'add_label', 'add_comment'
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == 'postgresql':
-        postgresql.ENUM(*TRIGGER_VALUES, name='automation_trigger').create(bind, checkfirst=True)
-        postgresql.ENUM(*ACTION_VALUES, name='automation_action').create(bind, checkfirst=True)
+        op.execute("DROP TYPE IF EXISTS automation_trigger CASCADE")
+        op.execute("DROP TYPE IF EXISTS automation_action CASCADE")
+        postgresql.ENUM(*TRIGGER_VALUES, name='automation_trigger').create(bind, checkfirst=False)
+        postgresql.ENUM(*ACTION_VALUES, name='automation_action').create(bind, checkfirst=False)
+        trigger_type = postgresql.ENUM(*TRIGGER_VALUES, name='automation_trigger', create_type=False)
+        action_type = postgresql.ENUM(*ACTION_VALUES, name='automation_action', create_type=False)
+    else:
+        trigger_type = sa.Enum(*TRIGGER_VALUES, name='automation_trigger')
+        action_type = sa.Enum(*ACTION_VALUES, name='automation_action')
 
     op.create_table(
         'automations',
@@ -39,9 +46,9 @@ def upgrade() -> None:
         sa.Column('team_id', sa.String(length=36), nullable=True),
         sa.Column('name', sa.String(length=160), nullable=False),
         sa.Column('enabled', sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column('trigger', sa.Enum(*TRIGGER_VALUES, name='automation_trigger', create_type=False), nullable=False),
+        sa.Column('trigger', trigger_type, nullable=False),
         sa.Column('trigger_config', sa.Text(), nullable=False, server_default='{}'),
-        sa.Column('action', sa.Enum(*ACTION_VALUES, name='automation_action', create_type=False), nullable=False),
+        sa.Column('action', action_type, nullable=False),
         sa.Column('action_config', sa.Text(), nullable=False, server_default='{}'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
         sa.ForeignKeyConstraint(['workspace_id'], ['workspaces.id'], name=op.f('fk_automations_workspace_id_workspaces'), ondelete='CASCADE'),

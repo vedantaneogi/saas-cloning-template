@@ -25,14 +25,18 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == 'postgresql':
-        postgresql.ENUM('issue', 'project', 'document', name='template_kind').create(bind, checkfirst=True)
+        op.execute("DROP TYPE IF EXISTS template_kind CASCADE")
+        postgresql.ENUM('issue', 'project', 'document', name='template_kind').create(bind, checkfirst=False)
+        kind_type = postgresql.ENUM('issue', 'project', 'document', name='template_kind', create_type=False)
+    else:
+        kind_type = sa.Enum('issue', 'project', 'document', name='template_kind')
 
     op.create_table(
         'templates',
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('workspace_id', sa.String(length=36), nullable=False),
         sa.Column('team_id', sa.String(length=36), nullable=True),
-        sa.Column('kind', sa.Enum('issue', 'project', 'document', name='template_kind', create_type=False), nullable=False),
+        sa.Column('kind', kind_type, nullable=False),
         sa.Column('name', sa.String(length=160), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('body', sa.Text(), nullable=False, server_default='{}'),

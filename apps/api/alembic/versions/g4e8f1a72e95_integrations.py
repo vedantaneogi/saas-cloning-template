@@ -25,13 +25,17 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == 'postgresql':
-        postgresql.ENUM('github', 'slack', 'figma', name='integration_kind').create(bind, checkfirst=True)
+        op.execute("DROP TYPE IF EXISTS integration_kind CASCADE")
+        postgresql.ENUM('github', 'slack', 'figma', name='integration_kind').create(bind, checkfirst=False)
+        kind_type = postgresql.ENUM('github', 'slack', 'figma', name='integration_kind', create_type=False)
+    else:
+        kind_type = sa.Enum('github', 'slack', 'figma', name='integration_kind')
 
     op.create_table(
         'workspace_integrations',
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('workspace_id', sa.String(length=36), nullable=False),
-        sa.Column('kind', sa.Enum('github', 'slack', 'figma', name='integration_kind', create_type=False), nullable=False),
+        sa.Column('kind', kind_type, nullable=False),
         sa.Column('config', sa.Text(), nullable=False, server_default='{}'),
         sa.Column('enabled', sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
