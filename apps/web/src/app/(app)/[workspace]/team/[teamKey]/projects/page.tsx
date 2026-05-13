@@ -2,19 +2,21 @@ import { notFound } from "next/navigation";
 import { Box, LayoutGrid, SlidersHorizontal, Square } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { ProjectsTable } from "@/components/projects-table";
+import { NewProjectButton } from "@/components/new-project-button";
 import { getWorkspace, listMembers, listProjects, NotFoundError } from "@/lib/api";
 
 export default async function TeamProjectsPage({ params }: { params: Promise<{ workspace: string; teamKey: string }> }) {
   const { workspace, teamKey } = await params;
+  let ws;
   let team;
   try {
-    const ws = await getWorkspace(workspace);
+    ws = await getWorkspace(workspace);
     team = ws.teams.find((t) => t.key === teamKey);
   } catch (e) {
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
-  if (!team) notFound();
+  if (!team || !ws) notFound();
 
   const [all, members] = await Promise.all([
     listProjects(workspace),
@@ -24,7 +26,18 @@ export default async function TeamProjectsPage({ params }: { params: Promise<{ w
 
   return (
     <>
-      <Topbar title="Projects" icon={<Box size={15} />} />
+      <Topbar
+        title="Projects"
+        icon={<Box size={15} />}
+        trailing={
+          <NewProjectButton
+            workspaceSlug={workspace}
+            workspaceName={ws.name}
+            workspaceColor={ws.icon_color}
+            members={members}
+          />
+        }
+      />
 
       <div className="flex h-[40px] shrink-0 items-center gap-2 border-b border-border-subtle px-4 text-mini">
         <button type="button" className="rounded-pill bg-row-selected px-2.5 py-1 text-text-primary">
