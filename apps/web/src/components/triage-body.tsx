@@ -48,7 +48,7 @@ export function TriageBody({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <header className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border-subtle px-5 text-mini text-text-tertiary">
+      <header className="flex h-[36px] shrink-0 items-center gap-2 border-b border-border-subtle px-5 text-mini text-text-tertiary">
         <AlertOctagon size={12} />
         <span>{items.length} item{items.length === 1 ? "" : "s"} waiting on triage</span>
         <span className="ml-auto text-text-quaternary">

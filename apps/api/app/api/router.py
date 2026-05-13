@@ -4002,7 +4002,7 @@ def notification_digest(
         rows = "".join(
             f"<li><strong>{(it['actor'] or {}).get('name', 'Someone')}</strong> "
             f"{it['body'] or ''}"
-            f"{f' — <em>{it[\"issue_identifier\"]}</em>' if it['issue_identifier'] else ''}"
+            f"{(' &mdash; <em>' + it['issue_identifier'] + '</em>') if it['issue_identifier'] else ''}"
             f"</li>"
             for it in group
         )

@@ -77,7 +77,7 @@ export default async function InitiativeDetailPage({
         </header>
 
         <section>
-          <header className="flex h-[34px] items-center gap-2 bg-elevated px-5 text-small">
+          <header className="flex h-[36px] items-center gap-2 bg-elevated px-5 text-small">
             <Folders size={13} className="text-text-tertiary" />
             <span className="font-medium text-text-primary">Projects</span>
             <span className="text-text-tertiary">{ini.projects.length}</span>

@@ -36,7 +36,7 @@ export function IssueRow({
     <Link
       href={`/${workspaceSlug}/issue/${issue.identifier}`}
       className={clsx(
-        "group flex h-[34px] items-center gap-2 border-b border-border-subtle pl-2 pr-4 text-small hover:bg-row-hover",
+        "group flex h-[38px] items-center gap-2 border-b border-border-subtle pl-3 pr-4 text-small hover:bg-row-hover",
         selected && "bg-row-selected"
       )}
     >
@@ -62,7 +62,7 @@ export function IssueRow({
         </span>
       )}
       <PriorityIcon value={issue.priority} />
-      <span className="w-14 shrink-0 font-mono text-mini text-text-tertiary">{issue.identifier}</span>
+      <span className="w-[68px] shrink-0 font-mono text-mini text-text-tertiary">{issue.identifier}</span>
       <StatusIcon group={issue.state.group} />
       <span className={clsx("flex-1 truncate text-text-primary", dim && "text-text-tertiary line-through")}>
         {issue.title}
@@ -91,14 +91,14 @@ export function IssueRow({
         </span>
       )}
 
-      <span className="w-12 text-right text-mini text-text-tertiary" title={issue.due_date ? `Due ${new Date(issue.due_date).toLocaleString()}` : `Updated ${relTime(issue.updated_at)} ago`}>
+      <span className="w-14 text-right text-mini text-text-tertiary" title={issue.due_date ? `Due ${new Date(issue.due_date).toLocaleString()}` : `Updated ${relTime(issue.updated_at)} ago`}>
         {issue.due_date ? shortDate(issue.due_date) : relTime(issue.updated_at)}
       </span>
       <span className="ml-1">
         {issue.assignee ? (
-          <Avatar initials={issue.assignee.initials} color={issue.assignee.color} size={18} />
+          <Avatar initials={issue.assignee.initials} color={issue.assignee.color} size={20} />
         ) : (
-          <span className="inline-block h-[18px] w-[18px] rounded-pill border border-dashed border-border-strong" />
+          <span className="inline-block h-[20px] w-[20px] rounded-pill border border-dashed border-border-strong" />
         )}
       </span>
     </Link>

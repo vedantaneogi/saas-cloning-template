@@ -62,7 +62,7 @@ function BoardColumn({
 
   return (
     <section className="flex h-full w-[320px] shrink-0 flex-col rounded-md border border-border-subtle bg-elevated">
-      <header className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border-subtle px-3 text-small">
+      <header className="flex h-[36px] shrink-0 items-center gap-2 border-b border-border-subtle px-3 text-small">
         <StatusIcon group={group} />
         <span className="font-medium text-text-primary">{title}</span>
         <span className="text-text-tertiary">{issues.length}</span>

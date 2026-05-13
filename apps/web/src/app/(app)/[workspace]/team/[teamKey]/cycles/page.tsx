@@ -37,7 +37,7 @@ export default async function TeamCyclesPage({
             .filter((b) => b.rows.length > 0)
             .map((b) => (
               <section key={b.title}>
-                <header className="flex h-[34px] items-center gap-2 bg-elevated px-5 text-small">
+                <header className="flex h-[36px] items-center gap-2 bg-elevated px-5 text-small">
                   <span className="font-medium text-text-primary">{b.title}</span>
                   <span className="text-text-tertiary">{b.rows.length}</span>
                 </header>

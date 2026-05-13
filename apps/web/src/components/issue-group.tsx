@@ -52,7 +52,7 @@ export function IssueGroup({
     <section className="border-b border-border-subtle last:border-b-0">
       <button
         onClick={() => setOpen(!open)}
-        className="group flex h-[34px] w-full items-center gap-2 bg-elevated px-3 text-small text-text-secondary hover:bg-elevated-hover"
+        className="group flex h-[36px] w-full items-center gap-2 bg-elevated px-3 text-small text-text-secondary hover:bg-elevated-hover"
       >
         <ChevronDown size={12} className={clsx("text-text-tertiary transition-transform", !open && "-rotate-90")} />
         <StatusIcon group={group} />
@@ -85,7 +85,7 @@ export function IssueGroup({
       {open && (
         <div>
           {adding && teamKey && (
-            <div className="flex h-[34px] items-center gap-2 border-b border-border-subtle bg-app px-3 text-small">
+            <div className="flex h-[36px] items-center gap-2 border-b border-border-subtle bg-app px-3 text-small">
               <StatusIcon group={group} />
               <input
                 autoFocus

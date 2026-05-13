@@ -58,22 +58,22 @@ export function SubIssuesPanel({
           <li key={s.identifier}>
             <Link
               href={`/${workspaceSlug}/issue/${s.identifier}`}
-              className="flex h-[34px] items-center gap-2 border-t border-border-subtle pl-3 pr-3 text-small hover:bg-row-hover"
+              className="flex h-[38px] items-center gap-2 border-t border-border-subtle pl-3 pr-3 text-small hover:bg-row-hover"
             >
               <PriorityIcon value={s.priority} />
-              <span className="w-14 shrink-0 font-mono text-mini text-text-tertiary">{s.identifier}</span>
+              <span className="w-[68px] shrink-0 font-mono text-mini text-text-tertiary">{s.identifier}</span>
               <StatusIcon group={s.state.group} />
               <span className="flex-1 truncate text-text-primary">{s.title}</span>
               {s.assignee ? (
-                <Avatar initials={s.assignee.initials} color={s.assignee.color} size={18} />
+                <Avatar initials={s.assignee.initials} color={s.assignee.color} size={20} />
               ) : (
-                <span className="inline-block h-[18px] w-[18px] rounded-pill border border-dashed border-border-strong" />
+                <span className="inline-block h-[20px] w-[20px] rounded-pill border border-dashed border-border-strong" />
               )}
             </Link>
           </li>
         ))}
         {adding && (
-          <li className="flex h-[34px] items-center gap-2 border-t border-border-subtle pl-3 pr-3 text-small">
+          <li className="flex h-[38px] items-center gap-2 border-t border-border-subtle pl-3 pr-3 text-small">
             <Plus size={12} className="text-text-tertiary" />
             <input
               autoFocus

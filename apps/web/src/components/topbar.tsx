@@ -16,7 +16,7 @@ export function Topbar({
   filters?: React.ReactNode;
 }) {
   return (
-    <header className="flex h-[44px] shrink-0 items-center gap-3 border-b border-border-subtle px-4">
+    <header className="flex h-[48px] shrink-0 items-center gap-3 border-b border-border-subtle px-4">
       <div className="flex min-w-0 items-center gap-2">
         {icon && <span className="text-text-tertiary">{icon}</span>}
         <h1 className="truncate text-small font-semibold text-text-primary">{title}</h1>

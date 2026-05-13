@@ -103,7 +103,7 @@ export function CustomerRequestsBody({
           const rows = buckets.get(b.key) ?? [];
           return (
             <section key={b.key}>
-              <header className="flex h-[34px] items-center gap-2 bg-elevated px-5 text-small">
+              <header className="flex h-[36px] items-center gap-2 bg-elevated px-5 text-small">
                 <span className={statusDot(b.key)} />
                 <span className="font-medium text-text-primary">{b.label}</span>
                 <span className="text-text-tertiary">{rows.length}</span>

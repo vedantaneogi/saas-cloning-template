@@ -70,7 +70,7 @@ export function InboxBody({
 
   return (
     <>
-      <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border-subtle px-3 text-mini text-text-tertiary">
+      <div className="flex h-[40px] shrink-0 items-center gap-2 border-b border-border-subtle px-3 text-mini text-text-tertiary">
         <FilterPill active={filter === "all"} onClick={() => setFilter("all")}>
           All <span className="text-text-quaternary">{items.length}</span>
         </FilterPill>

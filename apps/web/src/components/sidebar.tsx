@@ -94,12 +94,12 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
 
   return (
     <aside className="flex h-screen w-sidebar shrink-0 select-none flex-col bg-sidebar text-small text-text-secondary">
-      <div className="relative flex h-[44px] items-center gap-1 px-2.5">
+      <div className="relative flex h-[48px] items-center gap-1 px-3">
         <button
           onClick={() => setSwitcherOpen((v) => !v)}
           className="flex flex-1 items-center gap-2 truncate rounded-md px-1.5 py-1 text-default font-semibold text-text-primary hover:bg-row-hover"
         >
-          <Avatar initials={initialsFor(workspace.name)} color={workspace.icon_color} size={20} />
+          <Avatar initials={initialsFor(workspace.name)} color={workspace.icon_color} size={22} />
           <span className="truncate">{workspace.name}</span>
           <ChevronRight size={12} className="ml-auto rotate-90 text-text-tertiary" />
         </button>
@@ -165,7 +165,7 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 pb-3 pt-0.5">
+      <nav className="flex-1 overflow-y-auto px-2.5 pb-3 pt-0.5">
         <NavItem
           href={`/${wsSlug}/inbox`}
           icon={<Inbox size={14} />}
@@ -347,7 +347,7 @@ function NavItem({
     <Link
       href={href}
       className={clsx(
-        "group flex h-[26px] items-center gap-2 rounded-md px-2 text-small leading-none transition-colors",
+        "group flex h-[30px] items-center gap-2 rounded-md px-2 text-small leading-none transition-colors",
         active
           ? "bg-row-selected text-text-primary"
           : "text-text-secondary hover:bg-row-hover",
@@ -475,7 +475,7 @@ function SavedViewRow({
     <Link
       href={href}
       className={clsx(
-        "group flex h-[26px] items-center gap-2 rounded-md px-2 text-small leading-none transition-colors",
+        "group flex h-[30px] items-center gap-2 rounded-md px-2 text-small leading-none transition-colors",
         active ? "bg-row-selected text-text-primary" : "text-text-secondary hover:bg-row-hover"
       )}
     >

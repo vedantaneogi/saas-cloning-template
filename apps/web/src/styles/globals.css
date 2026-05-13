@@ -14,7 +14,7 @@
     background: var(--bg-app);
     color: var(--text-primary);
     font-family: var(--font-default);
-    font-size: var(--fs-default);
+    font-size: 16px; /* keep rem base = 16px so design tokens (rem values) render at their intended px */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
