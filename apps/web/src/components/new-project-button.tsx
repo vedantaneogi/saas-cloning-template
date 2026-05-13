@@ -1,9 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
-import { createProject, type Member, type ProjectState } from "@/lib/api";
+import {
+  createMilestone,
+  createProject,
+  listTemplates,
+  type Member,
+  type ProjectState,
+  type ProjectTemplateBody,
+  type Template,
+} from "@/lib/api";
 
 const STATES: { value: ProjectState; label: string }[] = [
   { value: "planned", label: "Planned" },
@@ -22,6 +30,8 @@ export function NewProjectButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templateId, setTemplateId] = useState<string>("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [state, setState] = useState<ProjectState>("planned");
@@ -30,8 +40,25 @@ export function NewProjectButton({
   const [iconColor, setIconColor] = useState("#5e6ad2");
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (!open) return;
+    listTemplates(workspaceSlug, { kind: "project" })
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, [open, workspaceSlug]);
+
   function reset() {
-    setName(""); setDescription(""); setState("planned"); setLeadId(""); setTargetDate(""); setIconColor("#5e6ad2");
+    setName(""); setDescription(""); setState("planned"); setLeadId(""); setTargetDate(""); setIconColor("#5e6ad2"); setTemplateId("");
+  }
+
+  function applyTemplate(id: string) {
+    setTemplateId(id);
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    const body = t.body as ProjectTemplateBody;
+    if (body.name && !name.trim()) setName(body.name);
+    if (body.description && !description.trim()) setDescription(body.description);
+    if (body.icon_color) setIconColor(body.icon_color);
   }
 
   async function submit() {
@@ -46,6 +73,28 @@ export function NewProjectButton({
         lead_id: leadId || undefined,
         target_date: targetDate || undefined,
       });
+      // Apply template milestones now that the project exists.
+      const t = templates.find((x) => x.id === templateId);
+      if (t) {
+        const body = t.body as ProjectTemplateBody;
+        const baseDate = targetDate ? new Date(targetDate) : new Date();
+        for (const m of body.milestones ?? []) {
+          let target: string | undefined;
+          if (m.target_date_offset_days != null) {
+            const d = new Date(baseDate);
+            d.setDate(d.getDate() + m.target_date_offset_days);
+            target = d.toISOString();
+          }
+          try {
+            await createMilestone(workspaceSlug, p.slug_id, {
+              name: m.name,
+              ...(target ? { target_date: target } : {}),
+            });
+          } catch (e) {
+            console.error("milestone create failed", e);
+          }
+        }
+      }
       setOpen(false);
       reset();
       router.push(`/${workspaceSlug}/project/${p.slug_id}`);
@@ -82,6 +131,21 @@ export function NewProjectButton({
               </button>
             </header>
             <div className="space-y-3 p-3 text-small">
+              {templates.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-mini text-text-tertiary">Template</span>
+                  <select
+                    value={templateId}
+                    onChange={(e) => applyTemplate(e.target.value)}
+                    className="flex-1 rounded-md border border-border-subtle bg-app px-2 py-1 text-text-primary outline-none"
+                  >
+                    <option value="">Blank project</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <input
                 autoFocus
                 value={name}
@@ -116,6 +180,11 @@ export function NewProjectButton({
                   <input type="color" value={iconColor} onChange={(e) => setIconColor(e.target.value)} className="h-7 w-full cursor-pointer rounded-md border border-border-subtle bg-app" />
                 </Field>
               </div>
+              {templateId && (
+                <p className="text-mini text-text-tertiary">
+                  Milestones from this template will be added on create.
+                </p>
+              )}
             </div>
             <footer className="flex items-center justify-end gap-2 border-t border-border-subtle px-3 py-2 text-mini">
               <button onClick={() => setOpen(false)} className="rounded-md px-2 py-1 text-text-tertiary hover:bg-row-hover">Cancel</button>

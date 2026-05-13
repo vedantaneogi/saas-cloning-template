@@ -605,6 +605,18 @@ export function createProject(
   });
 }
 
+export function createMilestone(
+  slug: string,
+  projectSlug: string,
+  body: { name: string; target_date?: string; description?: string },
+): Promise<ProjectMilestone> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects/${encodeURIComponent(projectSlug)}/milestones`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function patchProject(
   slug: string,
   projectSlug: string,
