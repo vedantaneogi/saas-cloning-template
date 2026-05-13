@@ -420,7 +420,7 @@ function DatePicker({
         <div className="p-2 text-small">
           <input
             type="date"
-            defaultValue={value ?? ""}
+            defaultValue={value ? value.slice(0, 10) : ""}
             onChange={(e) => {
               if (e.target.value) {
                 onSet(e.target.value);
