@@ -18,7 +18,11 @@ export default async function WorkspaceLayout({
   try {
     me = await getMe();
   } catch (e) {
-    if (e instanceof UnauthorizedError) redirect("/login");
+    // The browser still has a session cookie but the API rejected it (rotated
+    // AUTH_SECRET, expired JWT, etc.). Tell /login this is a stale session so
+    // it can clear the cookie before re-rendering the form — without the
+    // ?stale=1 param the middleware would just bounce us back here forever.
+    if (e instanceof UnauthorizedError) redirect("/login?stale=1");
     throw e;
   }
   if (!me.workspaces.find((w) => w.slug === slug)) {

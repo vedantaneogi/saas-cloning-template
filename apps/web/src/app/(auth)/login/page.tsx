@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/login-form";
 
 export default function LoginPage() {
@@ -6,7 +7,10 @@ export default function LoginPage() {
     <div className="rounded-xl bg-elevated p-6 shadow-popover">
       <h1 className="text-title3 font-semibold text-text-primary">Sign in</h1>
       <p className="mt-1 text-small text-text-tertiary">Welcome back. Enter your account credentials.</p>
-      <LoginForm />
+      {/* Suspense satisfies Next 15's useSearchParams() boundary requirement. */}
+      <Suspense fallback={<div className="mt-5 h-40" />}>
+        <LoginForm />
+      </Suspense>
       <p className="mt-5 text-mini text-text-tertiary">
         New to Linear clone?{" "}
         <Link href="/signup" className="text-accent hover:underline">Create an account</Link>

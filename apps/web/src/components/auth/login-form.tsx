@@ -1,15 +1,31 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { login } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { login, logout } from "@/lib/api";
 
 export function LoginForm() {
   const router = useRouter();
+  const search = useSearchParams();
+  const stale = search.get("stale") === "1";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // When we arrive from a layout redirect with ?stale=1, the browser still
+  // holds a session cookie that the API has rejected (rotated secret, expired
+  // JWT, etc.). Hit /api/auth/logout once on mount so the response clears the
+  // cookie via Set-Cookie; otherwise the next nav would 401 again.
+  useEffect(() => {
+    if (!stale) return;
+    let cancelled = false;
+    logout().catch(() => {}).finally(() => {
+      if (!cancelled) setNotice("Your session expired — please sign in again.");
+    });
+    return () => { cancelled = true; };
+  }, [stale]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,6 +66,7 @@ export function LoginForm() {
           className="w-full rounded-md bg-app px-3 py-2 text-small text-text-primary outline-none placeholder:text-text-tertiary focus:ring-1 focus:ring-accent"
         />
       </Field>
+      {notice && !error && <p className="text-mini text-text-tertiary">{notice}</p>}
       {error && <p className="text-mini text-priority-urgent">{error}</p>}
       <button
         type="submit"
