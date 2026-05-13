@@ -18,6 +18,102 @@
         { "name": "Customer", "color": "#f2c94c" },
         { "name": "Security", "color": "#f2994a" }
       ],
+      "templates": [
+        {
+          "kind": "project",
+          "name": "Product launch",
+          "description": "Standard product-launch project with milestone scaffolding.",
+          "body": {
+            "name": "New launch",
+            "description": "## Launch plan\n\nReplace this with the launch one-pager. Include scope, target audience, success metric, and risks.",
+            "icon_color": "#5e6ad2",
+            "milestones": [
+              { "name": "Kickoff & scope locked", "target_date_offset_days": 7 },
+              { "name": "Engineering build complete", "target_date_offset_days": 30 },
+              { "name": "Internal launch / dogfood", "target_date_offset_days": 45 },
+              { "name": "Marketing assets ready", "target_date_offset_days": 55 },
+              { "name": "Public launch", "target_date_offset_days": 60 }
+            ]
+          }
+        },
+        {
+          "kind": "project",
+          "name": "Quarterly initiative",
+          "description": "13-week initiative with monthly review milestones.",
+          "body": {
+            "name": "Q? initiative",
+            "description": "## Goal\n\nState the measurable outcome.\n\n## Why this quarter\n\nState the trigger / why now.",
+            "icon_color": "#22c55e",
+            "milestones": [
+              { "name": "Plan locked", "target_date_offset_days": 7 },
+              { "name": "Month 1 review", "target_date_offset_days": 30 },
+              { "name": "Month 2 review", "target_date_offset_days": 60 },
+              { "name": "Quarter close & retro", "target_date_offset_days": 90 }
+            ]
+          }
+        },
+        {
+          "kind": "document",
+          "name": "PRD — Product requirements",
+          "description": "Standard PRD outline for new features.",
+          "body": {
+            "title": "PRD — <feature name>",
+            "icon": "📝",
+            "body": "# PRD — <feature name>\n\n**Author:**  \n**Status:** Draft  \n**Last updated:** \n\n## Problem\n\nDescribe the customer / business problem in one or two paragraphs.\n\n## Goals\n\n- \n- \n\n## Non-goals\n\n- \n\n## Proposal\n\nDescribe the proposed solution.\n\n## Open questions\n\n- \n\n## Appendix\n\n- Related issues:  \n- Linked docs:  "
+          }
+        },
+        {
+          "kind": "document",
+          "name": "RFC — Technical proposal",
+          "description": "Engineering RFC template for substantive technical changes.",
+          "body": {
+            "title": "RFC — <title>",
+            "icon": "📐",
+            "body": "# RFC — <title>\n\n**Author:**  \n**Status:** Proposed  \n**Decision deadline:** \n\n## Context\n\nWhat is the problem? Why are we considering this?\n\n## Proposal\n\nThe core design.\n\n## Alternatives considered\n\n- **Option A:** … (rejected because …)\n- **Option B:** … (rejected because …)\n\n## Risks\n\n- \n\n## Rollout\n\n- \n\n## Approvers\n\n- "
+          }
+        },
+        {
+          "kind": "document",
+          "name": "Retro — Sprint / cycle retro",
+          "description": "Cycle retrospective template.",
+          "body": {
+            "title": "Retro — Cycle N",
+            "icon": "🔁",
+            "body": "# Retro — Cycle N\n\n## Went well 🎉\n\n- \n\n## Went poorly 🚧\n\n- \n\n## Action items ✅\n\n- [ ] Owner — action — by date\n- [ ] "
+          }
+        },
+        {
+          "kind": "document",
+          "name": "Postmortem — Incident review",
+          "description": "Blameless postmortem template.",
+          "body": {
+            "title": "Postmortem — <incident>",
+            "icon": "🚑",
+            "body": "# Postmortem — <incident>\n\n**Severity:** SEV-?  \n**Duration:**  \n**Customer impact:** \n\n## Summary\n\nOne-paragraph human description.\n\n## Timeline\n\n- HH:MM — \n- HH:MM — \n\n## Root cause\n\n## What went well\n\n## What went poorly\n\n## Action items\n\n- [ ] "
+          }
+        },
+        {
+          "kind": "issue",
+          "name": "Bug report",
+          "description": "Standard bug-report template.",
+          "body": {
+            "title": "Bug: <one-line summary>",
+            "description": "## Steps to reproduce\n\n1. \n2. \n3. \n\n## Expected\n\n## Actual\n\n## Environment\n\n- Browser:  \n- OS:  \n- Version: ",
+            "priority": 2,
+            "label_ids": []
+          }
+        },
+        {
+          "kind": "issue",
+          "name": "Feature request",
+          "description": "User-submitted feature request scaffold.",
+          "body": {
+            "title": "Feature: <one-line summary>",
+            "description": "## Problem\n\nWhat customer pain does this address?\n\n## Proposal\n\nHow should it work?\n\n## Success metric\n\nHow do we know it worked?",
+            "priority": 3
+          }
+        }
+      ],
       "customer_requests": [
         {
           "customer_name": "Marina Voss",

@@ -74,11 +74,14 @@ from app.db.models import (
     RelationType,
     StateGroup,
     Team,
+    Template,
+    TemplateKind,
     UpdateHealth,
     User,
     Workspace,
     WorkflowState,
 )
+import json as _json
 from app.auth.security import hash_password
 
 
@@ -164,6 +167,14 @@ def apply_seed(db: Session, payload: dict) -> dict:
         documents_by_title: dict[str, Document] = {d.title.lower(): d for d in db.query(Document).filter_by(workspace_id=ws.id).all()}
         for doc_def in w.get("documents", []) or []:
             _upsert_document(db, ws, doc_def, members_by_email, projects_by_name, documents_by_title)
+
+        # Templates (workspace-scoped; team-scoped variants resolved by team key)
+        existing_tpls: dict[tuple[str, str], Template] = {
+            (t.kind.value, t.name.lower()): t
+            for t in db.query(Template).filter_by(workspace_id=ws.id).all()
+        }
+        for tpl_def in w.get("templates", []) or []:
+            _upsert_template(db, ws, tpl_def, existing_tpls)
 
         # Customer requests (defer issue linking to a post-pass below)
         existing_crs: dict[str, CustomerRequest] = {c.title.lower(): c for c in db.query(CustomerRequest).filter_by(workspace_id=ws.id).all()}
@@ -438,6 +449,40 @@ def _upsert_document(
             existing.creator_id = creator.id
     db.flush()
     by_title[d["title"].lower()] = existing
+    return existing
+
+
+def _upsert_template(
+    db: Session,
+    ws: Workspace,
+    t: dict,
+    existing_by_key: dict[tuple[str, str], Template],
+) -> Template:
+    kind_str = t.get("kind", "issue")
+    try:
+        kind = TemplateKind(kind_str)
+    except ValueError:
+        kind = TemplateKind.issue
+    key = (kind.value, t["name"].lower())
+    body_obj = t.get("body", {})
+    body_str = body_obj if isinstance(body_obj, str) else _json.dumps(body_obj)
+    existing = existing_by_key.get(key)
+    if not existing:
+        existing = Template(
+            workspace_id=ws.id,
+            team_id=None,
+            kind=kind,
+            name=t["name"],
+            description=t.get("description"),
+            body=body_str,
+        )
+        db.add(existing)
+    else:
+        existing.name = t["name"]
+        existing.description = t.get("description", existing.description)
+        existing.body = body_str
+    db.flush()
+    existing_by_key[key] = existing
     return existing
 
 
