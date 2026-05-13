@@ -240,6 +240,12 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
               label="Customer requests"
               active={pathname.endsWith("/customer-requests")}
             />
+            <NavItem
+              href={`/${wsSlug}/insights/custom`}
+              icon={<BarChart3 size={14} />}
+              label="Custom charts"
+              active={pathname.endsWith("/insights/custom")}
+            />
           </div>
         )}
 

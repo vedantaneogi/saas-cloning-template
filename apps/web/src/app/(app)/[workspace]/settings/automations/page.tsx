@@ -1,13 +1,14 @@
 import { Topbar } from "@/components/topbar";
 import { Zap } from "lucide-react";
 import { AutomationsManager } from "@/components/automations-manager";
-import { getWorkspace, listAutomations } from "@/lib/api";
+import { getWorkspace, listAutomations, listMembers } from "@/lib/api";
 
 export default async function AutomationsSettings({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
-  const [ws, rules] = await Promise.all([
+  const [ws, rules, members] = await Promise.all([
     getWorkspace(workspace).catch(() => null),
     listAutomations(workspace).catch(() => []),
+    listMembers(workspace).catch(() => []),
   ]);
   return (
     <>
@@ -19,7 +20,12 @@ export default async function AutomationsSettings({ params }: { params: Promise<
             Rules fire when triggers match (issue created, status changed, etc.) or on demand via
             "Run scheduled rules" for stale-in-state cleanups.
           </p>
-          <AutomationsManager workspaceSlug={workspace} initial={rules} teams={ws?.teams ?? []} />
+          <AutomationsManager
+            workspaceSlug={workspace}
+            initial={rules}
+            teams={ws?.teams ?? []}
+            members={members}
+          />
         </div>
       </div>
     </>

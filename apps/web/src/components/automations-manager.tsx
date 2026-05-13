@@ -10,6 +10,7 @@ import {
   type Automation,
   type AutomationAction,
   type AutomationTrigger,
+  type Member,
   type Team,
 } from "@/lib/api";
 
@@ -61,16 +62,26 @@ const PRESETS: { name: string; trigger: AutomationTrigger; trigger_config: Recor
     action: "add_comment",
     action_config: { body: "Heads up — this issue is past its due date." },
   },
+  {
+    // Member ids get injected when this preset is added; see addPreset below.
+    name: "Round-robin assign triage issues",
+    trigger: "on_issue_create",
+    trigger_config: {},
+    action: "rotate_assign",
+    action_config: { member_ids: [], cursor: 0 },
+  },
 ];
 
 export function AutomationsManager({
   workspaceSlug,
   initial,
   teams,
+  members = [],
 }: {
   workspaceSlug: string;
   initial: Automation[];
   teams: Team[];
+  members?: Member[];
 }) {
   const [items, setItems] = useState<Automation[]>(initial);
   const [busy, setBusy] = useState(false);
@@ -79,7 +90,14 @@ export function AutomationsManager({
   async function addPreset(p: (typeof PRESETS)[number]) {
     setBusy(true);
     try {
-      const created = await createAutomation(workspaceSlug, p);
+      // rotate_assign requires real member ids to do anything; inject the
+      // full workspace member list when adding from preset so the user
+      // doesn't have to hand-edit the JSON in the DB to make it work.
+      const payload =
+        p.action === "rotate_assign"
+          ? { ...p, action_config: { ...p.action_config, member_ids: members.map((m) => m.id), cursor: 0 } }
+          : p;
+      const created = await createAutomation(workspaceSlug, payload);
       setItems((prev) => [created, ...prev]);
     } finally {
       setBusy(false);
