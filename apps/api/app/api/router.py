@@ -158,6 +158,7 @@ def _issue_dict(issue: Issue, child_counts: dict[str, tuple[int, int]] | None = 
         "state": WorkflowStateOut.model_validate(issue.state),
         "team": TeamOut.model_validate(issue.team),
         "assignee": MemberOut.model_validate(issue.assignee) if issue.assignee else None,
+        "creator": MemberOut.model_validate(issue.creator) if issue.creator else None,
         "labels": [LabelOut.model_validate(l) for l in issue.labels],
         "parent_identifier": issue.parent.identifier if issue.parent else None,
         "project_id": issue.project.id if issue.project else None,
@@ -891,6 +892,7 @@ def create_issue(
     team_key: str,
     body: IssueCreateIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
@@ -943,6 +945,7 @@ def create_issue(
         state_id=state.id,
         parent_id=parent_id,
         assignee_id=body.assignee_id,
+        creator_id=current_member.id,
         project_id=body.project_id,
         cycle_id=cycle_id,
         due_date=body.due_date,

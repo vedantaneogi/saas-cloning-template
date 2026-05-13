@@ -131,6 +131,7 @@ class IssueOut(BaseModel):
     state: WorkflowStateOut
     team: TeamOut
     assignee: MemberOut | None
+    creator: MemberOut | None = None
     labels: list[LabelOut]
     parent_identifier: str | None = None
     project_id: str | None = None

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { Popover, PopoverList, PopoverItem } from "@/components/popover";
+import { MarkdownEditor } from "@/components/markdown-editor";
 import { PriorityIcon } from "@/components/icons";
 import {
   createMilestone,
@@ -374,12 +375,11 @@ export function NewProjectButton({
 
               <hr className="my-2 border-border-subtle" />
 
-              <textarea
+              <MarkdownEditor
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
                 placeholder="Write a description, a project brief, or collect ideas..."
-                rows={6}
-                className="w-full flex-1 resize-none bg-transparent text-small text-text-primary outline-none placeholder:text-text-tertiary"
+                minHeight={180}
               />
             </div>
 

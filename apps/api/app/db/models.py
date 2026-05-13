@@ -307,6 +307,7 @@ class Issue(Base):
     state_id: Mapped[str] = mapped_column(ForeignKey("workflow_states.id", ondelete="RESTRICT"), nullable=False)
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("issues.id", ondelete="SET NULL"), nullable=True)
     assignee_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    creator_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     milestone_id: Mapped[str | None] = mapped_column(ForeignKey("project_milestones.id", ondelete="SET NULL"), nullable=True)
     cycle_id: Mapped[str | None] = mapped_column(ForeignKey("cycles.id", ondelete="SET NULL"), nullable=True)
@@ -325,7 +326,8 @@ class Issue(Base):
 
     team: Mapped["Team"] = relationship(back_populates="issues")
     state: Mapped["WorkflowState"] = relationship()
-    assignee: Mapped["Member | None"] = relationship()
+    assignee: Mapped["Member | None"] = relationship(foreign_keys=[assignee_id])
+    creator: Mapped["Member | None"] = relationship(foreign_keys=[creator_id])
     project: Mapped["Project | None"] = relationship(back_populates="issues", foreign_keys=[project_id])
     milestone: Mapped["ProjectMilestone | None"] = relationship(foreign_keys=[milestone_id])
     cycle: Mapped["Cycle | None"] = relationship(back_populates="issues", foreign_keys=[cycle_id])

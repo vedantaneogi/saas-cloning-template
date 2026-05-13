@@ -112,6 +112,7 @@ export interface Issue {
   state: WorkflowState;
   team: Team;
   assignee: Member | null;
+  creator: Member | null;
   labels: Label[];
   parent_identifier: string | null;
   project_id: string | null;

@@ -657,6 +657,12 @@ def _upsert_issue(
         raise _err(["issues", identifier, "state"], "unknown state", got=issue_def.get("state"))
 
     assignee = members.get(issue_def.get("assignee_email", ""))
+    # Default the creator to the assignee when the seed doesn't supply one
+    # explicitly; falls back to first workspace member so the activity row
+    # always has a name to render.
+    creator = members.get(issue_def.get("creator_email", "")) or assignee
+    if not creator and members:
+        creator = next(iter(members.values()))
     project = None
     if projects and issue_def.get("project"):
         project = projects.get(issue_def["project"].lower())
@@ -673,6 +679,7 @@ def _upsert_issue(
             state_id=state.id,
             parent_id=parent_id,
             assignee_id=assignee.id if assignee else None,
+            creator_id=creator.id if creator else None,
             project_id=project.id if project else None,
             cycle_id=cycle.id if cycle else None,
             title=issue_def["title"],
@@ -686,6 +693,10 @@ def _upsert_issue(
     else:
         issue.state_id = state.id
         issue.assignee_id = assignee.id if assignee else None
+        # Backfill creator on existing rows that were seeded before the column
+        # existed; never overwrite an already-set creator.
+        if issue.creator_id is None and creator is not None:
+            issue.creator_id = creator.id
         if project:
             issue.project_id = project.id
         if cycle:

@@ -137,13 +137,18 @@ function IssueView({ workspace, issue, customerRequests, members, teams }: { wor
                 />
               </header>
               <ul className="mt-3 space-y-3 text-small">
-                {issue.assignee && (
-                  <li className="flex items-center gap-2 text-text-tertiary">
-                    <Avatar initials={issue.assignee.initials} color={issue.assignee.color} size={18} />
-                    <span className="text-text-secondary">{issue.assignee.name}</span>
-                    <span>created the issue · {relTime(issue.updated_at)} ago</span>
-                  </li>
-                )}
+                {(() => {
+                  const creator = issue.creator ?? issue.assignee;
+                  const createdAt = issue.created_at ?? issue.updated_at;
+                  if (!creator) return null;
+                  return (
+                    <li className="flex items-center gap-2 text-text-tertiary">
+                      <Avatar initials={creator.initials} color={creator.color} size={18} />
+                      <span className="text-text-secondary">{creator.name}</span>
+                      <span>created the issue · {relTime(createdAt)} ago</span>
+                    </li>
+                  );
+                })()}
                 {issue.relations.map((r, i) => (
                   <li key={`${r.type}-${r.target_identifier}-${i}`} className="flex items-center gap-2 text-text-tertiary">
                     <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-pill bg-row-hover">
