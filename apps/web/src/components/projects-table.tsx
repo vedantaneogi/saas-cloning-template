@@ -6,6 +6,7 @@ import { useTransition } from "react";
 import { Box, Calendar, Check, Diamond, X } from "lucide-react";
 import clsx from "clsx";
 import { Popover, PopoverList, PopoverItem } from "@/components/popover";
+import { PriorityIcon } from "@/components/icons";
 import { createProjectUpdate, patchProject } from "@/lib/api";
 import type { Member, Project, ProjectState, UpdateHealth } from "@/lib/api";
 
@@ -15,19 +16,23 @@ export type ProjectGroup = {
   projects: Project[];
 };
 
-const STATE_OPTIONS: { value: ProjectState; label: string }[] = [
-  { value: "planned", label: "Planned" },
-  { value: "started", label: "In Progress" },
-  { value: "paused", label: "Paused" },
-  { value: "completed", label: "Completed" },
-  { value: "canceled", label: "Canceled" },
-];
+const STATE_META: Record<ProjectState, { label: string; color: string; pct: number }> = {
+  planned: { label: "Planned", color: "#6b6f76", pct: 0 },
+  started: { label: "In Progress", color: "#facc15", pct: 35 },
+  paused: { label: "Paused", color: "#d9b34c", pct: 50 },
+  completed: { label: "Completed", color: "#22c55e", pct: 100 },
+  canceled: { label: "Canceled", color: "#6b6f76", pct: 100 },
+};
+
+const STATE_OPTIONS: ProjectState[] = ["planned", "started", "paused", "completed", "canceled"];
 
 const HEALTH_OPTIONS: { value: UpdateHealth; label: string }[] = [
   { value: "onTrack", label: "On track" },
   { value: "atRisk", label: "At risk" },
   { value: "offTrack", label: "Off track" },
 ];
+
+const PRIORITY_LABELS = ["No priority", "Urgent", "High", "Medium", "Low"] as const;
 
 export function ProjectsTable({
   groups,
@@ -52,7 +57,7 @@ export function ProjectsTable({
           <th className="w-[80px] px-3 py-2.5 text-left font-normal">Lead</th>
           <th className="w-[120px] px-3 py-2.5 text-left font-normal">Target date</th>
           <th className="w-[70px] px-3 py-2.5 text-left font-normal">Issues</th>
-          <th className="w-[100px] px-4 py-2.5 text-left font-normal">Status</th>
+          <th className="w-[140px] px-4 py-2.5 text-left font-normal">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -109,7 +114,8 @@ function ProjectRow({
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const pct = p.issue_count > 0 ? Math.round((p.completed_issue_count / p.issue_count) * 100) : 0;
+  const issuePct =
+    p.issue_count > 0 ? Math.round((p.completed_issue_count / p.issue_count) * 100) : 0;
 
   function mutate(fn: () => Promise<unknown>) {
     start(async () => {
@@ -152,8 +158,11 @@ function ProjectRow({
         />
       </CellTd>
 
-      <CellTd className="text-text-tertiary">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-quaternary">—</span>
+      <CellTd>
+        <PriorityPicker
+          value={p.priority ?? 0}
+          onChange={(pr) => mutate(() => patchProject(workspace, p.slug_id, { priority: pr }))}
+        />
       </CellTd>
 
       <CellTd>
@@ -180,7 +189,7 @@ function ProjectRow({
       <CellTd>
         <StatePicker
           state={p.state}
-          pct={pct}
+          issuePct={issuePct}
           onChange={(s) => mutate(() => patchProject(workspace, p.slug_id, { state: s }))}
         />
       </CellTd>
@@ -301,6 +310,52 @@ function HealthGlyph({ health }: { health: string }) {
     <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
       <path d="M2 4 L5 7 L7 5 L10 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+// --- Priority ---------------------------------------------------------------
+
+function PriorityPicker({
+  value,
+  onChange,
+}: {
+  value: 0 | 1 | 2 | 3 | 4;
+  onChange: (p: 0 | 1 | 2 | 3 | 4) => void;
+}) {
+  return (
+    <Popover
+      align="start"
+      width={180}
+      trigger={({ toggle }) => (
+        <button
+          type="button"
+          onClick={toggle}
+          className="-mx-1 -my-0.5 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-mini text-text-secondary hover:bg-elevated-hover"
+          aria-label={`Priority ${PRIORITY_LABELS[value]}`}
+        >
+          <PriorityIcon value={value} />
+          {value !== 0 && <span>{PRIORITY_LABELS[value]}</span>}
+        </button>
+      )}
+    >
+      {({ close }) => (
+        <PopoverList>
+          {[1, 2, 3, 4, 0].map((p) => (
+            <PopoverItem
+              key={p}
+              active={value === p}
+              onClick={() => {
+                onChange(p as 0 | 1 | 2 | 3 | 4);
+                close();
+              }}
+            >
+              <PriorityIcon value={p as 0 | 1 | 2 | 3 | 4} />
+              <span>{PRIORITY_LABELS[p]}</span>
+            </PopoverItem>
+          ))}
+        </PopoverList>
+      )}
+    </Popover>
   );
 }
 
@@ -452,26 +507,26 @@ function DatePicker({
 
 function StatePicker({
   state,
-  pct,
+  issuePct,
   onChange,
 }: {
   state: ProjectState;
-  pct: number;
+  issuePct: number;
   onChange: (s: ProjectState) => void;
 }) {
-  const color = state === "completed" ? "#22c55e" : state === "canceled" ? "#6b6f76" : "#5e6ad2";
+  const meta = STATE_META[state];
   return (
     <Popover
       align="end"
-      width={180}
+      width={200}
       trigger={({ toggle }) => (
         <button
           type="button"
           onClick={toggle}
-          className="-mx-1.5 -my-0.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-mini text-text-secondary hover:bg-elevated-hover"
+          className="-mx-1.5 -my-0.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-mini text-text-secondary hover:bg-elevated-hover"
         >
-          <StateRing color={color} pct={pct} />
-          <span>{pct}%</span>
+          <StateRing color={meta.color} pct={state === "completed" ? 100 : issuePct} state={state} />
+          <span>{meta.label}</span>
         </button>
       )}
     >
@@ -479,20 +534,19 @@ function StatePicker({
         <PopoverList>
           {STATE_OPTIONS.map((s) => (
             <PopoverItem
-              key={s.value}
-              active={state === s.value}
+              key={s}
+              active={state === s}
               onClick={() => {
-                onChange(s.value);
+                onChange(s);
                 close();
               }}
             >
               <StateRing
-                color={
-                  s.value === "completed" ? "#22c55e" : s.value === "canceled" ? "#6b6f76" : "#5e6ad2"
-                }
-                pct={s.value === "completed" ? 100 : s.value === "canceled" ? 0 : 50}
+                color={STATE_META[s].color}
+                pct={STATE_META[s].pct}
+                state={s}
               />
-              <span>{s.label}</span>
+              <span>{STATE_META[s].label}</span>
             </PopoverItem>
           ))}
         </PopoverList>
@@ -501,24 +555,55 @@ function StatePicker({
   );
 }
 
-function StateRing({ color, pct }: { color: string; pct: number }) {
+function StateRing({ color, pct, state }: { color: string; pct: number; state: ProjectState }) {
+  // Canceled: dashed empty circle.
+  if (state === "canceled") {
+    return (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5">
+        <circle cx="8" cy="8" r="6" fill="none" stroke={color} strokeWidth="1.4" strokeDasharray="2 2" />
+        <path d="M5 5 L11 11 M11 5 L5 11" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  // Completed: filled circle with check.
+  if (state === "completed") {
+    return (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5">
+        <circle cx="8" cy="8" r="6" fill={color} />
+        <path d="M5.5 8.2 L7.2 9.8 L10.5 6.5" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  // Paused: filled circle with two bars.
+  if (state === "paused") {
+    return (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5">
+        <circle cx="8" cy="8" r="6" fill="none" stroke={color} strokeWidth="1.4" />
+        <rect x="6" y="5.5" width="1.4" height="5" rx="0.4" fill={color} />
+        <rect x="8.6" y="5.5" width="1.4" height="5" rx="0.4" fill={color} />
+      </svg>
+    );
+  }
+  // Started / Planned: ring with arc proportional to progress.
   const circumference = 2 * Math.PI * 6;
   const offset = circumference * (1 - pct / 100);
   return (
     <svg viewBox="0 0 16 16" className="h-3.5 w-3.5">
-      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
-      <circle
-        cx="8"
-        cy="8"
-        r="6"
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-        transform="rotate(-90 8 8)"
-      />
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
+      {pct > 0 && (
+        <circle
+          cx="8"
+          cy="8"
+          r="6"
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform="rotate(-90 8 8)"
+        />
+      )}
     </svg>
   );
 }

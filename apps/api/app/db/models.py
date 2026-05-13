@@ -415,6 +415,7 @@ class Project(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     icon_color: Mapped[str] = mapped_column(String(16), default="#5e6ad2")
     state: Mapped[ProjectState] = mapped_column(Enum(ProjectState, name="project_state"), default=ProjectState.planned)
+    priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     lead_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     initiative_id: Mapped[str | None] = mapped_column(ForeignKey("initiatives.id", ondelete="SET NULL"), nullable=True)
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -163,6 +163,7 @@ export interface Project {
   description: string | null;
   icon_color: string;
   state: ProjectState;
+  priority: 0 | 1 | 2 | 3 | 4;
   lead: Member | null;
   start_date: string | null;
   target_date: string | null;
@@ -607,7 +608,7 @@ export function createProject(
 export function patchProject(
   slug: string,
   projectSlug: string,
-  body: Partial<{ name: string; description: string; state: ProjectState; icon_color: string; lead_id: string; initiative_id: string; target_date: string; clear_target_date: boolean; clear_lead: boolean; clear_initiative: boolean }>
+  body: Partial<{ name: string; description: string; state: ProjectState; priority: 0 | 1 | 2 | 3 | 4; icon_color: string; lead_id: string; initiative_id: string; target_date: string; clear_target_date: boolean; clear_lead: boolean; clear_initiative: boolean }>
 ): Promise<Project> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects/${encodeURIComponent(projectSlug)}`, {
     method: "PATCH",

@@ -214,6 +214,7 @@ class ProjectOut(BaseModel):
     description: str | None
     icon_color: str
     state: str
+    priority: int = 0
     lead: MemberOut | None
     start_date: datetime | None
     target_date: datetime | None
@@ -247,6 +248,7 @@ class ProjectCreateIn(BaseModel):
     name: str
     description: str | None = None
     state: str = "planned"
+    priority: int = 0
     icon_color: str = "#5e6ad2"
     lead_id: str | None = None
     initiative_id: str | None = None
@@ -258,6 +260,7 @@ class ProjectPatchIn(BaseModel):
     name: str | None = None
     description: str | None = None
     state: str | None = None
+    priority: int | None = None
     icon_color: str | None = None
     lead_id: str | None = None
     initiative_id: str | None = None

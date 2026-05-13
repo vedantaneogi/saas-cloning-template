@@ -274,6 +274,7 @@ def _project_dict(p: Project, *, with_counts: bool = True, db: Session | None = 
         "description": p.description,
         "icon_color": p.icon_color,
         "state": p.state.value if hasattr(p.state, "value") else p.state,
+        "priority": p.priority or 0,
         "lead": MemberOut.model_validate(p.lead) if p.lead else None,
         "start_date": p.start_date,
         "target_date": p.target_date,
@@ -528,6 +529,7 @@ def create_project(
         if not ini:
             raise HTTPException(400, "initiative does not belong to workspace")
         initiative_id = ini.id
+    priority = max(0, min(4, body.priority or 0))
     project = Project(
         workspace_id=ws.id,
         slug_id=_make_slug(body.name),
@@ -535,6 +537,7 @@ def create_project(
         description=body.description,
         icon_color=body.icon_color,
         state=state,
+        priority=priority,
         lead_id=body.lead_id,
         initiative_id=initiative_id,
         start_date=body.start_date,
@@ -573,6 +576,8 @@ def patch_project(
             p.state = ProjectState(body.state)
         except ValueError:
             raise HTTPException(400, f"unknown state: {body.state}")
+    if body.priority is not None:
+        p.priority = max(0, min(4, body.priority))
     if body.clear_lead:
         p.lead_id = None
     elif body.lead_id is not None:

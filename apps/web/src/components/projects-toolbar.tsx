@@ -9,9 +9,18 @@ import { ProjectsGrid } from "@/components/projects-grid";
 import type { Member, Project, ProjectState } from "@/lib/api";
 
 type Health = "onTrack" | "atRisk" | "offTrack";
-type GroupBy = "none" | "status" | "health" | "lead";
+type GroupBy = "none" | "status" | "health" | "lead" | "initiative";
 type SortBy = "updated" | "name" | "target" | "status";
 type Display = "table" | "grid";
+type Tab = "all" | "active" | "backlog" | "completed" | "canceled";
+
+const TABS: { value: Tab; label: string; states: ProjectState[] | null }[] = [
+  { value: "all", label: "All projects", states: null },
+  { value: "active", label: "Active", states: ["started"] },
+  { value: "backlog", label: "Backlog", states: ["planned", "paused"] },
+  { value: "completed", label: "Completed", states: ["completed"] },
+  { value: "canceled", label: "Canceled", states: ["canceled"] },
+];
 
 const STATUS_OPTIONS: { value: ProjectState; label: string; dot: string }[] = [
   { value: "planned", label: "Planned", dot: "#95a2b3" },
@@ -36,6 +45,7 @@ export function ProjectsToolbar({
   workspace: string;
   members: Member[];
 }) {
+  const [tab, setTab] = useState<Tab>("all");
   const [statusFilter, setStatusFilter] = useState<Set<ProjectState>>(new Set());
   const [healthFilter, setHealthFilter] = useState<Set<Health>>(new Set());
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
@@ -44,6 +54,8 @@ export function ProjectsToolbar({
 
   const filtered = useMemo(() => {
     let out = projects;
+    const tabStates = TABS.find((t) => t.value === tab)?.states ?? null;
+    if (tabStates) out = out.filter((p) => tabStates.includes(p.state));
     if (statusFilter.size > 0) out = out.filter((p) => statusFilter.has(p.state));
     if (healthFilter.size > 0) out = out.filter((p) => (p.health ? healthFilter.has(p.health) : false));
     out = [...out].sort((a, b) => {
@@ -54,11 +66,10 @@ export function ProjectsToolbar({
         return ad.localeCompare(bd);
       }
       if (sortBy === "status") return a.state.localeCompare(b.state);
-      // updated — keep API order (most-recent first)
       return 0;
     });
     return out;
-  }, [projects, statusFilter, healthFilter, sortBy]);
+  }, [projects, tab, statusFilter, healthFilter, sortBy]);
 
   const grouped: ProjectGroup[] = useMemo(() => {
     if (groupBy === "none") return [{ key: "all", label: "", projects: filtered }];
@@ -72,9 +83,13 @@ export function ProjectsToolbar({
       } else if (groupBy === "health") {
         key = p.health ?? "none";
         label = HEALTH_OPTIONS.find((h) => h.value === p.health)?.label ?? "No update";
-      } else {
+      } else if (groupBy === "lead") {
         key = p.lead?.id ?? "none";
         label = p.lead?.name ?? "No lead";
+      } else {
+        // initiative
+        key = p.initiative_id ?? "none";
+        label = p.initiative_name ?? "No initiative";
       }
       if (!groups.has(key)) groups.set(key, { key, label, projects: [] });
       groups.get(key)!.projects.push(p);
@@ -109,12 +124,30 @@ export function ProjectsToolbar({
   return (
     <>
       <div className="flex h-[40px] shrink-0 items-center gap-1 px-4 text-mini">
-        <button type="button" className="rounded-pill bg-row-selected px-2.5 py-1 text-text-primary">
-          All projects
-        </button>
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            onClick={() => setTab(t.value)}
+            className={clsx(
+              "rounded-pill px-2.5 py-1",
+              tab === t.value
+                ? "bg-row-selected text-text-primary"
+                : "text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
         <button
           type="button"
-          className="rounded-md p-1 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
+          onClick={() => setGroupBy((g) => (g === "initiative" ? "none" : "initiative"))}
+          className={clsx(
+            "ml-0.5 rounded-md p-1",
+            groupBy === "initiative"
+              ? "bg-row-selected text-text-primary"
+              : "text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
+          )}
           aria-label="Group by initiative"
           title="Group by initiative"
         >
@@ -209,7 +242,7 @@ export function ProjectsToolbar({
               <div className="py-1.5">
                 <SectionLabel>Group by</SectionLabel>
                 <PopoverList>
-                  {(["none", "status", "health", "lead"] as GroupBy[]).map((g) => (
+                  {(["none", "status", "health", "lead", "initiative"] as GroupBy[]).map((g) => (
                     <PopoverItem key={g} active={groupBy === g} onClick={() => setGroupBy(g)}>
                       <span className="capitalize">{g === "none" ? "No grouping" : g}</span>
                     </PopoverItem>
@@ -245,7 +278,7 @@ export function ProjectsToolbar({
 
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <EmptyState filterActive={filterCount > 0} onClear={clearFilters} />
+          <EmptyState filterActive={filterCount > 0 || tab !== "all"} onClear={() => { clearFilters(); setTab("all"); }} />
         ) : display === "table" ? (
           <ProjectsTable
             groups={grouped}
