@@ -1,6 +1,6 @@
 # Clone status — vs. linear.xlsx feature matrix
 
-Last updated: 2026-05-12. Status keys: ✅ built · 🟡 partial · ❌ not started.
+Last updated: 2026-05-13. Status keys: ✅ built · 🟡 partial · ❌ not started.
 
 ---
 
@@ -180,8 +180,8 @@ Last updated: 2026-05-12. Status keys: ✅ built · 🟡 partial · ❌ not star
 
 ### Templates
 - ✅ Issue templates per team — presets (Bug report, Feature request) + custom JSON; picker in create-issue modal pre-fills title/desc/priority/labels
-- 🟡 Project templates — model + manager exist (Launch preset with milestones); apply-on-create-project flow is a small follow-up
-- 🟡 Document templates — model + presets exist (PRD/RFC/Retro/Postmortem); apply-on-create-document flow is a small follow-up
+- ✅ Project templates — Product launch (5 milestones over 60d), Quarterly initiative (4 milestones over 90d) seeded. New-project modal has a Template select that prefills name/description/icon_color and POSTs each milestone with target_date_offset_days applied relative to the chosen target date.
+- ✅ Document templates — PRD / RFC / Retro / Postmortem seeded with structured bodies. New-document button is now a dropdown ("Blank document" + each template) that prefills title/body/icon on create.
 
 ### Automations & rules
 - ✅ Workflow automation rules — 5 triggers (issue create, status change, label added, cycle end, stale-in-state) × 7 actions (move state, assign, label, comment, archive, set priority, rotate assign). CRUD + presets + run-scheduled
@@ -195,7 +195,7 @@ Last updated: 2026-05-12. Status keys: ✅ built · 🟡 partial · ❌ not star
 - ✅ Figma — link autodetect + iframe embed in IssueLinksPanel
 - ❌ Linear Asks (real Slack slash-command flow) — would need a registered Slack app; receiver covers the spirit of the feature
 
-**Most impactful next** (post-UI-polish): real Slack app OAuth + slash command (for Asks), custom-chart builder, due-date escalation trigger, project/document template apply-on-create.
+**Most impactful next** (post-UI-polish): real Slack app OAuth + slash command (for Asks), custom-chart builder, due-date escalation trigger.
 
 ---
 
