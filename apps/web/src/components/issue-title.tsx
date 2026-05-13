@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { patchIssue } from "@/lib/api";
-import { MarkdownView } from "@/components/markdown-view";
+import { MarkdownEditor } from "@/components/markdown-editor";
 
 export function IssueTitle({
   workspaceSlug,
@@ -82,66 +82,33 @@ export function IssueDescription({
   identifier: string;
   initial: string | null;
 }) {
-  const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(initial ?? "");
   const router = useRouter();
-  const ref = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (editing) ref.current?.focus();
-  }, [editing]);
+  const last = useRef(initial ?? "");
 
   async function save() {
     const trimmed = value.trim();
-    if (trimmed === (initial ?? "").trim()) {
-      setEditing(false);
-      return;
-    }
+    if (trimmed === last.current.trim()) return;
     await patchIssue(workspaceSlug, identifier, { description: trimmed });
-    setEditing(false);
+    last.current = trimmed;
     router.refresh();
   }
 
-  if (!editing) {
-    if (!initial) {
-      return (
-        <button
-          onClick={() => setEditing(true)}
-          className="mt-4 block text-small text-text-tertiary hover:text-text-secondary"
-        >
-          Add description…
-        </button>
-      );
-    }
-    return (
-      <div
-        onClick={() => setEditing(true)}
-        className="mt-5 cursor-text rounded-md hover:bg-row-hover/40"
-      >
-        <MarkdownView source={initial} />
-      </div>
-    );
-  }
-
   return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={save}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-          e.preventDefault();
-          save();
-        }
-        if (e.key === "Escape") {
-          setValue(initial ?? "");
-          setEditing(false);
-        }
+    <div
+      className="mt-5"
+      onBlur={(e) => {
+        // Only save when focus leaves the whole editor, not on internal moves.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) save();
       }}
-      rows={Math.max(4, value.split("\n").length + 1)}
-      className="mt-5 w-full resize-none rounded-md border border-border-subtle bg-input p-3 text-default text-text-secondary outline-none focus:border-border-strong"
-    />
+    >
+      <MarkdownEditor
+        value={value}
+        onChange={setValue}
+        placeholder="Add description…"
+        minHeight={120}
+      />
+    </div>
   );
 }
 

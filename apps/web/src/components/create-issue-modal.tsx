@@ -33,6 +33,7 @@ import {
   type Template,
 } from "@/lib/api";
 import { StatusIcon, PriorityIcon, Avatar } from "@/components/icons";
+import { MarkdownEditor } from "@/components/markdown-editor";
 import { Popover, PopoverItem, PopoverList } from "@/components/popover";
 
 const PRIORITY_LABELS = ["No priority", "Urgent", "High", "Medium", "Low"] as const;
@@ -71,7 +72,7 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
   const titleRef = useRef<HTMLTextAreaElement>(null);
-  const descRef = useRef<HTMLTextAreaElement>(null);
+  // descRef removed — MarkdownEditor manages its own DOM/height.
 
   useEffect(() => {
     if (!open) return;
@@ -119,13 +120,6 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
   useEffect(() => {
     if (open) titleRef.current?.focus();
   }, [open]);
-
-  useEffect(() => {
-    const ta = descRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = Math.max(60, ta.scrollHeight) + "px";
-  }, [description, open, expanded]);
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -301,14 +295,14 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
             rows={1}
             className="w-full resize-none bg-transparent text-large font-semibold leading-snug text-text-primary outline-none placeholder:text-text-quaternary"
           />
-          <textarea
-            ref={descRef}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add description…"
-            className="mt-2 w-full resize-none bg-transparent text-default leading-relaxed text-text-secondary outline-none placeholder:text-text-tertiary"
-            style={{ minHeight: expanded ? 360 : 60 }}
-          />
+          <div className="mt-2" style={{ minHeight: expanded ? 360 : 60 }}>
+            <MarkdownEditor
+              value={description}
+              onChange={setDescription}
+              placeholder="Add description…"
+              minHeight={expanded ? 360 : 60}
+            />
+          </div>
         </div>
 
         {/* property chips */}
