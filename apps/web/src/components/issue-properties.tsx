@@ -489,10 +489,10 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (v
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <div className="mb-1 flex w-full items-center justify-between text-mini text-text-tertiary">
+      <div className="mb-2 flex w-full items-center justify-between text-mini text-text-tertiary">
         <span>{title}</span>
       </div>
-      <div className="space-y-1.5">{children}</div>
+      <div className="space-y-2">{children}</div>
     </div>
   );
 }
@@ -501,7 +501,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   const prop = label.toLowerCase().replace(/\s+/g, "-");
   return (
     <div className="flex items-center text-small" data-issue-prop={prop}>
-      <span className="w-16 shrink-0 text-text-tertiary">{label}</span>
+      <span className="w-[72px] shrink-0 text-text-tertiary">{label}</span>
       <span className="flex items-center text-text-secondary">{children}</span>
     </div>
   );
