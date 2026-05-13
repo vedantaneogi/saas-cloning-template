@@ -41,7 +41,11 @@ export default async function TeamProjectsPage({ params }: { params: Promise<{ w
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <ProjectsTable projects={filtered} workspace={workspace} />
+        <ProjectsTable
+          groups={[{ key: "all", label: team.name, projects: filtered }]}
+          workspace={workspace}
+          showGroupHeaders={false}
+        />
       </div>
     </>
   );
