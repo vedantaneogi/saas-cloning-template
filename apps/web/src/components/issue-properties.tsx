@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BarChart3, Calendar, Folders, Target } from "lucide-react";
 import { Avatar, PriorityIcon, StatusIcon } from "@/components/icons";
 import { Popover, PopoverItem, PopoverList } from "@/components/popover";
+import { DatePicker } from "@/components/date-picker";
 import { ProjectIconBlock } from "@/components/project-icons";
 import {
   listCycles,
@@ -446,43 +447,16 @@ export function IssueProperties({ workspaceSlug, issue }: { workspaceSlug: strin
 }
 
 function DueDatePicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
-  const [open, setOpen] = useState(false);
-  const display = value
-    ? new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    : null;
+  const iso = value ? value.slice(0, 10) : "";
   return (
-    <span className="relative inline-flex items-center">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-row-hover"
-      >
-        <Calendar size={12} className="text-text-tertiary" />
-        <span>{display ?? <span className="text-text-tertiary">No date</span>}</span>
-      </button>
-      {open && (
-        <span className="absolute left-0 top-full z-40 mt-1 flex items-center gap-1 rounded-md border border-border-default bg-elevated p-2 shadow-popover">
-          <input
-            type="date"
-            defaultValue={value ? value.slice(0, 10) : ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              onChange(v ? new Date(v + "T00:00:00Z").toISOString() : null);
-              setOpen(false);
-            }}
-            className="bg-input text-small text-text-primary outline-none"
-          />
-          <button
-            onClick={() => {
-              onChange(null);
-              setOpen(false);
-            }}
-            className="rounded-md px-2 py-1 text-mini text-text-tertiary hover:bg-row-hover"
-          >
-            Clear
-          </button>
-        </span>
-      )}
-    </span>
+    <div className="min-w-[140px]">
+      <DatePicker
+        value={iso}
+        onChange={(next) => onChange(next ? new Date(next + "T00:00:00Z").toISOString() : null)}
+        placeholder="No date"
+        size="sm"
+      />
+    </div>
   );
 }
 

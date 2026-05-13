@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Box,
@@ -19,6 +19,7 @@ import {
 import clsx from "clsx";
 import { Popover, PopoverList, PopoverItem } from "@/components/popover";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { DatePicker } from "@/components/date-picker";
 import { PriorityIcon } from "@/components/icons";
 import {
   createMilestone,
@@ -493,26 +494,18 @@ function DateChip({
   icon: React.ReactNode;
   onChange: (v: string) => void;
 }) {
-  const ref = useRef<HTMLInputElement>(null);
+  // Reuse the shared DatePicker so the calendar UI is consistent everywhere,
+  // but render the trigger in our chip-pill style so it sits naturally in
+  // the modal's chip row.
   return (
-    <span className="inline-flex">
-      <button
-        type="button"
-        onClick={() => ref.current?.showPicker?.() ?? ref.current?.focus()}
-        className="inline-flex items-center gap-1.5 rounded-pill border border-border-subtle px-2.5 py-1 text-mini text-text-secondary hover:bg-row-hover hover:text-text-primary"
-      >
-        {value ? <Calendar size={12} className="text-text-tertiary" /> : icon}
-        <span>{value ? fmtDate(value) : placeholder}</span>
-      </button>
-      <input
-        ref={ref}
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="absolute h-0 w-0 opacity-0"
-        tabIndex={-1}
-      />
-    </span>
+    <DatePicker
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      size="sm"
+      icon={icon}
+      triggerClassName="!rounded-pill !border-border-subtle !bg-transparent hover:!bg-row-hover hover:text-text-primary"
+    />
   );
 }
 
@@ -562,15 +555,15 @@ function MilestonesBlock({
                 }}
                 className="flex-1 bg-transparent text-text-primary outline-none"
               />
-              <input
-                type="date"
+              <DatePicker
                 value={m.target_date}
-                onChange={(e) => {
+                onChange={(v) => {
                   const next = [...milestones];
-                  next[i] = { ...m, target_date: e.target.value };
+                  next[i] = { ...m, target_date: v };
                   onChange(next);
                 }}
-                className="rounded-md bg-transparent px-1 py-0.5 text-text-tertiary outline-none hover:bg-elevated-hover"
+                size="sm"
+                placeholder="Set date"
               />
               <button
                 type="button"
@@ -593,11 +586,11 @@ function MilestonesBlock({
                 placeholder="Milestone name"
                 className="flex-1 bg-transparent text-text-primary outline-none placeholder:text-text-tertiary"
               />
-              <input
-                type="date"
+              <DatePicker
                 value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
-                className="rounded-md bg-transparent px-1 py-0.5 text-text-tertiary outline-none"
+                onChange={setNewDate}
+                size="sm"
+                placeholder="Set date"
               />
               <button
                 type="button"

@@ -34,6 +34,7 @@ import {
 } from "@/lib/api";
 import { StatusIcon, PriorityIcon, Avatar } from "@/components/icons";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { DatePicker } from "@/components/date-picker";
 import { Popover, PopoverItem, PopoverList } from "@/components/popover";
 
 const PRIORITY_LABELS = ["No priority", "Urgent", "High", "Medium", "Low"] as const;
@@ -566,12 +567,9 @@ export function CreateIssueModal({ workspaceSlug, teams }: { workspaceSlug: stri
                 <label className="flex items-center gap-2 text-mini">
                   <Calendar size={12} className="text-text-tertiary" />
                   <span className="text-text-tertiary">Due date</span>
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="ml-auto rounded-md bg-app px-2 py-1 text-mini text-text-primary outline-none focus:ring-1 focus:ring-accent"
-                  />
+                  <div className="ml-auto w-[150px]">
+                    <DatePicker value={dueDate} onChange={setDueDate} size="sm" placeholder="Set date" />
+                  </div>
                 </label>
                 <label className="flex items-center gap-2 text-mini">
                   <BarChart3 size={12} className="text-text-tertiary" />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { StyledSelect } from "@/components/styled-select";
 import { listTeamIssues, type Issue, type Team } from "@/lib/api";
 
 type ViewKind = "active" | "backlog" | "all";
@@ -56,47 +57,35 @@ export function CustomChartBuilder({
     <div className="mt-6 space-y-5">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Field label="Team">
-          <select
+          <StyledSelect
             value={teamKey}
-            onChange={(e) => setTeamKey(e.target.value)}
-            className="w-full rounded-md border border-border-subtle bg-app px-2 py-1 text-small outline-none"
-          >
-            {teams.map((t) => (
-              <option key={t.key} value={t.key}>{t.name}</option>
-            ))}
-          </select>
+            onChange={setTeamKey}
+            options={teams.map((t) => ({ value: t.key, label: t.name }))}
+          />
         </Field>
         <Field label="View">
-          <select
+          <StyledSelect<ViewKind>
             value={view}
-            onChange={(e) => setView(e.target.value as ViewKind)}
-            className="w-full rounded-md border border-border-subtle bg-app px-2 py-1 text-small outline-none"
-          >
-            {(Object.keys(VIEW_LABELS) as ViewKind[]).map((v) => (
-              <option key={v} value={v}>{VIEW_LABELS[v]}</option>
-            ))}
-          </select>
+            onChange={setView}
+            options={(Object.keys(VIEW_LABELS) as ViewKind[]).map((v) => ({ value: v, label: VIEW_LABELS[v] }))}
+          />
         </Field>
         <Field label="Group by">
-          <select
+          <StyledSelect<GroupBy>
             value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-            className="w-full rounded-md border border-border-subtle bg-app px-2 py-1 text-small outline-none"
-          >
-            {(Object.keys(GROUP_BY_LABELS) as GroupBy[]).map((g) => (
-              <option key={g} value={g}>{GROUP_BY_LABELS[g]}</option>
-            ))}
-          </select>
+            onChange={setGroupBy}
+            options={(Object.keys(GROUP_BY_LABELS) as GroupBy[]).map((g) => ({ value: g, label: GROUP_BY_LABELS[g] }))}
+          />
         </Field>
         <Field label="Chart">
-          <select
+          <StyledSelect<ChartKind>
             value={chartKind}
-            onChange={(e) => setChartKind(e.target.value as ChartKind)}
-            className="w-full rounded-md border border-border-subtle bg-app px-2 py-1 text-small outline-none"
-          >
-            <option value="bar">Bar</option>
-            <option value="table">Table</option>
-          </select>
+            onChange={setChartKind}
+            options={[
+              { value: "bar", label: "Bar" },
+              { value: "table", label: "Table" },
+            ]}
+          />
         </Field>
       </div>
 
