@@ -596,7 +596,7 @@ export function listProjectIssues(slug: string, projectSlug: string): Promise<Is
 
 export function createProject(
   slug: string,
-  body: { name: string; description?: string; state?: ProjectState; icon_color?: string; lead_id?: string; target_date?: string }
+  body: { name: string; description?: string; state?: ProjectState; priority?: 0 | 1 | 2 | 3 | 4; icon_color?: string; lead_id?: string; start_date?: string; target_date?: string }
 ): Promise<Project> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects`, {
     method: "POST",

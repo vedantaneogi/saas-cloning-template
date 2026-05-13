@@ -6,7 +6,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Plus } from "lucide-react";
 import { Avatar, PriorityIcon, StatusIcon, SubIssueProgress } from "@/components/icons";
-import { createIssue, type Issue, type StateGroup } from "@/lib/api";
+import { createIssue, patchIssue, type Issue, type StateGroup } from "@/lib/api";
 
 export function BoardView({
   groups,
@@ -17,6 +17,19 @@ export function BoardView({
   workspaceSlug: string;
   teamKey?: string;
 }) {
+  const router = useRouter();
+  // Track the issue currently being dragged so columns can highlight when they're a valid drop target.
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+
+  async function moveIssue(identifier: string, toStateId: string) {
+    try {
+      await patchIssue(workspaceSlug, identifier, { state_id: toStateId });
+      router.refresh();
+    } catch (e) {
+      console.error("move failed", e);
+    }
+  }
+
   return (
     <div className="flex h-full gap-3 overflow-x-auto p-3">
       {groups.map((g) => (
@@ -28,6 +41,10 @@ export function BoardView({
           workspaceSlug={workspaceSlug}
           teamKey={teamKey}
           stateId={g.issues[0]?.state.id}
+          isDragging={draggedId !== null}
+          onDragStart={setDraggedId}
+          onDragEnd={() => setDraggedId(null)}
+          onDrop={moveIssue}
         />
       ))}
     </div>
@@ -41,6 +58,10 @@ function BoardColumn({
   workspaceSlug,
   teamKey,
   stateId,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+  onDrop,
 }: {
   title: string;
   group: StateGroup;
@@ -48,10 +69,15 @@ function BoardColumn({
   workspaceSlug: string;
   teamKey?: string;
   stateId?: string;
+  isDragging: boolean;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onDrop: (identifier: string, toStateId: string) => void;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const [over, setOver] = useState(false);
 
   async function submit() {
     if (!teamKey || !draft.trim()) return;
@@ -60,8 +86,37 @@ function BoardColumn({
     router.refresh();
   }
 
+  function handleDragOver(e: React.DragEvent) {
+    if (!stateId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!over) setOver(true);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setOver(false);
+    if (!stateId) return;
+    const identifier = e.dataTransfer.getData("text/issue-identifier");
+    const fromStateId = e.dataTransfer.getData("text/from-state");
+    if (!identifier || fromStateId === stateId) return;
+    onDrop(identifier, stateId);
+  }
+
   return (
-    <section className="flex h-full w-[320px] shrink-0 flex-col rounded-md border border-border-subtle bg-elevated">
+    <section
+      onDragOver={handleDragOver}
+      onDragLeave={() => setOver(false)}
+      onDrop={handleDrop}
+      className={clsx(
+        "flex h-full w-[320px] shrink-0 flex-col rounded-md border bg-elevated transition-colors",
+        over
+          ? "border-accent ring-1 ring-accent/40"
+          : isDragging
+            ? "border-border-default"
+            : "border-border-subtle",
+      )}
+    >
       <header className="flex h-[36px] shrink-0 items-center gap-2 border-b border-border-subtle px-3 text-small">
         <StatusIcon group={group} />
         <span className="font-medium text-text-primary">{title}</span>
@@ -94,11 +149,20 @@ function BoardColumn({
           </div>
         )}
         {issues.map((issue) => (
-          <BoardCard key={issue.identifier} issue={issue} workspaceSlug={workspaceSlug} />
+          <BoardCard
+            key={issue.identifier}
+            issue={issue}
+            workspaceSlug={workspaceSlug}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+          />
         ))}
         {issues.length === 0 && !adding && (
-          <div className="rounded-md border border-dashed border-border-subtle py-6 text-center text-mini text-text-tertiary">
-            No issues
+          <div className={clsx(
+            "rounded-md border border-dashed py-6 text-center text-mini text-text-tertiary transition-colors",
+            over ? "border-accent text-accent" : "border-border-subtle",
+          )}>
+            {over ? "Drop to move" : "No issues"}
           </div>
         )}
       </div>
@@ -106,14 +170,42 @@ function BoardColumn({
   );
 }
 
-function BoardCard({ issue, workspaceSlug }: { issue: Issue; workspaceSlug: string }) {
+function BoardCard({
+  issue,
+  workspaceSlug,
+  onDragStart,
+  onDragEnd,
+}: {
+  issue: Issue;
+  workspaceSlug: string;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+}) {
   const dim = issue.state.group === "completed" || issue.state.group === "canceled";
+  const [dragging, setDragging] = useState(false);
+
+  function handleDragStart(e: React.DragEvent) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/issue-identifier", issue.identifier);
+    e.dataTransfer.setData("text/from-state", issue.state.id);
+    setDragging(true);
+    onDragStart(issue.identifier);
+  }
+  function handleDragEnd() {
+    setDragging(false);
+    onDragEnd();
+  }
+
   return (
     <Link
       href={`/${workspaceSlug}/issue/${issue.identifier}`}
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       className={clsx(
-        "block rounded-md border border-border-subtle bg-app p-2 text-small hover:border-border-strong",
-        dim && "opacity-60"
+        "block cursor-grab rounded-md border border-border-subtle bg-app p-2 text-small hover:border-border-strong active:cursor-grabbing",
+        dim && "opacity-60",
+        dragging && "opacity-40",
       )}
     >
       <header className="flex items-center gap-1.5 text-mini text-text-tertiary">
