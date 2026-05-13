@@ -16,14 +16,13 @@ export function ProjectsTable({ projects, workspace }: { projects: Project[]; wo
   return (
     <table className="w-full text-small">
       <thead>
-        <tr className="text-mini font-normal text-text-tertiary">
-          <th className="px-4 py-2 text-left font-normal">Name</th>
-          <th className="px-3 py-2 text-left font-normal">Health</th>
-          <th className="px-3 py-2 text-left font-normal">Priority</th>
-          <th className="px-3 py-2 text-left font-normal">Lead</th>
-          <th className="px-3 py-2 text-left font-normal">Target date</th>
-          <th className="px-3 py-2 text-left font-normal">Issues</th>
-          <th className="px-4 py-2 text-left font-normal">Status</th>
+        <tr className="border-b border-border-subtle/60 text-mini font-normal text-text-tertiary">
+          <th className="px-4 py-2.5 text-left font-normal">Name</th>
+          <th className="w-[120px] px-3 py-2.5 text-left font-normal">Target</th>
+          <th className="w-[150px] px-3 py-2.5 text-left font-normal">Health</th>
+          <th className="w-[100px] px-3 py-2.5 text-left font-normal">Lead</th>
+          <th className="w-[120px] px-3 py-2.5 text-left font-normal">Issues</th>
+          <th className="w-[100px] px-4 py-2.5 text-left font-normal">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -39,7 +38,7 @@ function ProjectRow({ project: p, workspace }: { project: Project; workspace: st
   const pct = p.issue_count > 0 ? Math.round((p.completed_issue_count / p.issue_count) * 100) : 0;
   return (
     <tr className="border-b border-border-subtle/40 hover:bg-row-hover">
-      <td className="px-4 py-2.5">
+      <td className="px-4 py-3">
         <Link href={`/${workspace}/project/${p.slug_id}`} className="flex items-center gap-2">
           <ProjectGlyph color={p.icon_color} />
           <span className="font-medium text-text-primary">{p.name}</span>
@@ -54,11 +53,17 @@ function ProjectRow({ project: p, workspace }: { project: Project; workspace: st
           )}
         </Link>
       </td>
-      <td className="px-3 py-2.5">
+      <td className="px-3 py-3 text-mini text-text-tertiary">
+        {p.target_date ? (
+          <span>{fmtDate(p.target_date)}</span>
+        ) : (
+          <span className="text-text-quaternary">—</span>
+        )}
+      </td>
+      <td className="px-3 py-3">
         <HealthCell health={p.health ?? null} at={p.health_updated_at ?? null} />
       </td>
-      <td className="px-3 py-2.5 text-text-tertiary">—</td>
-      <td className="px-3 py-2.5">
+      <td className="px-3 py-3">
         {p.lead ? (
           <span
             className="inline-flex h-5 w-5 items-center justify-center rounded-pill text-micro font-medium text-white"
@@ -71,23 +76,48 @@ function ProjectRow({ project: p, workspace }: { project: Project; workspace: st
           <span className="inline-block h-5 w-5 rounded-pill border border-dashed border-border-strong" />
         )}
       </td>
-      <td className="px-3 py-2.5 text-mini text-text-tertiary">
-        {p.target_date ? (
-          <span className="inline-flex items-center gap-1">
-            <Calendar size={11} className="text-text-tertiary" />
-            {fmtDate(p.target_date)}
-          </span>
-        ) : (
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-sm border border-dashed border-border-strong">
-            <Calendar size={10} />
-          </span>
-        )}
+      <td className="px-3 py-3 text-mini text-text-tertiary">
+        <IssuesProgress done={p.completed_issue_count} total={p.issue_count} />
       </td>
-      <td className="px-3 py-2.5 text-text-secondary">{p.issue_count}</td>
-      <td className="px-4 py-2.5">
+      <td className="px-4 py-3">
         <StatusPill pct={pct} />
       </td>
     </tr>
+  );
+}
+
+function IssuesProgress({ done, total }: { done: number; total: number }) {
+  if (total === 0) {
+    return <span className="text-text-quaternary">—</span>;
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-text-secondary">
+      <DotsGlyph done={done} total={total} />
+      <span>{done} / {total}</span>
+    </span>
+  );
+}
+
+function DotsGlyph({ done, total }: { done: number; total: number }) {
+  // Linear's projects list shows a tiny status ring; we use a 12px circle outline + filled arc.
+  const pct = total > 0 ? done / total : 0;
+  const circumference = 2 * Math.PI * 5;
+  return (
+    <svg viewBox="0 0 12 12" className="h-3 w-3 shrink-0">
+      <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="1.5" />
+      <circle
+        cx="6"
+        cy="6"
+        r="5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - pct)}
+        strokeLinecap="round"
+        transform="rotate(-90 6 6)"
+      />
+    </svg>
   );
 }
 
