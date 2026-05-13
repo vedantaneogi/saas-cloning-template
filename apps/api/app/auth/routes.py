@@ -82,13 +82,14 @@ def _initials_for(name: str) -> str:
 
 def _set_cookie(response: Response, token: str, expires: datetime) -> None:
     s = get_settings()
+    max_age = s.auth_session_days * 86400
     response.set_cookie(
         key=s.auth_cookie_name,
         value=token,
         httponly=True,
         secure=s.auth_cookie_secure,
         samesite="lax",
-        expires=int(expires.timestamp()),
+        max_age=max_age,
         path="/",
     )
 

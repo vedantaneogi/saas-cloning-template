@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_member, get_current_user, get_db, get_optional_user, get_workspace, require_role
@@ -229,13 +229,59 @@ def _comment_dict(db: Session, c: Comment, workspace_id: str, current_member_id:
     }
 
 
-def _project_dict(p: Project, *, with_counts: bool = True, db: Session | None = None) -> dict:
+def _project_health_map(db: Session, project_ids: list[str]) -> dict[str, tuple[str, datetime]]:
+    """Latest update per project, batched."""
+    if not project_ids:
+        return {}
+    out: dict[str, tuple[str, datetime]] = {}
+    rows = (
+        db.query(ProjectUpdateModel.project_id, ProjectUpdateModel.health, ProjectUpdateModel.created_at)
+        .filter(ProjectUpdateModel.project_id.in_(project_ids))
+        .order_by(ProjectUpdateModel.project_id, ProjectUpdateModel.created_at.desc())
+        .all()
+    )
+    for pid, h, at in rows:
+        if pid in out:
+            continue
+        out[pid] = (h.value if hasattr(h, "value") else h, at)
+    return out
+
+
+def _project_issue_counts_map(db: Session, project_ids: list[str]) -> dict[str, tuple[int, int]]:
+    """(total, completed) issue counts per project, batched."""
+    if not project_ids:
+        return {}
+    rows = (
+        db.query(Issue.project_id, WorkflowState.group, func.count(Issue.id))
+        .join(WorkflowState, Issue.state_id == WorkflowState.id)
+        .filter(Issue.project_id.in_(project_ids))
+        .group_by(Issue.project_id, WorkflowState.group)
+        .all()
+    )
+    totals: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for pid, group, n in rows:
+        totals[pid][0] += n
+        if group in (StateGroup.completed, StateGroup.canceled):
+            totals[pid][1] += n
+    return {pid: (t[0], t[1]) for pid, t in totals.items()}
+
+
+def _project_dict(
+    p: Project,
+    *,
+    with_counts: bool = True,
+    db: Session | None = None,
+    health_map: dict[str, tuple[str, datetime]] | None = None,
+    counts_map: dict[str, tuple[int, int]] | None = None,
+) -> dict:
     counts = (0, 0)
-    health = None
-    health_at = None
+    health: str | None = None
+    health_at: datetime | None = None
     next_milestone = None
-    if db is not None:
-        # Latest update — its health is the project's current health signal.
+    if health_map is not None:
+        if p.id in health_map:
+            health, health_at = health_map[p.id]
+    elif db is not None:
         last_update = (
             db.query(ProjectUpdateModel)
             .filter_by(project_id=p.id)
@@ -245,8 +291,7 @@ def _project_dict(p: Project, *, with_counts: bool = True, db: Session | None = 
         if last_update:
             health = last_update.health.value if hasattr(last_update.health, "value") else last_update.health
             health_at = last_update.created_at
-        # Next milestone — soonest target_date that hasn't passed, falling
-        # back to first by position when no dates exist.
+    if db is not None or health_map is not None:
         ms = sorted(
             list(p.milestones or []),
             key=lambda m: (m.target_date is None, m.target_date or datetime.max.replace(tzinfo=timezone.utc), m.position),
@@ -258,15 +303,18 @@ def _project_dict(p: Project, *, with_counts: bool = True, db: Session | None = 
                 "name": upcoming.name,
                 "target_date": upcoming.target_date,
             }
-    if with_counts and db is not None:
-        rows = (
-            db.query(Issue.id, WorkflowState.group)
-            .join(WorkflowState, Issue.state_id == WorkflowState.id)
-            .filter(Issue.project_id == p.id)
-            .all()
-        )
-        completed = sum(1 for _, g in rows if g in (StateGroup.completed, StateGroup.canceled))
-        counts = (len(rows), completed)
+    if with_counts:
+        if counts_map is not None:
+            counts = counts_map.get(p.id, (0, 0))
+        elif db is not None:
+            rows = (
+                db.query(Issue.id, WorkflowState.group)
+                .join(WorkflowState, Issue.state_id == WorkflowState.id)
+                .filter(Issue.project_id == p.id)
+                .all()
+            )
+            completed = sum(1 for _, g in rows if g in (StateGroup.completed, StateGroup.canceled))
+            counts = (len(rows), completed)
     return {
         "id": p.id,
         "slug_id": p.slug_id,
@@ -438,7 +486,10 @@ def list_projects(
         except ValueError:
             raise HTTPException(400, f"unknown state: {state}")
     projects = q.order_by(Project.created_at).all()
-    return [_project_dict(p, db=db) for p in projects]
+    pids = [p.id for p in projects]
+    h_map = _project_health_map(db, pids)
+    c_map = _project_issue_counts_map(db, pids)
+    return [_project_dict(p, db=db, health_map=h_map, counts_map=c_map) for p in projects]
 
 
 @router.get("/workspaces/{slug}/projects/{slug_id}", response_model=ProjectDetailOut)
