@@ -1,6 +1,6 @@
 # Clone status — vs. linear.xlsx feature matrix
 
-Last updated: 2026-05-13. Status keys: ✅ built · 🟡 partial · ❌ not started.
+Last updated: 2026-05-14. Status keys: ✅ built · 🟡 partial · ❌ not started.
 
 ---
 
@@ -161,7 +161,7 @@ Last updated: 2026-05-13. Status keys: ✅ built · 🟡 partial · ❌ not star
 ### Triage / SLA
 - ✅ SLA / aging indicators — triage queue chips: neutral <3d, amber 3-6d, urgent ≥7d
 - 🟡 Triage responsibility rotation — automation engine supports `rotate_assign` on `on_issue_create`; preset wiring is left to user setup
-- 🟡 SLA / due-date escalation — engine has all action types; due-date-passed trigger not added (one of the leftover items)
+- ✅ SLA / due-date escalation — `due_date_passed` trigger + Postgres enum migration; scheduler matches non-completed/non-canceled issues whose due_date is older than `trigger_config.grace_days`. "Comment on overdue issues" preset ships in the automations manager.
 
 ### Issue niceties
 - ✅ Auto-close on duplicate — creating a `duplicate` relation transitions source to its team's Canceled state and posts a system comment
@@ -187,7 +187,7 @@ Last updated: 2026-05-13. Status keys: ✅ built · 🟡 partial · ❌ not star
 - ✅ Workflow automation rules — 5 triggers (issue create, status change, label added, cycle end, stale-in-state) × 7 actions (move state, assign, label, comment, archive, set priority, rotate assign). CRUD + presets + run-scheduled
 - ✅ Auto-assign on triage (rotation) — `rotate_assign` action on `on_issue_create`
 - ✅ Auto-close stale issues — `stale_in_state` trigger + admin "Run scheduled rules now" CTA
-- ❌ SLA / due-date escalation — would need a `due_date_passed` trigger type (small addition)
+- ✅ SLA / due-date escalation — `due_date_passed` trigger added in `f54b0dd` (migration `j2e7f50a1b88`).
 
 ### Integrations
 - ✅ GitHub — `/api/webhooks/github/{slug}` validates X-Hub-Signature-256, links PRs/branches to issues by identifier, updates IssueLink status on merge/close
@@ -195,7 +195,7 @@ Last updated: 2026-05-13. Status keys: ✅ built · 🟡 partial · ❌ not star
 - ✅ Figma — link autodetect + iframe embed in IssueLinksPanel
 - ❌ Linear Asks (real Slack slash-command flow) — would need a registered Slack app; receiver covers the spirit of the feature
 
-**Most impactful next** (post-UI-polish): real Slack app OAuth + slash command (for Asks), custom-chart builder, due-date escalation trigger.
+**Most impactful next** (post-UI-polish): real Slack app OAuth + slash command (for Asks), custom-chart builder.
 
 ---
 
