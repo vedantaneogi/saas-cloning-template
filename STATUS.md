@@ -155,12 +155,12 @@ Last updated: 2026-05-14. Status keys: ✅ built · 🟡 partial · ❌ not star
 - ✅ Cycle insights (velocity, throughput, scope changes) — 4 metric cards above the burndown
 - ✅ Project completion charts (scope vs completion over time, risk indicators) — `/project/{slug}` "Completion over time" section + health derived
 - ✅ Team insights dashboard (velocity, lead time, cycle time, throughput) — new `/team/{key}/insights` page with per-cycle bars
-- ❌ Custom charts (build chart from any saved view) — deferred; needs a chart builder UI
+- ✅ Custom charts — `/[workspace]/insights/custom`: pick a team + view kind + grouping (status/priority/assignee/label/project) → bar or table chart. Sidebar link under WORKSPACE.
 - ✅ Roadmap filter / group (status, team) + group toggle (initiative | team)
 
 ### Triage / SLA
 - ✅ SLA / aging indicators — triage queue chips: neutral <3d, amber 3-6d, urgent ≥7d
-- 🟡 Triage responsibility rotation — automation engine supports `rotate_assign` on `on_issue_create`; preset wiring is left to user setup
+- ✅ Triage responsibility rotation — "Round-robin assign triage issues" preset in the automations manager; addPreset injects current workspace members into `action_config.member_ids` so it's immediately functional.
 - ✅ SLA / due-date escalation — `due_date_passed` trigger + Postgres enum migration; scheduler matches non-completed/non-canceled issues whose due_date is older than `trigger_config.grace_days`. "Comment on overdue issues" preset ships in the automations manager.
 
 ### Issue niceties
@@ -195,7 +195,7 @@ Last updated: 2026-05-14. Status keys: ✅ built · 🟡 partial · ❌ not star
 - ✅ Figma — link autodetect + iframe embed in IssueLinksPanel
 - ❌ Linear Asks (real Slack slash-command flow) — would need a registered Slack app; receiver covers the spirit of the feature
 
-**Most impactful next** (post-UI-polish): real Slack app OAuth + slash command (for Asks), custom-chart builder.
+**Most impactful next**: real Slack app OAuth + slash command (for Asks) — only remaining ❌. Requires registering a real Slack app + OAuth flow, so it needs a Slack admin step.
 
 ---
 
