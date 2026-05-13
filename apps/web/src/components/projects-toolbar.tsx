@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { Popover, PopoverList, PopoverItem } from "@/components/popover";
 import { ProjectsTable, type ProjectGroup } from "@/components/projects-table";
 import { ProjectsGrid } from "@/components/projects-grid";
-import type { Project, ProjectState } from "@/lib/api";
+import type { Member, Project, ProjectState } from "@/lib/api";
 
 type Health = "onTrack" | "atRisk" | "offTrack";
 type GroupBy = "none" | "status" | "health" | "lead";
@@ -27,7 +27,15 @@ const HEALTH_OPTIONS: { value: Health; label: string; dot: string }[] = [
   { value: "offTrack", label: "Off track", dot: "#f2453d" },
 ];
 
-export function ProjectsToolbar({ projects, workspace }: { projects: Project[]; workspace: string }) {
+export function ProjectsToolbar({
+  projects,
+  workspace,
+  members,
+}: {
+  projects: Project[];
+  workspace: string;
+  members: Member[];
+}) {
   const [statusFilter, setStatusFilter] = useState<Set<ProjectState>>(new Set());
   const [healthFilter, setHealthFilter] = useState<Set<Health>>(new Set());
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
@@ -239,7 +247,12 @@ export function ProjectsToolbar({ projects, workspace }: { projects: Project[]; 
         {filtered.length === 0 ? (
           <EmptyState filterActive={filterCount > 0} onClear={clearFilters} />
         ) : display === "table" ? (
-          <ProjectsTable groups={grouped} workspace={workspace} showGroupHeaders={groupBy !== "none"} />
+          <ProjectsTable
+            groups={grouped}
+            workspace={workspace}
+            showGroupHeaders={groupBy !== "none"}
+            members={members}
+          />
         ) : (
           grouped.map((g) => (
             <section key={g.key}>

@@ -18,7 +18,7 @@ export default async function ProjectsListPage({ params }: { params: Promise<{ w
         icon={<Box size={15} />}
         trailing={<NewProjectButton workspaceSlug={workspace} members={members} />}
       />
-      <ProjectsToolbar projects={projects} workspace={workspace} />
+      <ProjectsToolbar projects={projects} workspace={workspace} members={members} />
     </>
   );
 }

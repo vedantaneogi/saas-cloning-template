@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { Box, LayoutGrid, SlidersHorizontal, Square } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { ProjectsTable } from "@/components/projects-table";
-import { getWorkspace, listProjects, NotFoundError } from "@/lib/api";
+import { getWorkspace, listMembers, listProjects, NotFoundError } from "@/lib/api";
 
 export default async function TeamProjectsPage({ params }: { params: Promise<{ workspace: string; teamKey: string }> }) {
   const { workspace, teamKey } = await params;
@@ -16,7 +16,10 @@ export default async function TeamProjectsPage({ params }: { params: Promise<{ w
   }
   if (!team) notFound();
 
-  const all = await listProjects(workspace);
+  const [all, members] = await Promise.all([
+    listProjects(workspace),
+    listMembers(workspace).catch(() => []),
+  ]);
   const filtered = all.filter((p) => (p.team_keys ?? []).includes(teamKey));
 
   return (
@@ -45,6 +48,7 @@ export default async function TeamProjectsPage({ params }: { params: Promise<{ w
           groups={[{ key: "all", label: team.name, projects: filtered }]}
           workspace={workspace}
           showGroupHeaders={false}
+          members={members}
         />
       </div>
     </>
