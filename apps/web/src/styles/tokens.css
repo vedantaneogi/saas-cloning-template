@@ -14,8 +14,11 @@
   --bg-pill: #ffffff0d;
   --bg-tag: #ffffff14;
 
-  /* borders */
-  --border-default: lch(8.84% 1.38 272 / 1);
+  /* borders — `default` is tuned to merge with --bg-app so popovers
+     read as edged by the shadow rather than glowing with a brighter
+     border ring (the old LCH 8.84% value was lighter than --bg-elevated
+     and lit up as a bright "white" line against the dark page). */
+  --border-default: #0b0c10;
   --border-subtle: #ffffff14;
   --border-strong: #ffffff26;
 
@@ -57,8 +60,10 @@
   --label-infra: #9b9b9b;
   --label-api: #bc7cf0;
 
-  /* shadows */
-  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.24);
+  /* shadows — popover now compensates for the darker border by
+     adding a slightly deeper drop + a 1px inner highlight that traces
+     the top edge, matching Linear's elevated popovers. */
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   --shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
