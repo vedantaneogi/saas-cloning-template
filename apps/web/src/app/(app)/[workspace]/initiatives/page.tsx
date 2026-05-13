@@ -2,11 +2,16 @@ import Link from "next/link";
 import { Compass } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Avatar } from "@/components/icons";
-import { listInitiatives, type Initiative } from "@/lib/api";
+import { NewProjectButton } from "@/components/new-project-button";
+import { getWorkspace, listInitiatives, listMembers, type Initiative } from "@/lib/api";
 
 export default async function InitiativesPage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
-  const initiatives = await listInitiatives(workspace).catch(() => [] as Initiative[]);
+  const [initiatives, ws, members] = await Promise.all([
+    listInitiatives(workspace).catch(() => [] as Initiative[]),
+    getWorkspace(workspace),
+    listMembers(workspace).catch(() => []),
+  ]);
 
   const buckets: { title: string; rows: Initiative[] }[] = [
     { title: "Active", rows: initiatives.filter((i) => i.status === "active") },
@@ -17,7 +22,18 @@ export default async function InitiativesPage({ params }: { params: Promise<{ wo
 
   return (
     <>
-      <Topbar title="Initiatives" icon={<Compass size={15} />} />
+      <Topbar
+        title="Initiatives"
+        icon={<Compass size={15} />}
+        trailing={
+          <NewProjectButton
+            workspaceSlug={workspace}
+            workspaceName={ws.name}
+            workspaceColor={ws.icon_color}
+            members={members}
+          />
+        }
+      />
       <div className="flex-1 overflow-y-auto">
         {initiatives.length === 0 ? (
           <div className="flex h-64 items-center justify-center text-small text-text-tertiary">

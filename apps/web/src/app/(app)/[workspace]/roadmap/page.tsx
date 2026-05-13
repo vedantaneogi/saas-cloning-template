@@ -3,7 +3,8 @@ import { Map as MapIcon, Compass, Folders, Users as TeamIcon } from "lucide-reac
 import { Topbar } from "@/components/topbar";
 import { ProjectIconBlock } from "@/components/project-icons";
 import { RoadmapFilters } from "@/components/roadmap-filters";
-import { getWorkspace, listInitiatives, listProjects, type Initiative, type Project } from "@/lib/api";
+import { NewProjectButton } from "@/components/new-project-button";
+import { getWorkspace, listInitiatives, listMembers, listProjects, type Initiative, type Project } from "@/lib/api";
 
 export default async function RoadmapPage({
   params,
@@ -18,12 +19,21 @@ export default async function RoadmapPage({
   const teamFilter = sp.team ?? "all";
   const groupBy: "initiative" | "team" = sp.group === "team" ? "team" : "initiative";
 
-  const [initiatives, projectsRaw, ws] = await Promise.all([
+  const [initiatives, projectsRaw, ws, members] = await Promise.all([
     listInitiatives(workspace).catch(() => [] as Initiative[]),
     listProjects(workspace).catch(() => [] as Project[]),
     getWorkspace(workspace).catch(() => null),
+    listMembers(workspace).catch(() => []),
   ]);
   const teams = ws?.teams ?? [];
+  const newProjectBtn = ws ? (
+    <NewProjectButton
+      workspaceSlug={workspace}
+      workspaceName={ws.name}
+      workspaceColor={ws.icon_color}
+      members={members}
+    />
+  ) : null;
 
   const projects = projectsRaw.filter((p) => {
     if (status !== "all" && p.state !== status) return false;
@@ -63,7 +73,7 @@ export default async function RoadmapPage({
   if (dates.length === 0) {
     return (
       <>
-        <Topbar title="Roadmap" icon={<MapIcon size={15} />} />
+        <Topbar title="Roadmap" icon={<MapIcon size={15} />} trailing={newProjectBtn} />
         <RoadmapFilters teams={teams} status={status} team={teamFilter} groupBy={groupBy} />
         <div className="flex h-64 items-center justify-center text-small text-text-tertiary">
           No projects match these filters.
@@ -106,7 +116,7 @@ export default async function RoadmapPage({
 
   return (
     <>
-      <Topbar title="Roadmap" icon={<MapIcon size={15} />} />
+      <Topbar title="Roadmap" icon={<MapIcon size={15} />} trailing={newProjectBtn} />
       <RoadmapFilters teams={teams} status={status} team={teamFilter} groupBy={groupBy} />
       <div className="flex-1 overflow-auto">
         {/* Month header (sticky) */}

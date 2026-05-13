@@ -136,44 +136,66 @@ def run_event(
 
 
 def run_scheduled(db: Session, workspace_id: str) -> dict:
-    """Apply scheduled (stale_in_state) rules across the workspace.
+    """Apply scheduled rules (stale_in_state + due_date_passed) for a workspace.
 
     Returns a summary dict: {applied: N, by_rule: {rule_id: count}}.
     Designed to be invoked by an admin endpoint — no cron in-process.
     """
     rules = (
         db.query(Automation)
-        .filter(Automation.workspace_id == workspace_id, Automation.enabled.is_(True), Automation.trigger == AutomationTrigger.stale_in_state)
+        .filter(
+            Automation.workspace_id == workspace_id,
+            Automation.enabled.is_(True),
+            Automation.trigger.in_([AutomationTrigger.stale_in_state, AutomationTrigger.due_date_passed]),
+        )
         .all()
     )
     summary = {"applied": 0, "by_rule": {}}
     now = datetime.now(timezone.utc)
+    ws_team_ids: list[str] | None = None  # lazy
+
     for rule in rules:
         cfg = _cfg(rule.trigger_config)
-        group = cfg.get("state_group")
-        days = int(cfg.get("days", 14) or 14)
-        if not group:
-            continue
-        try:
-            sg = StateGroup(group)
-        except ValueError:
-            continue
-        threshold = now - timedelta(days=days)
-        q = (
-            db.query(Issue)
-            .join(WorkflowState, Issue.state_id == WorkflowState.id)
-            .filter(WorkflowState.group == sg)
-            .filter(Issue.updated_at <= threshold)
-            .filter(Issue.archived_at.is_(None))
-        )
+
+        if rule.trigger == AutomationTrigger.stale_in_state:
+            group = cfg.get("state_group")
+            days = int(cfg.get("days", 14) or 14)
+            if not group:
+                continue
+            try:
+                sg = StateGroup(group)
+            except ValueError:
+                continue
+            threshold = now - timedelta(days=days)
+            q = (
+                db.query(Issue)
+                .join(WorkflowState, Issue.state_id == WorkflowState.id)
+                .filter(WorkflowState.group == sg)
+                .filter(Issue.updated_at <= threshold)
+                .filter(Issue.archived_at.is_(None))
+            )
+        else:  # due_date_passed
+            grace = int(cfg.get("grace_days", 0) or 0)
+            cutoff = now - timedelta(days=grace)
+            # Only escalate issues that aren't already done/canceled.
+            q = (
+                db.query(Issue)
+                .join(WorkflowState, Issue.state_id == WorkflowState.id)
+                .filter(Issue.due_date.isnot(None))
+                .filter(Issue.due_date < cutoff)
+                .filter(WorkflowState.group.notin_([StateGroup.completed, StateGroup.canceled]))
+                .filter(Issue.archived_at.is_(None))
+            )
+
         if rule.team_id:
             q = q.filter(Issue.team_id == rule.team_id)
         else:
-            # Workspace-wide: limit to issues in teams of this workspace.
-            team_ids = [t.id for t in db.query(Team).filter_by(workspace_id=workspace_id).all()]
-            if not team_ids:
+            if ws_team_ids is None:
+                ws_team_ids = [t.id for t in db.query(Team).filter_by(workspace_id=workspace_id).all()]
+            if not ws_team_ids:
                 continue
-            q = q.filter(Issue.team_id.in_(team_ids))
+            q = q.filter(Issue.team_id.in_(ws_team_ids))
+
         hits = q.all()
         for issue in hits:
             _apply_action(db, rule, issue)

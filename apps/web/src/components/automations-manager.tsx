@@ -19,6 +19,7 @@ const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
   on_label_added: "When a label is added",
   on_cycle_end: "When a cycle ends",
   stale_in_state: "When stale in a state (scheduled)",
+  due_date_passed: "When due date has passed (scheduled)",
 };
 
 const ACTION_LABELS: Record<AutomationAction, string> = {
@@ -52,6 +53,13 @@ const PRESETS: { name: string; trigger: AutomationTrigger; trigger_config: Recor
     trigger_config: {},
     action: "add_comment",
     action_config: { body: "Thanks — your issue has been received." },
+  },
+  {
+    name: "Comment on overdue issues",
+    trigger: "due_date_passed",
+    trigger_config: { grace_days: 0 },
+    action: "add_comment",
+    action_config: { body: "Heads up — this issue is past its due date." },
   },
 ];
 

@@ -732,6 +732,7 @@ class AutomationTrigger(str, enum.Enum):
     on_label_added = "on_label_added"
     on_cycle_end = "on_cycle_end"
     stale_in_state = "stale_in_state"  # scheduled
+    due_date_passed = "due_date_passed"  # scheduled — issue.due_date < now
 
 
 class AutomationAction(str, enum.Enum):
@@ -751,6 +752,7 @@ class Automation(Base):
       on_status_change: {to_state_group: "completed", from_state_group: null}
       on_label_added:   {label_id: "..."}
       stale_in_state:   {state_group: "started", days: 14}
+      due_date_passed:  {grace_days: 0}  // run actions on issues this many days past due
     `action_config`:
       move_to_state:    {state_group: "canceled"}
       assign_to_member: {member_id: "..."}

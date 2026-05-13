@@ -4,7 +4,8 @@ import { Compass, Folders } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Avatar } from "@/components/icons";
 import { ProjectIconBlock } from "@/components/project-icons";
-import { getInitiative, NotFoundError } from "@/lib/api";
+import { NewProjectButton } from "@/components/new-project-button";
+import { getInitiative, getWorkspace, listMembers, NotFoundError } from "@/lib/api";
 
 export default async function InitiativeDetailPage({
   params,
@@ -20,11 +21,26 @@ export default async function InitiativeDetailPage({
     throw e;
   }
 
+  const [ws, members] = await Promise.all([
+    getWorkspace(workspace),
+    listMembers(workspace).catch(() => []),
+  ]);
   const pct = ini.project_count > 0 ? Math.round((ini.completed_project_count / ini.project_count) * 100) : 0;
 
   return (
     <>
-      <Topbar title={ini.name} icon={<Compass size={15} />} />
+      <Topbar
+        title={ini.name}
+        icon={<Compass size={15} />}
+        trailing={
+          <NewProjectButton
+            workspaceSlug={workspace}
+            workspaceName={ws.name}
+            workspaceColor={ws.icon_color}
+            members={members}
+          />
+        }
+      />
       <div className="flex-1 overflow-y-auto">
         <header className="border-b border-border-subtle px-6 py-5">
           <div className="flex items-center gap-3">

@@ -1214,7 +1214,7 @@ export async function deleteTemplate(slug: string, id: string): Promise<void> {
 
 // --- automations -----------------------------------------------------------
 
-export type AutomationTrigger = "on_issue_create" | "on_status_change" | "on_label_added" | "on_cycle_end" | "stale_in_state";
+export type AutomationTrigger = "on_issue_create" | "on_status_change" | "on_label_added" | "on_cycle_end" | "stale_in_state" | "due_date_passed";
 export type AutomationAction = "move_to_state" | "assign_to_member" | "add_label" | "add_comment" | "archive" | "set_priority" | "rotate_assign";
 
 export interface Automation {
