@@ -112,7 +112,7 @@ export function IssueProperties({ workspaceSlug, issue }: { workspaceSlug: strin
 
   return (
     <>
-      <Section title="Properties">
+      <div className="mb-5 space-y-2">
         <Row label="Status">
           <Popover
             trigger={({ toggle }) => (
@@ -288,7 +288,7 @@ export function IssueProperties({ workspaceSlug, issue }: { workspaceSlug: strin
             }}
           />
         </Row>
-      </Section>
+      </div>
 
       <Section title="Project">
         <Popover
