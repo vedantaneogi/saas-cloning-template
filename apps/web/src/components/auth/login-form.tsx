@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { login, logout } from "@/lib/api";
+import { login } from "@/lib/api";
 
 export function LoginForm() {
   const router = useRouter();
@@ -12,20 +12,11 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  // When we arrive from a layout redirect with ?stale=1, the browser still
-  // holds a session cookie that the API has rejected (rotated secret, expired
-  // JWT, etc.). Hit /api/auth/logout once on mount so the response clears the
-  // cookie via Set-Cookie; otherwise the next nav would 401 again.
-  useEffect(() => {
-    if (!stale) return;
-    let cancelled = false;
-    logout().catch(() => {}).finally(() => {
-      if (!cancelled) setNotice("Your session expired — please sign in again.");
-    });
-    return () => { cancelled = true; };
-  }, [stale]);
+  // Middleware already cleared the stale cookie before rendering this page —
+  // we just show a notice. Previously we POSTed /api/auth/logout from a
+  // useEffect, which raced the submit() request and could wipe the
+  // freshly-issued login cookie if logout's response arrived second.
+  const notice = stale ? "Your session expired — please sign in again." : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

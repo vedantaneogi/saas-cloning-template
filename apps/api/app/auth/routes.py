@@ -94,6 +94,23 @@ def _set_cookie(response: Response, token: str, expires: datetime) -> None:
     )
 
 
+def _clear_cookie(response: Response) -> None:
+    """Mirror _set_cookie's attributes so the browser actually evicts the
+    cookie. Starlette's response.delete_cookie omits Secure + SameSite, and
+    some browsers refuse to drop a cookie whose attributes don't match the
+    original — which left users stuck in the stale-cookie loop."""
+    s = get_settings()
+    response.set_cookie(
+        key=s.auth_cookie_name,
+        value="",
+        httponly=True,
+        secure=s.auth_cookie_secure,
+        samesite="lax",
+        max_age=0,
+        path="/",
+    )
+
+
 def _slugify(name: str) -> str:
     out = "".join(c if c.isalnum() else "-" for c in name.lower()).strip("-")
     while "--" in out:
@@ -206,7 +223,7 @@ def login(body: LoginIn, response: Response, db: Session = Depends(get_db)) -> M
 
 @router.post("/logout")
 def logout(response: Response) -> dict[str, bool]:
-    response.delete_cookie(get_settings().auth_cookie_name, path="/")
+    _clear_cookie(response)
     return {"ok": True}
 
 

@@ -9,12 +9,26 @@ export function middleware(req: NextRequest) {
 
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
 
-  // Logged in, but on /login or /signup → bounce home.
-  // EXCEPT when ?stale=1 is set — that means the (app) layout detected an
-  // invalid session (e.g. JWT was signed by a rotated AUTH_SECRET, or its exp
-  // has passed). Without this escape, the cookie sticks around, middleware
-  // bounces to /, layout redirects back to /login, and the user is in a loop.
+  // ?stale=1 means the (app) layout detected an invalid session (rotated
+  // AUTH_SECRET, expired JWT, etc.). Clear the cookie server-side as part of
+  // rendering /login so the browser drops it before the user even sees the
+  // form — doing this in a client useEffect raced the login submit and
+  // sometimes wiped the freshly-issued cookie.
   const stale = req.nextUrl.searchParams.get("stale") === "1";
+  if (stale && session && (pathname === "/login" || pathname === "/signup")) {
+    const res = NextResponse.next();
+    // Match the API's Set-Cookie attributes so every browser drops it.
+    res.cookies.set("lc_session", "", {
+      path: "/",
+      maxAge: 0,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: req.nextUrl.protocol === "https:",
+    });
+    return res;
+  }
+
+  // Logged in and not stale → bounce auth pages home.
   if (session && !stale && (pathname === "/login" || pathname === "/signup")) {
     return NextResponse.redirect(new URL("/", req.url));
   }
