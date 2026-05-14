@@ -70,7 +70,7 @@ export function NewDocButton({ workspaceSlug, projectId }: { workspaceSlug: stri
         <ChevronDown size={10} />
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-[220px] overflow-hidden rounded-md border border-border-default bg-elevated text-small shadow-popover">
+        <div className="absolute right-0 z-40 mt-1 w-[220px] overflow-hidden rounded-md bg-elevated text-small shadow-popover">
           <ul className="py-1">
             <li>
               <button

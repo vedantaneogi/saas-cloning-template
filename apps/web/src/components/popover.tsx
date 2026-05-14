@@ -10,6 +10,34 @@ import {
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 
+// Ordered stack of every open popover's trigger + content elements. Because
+// we portal each popover to document.body, a parent popover cannot detect
+// (via DOM containment) that a click landed inside a *child* popover — the
+// child's content is a sibling, not a descendant. That made the parent treat
+// the child click as "outside" and close itself, collapsing the whole tree
+// (e.g. picking a date inside the issue-modal date picker closed the
+// surrounding More-properties popover).
+//
+// On every mousedown we find the deepest popover whose trigger or content
+// contains the target; only popovers opened *after* that one close. So:
+// - click inside the topmost popover → nothing closes
+// - click inside a parent popover's body → child closes, parent stays
+// - click completely outside → all popovers close
+type PopoverEntry = {
+  trigger: HTMLElement | null;
+  content: HTMLElement | null;
+};
+const popoverStack: PopoverEntry[] = [];
+
+function deepestHitIndex(target: Node): number {
+  for (let i = popoverStack.length - 1; i >= 0; i--) {
+    const p = popoverStack[i];
+    if (p.trigger?.contains(target)) return i;
+    if (p.content?.contains(target)) return i;
+  }
+  return -1;
+}
+
 export function Popover({
   trigger,
   children,
@@ -40,23 +68,39 @@ export function Popover({
 
   useEffect(() => setMounted(true), []);
 
-  // Outside-click + Escape. The popover lives in a portal, so we have to
-  // check BOTH the trigger wrapper AND the popover element when deciding
-  // whether the click was outside.
+  // Outside-click + Escape. Each open popover registers itself in
+  // `popoverStack`; on every mousedown we find the deepest popover that
+  // contains the target and close only the popovers opened after it. That
+  // keeps parent popovers from collapsing when the user interacts with a
+  // nested child popover (which would be portaled outside the parent's DOM).
   useEffect(() => {
     if (!open) return;
+    const entry: PopoverEntry = {
+      trigger: triggerRef.current,
+      content: popRef.current,
+    };
+    popoverStack.push(entry);
     function onDown(e: MouseEvent) {
+      // Refresh content ref — the portaled element mounts after registration.
+      entry.content = popRef.current;
       const target = e.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (popRef.current?.contains(target)) return;
-      setOpen(false);
+      const hitIdx = deepestHitIndex(target);
+      const myIdx = popoverStack.indexOf(entry);
+      // Click landed in a popover opened *before* me (or completely outside
+      // every popover) — I should close. Click landed in me or in a deeper
+      // descendant — stay open.
+      if (myIdx > hitIdx) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      // Escape only closes the topmost popover.
+      if (e.key !== "Escape") return;
+      if (popoverStack[popoverStack.length - 1] === entry) setOpen(false);
     }
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     return () => {
+      const i = popoverStack.indexOf(entry);
+      if (i >= 0) popoverStack.splice(i, 1);
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
     };
@@ -114,7 +158,11 @@ export function Popover({
           <div
             ref={popRef}
             className={clsx(
-              "fixed z-[1000] overflow-hidden rounded-md border border-border-default bg-elevated text-small shadow-popover",
+              // Linear's popovers lift off the page with shadow + bg only —
+              // any literal 1px border ring reads as a bright outline against
+              // dark surfaces, so drop the border and let shadow-popover do
+              // the edge work.
+              "fixed z-[1000] overflow-hidden rounded-md bg-elevated text-small shadow-popover",
               // hide until measured so we don't flash at (0,0) before the
               // layout effect resolves a real position
               pos == null && "invisible",

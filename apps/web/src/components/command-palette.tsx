@@ -184,7 +184,7 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
       onClick={() => setOpen(false)}
     >
       <div
-        className="w-[640px] max-w-[90vw] overflow-hidden rounded-lg border border-border-default bg-elevated shadow-popover"
+        className="w-[640px] max-w-[90vw] overflow-hidden rounded-lg bg-elevated shadow-popover"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-border-subtle px-3.5 py-2.5">

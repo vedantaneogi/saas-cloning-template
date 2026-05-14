@@ -68,7 +68,7 @@ export function ShortcutCheatsheet() {
         if (e.target === e.currentTarget) setOpen(false);
       }}
     >
-      <div className="w-[560px] max-w-[92vw] overflow-hidden rounded-lg border border-border-default bg-elevated shadow-popover">
+      <div className="w-[560px] max-w-[92vw] overflow-hidden rounded-lg bg-elevated shadow-popover">
         <header className="flex items-center justify-between border-b border-border-subtle px-4 py-2.5">
           <h2 className="text-small font-semibold text-text-primary">Keyboard shortcuts</h2>
           <button onClick={() => setOpen(false)} className="text-text-tertiary hover:text-text-secondary" aria-label="Close">

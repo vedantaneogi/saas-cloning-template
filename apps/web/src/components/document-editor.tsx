@@ -138,7 +138,7 @@ export function DocumentEditor({
                 {icon}
               </button>
               {iconPickerOpen && (
-                <div className="absolute left-0 top-full z-30 mt-1 grid grid-cols-5 gap-1 rounded-md border border-border-default bg-elevated p-1.5 shadow-popover">
+                <div className="absolute left-0 top-full z-30 mt-1 grid grid-cols-5 gap-1 rounded-md bg-elevated p-1.5 shadow-popover">
                   {ICON_CHOICES.map((c) => (
                     <button
                       key={c}
@@ -259,7 +259,7 @@ function SlashMenu({ filter, onPick, onClose }: { filter: string; onPick: (inser
   const matches = SLASH_ITEMS.filter((it) => !filter || it.label.toLowerCase().includes(filter) || it.key.includes(filter));
   if (matches.length === 0) return null;
   return (
-    <div className="absolute left-0 top-6 z-30 w-[260px] rounded-md border border-border-default bg-elevated p-1 shadow-popover">
+    <div className="absolute left-0 top-6 z-30 w-[260px] rounded-md bg-elevated p-1 shadow-popover">
       <ul>
         {matches.map((it) => (
           <li key={it.key}>
