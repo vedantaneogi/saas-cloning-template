@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 
 export function Popover({
@@ -23,15 +30,26 @@ export function Popover({
   placement?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
-  const [drop, setDrop] = useState<"down" | "up">(placement ?? "down");
-  const ref = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+  // Fixed-position coords resolved from the trigger's bounding box. We portal
+  // the popover to document.body so it escapes any modal / overflow:hidden /
+  // stacking-context that would otherwise clip or hide it.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => setMounted(true), []);
+
+  // Outside-click + Escape. The popover lives in a portal, so we have to
+  // check BOTH the trigger wrapper AND the popover element when deciding
+  // whether the click was outside.
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target)) return;
+      if (popRef.current?.contains(target)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -44,42 +62,69 @@ export function Popover({
     };
   }, [open]);
 
-  // Flip up when there's not enough room below the trigger, OR when the
-  // caller has forced a direction via `placement`.
+  // Position the popover in viewport coords (`position: fixed`). Recomputes
+  // on open, on scroll (any ancestor), and on resize. We anchor the popover
+  // by its top-left when dropping down, top-right when align="end".
   useLayoutEffect(() => {
     if (!open) return;
-    if (placement) {
-      setDrop(placement);
-      return;
+    function recompute() {
+      const t = triggerRef.current;
+      const p = popRef.current;
+      if (!t || !p) return;
+      const tr = t.getBoundingClientRect();
+      const ph = p.offsetHeight;
+      const pw = p.offsetWidth;
+      // auto-flip vertically unless caller pinned the placement
+      const spaceBelow = window.innerHeight - tr.bottom;
+      const spaceAbove = tr.top;
+      const drop =
+        placement ??
+        (spaceBelow < ph + 16 && spaceAbove > spaceBelow ? "up" : "down");
+
+      let top = drop === "down" ? tr.bottom + 4 : tr.top - ph - 4;
+      let left = align === "end" ? tr.right - pw : tr.left;
+      // keep inside the viewport with a small gutter
+      const gutter = 8;
+      if (left < gutter) left = gutter;
+      if (left + pw > window.innerWidth - gutter) {
+        left = window.innerWidth - pw - gutter;
+      }
+      if (top < gutter) top = gutter;
+      if (top + ph > window.innerHeight - gutter) {
+        top = window.innerHeight - ph - gutter;
+      }
+      setPos({ top, left });
     }
-    const t = triggerRef.current;
-    const p = popRef.current;
-    if (!t || !p) return;
-    const tr = t.getBoundingClientRect();
-    const ph = p.offsetHeight;
-    const spaceBelow = window.innerHeight - tr.bottom;
-    const spaceAbove = tr.top;
-    setDrop(spaceBelow < ph + 16 && spaceAbove > spaceBelow ? "up" : "down");
-  }, [open, placement]);
+    recompute();
+    window.addEventListener("scroll", recompute, true);
+    window.addEventListener("resize", recompute);
+    return () => {
+      window.removeEventListener("scroll", recompute, true);
+      window.removeEventListener("resize", recompute);
+    };
+  }, [open, align, placement]);
 
   return (
-    <div className="relative inline-block" ref={ref}>
+    <div className="relative inline-block">
       <div ref={triggerRef}>
         {trigger({ open, toggle: () => setOpen((o) => !o), close: () => setOpen(false) })}
       </div>
-      {open && (
-        <div
-          ref={popRef}
-          className={clsx(
-            "absolute z-40 overflow-hidden rounded-md border border-border-default bg-elevated text-small shadow-popover",
-            align === "end" ? "right-0" : "left-0",
-            drop === "up" ? "bottom-full mb-1" : "mt-1"
-          )}
-          style={{ width }}
-        >
-          {children({ close: () => setOpen(false) })}
-        </div>
-      )}
+      {open && mounted &&
+        createPortal(
+          <div
+            ref={popRef}
+            className={clsx(
+              "fixed z-[1000] overflow-hidden rounded-md border border-border-default bg-elevated text-small shadow-popover",
+              // hide until measured so we don't flash at (0,0) before the
+              // layout effect resolves a real position
+              pos == null && "invisible",
+            )}
+            style={{ width, top: pos?.top ?? 0, left: pos?.left ?? 0 }}
+          >
+            {children({ close: () => setOpen(false) })}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
