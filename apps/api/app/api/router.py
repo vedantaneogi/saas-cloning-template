@@ -136,7 +136,11 @@ router = APIRouter(prefix="/api")
 # --- helpers ------------------------------------------------------------
 
 def _issue_query(db: Session) -> "selectinload":  # type: ignore[name-defined]
-    """Common eager-loads so the serializer doesn't N+1."""
+    """Common eager-loads so the serializer doesn't N+1.
+
+    Includes subscribers + outgoing_relations + links so the list-side
+    filter funnel on /my issues can answer Subscribers / Relations /
+    Links dimensions without round-tripping detail."""
     return (
         selectinload(Issue.state),
         selectinload(Issue.team),
@@ -144,6 +148,9 @@ def _issue_query(db: Session) -> "selectinload":  # type: ignore[name-defined]
         selectinload(Issue.labels),
         selectinload(Issue.parent),
         selectinload(Issue.cycle),
+        selectinload(Issue.subscribers),
+        selectinload(Issue.outgoing_relations),
+        selectinload(Issue.links),
     )
 
 
@@ -175,6 +182,12 @@ def _issue_dict(issue: Issue, child_counts: dict[str, tuple[int, int]] | None = 
         "archived_at": issue.archived_at,
         "child_count": cc[0] if cc else 0,
         "child_done_count": cc[1] if cc else 0,
+        # Lightweight metadata for the my-issues filter funnel — keeps
+        # the list endpoint a single round trip instead of forcing the
+        # client to hit issue detail for each row.
+        "subscriber_ids": [m.id for m in (issue.subscribers or [])],
+        "has_relations": bool(issue.outgoing_relations) if hasattr(issue, "outgoing_relations") else False,
+        "link_count": len(issue.links) if getattr(issue, "links", None) is not None else 0,
     }
 
 
@@ -3177,6 +3190,7 @@ def _search_issue(i: Issue) -> dict:
         "title": i.title,
         "priority": i.priority,
         "state_group": i.state.group.value if i.state else "started",
+        "state_name": i.state.name if i.state else "",
         "team_key": i.team.key if i.team else "",
     }
 

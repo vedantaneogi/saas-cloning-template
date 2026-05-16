@@ -45,6 +45,7 @@ export function Popover({
   width,
   placement,
   triggerWrapperClassName,
+  surface = "default",
 }: {
   trigger: (props: { open: boolean; toggle: () => void; close: () => void }) => ReactNode;
   children: (api: { close: () => void }) => ReactNode;
@@ -64,6 +65,12 @@ export function Popover({
    * picker inside a form row.
    */
   triggerWrapperClassName?: string;
+  /**
+   * Override the popover content surface (background / blur / border).
+   * Defaults to the opaque elevated panel. Pass `"glass"` to render the
+   * frosted-glass surface Linear uses for display-option panels.
+   */
+  surface?: "default" | "glass";
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -176,7 +183,15 @@ export function Popover({
               // popover triggers inside it (e.g. Customize sidebar) fire, the
               // dropdown is a *sibling* of the modal — without a higher z-index
               // the dropdown gets buried under the backdrop.
-              "fixed z-[1200] overflow-hidden rounded-md bg-elevated text-small shadow-popover",
+              "fixed z-[1200] overflow-hidden text-small shadow-popover",
+              surface === "glass"
+                ? // Frosted-glass surface for the display-options-style
+                  // panels (List/Board, toggles, pills). The translucent
+                  // tint over a heavy blur is what makes the page below
+                  // bleed through; the hairline outline pulls the panel
+                  // off the surface without reading as a hard border.
+                  "rounded-xl border border-white/10 bg-elevated/70 backdrop-blur-xl backdrop-saturate-150"
+                : "rounded-md bg-elevated",
               // hide until measured so we don't flash at (0,0) before the
               // layout effect resolves a real position
               pos == null && "invisible",

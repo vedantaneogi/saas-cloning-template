@@ -3,20 +3,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  AtSign,
   BarChart3,
+  Bot,
   Box,
+  Calendar,
   CheckSquare,
   ChevronDown,
   ChevronRight,
   Circle,
+  CornerUpRight,
+  FileText,
   Filter,
   Layers,
   LayoutList,
+  Link as LinkIcon,
+  Lock,
+  PanelRight,
+  ScrollText,
   SlidersHorizontal,
   Sparkles,
   Tag,
   Target,
   User as UserIcon,
+  Users,
 } from "lucide-react";
 import clsx from "clsx";
 import { Popover } from "@/components/popover";
@@ -29,9 +39,11 @@ import {
 } from "@/lib/my-issues-prefs";
 import {
   getWorkspace,
+  listMembers,
   listProjects,
   listWorkspaceLabels,
   type Label,
+  type Member,
   type Project,
 } from "@/lib/api";
 
@@ -51,11 +63,13 @@ export function MyIssuesControls({ workspaceSlug }: { workspaceSlug: string }) {
   // the page's initial render lean.
   const [labels, setLabels] = useState<Label[] | null>(null);
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [members, setMembers] = useState<Member[] | null>(null);
   const [cycles, setCycles] = useState<{ id: string; name: string; team_key: string }[] | null>(null);
 
   function ensurePickers() {
     if (labels === null) listWorkspaceLabels(workspaceSlug).then(setLabels).catch(() => setLabels([]));
     if (projects === null) listProjects(workspaceSlug).then(setProjects).catch(() => setProjects([]));
+    if (members === null) listMembers(workspaceSlug).then(setMembers).catch(() => setMembers([]));
     if (cycles === null) {
       // Build a flat cycle list by fetching active+upcoming per team.
       getWorkspace(workspaceSlug)
@@ -76,8 +90,14 @@ export function MyIssuesControls({ workspaceSlug }: { workspaceSlug: string }) {
     }
   }
 
+  // Each trailing button is a pill-outlined chip to match Linear — same
+  // outline weight + radius as the Assigned / Created / Subscribed /
+  // Activity tabs so the whole row reads as one consistent control bar.
+  const chipCls =
+    "relative flex h-7 w-7 items-center justify-center rounded-pill border border-border-subtle text-text-tertiary transition-colors hover:bg-row-hover hover:text-text-secondary";
+
   return (
-    <span className="flex items-center gap-0.5">
+    <span className="flex items-center gap-1.5">
       <Popover
         align="end"
         width={280}
@@ -87,10 +107,7 @@ export function MyIssuesControls({ workspaceSlug }: { workspaceSlug: string }) {
             onClick={() => { ensurePickers(); toggle(); }}
             aria-label="Filter"
             title="Filter"
-            className={clsx(
-              "relative flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
-              open && "bg-row-hover text-text-secondary",
-            )}
+            className={clsx(chipCls, open && "border-border-strong bg-row-hover text-text-secondary")}
           >
             <Filter size={13} />
             {activeFilterCount > 0 && (
@@ -107,26 +124,26 @@ export function MyIssuesControls({ workspaceSlug }: { workspaceSlug: string }) {
             toggleInList={toggleInList}
             clearFilters={clearFilters}
             close={close}
+            update={update}
             labels={labels ?? []}
             projects={projects ?? []}
             cycles={cycles ?? []}
+            members={members ?? []}
           />
         )}
       </Popover>
 
       <Popover
         align="end"
-        width={340}
+        width={360}
+        surface="glass"
         trigger={({ toggle, open }) => (
           <button
             type="button"
             onClick={toggle}
             aria-label="Display options"
             title="Display options"
-            className={clsx(
-              "flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
-              open && "bg-row-hover text-text-secondary",
-            )}
+            className={clsx(chipCls, open && "border-border-strong bg-row-hover text-text-secondary")}
           >
             <SlidersHorizontal size={13} />
           </button>
@@ -134,6 +151,23 @@ export function MyIssuesControls({ workspaceSlug }: { workspaceSlug: string }) {
       >
         {() => <DisplayMenu prefs={prefs} update={update} />}
       </Popover>
+
+      {/*
+        Third button — toggles the right-side insights panel (Labels /
+        Priority / Projects / Teams breakdowns of the currently visible
+        issue list). No popover; just flips a pref the MyIssuesBody
+        reads to mount the side rail.
+      */}
+      <button
+        type="button"
+        onClick={() => update({ insights_open: !prefs.insights_open })}
+        aria-label="Toggle insights panel"
+        aria-pressed={prefs.insights_open}
+        title="Insights panel"
+        className={clsx(chipCls, prefs.insights_open && "border-border-strong bg-row-hover text-text-secondary")}
+      >
+        <PanelRight size={13} />
+      </button>
     </span>
   );
 }
@@ -161,41 +195,33 @@ const PRIORITY_OPTIONS = [
 function FilterMenu({
   prefs,
   toggleInList,
+  update,
   clearFilters,
   close,
   labels,
   projects,
   cycles,
+  members,
 }: {
   prefs: MyIssuesPrefs;
   toggleInList: ReturnType<typeof useMyIssuesPrefs>["toggleInList"];
+  update: (patch: Partial<MyIssuesPrefs>) => void;
   clearFilters: () => void;
   close: () => void;
   labels: Label[];
   projects: Project[];
   cycles: { id: string; name: string; team_key: string }[];
+  members: Member[];
 }) {
   const [search, setSearch] = useState("");
 
+  // Filter row catalog. Each row is either:
+  //   - real:        wired to a prefs field, mutations land via toggleInList / update
+  //   - decorative:  shown to match Linear's surface area but disabled because the
+  //                  underlying data doesn't exist in this clone (AI/Agent/etc.)
   const rows: FilterRowDef[] = [
-    {
-      key: "ai_filter",
-      label: "AI filter",
-      icon: <Sparkles size={13} />,
-      disabled: true,
-      options: [],
-      selected: [],
-      onToggle: () => undefined,
-    },
-    {
-      key: "advanced_filter",
-      label: "Advanced filter",
-      icon: <Filter size={13} />,
-      disabled: true,
-      options: [],
-      selected: [],
-      onToggle: () => undefined,
-    },
+    { key: "ai_filter", label: "AI filter", icon: <Sparkles size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    { key: "advanced_filter", label: "Advanced filter", icon: <Filter size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
     {
       key: "status_groups",
       label: "Status",
@@ -203,6 +229,31 @@ function FilterMenu({
       options: STATUS_GROUP_OPTIONS.map((s) => ({ value: s.value, label: s.label })),
       selected: prefs.status_groups,
       onToggle: (v) => toggleInList("status_groups", v as never),
+    },
+    {
+      key: "assignee_ids",
+      label: "Assignee",
+      icon: <UserIcon size={13} />,
+      options: members.map((m) => ({ value: m.id, label: m.name })),
+      selected: prefs.assignee_ids,
+      onToggle: (v) => toggleInList("assignee_ids", v as never),
+    },
+    {
+      key: "agent",
+      label: "Agent",
+      icon: <Bot size={13} />,
+      disabled: true,
+      options: [],
+      selected: [],
+      onToggle: () => undefined,
+    },
+    {
+      key: "creator_ids",
+      label: "Creator",
+      icon: <AtSign size={13} />,
+      options: members.map((m) => ({ value: m.id, label: m.name })),
+      selected: prefs.creator_ids,
+      onToggle: (v) => toggleInList("creator_ids", v as never),
     },
     {
       key: "priorities",
@@ -221,6 +272,42 @@ function FilterMenu({
       onToggle: (v) => toggleInList("label_ids", v as never),
     },
     {
+      key: "relations_filter",
+      label: "Relations",
+      icon: <CornerUpRight size={13} />,
+      kind: "single",
+      options: [
+        { value: "any", label: "Any" },
+        { value: "with_relations", label: "Has relations" },
+        { value: "no_relations", label: "No relations" },
+      ],
+      selected: [prefs.relations_filter],
+      onToggle: (v) => update({ relations_filter: v as MyIssuesPrefs["relations_filter"] }),
+    },
+    {
+      key: "suggested_label",
+      label: "Suggested label",
+      icon: <Sparkles size={13} />,
+      disabled: true,
+      options: [],
+      selected: [],
+      onToggle: () => undefined,
+    },
+    {
+      key: "date_filter",
+      label: "Dates",
+      icon: <Calendar size={13} />,
+      kind: "single",
+      options: [
+        { value: "any", label: "Any" },
+        { value: "due", label: "Has due date" },
+        { value: "no_due", label: "No due date" },
+        { value: "overdue", label: "Overdue" },
+      ],
+      selected: [prefs.date_filter],
+      onToggle: (v) => update({ date_filter: v as MyIssuesPrefs["date_filter"] }),
+    },
+    {
       key: "project_ids",
       label: "Project",
       icon: <Box size={13} />,
@@ -229,12 +316,80 @@ function FilterMenu({
       onToggle: (v) => toggleInList("project_ids", v as never),
     },
     {
+      key: "project_properties",
+      label: "Project properties",
+      icon: <Box size={13} />,
+      disabled: true,
+      options: [],
+      selected: [],
+      onToggle: () => undefined,
+    },
+    {
       key: "cycle_ids",
       label: "Cycle",
       icon: <Target size={13} />,
       options: cycles.map((c) => ({ value: c.id, label: c.name })),
       selected: prefs.cycle_ids,
       onToggle: (v) => toggleInList("cycle_ids", v as never),
+    },
+    {
+      key: "added_to_cycle",
+      label: "Added to cycle",
+      icon: <Target size={13} />,
+      disabled: true,
+      options: [],
+      selected: [],
+      onToggle: () => undefined,
+    },
+    {
+      key: "subscriber_ids",
+      label: "Subscribers",
+      icon: <Users size={13} />,
+      options: members.map((m) => ({ value: m.id, label: m.name })),
+      selected: prefs.subscriber_ids,
+      onToggle: (v) => toggleInList("subscriber_ids", v as never),
+    },
+    {
+      key: "auto_closed",
+      label: "Auto-closed",
+      icon: <Lock size={13} />,
+      disabled: true,
+      options: [],
+      selected: [],
+      onToggle: () => undefined,
+    },
+    {
+      key: "search_query",
+      label: "Content",
+      icon: <ScrollText size={13} />,
+      kind: "search",
+      searchValue: prefs.search_query,
+      onSearchChange: (v) => update({ search_query: v }),
+      options: [],
+      selected: prefs.search_query.trim() ? [prefs.search_query] : [],
+      onToggle: () => undefined,
+    },
+    {
+      key: "links_filter",
+      label: "Links",
+      icon: <LinkIcon size={13} />,
+      kind: "single",
+      options: [
+        { value: "any", label: "Any" },
+        { value: "with_links", label: "Has links" },
+        { value: "no_links", label: "No links" },
+      ],
+      selected: [prefs.links_filter],
+      onToggle: (v) => update({ links_filter: v as MyIssuesPrefs["links_filter"] }),
+    },
+    {
+      key: "template",
+      label: "Template",
+      icon: <FileText size={13} />,
+      disabled: true,
+      options: [],
+      selected: [],
+      onToggle: () => undefined,
     },
   ];
 
@@ -289,6 +444,17 @@ interface FilterRowDef {
   selected: string[];
   onToggle: (value: string) => void;
   disabled?: boolean;
+  /**
+   * "list" (default) = multi-select checkboxes, with a free-text search
+   * input at the top of the submenu. "single" = radio-style picker
+   * (Dates / Relations / Links — only one window applies at a time).
+   * "search" = no options, just a single text input the user types into
+   * (Content filter).
+   */
+  kind?: "list" | "single" | "search";
+  /** For kind="search" only — controlled input value. */
+  searchValue?: string;
+  onSearchChange?: (v: string) => void;
 }
 
 /**
@@ -364,6 +530,22 @@ function FilterRow({ row }: { row: FilterRowDef }) {
     );
   }
 
+  const kind = row.kind ?? "list";
+
+  // Active-count chip shown on the row spine. "list" multi-selects show
+  // the number of picks; "single" hides "any" (the default no-op state)
+  // but shows the active value's label so the row reads as set; "search"
+  // shows a dot when the text isn't empty.
+  let trailingHint: React.ReactNode = null;
+  if (kind === "list" && row.selected.length > 0) {
+    trailingHint = <span className="text-mini text-text-tertiary">{row.selected.length}</span>;
+  } else if (kind === "single" && row.selected[0] && row.selected[0] !== "any") {
+    const lbl = row.options.find((o) => o.value === row.selected[0])?.label;
+    if (lbl) trailingHint = <span className="text-mini text-text-tertiary">{lbl}</span>;
+  } else if (kind === "search" && (row.searchValue ?? "").trim().length > 0) {
+    trailingHint = <span className="inline-block h-1.5 w-1.5 rounded-pill bg-accent" />;
+  }
+
   return (
     <>
       <button
@@ -376,9 +558,7 @@ function FilterRow({ row }: { row: FilterRowDef }) {
       >
         <span className="text-text-tertiary">{row.icon}</span>
         <span className="flex-1">{row.label}</span>
-        {row.selected.length > 0 && (
-          <span className="text-mini text-text-tertiary">{row.selected.length}</span>
-        )}
+        {trailingHint}
         <ChevronRight size={11} className="text-text-tertiary" />
       </button>
       {open && mounted && createPortal(
@@ -393,46 +573,89 @@ function FilterRow({ row }: { row: FilterRowDef }) {
           )}
           style={{ top: pos?.top ?? 0, left: pos?.left ?? 0 }}
         >
-          <div className="px-2.5 py-1">
-            <input
-              autoFocus
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter..."
-              className="w-full bg-transparent py-1 text-small text-text-primary placeholder:text-text-quaternary focus:outline-none"
-            />
-          </div>
-          <hr className="border-border-subtle" />
-          <div className="max-h-72 overflow-y-auto py-1">
-            {filteredOptions.length === 0 && (
-              <div className="px-3 py-2 text-mini text-text-tertiary">No matches.</div>
-            )}
-            {filteredOptions.map((opt) => {
-              const checked = row.selected.includes(opt.value);
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); row.onToggle(opt.value); }}
-                  className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
-                >
-                  <span className={clsx(
-                    "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
-                    checked ? "border-accent bg-accent" : "border-border-strong bg-input",
-                  )}>
-                    {checked && <CheckSvg />}
-                  </span>
-                  {opt.color && (
-                    <span
-                      className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                      style={{ background: opt.color }}
-                    />
-                  )}
-                  <span className="flex-1 truncate">{opt.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {kind === "list" && (
+            <>
+              <div className="px-2.5 py-1">
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter..."
+                  className="w-full bg-transparent py-1 text-small text-text-primary placeholder:text-text-quaternary focus:outline-none"
+                />
+              </div>
+              <hr className="border-border-subtle" />
+              <div className="max-h-72 overflow-y-auto py-1">
+                {filteredOptions.length === 0 && (
+                  <div className="px-3 py-2 text-mini text-text-tertiary">No matches.</div>
+                )}
+                {filteredOptions.map((opt) => {
+                  const checked = row.selected.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); row.onToggle(opt.value); }}
+                      className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
+                    >
+                      <span className={clsx(
+                        "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                        checked ? "border-accent bg-accent" : "border-border-strong bg-input",
+                      )}>
+                        {checked && <CheckSvg />}
+                      </span>
+                      {opt.color && (
+                        <span
+                          className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                          style={{ background: opt.color }}
+                        />
+                      )}
+                      <span className="flex-1 truncate">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {kind === "single" && (
+            <div className="max-h-72 overflow-y-auto py-1">
+              {row.options.map((opt) => {
+                const active = row.selected[0] === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); row.onToggle(opt.value); }}
+                    className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
+                  >
+                    <span className={clsx(
+                      "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-pill border",
+                      active ? "border-accent" : "border-border-strong",
+                    )}>
+                      {active && <span className="h-1.5 w-1.5 rounded-pill bg-accent" />}
+                    </span>
+                    <span className="flex-1 truncate">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {kind === "search" && (
+            <div className="px-2.5 py-2">
+              <input
+                autoFocus
+                value={row.searchValue ?? ""}
+                onChange={(e) => row.onSearchChange?.(e.target.value)}
+                placeholder="Search content..."
+                className="w-full rounded-md bg-input px-2 py-1.5 text-small text-text-primary placeholder:text-text-quaternary focus:outline-none"
+              />
+              <p className="px-1 pt-2 text-mini text-text-tertiary">
+                Matches issue title or description.
+              </p>
+            </div>
+          )}
         </div>,
         document.body,
       )}
@@ -507,71 +730,79 @@ function DisplayMenu({
   update: (patch: Partial<MyIssuesPrefs>) => void;
 }) {
   return (
-    <div className="py-2">
-      <div className="px-3 pb-2 pt-0.5">
-        <div className="flex items-center rounded-md bg-input p-0.5">
+    <div className="px-2 py-2">
+      <div className="px-2 pb-3 pt-1">
+        {/* List/Board segmented control. Larger inner pad so the active
+            tab reads as a substantial chip — the popover screenshot has
+            the segments occupying most of the row width. */}
+        <div className="flex items-center gap-1 rounded-md bg-input/60 p-1">
           <ViewTab active={prefs.view === "list"} onClick={() => update({ view: "list" })}>
-            <LayoutList size={12} className="mr-1.5" /> List
+            <LayoutList size={13} className="mr-2" /> List
           </ViewTab>
           <ViewTab active={prefs.view === "board"} onClick={() => update({ view: "board" })}>
-            <Layers size={12} className="mr-1.5" /> Board
+            <Layers size={13} className="mr-2" /> Board
           </ViewTab>
         </div>
       </div>
 
-      <PickerRow label="Grouping">
-        <DropdownPicker
-          value={prefs.grouping}
-          options={GROUPING_OPTIONS}
-          onChange={(v) => update({ grouping: v })}
+      <div className="space-y-1 px-1 pb-2">
+        <PickerRow label="Grouping">
+          <DropdownPicker
+            value={prefs.grouping}
+            options={GROUPING_OPTIONS}
+            onChange={(v) => update({ grouping: v })}
+          />
+        </PickerRow>
+        <PickerRow label="Sub-grouping">
+          <DropdownPicker
+            value={prefs.sub_grouping}
+            options={GROUPING_OPTIONS}
+            onChange={(v) => update({ sub_grouping: v })}
+          />
+        </PickerRow>
+        <PickerRow label="Ordering">
+          <DropdownPicker
+            value={prefs.ordering}
+            options={ORDERING_OPTIONS}
+            onChange={(v) => update({ ordering: v })}
+          />
+        </PickerRow>
+        <Toggle
+          label="Order completed by recency"
+          value={prefs.order_completed_by_recency}
+          onChange={(v) => update({ order_completed_by_recency: v })}
         />
-      </PickerRow>
-      <PickerRow label="Sub-grouping">
-        <DropdownPicker
-          value={prefs.sub_grouping}
-          options={GROUPING_OPTIONS}
-          onChange={(v) => update({ sub_grouping: v })}
+      </div>
+
+      <hr className="mx-1 my-2 border-white/5" />
+
+      <div className="space-y-1 px-1 pb-2">
+        <PickerRow label="Completed issues">
+          <DropdownPicker
+            value={prefs.completed_window}
+            options={COMPLETED_WINDOW_OPTIONS}
+            onChange={(v) => update({ completed_window: v })}
+          />
+        </PickerRow>
+        <Toggle
+          label="Show sub-issues"
+          value={prefs.show_sub_issues}
+          onChange={(v) => update({ show_sub_issues: v })}
         />
-      </PickerRow>
-      <PickerRow label="Ordering">
-        <DropdownPicker
-          value={prefs.ordering}
-          options={ORDERING_OPTIONS}
-          onChange={(v) => update({ ordering: v })}
+      </div>
+
+      <hr className="mx-1 my-2 border-white/5" />
+
+      <div className="px-3 pb-2 pt-1 text-small font-semibold text-text-primary">List options</div>
+      <div className="px-1 pb-2">
+        <Toggle
+          label="Nested sub-issues"
+          value={prefs.nested_sub_issues}
+          onChange={(v) => update({ nested_sub_issues: v })}
         />
-      </PickerRow>
-
-      <Toggle
-        label="Order completed by recency"
-        value={prefs.order_completed_by_recency}
-        onChange={(v) => update({ order_completed_by_recency: v })}
-      />
-
-      <hr className="my-1 border-border-subtle" />
-
-      <PickerRow label="Completed issues">
-        <DropdownPicker
-          value={prefs.completed_window}
-          options={COMPLETED_WINDOW_OPTIONS}
-          onChange={(v) => update({ completed_window: v })}
-        />
-      </PickerRow>
-      <Toggle
-        label="Show sub-issues"
-        value={prefs.show_sub_issues}
-        onChange={(v) => update({ show_sub_issues: v })}
-      />
-
-      <hr className="my-1 border-border-subtle" />
-
-      <div className="px-3 pb-1 pt-0.5 text-small font-medium text-text-primary">List options</div>
-      <Toggle
-        label="Nested sub-issues"
-        value={prefs.nested_sub_issues}
-        onChange={(v) => update({ nested_sub_issues: v })}
-      />
-      <div className="px-3 pb-1 pt-1 text-small text-text-secondary">Display properties</div>
-      <div className="flex flex-wrap gap-1.5 px-3 pb-2 pt-1">
+      </div>
+      <div className="px-3 pb-2 text-small text-text-secondary">Display properties</div>
+      <div className="flex flex-wrap gap-2 px-3 pb-3 pt-1">
         {DISPLAY_PROPS.map((p) => {
           const active = Boolean(prefs[p.key]);
           return (
@@ -580,10 +811,10 @@ function DisplayMenu({
               type="button"
               onClick={() => update({ [p.key]: !active } as Partial<MyIssuesPrefs>)}
               className={clsx(
-                "rounded-pill px-2 py-0.5 text-mini",
+                "rounded-pill px-2.5 py-1 text-mini transition-colors",
                 active
-                  ? "bg-row-selected text-text-primary"
-                  : "bg-pill text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
+                  ? "bg-white/15 text-text-primary"
+                  : "bg-white/[0.04] text-text-tertiary hover:bg-white/10 hover:text-text-secondary",
               )}
             >
               {p.label}
@@ -609,7 +840,7 @@ function ViewTab({
       type="button"
       onClick={onClick}
       className={clsx(
-        "flex flex-1 items-center justify-center rounded-md px-2 py-1 text-small transition-colors",
+        "flex flex-1 items-center justify-center rounded-md px-3 py-2 text-small font-medium transition-colors",
         active
           ? "bg-elevated text-text-primary shadow-button"
           : "text-text-secondary hover:text-text-primary",
@@ -628,7 +859,7 @@ function PickerRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between px-3 py-1">
+    <div className="flex items-center justify-between px-2 py-1.5">
       <span className="text-small text-text-secondary">{label}</span>
       {children}
     </div>
@@ -648,19 +879,19 @@ function Toggle({
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className="flex w-full items-center justify-between px-3 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
+      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-small text-text-secondary hover:bg-white/5"
     >
       <span>{label}</span>
       <span
         className={clsx(
-          "relative inline-flex h-[14px] w-[24px] shrink-0 items-center rounded-pill transition-colors",
-          value ? "bg-accent" : "bg-input",
+          "relative inline-flex h-[16px] w-[28px] shrink-0 items-center rounded-pill transition-colors",
+          value ? "bg-accent" : "bg-white/15",
         )}
       >
         <span
           className={clsx(
-            "absolute h-[10px] w-[10px] rounded-pill bg-white shadow-sm transition-transform",
-            value ? "translate-x-[12px]" : "translate-x-[2px]",
+            "absolute h-[12px] w-[12px] rounded-pill bg-white shadow-sm transition-transform",
+            value ? "translate-x-[14px]" : "translate-x-[2px]",
           )}
         />
       </span>
@@ -687,8 +918,8 @@ function DropdownPicker<T extends string>({
           type="button"
           onClick={toggle}
           className={clsx(
-            "flex items-center gap-1 rounded-md bg-input px-2 py-0.5 text-mini text-text-secondary hover:text-text-primary",
-            open && "bg-row-hover text-text-primary",
+            "flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-1 text-mini text-text-secondary hover:bg-white/10 hover:text-text-primary",
+            open && "bg-white/10 text-text-primary",
           )}
         >
           {current}

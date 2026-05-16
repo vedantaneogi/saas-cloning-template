@@ -129,6 +129,11 @@ export interface Issue {
   archived_at: string | null;
   child_count: number;
   child_done_count: number;
+  // Filter-funnel metadata surfaced by `_issue_dict` so the my-issues
+  // controls don't need a per-row detail fetch.
+  subscriber_ids?: string[];
+  has_relations?: boolean;
+  link_count?: number;
 }
 
 export interface IssueDetail extends Issue {
@@ -963,6 +968,7 @@ export interface SearchIssue {
   title: string;
   priority: 0 | 1 | 2 | 3 | 4;
   state_group: StateGroup;
+  state_name: string;
   team_key: string;
 }
 export interface SearchProject {

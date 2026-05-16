@@ -6,14 +6,17 @@ import { Topbar } from "@/components/topbar";
 import { MyIssuesBody } from "@/components/my-issues-body";
 import { MyIssuesControls } from "@/components/my-issues-controls";
 import {
+  getWorkspace,
   listMembers,
   listProjects,
+  listWorkspaceLabels,
   myIssues,
-  myIssueCounts,
   NotFoundError,
   type Issue,
+  type Label,
   type Member,
   type Project,
+  type Team,
 } from "@/lib/api";
 
 const SCOPES = ["assigned", "created", "subscribed", "activity"] as const;
@@ -23,16 +26,29 @@ export default async function MyIssuesPage({ params }: { params: Promise<{ works
   if (!(SCOPES as readonly string[]).includes(scope)) notFound();
 
   let issues: Issue[];
-  let counts: Record<string, number> = {};
   let projects: Project[] = [];
   let members: Member[] = [];
+  let labels: Label[] = [];
+  let teams: Team[] = [];
   try {
-    [issues, counts, projects, members] = await Promise.all([
+    const [
+      issuesRes,
+      projectsRes,
+      membersRes,
+      labelsRes,
+      wsRes,
+    ] = await Promise.all([
       myIssues(workspace, scope),
-      myIssueCounts(workspace),
       listProjects(workspace).catch(() => [] as Project[]),
       listMembers(workspace).catch(() => [] as Member[]),
+      listWorkspaceLabels(workspace).catch(() => [] as Label[]),
+      getWorkspace(workspace).catch(() => null),
     ]);
+    issues = issuesRes;
+    projects = projectsRes;
+    members = membersRes;
+    labels = labelsRes;
+    teams = wsRes?.teams ?? [];
   } catch (e) {
     if (e instanceof NotFoundError) notFound();
     throw e;
@@ -41,22 +57,26 @@ export default async function MyIssuesPage({ params }: { params: Promise<{ works
   return (
     <>
       <Topbar title="My issues" icon={<CircleUser size={15} />} />
-      <div className="flex h-[40px] shrink-0 items-center gap-1 border-b border-border-subtle px-4">
+      {/*
+        Tabs sub-row. Linear styles every tab as an outlined pill (not
+        only the active one), with generous horizontal breathing room
+        and a slightly taller bar than the topbar itself. We mirror that
+        here so the active pill reads as a fill-up over the same outline
+        every other tab uses, rather than a magically appearing chip.
+      */}
+      <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border-subtle px-5">
         {SCOPES.map((s) => (
           <Link
             key={s}
             href={`/${workspace}/my/${s}`}
             className={clsx(
-              "rounded-pill px-2.5 py-1 text-mini",
+              "rounded-pill border px-3 py-1 text-mini transition-colors",
               s === scope
-                ? "bg-row-selected text-text-primary"
-                : "text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
+                ? "border-border-strong bg-row-selected text-text-primary"
+                : "border-border-subtle text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
             )}
           >
             {s[0].toUpperCase() + s.slice(1)}
-            {counts[s] !== undefined && counts[s] > 0 && (
-              <span className="ml-1 text-text-quaternary">{counts[s]}</span>
-            )}
           </Link>
         ))}
         <span className="ml-auto">
@@ -69,6 +89,8 @@ export default async function MyIssuesPage({ params }: { params: Promise<{ works
         initial={issues}
         projects={projects}
         members={members}
+        labels={labels}
+        teams={teams}
       />
     </>
   );

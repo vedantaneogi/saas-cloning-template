@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import clsx from "clsx";
+import { BoardView } from "@/components/board-view";
 import { IssueRow } from "@/components/issue-row";
+import { MyIssuesInsights } from "@/components/my-issues-insights";
 import { useMyIssuesPrefs, type MyIssuesGrouping } from "@/lib/my-issues-prefs";
-import { myIssues, type Issue, type Member, type Project } from "@/lib/api";
+import { myIssues, type Issue, type Label, type Member, type Project, type StateGroup, type Team } from "@/lib/api";
 
 interface GroupBucket {
   key: string;
@@ -34,15 +36,19 @@ export function MyIssuesBody({
   initial,
   projects,
   members,
+  labels,
+  teams,
 }: {
   workspaceSlug: string;
   scope: string;
   initial: Issue[];
   projects: Project[];
   members: Member[];
+  labels: Label[];
+  teams: Team[];
 }) {
   const router = useRouter();
-  const { prefs } = useMyIssuesPrefs(workspaceSlug);
+  const { prefs, update } = useMyIssuesPrefs(workspaceSlug);
   const [issues, setIssues] = useState<Issue[]>(initial);
 
   // The completed-issues window is the only pref the server cares about
@@ -68,6 +74,8 @@ export function MyIssuesBody({
   }, [initial]);
 
   const filtered = useMemo(() => {
+    const now = Date.now();
+    const q = prefs.search_query.trim().toLowerCase();
     return issues.filter((n) => {
       if (prefs.status_groups.length > 0 && !prefs.status_groups.includes(n.state.group)) return false;
       if (prefs.priorities.length > 0 && !prefs.priorities.includes(n.priority)) return false;
@@ -81,9 +89,54 @@ export function MyIssuesBody({
       if (prefs.cycle_ids.length > 0) {
         if (!n.cycle_id || !prefs.cycle_ids.includes(n.cycle_id)) return false;
       }
+      if (prefs.assignee_ids.length > 0) {
+        if (!n.assignee || !prefs.assignee_ids.includes(n.assignee.id)) return false;
+      }
+      if (prefs.creator_ids.length > 0) {
+        if (!n.creator || !prefs.creator_ids.includes(n.creator.id)) return false;
+      }
+      if (prefs.subscriber_ids.length > 0) {
+        const subs = n.subscriber_ids ?? [];
+        if (!prefs.subscriber_ids.some((id) => subs.includes(id))) return false;
+      }
+      if (prefs.date_filter !== "any") {
+        const due = n.due_date ? new Date(n.due_date).getTime() : null;
+        if (prefs.date_filter === "due" && due == null) return false;
+        if (prefs.date_filter === "no_due" && due != null) return false;
+        if (prefs.date_filter === "overdue" && (due == null || due >= now)) return false;
+      }
+      if (prefs.relations_filter !== "any") {
+        const has = Boolean(n.has_relations);
+        if (prefs.relations_filter === "with_relations" && !has) return false;
+        if (prefs.relations_filter === "no_relations" && has) return false;
+      }
+      if (prefs.links_filter !== "any") {
+        const has = (n.link_count ?? 0) > 0;
+        if (prefs.links_filter === "with_links" && !has) return false;
+        if (prefs.links_filter === "no_links" && has) return false;
+      }
+      if (q) {
+        const title = n.title.toLowerCase();
+        const desc = (n.description ?? "").toLowerCase();
+        if (!title.includes(q) && !desc.includes(q)) return false;
+      }
       return true;
     });
-  }, [issues, prefs.status_groups, prefs.priorities, prefs.label_ids, prefs.project_ids, prefs.cycle_ids]);
+  }, [
+    issues,
+    prefs.status_groups,
+    prefs.priorities,
+    prefs.label_ids,
+    prefs.project_ids,
+    prefs.cycle_ids,
+    prefs.assignee_ids,
+    prefs.creator_ids,
+    prefs.subscriber_ids,
+    prefs.date_filter,
+    prefs.relations_filter,
+    prefs.links_filter,
+    prefs.search_query,
+  ]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -106,24 +159,63 @@ export function MyIssuesBody({
     updated: prefs.show_updated,
   };
 
-  if (sorted.length === 0) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-small text-text-tertiary">
-        No issues match the current view.
-      </div>
-    );
+  const showInsights = prefs.insights_open;
+  const isBoard = prefs.view === "board";
+
+  // Board view groups by status name regardless of the grouping pref —
+  // a kanban only makes sense when columns map to states. (Linear does
+  // the same: switching to Board re-buckets by status; the Grouping
+  // dropdown still records the user's list-mode pick but doesn't drive
+  // the columns.) Columns the user explicitly hid stay out.
+  const boardGroups = useMemo(() => {
+    if (!isBoard) return [];
+    const hidden = new Set(prefs.hidden_status_groups);
+    return bucketByStatusName(sorted).filter((g) => !hidden.has(g.group));
+  }, [isBoard, sorted, prefs.hidden_status_groups]);
+
+  function hideColumn(group: string) {
+    const next = prefs.hidden_status_groups.includes(group)
+      ? prefs.hidden_status_groups
+      : [...prefs.hidden_status_groups, group];
+    update({ hidden_status_groups: next });
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      {groups.map((g) => (
-        <GroupSection key={g.key} group={g} workspaceSlug={workspaceSlug} display={display} />
-      ))}
+    <div className="flex min-h-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {sorted.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center text-small text-text-tertiary">
+            No issues match the current view.
+          </div>
+        ) : isBoard ? (
+          <BoardView
+            groups={boardGroups}
+            workspaceSlug={workspaceSlug}
+            onHideColumn={(g) => hideColumn(g)}
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            {groups.map((g) => (
+              <GroupSection key={g.key} group={g} workspaceSlug={workspaceSlug} display={display} />
+            ))}
+          </div>
+        )}
+      </div>
+      {showInsights && (
+        <MyIssuesInsights
+          workspaceSlug={workspaceSlug}
+          issues={sorted}
+          labels={labels}
+          projects={projects}
+          teams={teams}
+          members={members}
+        />
+      )}
     </div>
   );
 
-  // Make the router import used so dead-code-elim doesn't strip it (we
-  // wire it once mutations land on this page).
+  // Keep router referenced — mutations from inside this body will use
+  // router.refresh() when they land.
   void router;
 }
 
@@ -138,13 +230,18 @@ function GroupSection({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <section className="border-b border-border-subtle last:border-b-0">
+    <section className="border-b border-white/5 last:border-b-0">
+      {/*
+        Glass-style group header to keep List + Board visually
+        consistent — translucent white tint + heavy blur over the
+        page bg, hairline divider below.
+      */}
       <button
         onClick={() => setOpen(!open)}
-        className="group flex h-[36px] w-full items-center gap-2 bg-elevated px-3 text-small text-text-secondary hover:bg-elevated-hover"
+        className="group flex h-[40px] w-full items-center gap-2 border-b border-white/5 bg-white/[0.025] px-4 text-small text-text-secondary backdrop-blur-md hover:bg-white/[0.04]"
       >
         <ChevronDown size={12} className={clsx("text-text-tertiary transition-transform", !open && "-rotate-90")} />
-        <span className="font-medium text-text-primary">{group.title}</span>
+        <span className="font-semibold text-text-primary">{group.title}</span>
         <span className="text-text-tertiary">{group.count}</span>
       </button>
       {open && (
@@ -310,3 +407,35 @@ const FOCUS_TITLES: Record<number, string> = {
   3: "Completed",
   4: "Canceled",
 };
+
+const STATE_GROUP_ORDER: Record<string, number> = {
+  backlog: 0,
+  unstarted: 1,
+  started: 2,
+  completed: 3,
+  canceled: 4,
+};
+
+/**
+ * Group an issue list into board columns keyed by the issue's state
+ * (name + group). Across teams there can be multiple state names for
+ * the same group (e.g. "Todo" and "Open" both `unstarted`); we treat
+ * each unique state name as its own column so cross-team work isn't
+ * silently collapsed.
+ */
+function bucketByStatusName(issues: Issue[]): { name: string; group: StateGroup; issues: Issue[] }[] {
+  const map = new Map<string, { name: string; group: StateGroup; issues: Issue[]; sort: number }>();
+  for (const i of issues) {
+    const key = `${STATE_GROUP_ORDER[i.state.group] ?? 9}-${i.state.name}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        name: i.state.name,
+        group: i.state.group,
+        issues: [],
+        sort: (STATE_GROUP_ORDER[i.state.group] ?? 9) * 1000 + i.state.position,
+      });
+    }
+    map.get(key)!.issues.push(i);
+  }
+  return [...map.values()].sort((a, b) => a.sort - b.sort);
+}

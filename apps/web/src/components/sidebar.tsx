@@ -200,14 +200,21 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
             </button>
           </div>
         )}
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent("command-palette:open"))}
+        {/*
+          Clicking the magnifier now navigates to the dedicated /search
+          page (Linear's pattern) instead of toggling the command-palette
+          modal. The palette is still bindable via ⌘K — `command-palette:open`
+          fires from keybindings — but this affordance is for finding
+          things across the workspace with tabs, filters, and recents.
+        */}
+        <Link
+          href={`/${wsSlug}/search`}
           className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
           aria-label="Search"
           title="Search (⌘K)"
         >
           <Search size={15} />
-        </button>
+        </Link>
         <button
           onClick={() => window.dispatchEvent(new CustomEvent("create-issue:open"))}
           className="rounded-md p-1.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"

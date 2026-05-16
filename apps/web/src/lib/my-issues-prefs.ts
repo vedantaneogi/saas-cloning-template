@@ -23,6 +23,7 @@ export type MyIssuesGrouping =
   | "no_grouping";
 export type MyIssuesOrdering = "importance" | "priority" | "newest" | "oldest" | "updated";
 export type CompletedWindow = "day" | "week" | "month" | "all";
+export type InsightsTab = "labels" | "priority" | "projects" | "teams";
 
 export interface MyIssuesPrefs {
   // Filters (each array empty = no filter on that dimension)
@@ -31,6 +32,27 @@ export interface MyIssuesPrefs {
   label_ids: string[];
   project_ids: string[];
   cycle_ids: string[];
+  assignee_ids: string[];
+  creator_ids: string[];
+  subscriber_ids: string[];
+  // Date filter — "any" disables, "due" requires a due_date, "no_due"
+  // requires the absence of one, "overdue" requires due_date < now.
+  date_filter: "any" | "due" | "no_due" | "overdue";
+  // Relations filter — "any" disables, "with_relations" requires the
+  // issue to have at least one outgoing relation, "no_relations" the
+  // opposite. Relation dimensions live on issue detail; in the list
+  // endpoint we infer from a `has_relations` flag we surface there.
+  relations_filter: "any" | "with_relations" | "no_relations";
+  // Links filter — "any" disables, "with_links" requires the issue to
+  // have at least one IssueLink, "no_links" the opposite.
+  links_filter: "any" | "with_links" | "no_links";
+  // Plain-text search across title + description.
+  search_query: string;
+  // Board-only — columns the user explicitly hid from the board (e.g.
+  // "completed" once a sprint wraps). Stored separately from
+  // `status_groups` because those *include* a state, while
+  // `hidden_status_groups` *excludes* it.
+  hidden_status_groups: string[];
   // View
   view: MyIssuesView;
   grouping: MyIssuesGrouping;
@@ -54,6 +76,9 @@ export interface MyIssuesPrefs {
   show_time_in_status: boolean;
   show_created: boolean;
   show_updated: boolean;
+  // Right-side insights panel — open/closed + which tab is showing.
+  insights_open: boolean;
+  insights_tab: InsightsTab;
 }
 
 const DEFAULTS: MyIssuesPrefs = {
@@ -62,6 +87,14 @@ const DEFAULTS: MyIssuesPrefs = {
   label_ids: [],
   project_ids: [],
   cycle_ids: [],
+  assignee_ids: [],
+  creator_ids: [],
+  subscriber_ids: [],
+  date_filter: "any",
+  relations_filter: "any",
+  links_filter: "any",
+  search_query: "",
+  hidden_status_groups: [],
   view: "list",
   grouping: "focus",
   sub_grouping: "no_grouping",
@@ -84,6 +117,8 @@ const DEFAULTS: MyIssuesPrefs = {
   show_time_in_status: false,
   show_created: true,
   show_updated: false,
+  insights_open: false,
+  insights_tab: "labels",
 };
 
 const cache = new Map<string, MyIssuesPrefs>();
@@ -144,7 +179,20 @@ export function useMyIssuesPrefs(slug: string) {
   }
 
   function clearFilters() {
-    update({ status_groups: [], priorities: [], label_ids: [], project_ids: [], cycle_ids: [] });
+    update({
+      status_groups: [],
+      priorities: [],
+      label_ids: [],
+      project_ids: [],
+      cycle_ids: [],
+      assignee_ids: [],
+      creator_ids: [],
+      subscriber_ids: [],
+      date_filter: "any",
+      relations_filter: "any",
+      links_filter: "any",
+      search_query: "",
+    });
   }
 
   const activeFilterCount =
@@ -152,7 +200,14 @@ export function useMyIssuesPrefs(slug: string) {
     prefs.priorities.length +
     prefs.label_ids.length +
     prefs.project_ids.length +
-    prefs.cycle_ids.length;
+    prefs.cycle_ids.length +
+    prefs.assignee_ids.length +
+    prefs.creator_ids.length +
+    prefs.subscriber_ids.length +
+    (prefs.date_filter !== "any" ? 1 : 0) +
+    (prefs.relations_filter !== "any" ? 1 : 0) +
+    (prefs.links_filter !== "any" ? 1 : 0) +
+    (prefs.search_query.trim() ? 1 : 0);
 
   return { prefs, update, toggleInList, clearFilters, activeFilterCount };
 }
