@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_member, get_current_user, get_db, get_optional_user, get_workspace, require_role
@@ -33,6 +33,7 @@ from app.db.models import (
     IssueLinkStatus,
     IssueLinkType,
     IssueRelation,
+    issue_subscribers,
     Label,
     Member,
     MemberRole,
@@ -856,16 +857,44 @@ def my_issue_counts(
     base = (
         db.query(Issue)
         .join(Team, Issue.team_id == Team.id)
-        .filter(Team.workspace_id == ws.id, Issue.assignee_id == member_id)
+        .filter(Team.workspace_id == ws.id, Issue.is_triage.is_(False))
     )
-    n = base.count()
-    return {"assigned": n, "created": n, "subscribed": n, "activity": n}
+    assigned = base.filter(Issue.assignee_id == member_id).count()
+    created = base.filter(Issue.creator_id == member_id).count()
+    subscribed = (
+        base.join(issue_subscribers, issue_subscribers.c.issue_id == Issue.id)
+        .filter(issue_subscribers.c.member_id == member_id)
+        .count()
+    )
+    # Activity = union of the three (no point counting a 4th time — same
+    # query the listing uses). Use a portable COUNT(DISTINCT) so SQLite
+    # and Postgres both behave; Query.distinct(col) is Postgres-only.
+    activity = (
+        db.query(func.count(func.distinct(Issue.id)))
+        .join(Team, Issue.team_id == Team.id)
+        .outerjoin(issue_subscribers, issue_subscribers.c.issue_id == Issue.id)
+        .filter(
+            Team.workspace_id == ws.id,
+            Issue.is_triage.is_(False),
+            or_(
+                Issue.assignee_id == member_id,
+                Issue.creator_id == member_id,
+                issue_subscribers.c.member_id == member_id,
+            ),
+        )
+        .scalar()
+    )
+    return {"assigned": assigned, "created": created, "subscribed": subscribed, "activity": activity}
 
 
 @router.get("/workspaces/{slug}/my/{scope}", response_model=list[IssueOut])
 def my_issues(
     scope: str,
     member_id: str | None = Query(None),
+    completed_window: str | None = Query(
+        None,
+        description="Hide completed/canceled issues finished outside this window: 'day', 'week', 'month', 'all'. Null/missing means no filter.",
+    ),
     ws: Workspace = Depends(get_workspace),
     user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
@@ -891,13 +920,51 @@ def my_issues(
     if scope == "assigned":
         q = q.filter(Issue.assignee_id == member_id)
     elif scope == "created":
-        q = q.filter(Issue.assignee_id == member_id)  # TODO: track creator separately
+        # `creator_id` was added in migration i9c4d52a1f76; earlier issues
+        # may still have NULL — they show up under `assigned` for now.
+        q = q.filter(Issue.creator_id == member_id)
     elif scope == "subscribed":
-        q = q.filter(Issue.assignee_id == member_id)
-    else:
-        q = q.filter(Issue.assignee_id == member_id).order_by(Issue.updated_at.desc())
+        # Subscriptions live on the `issue_subscribers` join table.
+        q = q.join(issue_subscribers, issue_subscribers.c.issue_id == Issue.id).filter(
+            issue_subscribers.c.member_id == member_id
+        )
+    else:  # activity: anything I created OR was assigned OR subscribed to, ordered by recency
+        q = (
+            q.outerjoin(issue_subscribers, issue_subscribers.c.issue_id == Issue.id)
+            .filter(
+                or_(
+                    Issue.assignee_id == member_id,
+                    Issue.creator_id == member_id,
+                    issue_subscribers.c.member_id == member_id,
+                )
+            )
+            .order_by(Issue.updated_at.desc())
+        )
+
+    # Completed-issues window. Linear's display popover lets the user
+    # decide whether they care about old completed work; default keeps
+    # everything so the UI can toggle without losing data.
+    if completed_window in {"day", "week", "month"}:
+        now = datetime.now(timezone.utc)
+        delta = {
+            "day": timedelta(days=1),
+            "week": timedelta(days=7),
+            "month": timedelta(days=30),
+        }[completed_window]
+        cutoff = now - delta
+        q = q.filter(
+            or_(
+                WorkflowState.group.notin_([StateGroup.completed, StateGroup.canceled]),
+                Issue.updated_at >= cutoff,
+            )
+        ).join(WorkflowState, WorkflowState.id == Issue.state_id)
 
     issues = q.all()
+    # Dedupe — the subscribers join can multiply rows when both filters match.
+    seen: dict[str, Issue] = {}
+    for i in issues:
+        seen.setdefault(i.id, i)
+    issues = list(seen.values())
     counts = _child_counts(db, [i.id for i in issues])
     return [_issue_dict(i, counts) for i in issues]
 

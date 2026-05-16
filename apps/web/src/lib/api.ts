@@ -269,8 +269,19 @@ export function getIssue(slug: string, identifier: string): Promise<IssueDetail>
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(identifier)}`);
 }
 
-export function myIssues(slug: string, scope: string): Promise<Issue[]> {
-  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/my/${encodeURIComponent(scope)}`);
+export function myIssues(
+  slug: string,
+  scope: string,
+  opts: { completedWindow?: "day" | "week" | "month" | "all" } = {},
+): Promise<Issue[]> {
+  const usp = new URLSearchParams();
+  if (opts.completedWindow && opts.completedWindow !== "all") {
+    usp.set("completed_window", opts.completedWindow);
+  }
+  const qs = usp.toString();
+  return fetchJson(
+    `/api/workspaces/${encodeURIComponent(slug)}/my/${encodeURIComponent(scope)}${qs ? `?${qs}` : ""}`,
+  );
 }
 
 export function myIssueCounts(slug: string): Promise<Record<string, number>> {
