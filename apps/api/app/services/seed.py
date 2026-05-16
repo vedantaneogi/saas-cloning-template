@@ -74,6 +74,7 @@ from app.db.models import (
     RelationType,
     StateGroup,
     Team,
+    TeamMembership,
     Template,
     TemplateKind,
     UpdateHealth,
@@ -187,6 +188,21 @@ def apply_seed(db: Session, payload: dict) -> dict:
         for t in w.get("teams", []) or []:
             team = _upsert_team(db, ws, t)
             summary["teams"] += 1
+
+            # Every seeded workspace member joins every seeded team. Real
+            # workspaces flip individual TeamMemberships through the UI;
+            # the seed mirrors how the rest of the demo treats team
+            # membership (everyone-everywhere), and gives the Members
+            # page real `team_keys` data to render.
+            for mem in members_by_email.values():
+                existing = (
+                    db.query(TeamMembership)
+                    .filter_by(team_id=team.id, member_id=mem.id)
+                    .first()
+                )
+                if not existing:
+                    db.add(TeamMembership(team_id=team.id, member_id=mem.id))
+            db.flush()
 
             # workflow states (per team) — keep an authoritative dict so we
             # don't re-read team.states before SQLAlchemy refreshes it.

@@ -44,6 +44,7 @@ export function Popover({
   align = "start",
   width,
   placement,
+  triggerWrapperClassName,
 }: {
   trigger: (props: { open: boolean; toggle: () => void; close: () => void }) => ReactNode;
   children: (api: { close: () => void }) => ReactNode;
@@ -56,6 +57,13 @@ export function Popover({
    * appears disconnected outside the modal). Set "up" to anchor above.
    */
   placement?: "up" | "down";
+  /**
+   * Overrides the trigger wrapper's layout. Defaults to `relative inline-block`,
+   * which is right for buttons/chips. Pass `relative block` (or similar) when
+   * the trigger needs to fill its parent — e.g. a full-width <select>-style
+   * picker inside a form row.
+   */
+  triggerWrapperClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -149,7 +157,7 @@ export function Popover({
   }, [open, align, placement]);
 
   return (
-    <div className="relative inline-block">
+    <div className={triggerWrapperClassName ?? "relative inline-block"}>
       <div ref={triggerRef}>
         {trigger({ open, toggle: () => setOpen((o) => !o), close: () => setOpen(false) })}
       </div>
@@ -162,7 +170,13 @@ export function Popover({
               // any literal 1px border ring reads as a bright outline against
               // dark surfaces, so drop the border and let shadow-popover do
               // the edge work.
-              "fixed z-[1000] overflow-hidden rounded-md bg-elevated text-small shadow-popover",
+              //
+              // z-[1200] keeps popovers above modal backdrops (z-[1100]).
+              // Popovers are portaled to <body>, so when a modal opens and the
+              // popover triggers inside it (e.g. Customize sidebar) fire, the
+              // dropdown is a *sibling* of the modal — without a higher z-index
+              // the dropdown gets buried under the backdrop.
+              "fixed z-[1200] overflow-hidden rounded-md bg-elevated text-small shadow-popover",
               // hide until measured so we don't flash at (0,0) before the
               // layout effect resolves a real position
               pos == null && "invisible",

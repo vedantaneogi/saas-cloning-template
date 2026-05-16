@@ -15,15 +15,23 @@ import {
   HelpCircle,
   CircleUser,
   Compass,
+  Plus,
   Star,
   AlertOctagon,
   FileText,
   Map as MapIcon,
   Users,
   BarChart3,
+  Check,
+  LogOut,
+  Repeat2,
 } from "lucide-react";
 import clsx from "clsx";
 import { Avatar } from "@/components/icons";
+import { TeamMenu } from "@/components/team-menu";
+import { SidebarTrySection } from "@/components/sidebar-try-section";
+import { SidebarWorkspaceNav } from "@/components/sidebar-workspace-nav";
+import { useTeamFavorites } from "@/lib/team-prefs";
 import { getActiveCycle, getTriageCount, getUnreadCount, listSavedViews, patchSavedView, logout, type Cycle, type Me, type SavedView, type Workspace, type Team } from "@/lib/api";
 
 type Sections = "favorites" | "workspace" | "teams";
@@ -33,6 +41,7 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
   const wsSlug = workspace.slug;
   const router = useRouter();
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switchSubOpen, setSwitchSubOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const [sectionOpen, setSectionOpen] = useState<Record<Sections, boolean>>({
@@ -81,6 +90,9 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
     viewsByTeam.set(v.team_key, list);
   }
   const favorites = savedViews.filter((v) => v.favorite);
+  const favTeamKeys = useTeamFavorites(wsSlug);
+  const favoriteTeams = workspace.teams.filter((t) => favTeamKeys.has(t.key));
+  const hasFavorites = favorites.length > 0 || favoriteTeams.length > 0;
 
   async function toggleFavorite(v: SavedView) {
     setSavedViews((prev) => prev.map((x) => (x.id === v.id ? { ...x, favorite: !x.favorite } : x)));
@@ -105,34 +117,75 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
         </button>
         {switcherOpen && (
           <div
-            className="absolute left-2.5 top-[44px] z-30 w-[228px] rounded-md bg-elevated shadow-popover"
-            onMouseLeave={() => setSwitcherOpen(false)}
+            className="absolute left-2.5 top-[44px] z-30 w-[240px] rounded-md bg-elevated py-1 shadow-popover"
+            onMouseLeave={() => { setSwitcherOpen(false); setSwitchSubOpen(false); }}
           >
-            <div className="px-2 py-1 text-micro font-medium uppercase tracking-wider text-text-tertiary">Workspaces</div>
-            {me.workspaces.map((w) => (
-              <Link
-                key={w.id}
-                href={`/${w.slug}/inbox`}
-                onClick={() => setSwitcherOpen(false)}
-                className={clsx(
-                  "flex items-center gap-2 rounded-sm px-2 py-1.5 text-small",
-                  w.slug === wsSlug ? "bg-row-selected text-text-primary" : "text-text-secondary hover:bg-row-hover"
-                )}
-              >
-                <Avatar initials={initialsFor(w.name)} color={w.icon_color} size={18} />
-                <span className="flex-1 truncate">{w.name}</span>
-                <span className="text-text-quaternary">{w.role}</span>
-              </Link>
-            ))}
-            <hr className="my-1 border-border-subtle" />
             <Link
-              href="/new-workspace"
+              href={`/${wsSlug}/settings`}
               onClick={() => setSwitcherOpen(false)}
-              className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-small text-text-secondary hover:bg-row-hover"
+              className="flex items-center gap-2 px-2.5 py-1.5 text-small text-text-secondary hover:bg-row-hover"
             >
-              <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-pill border border-dashed border-border-strong text-text-tertiary">+</span>
-              <span>Create workspace</span>
+              <Settings size={13} className="text-text-tertiary" />
+              <span className="flex-1">Settings</span>
             </Link>
+            <Link
+              href={`/${wsSlug}/settings/members`}
+              onClick={() => setSwitcherOpen(false)}
+              className="flex items-center gap-2 px-2.5 py-1.5 text-small text-text-secondary hover:bg-row-hover"
+            >
+              <Users size={13} className="text-text-tertiary" />
+              <span className="flex-1">Invite and manage members</span>
+            </Link>
+
+            <hr className="my-1 border-border-subtle" />
+
+            <div
+              className="relative"
+              onMouseEnter={() => setSwitchSubOpen(true)}
+              onMouseLeave={() => setSwitchSubOpen(false)}
+            >
+              <button
+                type="button"
+                onClick={() => setSwitchSubOpen((v) => !v)}
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
+              >
+                <Repeat2 size={13} className="text-text-tertiary" />
+                <span className="flex-1">Switch workspace</span>
+                <ChevronRight size={11} className="text-text-tertiary" />
+              </button>
+              {switchSubOpen && (
+                <div className="absolute left-full top-0 ml-1 w-[240px] rounded-md bg-elevated py-1 shadow-popover">
+                  <div className="px-2.5 py-1 text-micro font-medium uppercase tracking-wider text-text-tertiary">Workspaces</div>
+                  {me.workspaces.map((w) => (
+                    <Link
+                      key={w.id}
+                      href={`/${w.slug}/inbox`}
+                      onClick={() => { setSwitcherOpen(false); setSwitchSubOpen(false); }}
+                      className={clsx(
+                        "flex items-center gap-2 px-2.5 py-1.5 text-small",
+                        w.slug === wsSlug ? "bg-row-selected text-text-primary" : "text-text-secondary hover:bg-row-hover"
+                      )}
+                    >
+                      <Avatar initials={initialsFor(w.name)} color={w.icon_color} size={18} />
+                      <span className="flex-1 truncate">{w.name}</span>
+                      {w.slug === wsSlug && <Check size={12} className="text-text-tertiary" />}
+                    </Link>
+                  ))}
+                  <hr className="my-1 border-border-subtle" />
+                  <Link
+                    href="/new-workspace"
+                    onClick={() => { setSwitcherOpen(false); setSwitchSubOpen(false); }}
+                    className="flex items-center gap-2 px-2.5 py-1.5 text-small text-text-secondary hover:bg-row-hover"
+                  >
+                    <Plus size={13} className="text-text-tertiary" />
+                    <span>Create or join a workspace…</span>
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            <hr className="my-1 border-border-subtle" />
+
             <button
               onClick={async () => {
                 setSwitcherOpen(false);
@@ -140,10 +193,10 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
                 router.push("/login");
                 router.refresh();
               }}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-small text-text-secondary hover:bg-row-hover"
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
             >
-              <span className="inline-flex h-[18px] w-[18px] items-center justify-center text-text-tertiary">⇥</span>
-              <span>Sign out</span>
+              <LogOut size={13} className="text-text-tertiary" />
+              <span>Log out</span>
             </button>
           </div>
         )}
@@ -165,7 +218,7 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2.5 pb-3 pt-0.5">
+      <nav className="scroll-thin flex-1 overflow-y-auto px-2.5 pb-3 pt-0.5">
         <NavItem
           href={`/${wsSlug}/inbox`}
           icon={<Inbox size={14} />}
@@ -184,7 +237,16 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
           active={pathname.includes("/my/")}
         />
 
-        {favorites.length > 0 && (
+        <SectionHeader
+          title="Workspace"
+          open={sectionOpen.workspace}
+          onToggle={() => setSectionOpen((s) => ({ ...s, workspace: !s.workspace }))}
+        />
+        {sectionOpen.workspace && (
+          <SidebarWorkspaceNav workspaceSlug={wsSlug} pathname={pathname} />
+        )}
+
+        {hasFavorites && (
           <>
             <SectionHeader
               title="Favorites"
@@ -193,6 +255,14 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
             />
             {sectionOpen.favorites && (
               <div>
+                {favoriteTeams.map((t) => (
+                  <FavoriteTeamRow
+                    key={t.key}
+                    team={t}
+                    workspaceSlug={wsSlug}
+                    pathname={pathname}
+                  />
+                ))}
                 {favorites.map((v) => (
                   <SavedViewRow
                     key={v.id}
@@ -208,51 +278,19 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
         )}
 
         <SectionHeader
-          title="Workspace"
-          open={sectionOpen.workspace}
-          onToggle={() => setSectionOpen((s) => ({ ...s, workspace: !s.workspace }))}
-        />
-        {sectionOpen.workspace && (
-          <div>
-            <NavItem href={`/${wsSlug}/views`} icon={<Layers size={14} />} label="Views" />
-            <NavItem
-              href={`/${wsSlug}/initiatives`}
-              icon={<Compass size={14} />}
-              label="Initiatives"
-              active={pathname.endsWith("/initiatives") || pathname.includes("/initiative/")}
-            />
-            <NavItem
-              href={`/${wsSlug}/roadmap`}
-              icon={<MapIcon size={14} />}
-              label="Roadmap"
-              active={pathname.endsWith("/roadmap")}
-            />
-            <NavItem href={`/${wsSlug}/projects`} icon={<Folders size={14} />} label="Projects" />
-            <NavItem
-              href={`/${wsSlug}/documents`}
-              icon={<FileText size={14} />}
-              label="Documents"
-              active={pathname.endsWith("/documents") || pathname.includes("/document/")}
-            />
-            <NavItem
-              href={`/${wsSlug}/customer-requests`}
-              icon={<Users size={14} />}
-              label="Customer requests"
-              active={pathname.endsWith("/customer-requests")}
-            />
-            <NavItem
-              href={`/${wsSlug}/insights/custom`}
-              icon={<BarChart3 size={14} />}
-              label="Custom charts"
-              active={pathname.endsWith("/insights/custom")}
-            />
-          </div>
-        )}
-
-        <SectionHeader
           title="Your teams"
           open={sectionOpen.teams}
           onToggle={() => setSectionOpen((s) => ({ ...s, teams: !s.teams }))}
+          trailing={
+            <Link
+              href={`/${wsSlug}/settings/new-team`}
+              aria-label="Create new team"
+              title="Create new team"
+              className="rounded-sm p-0.5 text-text-tertiary opacity-0 transition-opacity hover:bg-row-hover hover:text-text-secondary group-hover/section:opacity-100"
+            >
+              <Plus size={11} />
+            </Link>
+          }
         />
         {sectionOpen.teams && (
           <div>
@@ -275,6 +313,8 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
           </div>
         )}
 
+        <SidebarTrySection workspaceSlug={wsSlug} />
+
       </nav>
 
       <div className="flex items-center gap-1 border-t border-border-subtle px-3 py-2 text-micro text-text-tertiary">
@@ -286,17 +326,6 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
         >
           <HelpCircle size={14} />
         </button>
-        <Link
-          href={`/${wsSlug}/settings`}
-          className={clsx(
-            "rounded-md p-1",
-            pathname.includes("/settings") ? "bg-row-selected text-text-primary" : "text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
-          )}
-          aria-label="Settings"
-          title="Settings"
-        >
-          <Settings size={14} />
-        </Link>
         <span className="ml-auto">
           <Avatar initials={me.user.initials} color={me.user.color} size={20} />
         </span>
@@ -310,27 +339,32 @@ function SectionHeader({
   open,
   onToggle,
   muted,
+  trailing,
 }: {
   title: string;
   open: boolean;
   onToggle: () => void;
   muted?: boolean;
+  trailing?: React.ReactNode;
 }) {
   return (
-    <button
-      onClick={onToggle}
-      className={clsx(
-        "mt-4 flex w-full items-center gap-1 rounded-md px-2 pb-1 pt-0.5 text-micro font-medium uppercase tracking-wider transition-colors",
-        muted ? "text-text-quaternary" : "text-text-tertiary",
-        "hover:text-text-secondary"
-      )}
-    >
-      <span>{title}</span>
-      <ChevronRight
-        size={10}
-        className={clsx("transition-transform", open && "rotate-90")}
-      />
-    </button>
+    <div className="group/section mt-4 flex items-center gap-1 px-2 pb-1 pt-0.5">
+      <button
+        onClick={onToggle}
+        className={clsx(
+          "flex flex-1 items-center gap-1 rounded-md text-micro font-medium uppercase tracking-wider transition-colors",
+          muted ? "text-text-quaternary" : "text-text-tertiary",
+          "hover:text-text-secondary"
+        )}
+      >
+        <span>{title}</span>
+        <ChevronRight
+          size={10}
+          className={clsx("transition-transform", open && "rotate-90")}
+        />
+      </button>
+      {trailing}
+    </div>
   );
 }
 
@@ -391,22 +425,25 @@ function TeamGroup({
   const base = `/${workspaceSlug}/team/${team.key}`;
   return (
     <div className="mt-0.5">
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-row-hover"
-      >
-        <ChevronRight
-          size={10}
-          className={clsx("text-text-tertiary transition-transform", open && "rotate-90")}
-        />
-        <span
-          className="inline-block h-3 w-3 shrink-0 rounded-sm"
-          style={{ background: team.icon_color }}
-        />
-        <span className="truncate text-small font-medium text-text-primary">{team.name}</span>
-      </button>
+      <div className="group/team flex items-center rounded-md pr-1 hover:bg-row-hover">
+        <button
+          onClick={onToggle}
+          className="flex flex-1 items-center gap-1.5 px-1.5 py-1 text-left"
+        >
+          <ChevronRight
+            size={10}
+            className={clsx("text-text-tertiary transition-transform", open && "rotate-90")}
+          />
+          <span
+            className="inline-block h-3 w-3 shrink-0 rounded-sm"
+            style={{ background: team.icon_color }}
+          />
+          <span className="truncate text-small font-medium text-text-primary">{team.name}</span>
+        </button>
+        <TeamMenu team={team} workspaceSlug={workspaceSlug} />
+      </div>
       {open && (
-        <div className="ml-3.5">
+        <div className="ml-6">
           <NavItem
             href={`${base}/active`}
             icon={<Layers size={13} />}
@@ -505,6 +542,35 @@ function SavedViewRow({
       >
         <Star size={12} fill={view.favorite ? "currentColor" : "none"} />
       </button>
+    </Link>
+  );
+}
+
+function FavoriteTeamRow({
+  team,
+  workspaceSlug,
+  pathname,
+}: {
+  team: Team;
+  workspaceSlug: string;
+  pathname: string;
+}) {
+  const href = `/${workspaceSlug}/team/${team.key}/active`;
+  const active = pathname.startsWith(`/${workspaceSlug}/team/${team.key}`);
+  return (
+    <Link
+      href={href}
+      className={clsx(
+        "group/team flex h-[30px] items-center gap-2 rounded-md px-2 text-small leading-none transition-colors",
+        active ? "bg-row-selected text-text-primary" : "text-text-secondary hover:bg-row-hover",
+      )}
+    >
+      <span
+        className="inline-block h-3 w-3 shrink-0 rounded-sm"
+        style={{ background: team.icon_color }}
+      />
+      <span className="flex-1 truncate font-medium text-text-primary">{team.name}</span>
+      <ChevronRight size={10} className="text-text-tertiary opacity-0 transition-opacity group-hover/team:opacity-100" />
     </Link>
   );
 }

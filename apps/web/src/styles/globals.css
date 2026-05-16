@@ -54,6 +54,16 @@
     background: transparent;
   }
 
+  /* Firefox + modern Chromium: use the standard properties so dark
+     scrollbars surface in any container that opts in. The sidebar nav
+     applies `.scroll-thin` (see component) to enforce this — by default
+     Windows + macOS overlay-scrollbars stay hidden until the user
+     scrolls, which made the sidebar feel "stuck" at short viewports. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;

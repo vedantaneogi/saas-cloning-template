@@ -1,16 +1,24 @@
 import { Inbox as InboxIcon } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { InboxBody } from "@/components/inbox-body";
+import { InboxTopbarControls } from "@/components/inbox-filters";
 import { listNotifications } from "@/lib/api";
 
 export default async function InboxPage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
-  const notes = await listNotifications(workspace).catch(() => []);
+  // The list-notifications endpoint hides snoozed rows by default. Pull
+  // them in here so the client-side "Show snoozed" toggle has data to
+  // work with — it filters them back out when off.
+  const notes = await listNotifications(workspace, { includeSnoozed: true }).catch(() => []);
 
   return (
     <div className="flex h-full">
       <aside className="flex h-full w-[360px] shrink-0 flex-col border-r border-border-subtle">
-        <Topbar title="Inbox" icon={<InboxIcon size={15} />} />
+        <Topbar
+          title="Inbox"
+          icon={<InboxIcon size={15} />}
+          trailing={<InboxTopbarControls workspaceSlug={workspace} />}
+        />
         <InboxBody workspaceSlug={workspace} initial={notes} />
       </aside>
       <main className="flex flex-1 items-center justify-center bg-app">

@@ -5,8 +5,11 @@ import { Avatar } from "@/components/icons";
 import { patchMemberRole, type Member, type MemberRole } from "@/lib/api";
 
 const ROLES: { value: MemberRole; label: string; tone: string }[] = [
-  { value: "admin", label: "Admin", tone: "bg-priority-urgent/15 text-priority-urgent" },
-  { value: "member", label: "Member", tone: "bg-accent/15 text-accent" },
+  // Linear renders role badges as muted neutral pills, not error-red. Use the
+  // accent for admin (the role with elevated rights) and a flat pill for the
+  // rest so "Admin" doesn't read as a warning state.
+  { value: "admin", label: "Admin", tone: "bg-accent/15 text-accent" },
+  { value: "member", label: "Member", tone: "bg-pill text-text-secondary" },
   { value: "guest", label: "Guest", tone: "bg-pill text-text-tertiary" },
 ];
 

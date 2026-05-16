@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import datetime, timezone
 
 from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -11,6 +12,11 @@ from app.auth.security import decode_token
 from app.core.config import get_settings
 from app.db.models import Member, MemberRole, User, Workspace
 from app.db.session import get_db as _get_db
+
+# Don't churn the DB on every single request — only bump `last_active_at`
+# when the previous value is older than this. 60s is fine-grained enough
+# to drive the "Online" pill but doesn't write on every page navigation.
+_LAST_ACTIVE_THROTTLE_SECONDS = 60
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -64,6 +70,14 @@ def get_current_member(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="you are not a member of this workspace",
         )
+    now = datetime.now(timezone.utc)
+    last = member.last_active_at
+    # SQLite drops tzinfo on round-trip — coerce to UTC before subtracting.
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    if last is None or (now - last).total_seconds() > _LAST_ACTIVE_THROTTLE_SECONDS:
+        member.last_active_at = now
+        db.commit()
     return member
 
 

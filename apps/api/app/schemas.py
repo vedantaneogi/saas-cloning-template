@@ -17,6 +17,12 @@ class MemberOut(BaseModel):
     color: str
     role: str = "member"
     email: str | None = None
+    # Populated by the members-list endpoint. Other endpoints that
+    # return a MemberOut leave these as None — the Members page is the
+    # only consumer.
+    joined_at: datetime | None = None
+    last_active_at: datetime | None = None
+    team_keys: list[str] = []
 
 
 class WorkflowStateOut(BaseModel):
@@ -499,6 +505,22 @@ class TeamCreateIn(BaseModel):
 
 class MemberRolePatchIn(BaseModel):
     role: str
+
+
+class TeamPreferenceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    team_key: str
+    favorite: bool
+    sub_issue_added: bool
+    sub_issue_resolved: bool
+    sub_triage_added: bool
+
+
+class TeamPreferencePatchIn(BaseModel):
+    favorite: bool | None = None
+    sub_issue_added: bool | None = None
+    sub_issue_resolved: bool | None = None
+    sub_triage_added: bool | None = None
 
 
 class IssuePatchIn(BaseModel):

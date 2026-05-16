@@ -15,6 +15,7 @@ from app.db.models import (
     NotificationKind,
     NotificationPreference,
     Team,
+    TeamPreference,
     Workspace,
     WorkflowState,
 )
@@ -130,6 +131,74 @@ def comment_reacted(db: Session, *, issue: Issue, comment: Comment, emoji: str, 
         comment_id=comment.id,
         body=f"reacted {emoji} to your comment on {issue.identifier}",
     )
+
+
+def _team_subscribers(db: Session, team_id: str, topic_field: str) -> list[str]:
+    """Member ids subscribed to a given topic on this team."""
+    if topic_field not in ("sub_issue_added", "sub_issue_resolved", "sub_triage_added"):
+        return []
+    column = getattr(TeamPreference, topic_field)
+    rows = (
+        db.query(TeamPreference.member_id)
+        .filter(TeamPreference.team_id == team_id, column.is_(True))
+        .all()
+    )
+    return [r[0] for r in rows]
+
+
+def team_issue_added(db: Session, *, issue: Issue, actor_id: str | None) -> None:
+    """Fan out a notification to every member subscribed to
+    `sub_issue_added` on this team. Skips muted recipients and the actor."""
+    if not issue.team_id:
+        return
+    for recipient_id in _team_subscribers(db, issue.team_id, "sub_issue_added"):
+        _add(
+            db,
+            workspace_id=_workspace_id_for_issue(issue),
+            issue=issue,
+            recipient_id=recipient_id,
+            actor_id=actor_id,
+            kind=NotificationKind.subscribed,
+            issue_id=issue.id,
+            body=f"added {issue.identifier} to the team",
+        )
+
+
+def team_issue_resolved(db: Session, *, issue: Issue, actor_id: str | None) -> None:
+    """Fan out to members subscribed to `sub_issue_resolved` when an issue
+    moves into a completed/canceled state. Caller must check the state
+    transition before invoking (we don't recompute it here)."""
+    if not issue.team_id:
+        return
+    for recipient_id in _team_subscribers(db, issue.team_id, "sub_issue_resolved"):
+        _add(
+            db,
+            workspace_id=_workspace_id_for_issue(issue),
+            issue=issue,
+            recipient_id=recipient_id,
+            actor_id=actor_id,
+            kind=NotificationKind.subscribed,
+            issue_id=issue.id,
+            body=f"resolved {issue.identifier}",
+        )
+
+
+def team_triage_added(db: Session, *, issue: Issue, actor_id: str | None) -> None:
+    """Fan out to members subscribed to `sub_triage_added` when an issue
+    lands in the team's triage queue."""
+    if not issue.team_id:
+        return
+    for recipient_id in _team_subscribers(db, issue.team_id, "sub_triage_added"):
+        _add(
+            db,
+            workspace_id=_workspace_id_for_issue(issue),
+            issue=issue,
+            recipient_id=recipient_id,
+            actor_id=actor_id,
+            kind=NotificationKind.subscribed,
+            issue_id=issue.id,
+            body=f"added {issue.identifier} to triage",
+        )
 
 
 def issue_commented(db: Session, *, issue: Issue, comment: Comment, actor_id: str | None) -> None:

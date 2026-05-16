@@ -25,7 +25,7 @@ export function DocumentEditor({
   const [icon, setIcon] = useState(doc.icon);
   const [savingFlash, setSavingFlash] = useState<"idle" | "saving" | "saved">("idle");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [mode, setMode] = useState<"write" | "preview">("write");
+  const [mode, setMode] = useState<"write" | "preview">("preview");
   const [side, setSide] = useState<"history" | "comments" | null>(null);
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");

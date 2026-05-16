@@ -57,6 +57,7 @@ const config: Config = {
         small: "var(--fs-small)",
         default: "var(--fs-default)",
         large: "var(--fs-large)",
+        title3: "var(--fs-title3)",
         title2: "var(--fs-title2)",
         title1: "var(--fs-title1)",
       },

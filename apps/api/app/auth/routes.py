@@ -22,6 +22,7 @@ from app.db.models import (
     MemberRole,
     StateGroup,
     Team,
+    TeamMembership,
     User,
     Workspace,
     WorkflowState,
@@ -343,6 +344,34 @@ def accept_invite(
             role=role,
         )
         db.add(m)
+        db.flush()
+        new_member = m
+    else:
+        new_member = existing_member
+
+    # Auto-join the invitee to whichever teams were picked in the invite
+    # modal. Unknown keys (workspace teams may have been deleted between
+    # invite-create and accept) are silently skipped.
+    if invite.team_keys_json:
+        try:
+            import json as _json
+            picked = _json.loads(invite.team_keys_json)
+        except (ValueError, TypeError):
+            picked = []
+        if isinstance(picked, list) and picked:
+            teams = (
+                db.query(Team)
+                .filter(Team.workspace_id == invite.workspace_id, Team.key.in_(picked))
+                .all()
+            )
+            for team in teams:
+                exists = (
+                    db.query(TeamMembership)
+                    .filter_by(team_id=team.id, member_id=new_member.id)
+                    .first()
+                )
+                if not exists:
+                    db.add(TeamMembership(team_id=team.id, member_id=new_member.id))
 
     invite.accepted_at = datetime.now(timezone.utc)
     db.commit()

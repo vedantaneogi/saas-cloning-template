@@ -127,9 +127,9 @@ function parseBlocks(src: string): Block[] {
 function renderBlock(b: Block, ws?: string) {
   switch (b.kind) {
     case "h":
-      if (b.level === 1) return <h1 className="text-title3 font-semibold text-text-primary">{inline(b.text, ws)}</h1>;
-      if (b.level === 2) return <h2 className="text-default font-semibold text-text-primary">{inline(b.text, ws)}</h2>;
-      return <h3 className="text-small font-semibold text-text-primary">{inline(b.text, ws)}</h3>;
+      if (b.level === 1) return <h1 className="mt-2 text-title2 font-semibold tracking-tight text-text-primary">{inline(b.text, ws)}</h1>;
+      if (b.level === 2) return <h2 className="mt-3 text-large font-semibold tracking-tight text-text-primary">{inline(b.text, ws)}</h2>;
+      return <h3 className="mt-2 text-default font-semibold text-text-primary">{inline(b.text, ws)}</h3>;
     case "ul":
       return (
         <ul className="ml-5 list-disc space-y-1">

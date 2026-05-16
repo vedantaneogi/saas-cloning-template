@@ -52,6 +52,7 @@ from app.db.models import (
     StateGroup,
     Team,
     TeamMembership,
+    TeamPreference,
     Template,
     TemplateKind,
     UpdateHealth,
@@ -90,6 +91,8 @@ from app.schemas import (
     ProjectResourceOut,
     TeamCreateIn,
     TeamPatchIn,
+    TeamPreferenceOut,
+    TeamPreferencePatchIn,
     WorkflowStateCreateIn,
     WorkflowStatePatchIn,
     InitiativeCreateIn,
@@ -359,8 +362,42 @@ def _child_counts(db: Session, parent_ids: list[str]) -> dict[str, tuple[int, in
 # --- routes -------------------------------------------------------------
 
 @router.get("/workspaces/{slug}", response_model=WorkspaceOut)
-def get_workspace_route(ws: Workspace = Depends(get_workspace)) -> Workspace:
-    return ws
+def get_workspace_route(
+    ws: Workspace = Depends(get_workspace),
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    # Hide teams the current user has left from the workspace fetch so the
+    # sidebar / team picker doesn't keep showing them post-leave. Public
+    # (unauthenticated) callers see every team.
+    left_team_ids: set[str] = set()
+    if user is not None:
+        member = db.query(Member).filter_by(workspace_id=ws.id, user_id=user.id).first()
+        if member is not None:
+            rows = (
+                db.query(TeamPreference.team_id)
+                .filter(TeamPreference.member_id == member.id, TeamPreference.left.is_(True))
+                .all()
+            )
+            left_team_ids = {r[0] for r in rows}
+    teams = [t for t in ws.teams if t.id not in left_team_ids]
+    return {
+        "id": ws.id,
+        "slug": ws.slug,
+        "name": ws.name,
+        "icon_color": ws.icon_color,
+        "teams": [
+            {
+                "id": t.id,
+                "key": t.key,
+                "name": t.name,
+                "icon_color": t.icon_color,
+                "cycles_enabled": t.cycles_enabled,
+                "estimate_scale": t.estimate_scale.value if t.estimate_scale else "fibonacci",
+            }
+            for t in teams
+        ],
+    }
 
 
 @router.get("/workspaces/{slug}/teams/{team_key}/issues", response_model=list[IssueOut])
@@ -865,9 +902,65 @@ def my_issues(
     return [_issue_dict(i, counts) for i in issues]
 
 
-@router.get("/workspaces/{slug}/members", response_model=list[MemberOut])
-def list_members(ws: Workspace = Depends(get_workspace), db: Session = Depends(get_db)) -> list[Member]:
-    return db.query(Member).filter_by(workspace_id=ws.id).order_by(Member.name).all()
+@router.get("/workspaces/{slug}/members")
+def list_members(ws: Workspace = Depends(get_workspace), db: Session = Depends(get_db)) -> list[dict]:
+    members = (
+        db.query(Member)
+        .filter_by(workspace_id=ws.id)
+        .order_by(Member.name)
+        .all()
+    )
+    # Resolve joined_at (User.created_at) + team_keys (TeamMembership →
+    # Team.key) so the Members table can render them without N+1 calls.
+    user_ids = [m.user_id for m in members if m.user_id]
+    users_by_id: dict[str, User] = {}
+    if user_ids:
+        for u in db.query(User).filter(User.id.in_(user_ids)).all():
+            users_by_id[u.id] = u
+    teams_by_member: dict[str, list[str]] = {}
+    if members:
+        rows = (
+            db.query(TeamMembership.member_id, Team.key)
+            .join(Team, Team.id == TeamMembership.team_id)
+            .filter(TeamMembership.member_id.in_([m.id for m in members]))
+            .order_by(Team.key)
+            .all()
+        )
+        for member_id, team_key in rows:
+            teams_by_member.setdefault(member_id, []).append(team_key)
+
+    out: list[dict] = []
+    for m in members:
+        u = users_by_id.get(m.user_id) if m.user_id else None
+        out.append(
+            {
+                "id": m.id,
+                "name": m.name,
+                "initials": m.initials,
+                "color": m.color,
+                "role": m.role.value if hasattr(m.role, "value") else m.role,
+                "email": m.email,
+                # SQLite drops tzinfo on round-trip — emit an explicit
+                # "Z" suffix so the browser doesn't reparse the value as
+                # local time and skew the "Online"/relative-time math by
+                # the local UTC offset (e.g. +5:30 in IST).
+                "joined_at": _iso_utc(u.created_at) if u else None,
+                "last_active_at": _iso_utc(m.last_active_at),
+                "team_keys": teams_by_member.get(m.id, []),
+            }
+        )
+    return out
+
+
+def _iso_utc(dt):
+    if dt is None:
+        return None
+    from datetime import timezone as _tz
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_tz.utc)
+    else:
+        dt = dt.astimezone(_tz.utc)
+    return dt.isoformat().replace("+00:00", "Z")
 
 
 @router.get("/workspaces/{slug}/teams/{team_key}/labels", response_model=list[LabelOut])
@@ -961,7 +1054,10 @@ def create_issue(
     if body.label_ids:
         labels = db.query(Label).filter(Label.id.in_(body.label_ids)).all()
         issue.labels = labels
-    notif.issue_assigned(db, issue=issue, previous_assignee_id=None, actor_id=None)
+    notif.issue_assigned(db, issue=issue, previous_assignee_id=None, actor_id=current_member.id)
+    notif.team_issue_added(db, issue=issue, actor_id=current_member.id)
+    if issue.is_triage:
+        notif.team_triage_added(db, issue=issue, actor_id=current_member.id)
     # Run on_issue_create automations (may mutate the issue further).
     from app.services.automations import run_event as _auto_run
     from app.db.models import AutomationTrigger as _AT
@@ -1055,6 +1151,19 @@ def patch_issue(
     # Emit notifications (actor unresolved for now — uses None; future: pull from auth)
     notif.issue_assigned(db, issue=issue, previous_assignee_id=prev_assignee_id, actor_id=None)
     notif.issue_status_changed(db, issue=issue, previous_state_name=prev_state_name, new_state_name=new_state_name, actor_id=None)
+    # Team-subscription topic: issue moved into a completed/canceled state.
+    # We use state_group rather than state_name so renamed states still fire.
+    if prev_state_name != new_state_name:
+        prev_state = (
+            db.query(WorkflowState).filter_by(team_id=issue.team_id, name=prev_state_name).first()
+            if prev_state_name
+            else None
+        )
+        new_state_row = db.query(WorkflowState).filter_by(id=issue.state_id).first()
+        prev_group_val = prev_state.group.value if prev_state else None
+        new_group_val = new_state_row.group.value if new_state_row else None
+        if new_group_val in ("completed", "canceled") and prev_group_val not in ("completed", "canceled"):
+            notif.team_issue_resolved(db, issue=issue, actor_id=None)
     # Run on_status_change automations when the state actually moved.
     if prev_state_name != new_state_name:
         from app.services.automations import run_event as _auto_run
@@ -1157,6 +1266,8 @@ def create_triage_issue(
         triage_source=body.source,
     )
     db.add(issue)
+    db.flush()
+    notif.team_triage_added(db, issue=issue, actor_id=None)
     db.commit()
     db.refresh(issue)
     return _issue_dict(issue)
@@ -2763,6 +2874,23 @@ def _default_member_id(db: Session, ws: Workspace, user: User | None) -> str | N
 
 
 def _notification_dict(n: Notification) -> dict:
+    # Inbox filters (Team / Project / Initiative / Issue priority / Issue
+    # status type) need metadata pulled from the linked issue. Surface it
+    # here so the frontend can subset notifications without a per-row
+    # follow-up fetch.
+    issue = n.issue
+    team_key = issue.team.key if (issue and issue.team) else None
+    project_id = issue.project_id if issue else None
+    initiative_id = (
+        issue.project.initiative_id
+        if (issue and issue.project and getattr(issue.project, "initiative_id", None))
+        else None
+    )
+    priority = issue.priority if issue else None
+    state_group = (
+        issue.state.group.value if (issue and issue.state and hasattr(issue.state.group, "value"))
+        else (issue.state.group if (issue and issue.state) else None)
+    )
     return {
         "id": n.id,
         "kind": n.kind.value if hasattr(n.kind, "value") else n.kind,
@@ -2771,15 +2899,23 @@ def _notification_dict(n: Notification) -> dict:
         "snoozed_until": n.snoozed_until,
         "created_at": n.created_at,
         "actor": MemberOut.model_validate(n.actor).model_dump() if n.actor else None,
-        "issue_identifier": n.issue.identifier if n.issue else None,
-        "issue_title": n.issue.title if n.issue else None,
+        "issue_identifier": issue.identifier if issue else None,
+        "issue_title": issue.title if issue else None,
+        # Filter-friendly metadata. Null when the notification isn't tied
+        # to an issue (e.g. workspace-level updates).
+        "team_key": team_key,
+        "project_id": project_id,
+        "initiative_id": initiative_id,
+        "priority": priority,
+        "state_group": state_group,
     }
 
 
-@router.get("/workspaces/{slug}/notifications", response_model=list[NotificationOut])
+@router.get("/workspaces/{slug}/notifications")
 def list_notifications(
     member_id: str | None = Query(None),
     unread_only: bool = Query(False),
+    include_snoozed: bool = Query(False),
     limit: int = Query(100, ge=1, le=500),
     ws: Workspace = Depends(get_workspace),
     user: User | None = Depends(get_optional_user),
@@ -2791,13 +2927,19 @@ def list_notifications(
     q = (
         db.query(Notification)
         .filter(Notification.workspace_id == ws.id, Notification.recipient_id == rid)
-        .options(selectinload(Notification.actor), selectinload(Notification.issue))
+        .options(
+            selectinload(Notification.actor),
+            selectinload(Notification.issue).selectinload(Issue.team),
+            selectinload(Notification.issue).selectinload(Issue.project),
+            selectinload(Notification.issue).selectinload(Issue.state),
+        )
     )
     if unread_only:
         q = q.filter(Notification.read_at.is_(None))
-    # Hide notifications currently snoozed (snoozed_until > now).
-    now = datetime.now(timezone.utc)
-    q = q.filter((Notification.snoozed_until.is_(None)) | (Notification.snoozed_until <= now))
+    if not include_snoozed:
+        # Hide notifications currently snoozed (snoozed_until > now).
+        now = datetime.now(timezone.utc)
+        q = q.filter((Notification.snoozed_until.is_(None)) | (Notification.snoozed_until <= now))
     notes = q.order_by(Notification.created_at.desc()).limit(limit).all()
     return [_notification_dict(n) for n in notes]
 
@@ -3221,6 +3363,166 @@ def create_team(
     return team
 
 
+# --- Team membership: leave ------------------------------------------------
+
+
+@router.delete(
+    "/workspaces/{slug}/teams/{team_key}/membership",
+    status_code=204,
+)
+def leave_team(
+    team_key: str,
+    ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> None:
+    """Self-service leave: hide the team from the current user's workspace
+    fetch / sidebar. We flip `team_preferences.left=True` (upserting the
+    row if needed) and drop any matching TeamMembership join row. The
+    workspace endpoint filters teams by this flag so the team disappears
+    on the next refresh; re-joining flips the flag back.
+    """
+    team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
+    if not team:
+        raise HTTPException(404, f"team not found: {team_key}")
+    pref = (
+        db.query(TeamPreference)
+        .filter_by(member_id=current_member.id, team_id=team.id)
+        .first()
+    )
+    if pref is None:
+        pref = TeamPreference(member_id=current_member.id, team_id=team.id, left=True)
+        db.add(pref)
+    else:
+        pref.left = True
+    # Best effort: also clear any TeamMembership join row so role-gated
+    # actions on the team stop applying.
+    row = (
+        db.query(TeamMembership)
+        .filter_by(team_id=team.id, member_id=current_member.id)
+        .first()
+    )
+    if row is not None:
+        db.delete(row)
+    db.commit()
+    return None
+
+
+# --- Member sidebar preferences ---------------------------------------------
+
+
+@router.get("/workspaces/{slug}/me/sidebar-prefs")
+def get_sidebar_prefs(
+    current_member: Member = Depends(get_current_member),
+) -> dict:
+    """Return the current member's sidebar customization map.
+
+    Shape: { "<item_key>": "always" | "badged" | "never", ... } plus
+    {"badge_style": "count" | "dot" } at the top level for badge rendering.
+    Missing keys fall back to the client-side default (see web/lib/sidebar-prefs.ts).
+    """
+    raw = current_member.sidebar_prefs
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+class _SidebarPrefsIn(BaseModel):
+    prefs: dict
+
+
+@router.put("/workspaces/{slug}/me/sidebar-prefs")
+def put_sidebar_prefs(
+    body: _SidebarPrefsIn,
+    current_member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    current_member.sidebar_prefs = json.dumps(body.prefs or {})
+    db.commit()
+    return body.prefs or {}
+
+
+# --- Team preferences (favorite + subscription topics) ----------------------
+
+
+def _serialize_team_prefs(prefs: list[TeamPreference], teams: dict[str, str]) -> list[dict]:
+    """Render a list of `TeamPreference` rows as the API's flat shape.
+
+    `teams` is a {team_id: team_key} map so callers don't pay a per-row join
+    just to surface the team key.
+    """
+    return [
+        {
+            "team_key": teams[p.team_id],
+            "favorite": p.favorite,
+            "sub_issue_added": p.sub_issue_added,
+            "sub_issue_resolved": p.sub_issue_resolved,
+            "sub_triage_added": p.sub_triage_added,
+        }
+        for p in prefs
+        if p.team_id in teams
+    ]
+
+
+@router.get(
+    "/workspaces/{slug}/team-preferences",
+    response_model=list[TeamPreferenceOut],
+)
+def list_team_preferences(
+    ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    teams = {t.id: t.key for t in db.query(Team).filter(Team.workspace_id == ws.id).all()}
+    prefs = (
+        db.query(TeamPreference)
+        .filter(TeamPreference.member_id == current_member.id)
+        .filter(TeamPreference.team_id.in_(list(teams.keys())) if teams else False)
+        .all()
+    )
+    return _serialize_team_prefs(prefs, teams)
+
+
+@router.patch(
+    "/workspaces/{slug}/teams/{team_key}/preferences",
+    response_model=TeamPreferenceOut,
+)
+def patch_team_preference(
+    team_key: str,
+    body: TeamPreferencePatchIn,
+    ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
+    if not team:
+        raise HTTPException(404, f"team not found: {team_key}")
+    pref = (
+        db.query(TeamPreference)
+        .filter_by(member_id=current_member.id, team_id=team.id)
+        .first()
+    )
+    if pref is None:
+        pref = TeamPreference(member_id=current_member.id, team_id=team.id)
+        db.add(pref)
+    data = body.model_dump(exclude_unset=True)
+    for field in ("favorite", "sub_issue_added", "sub_issue_resolved", "sub_triage_added"):
+        if field in data and data[field] is not None:
+            setattr(pref, field, bool(data[field]))
+    db.commit()
+    db.refresh(pref)
+    return {
+        "team_key": team.key,
+        "favorite": pref.favorite,
+        "sub_issue_added": pref.sub_issue_added,
+        "sub_issue_resolved": pref.sub_issue_resolved,
+        "sub_triage_added": pref.sub_triage_added,
+    }
+
+
 @router.post("/seed", status_code=200)
 def seed_route(body: SeedRequest, db: Session = Depends(get_db)) -> dict:
     return apply_seed(db, body.model_dump(by_alias=False))
@@ -3306,6 +3608,10 @@ def create_workspace(
 class InviteCreateIn(BaseModel):
     email: str
     role: str = "member"
+    # Optional list of team `key`s the new member should auto-join when
+    # they accept. Unknown keys are silently ignored so a stale UI
+    # selection can't break invite creation.
+    team_keys: list[str] = []
 
 
 class InvitePublicOut(BaseModel):
@@ -3316,6 +3622,7 @@ class InvitePublicOut(BaseModel):
     accept_url: str
     expires_at: datetime
     created_at: datetime
+    team_keys: list[str] = []
 
 
 def _accept_url(token: str) -> str:
@@ -3343,9 +3650,21 @@ def list_invites(
             "accept_url": _accept_url(r.token),
             "expires_at": r.expires_at,
             "created_at": r.created_at,
+            "team_keys": _invite_team_keys(r),
         }
         for r in rows
     ]
+
+
+def _invite_team_keys(inv: WorkspaceInvite) -> list[str]:
+    if not inv.team_keys_json:
+        return []
+    try:
+        import json as _json
+        val = _json.loads(inv.team_keys_json)
+        return [str(k) for k in val] if isinstance(val, list) else []
+    except (ValueError, TypeError):
+        return []
 
 
 @router.post("/workspaces/{slug}/invites", response_model=InvitePublicOut)
@@ -3367,6 +3686,18 @@ def create_invite(
     if db.query(Member).filter_by(workspace_id=ws.id, email=email).first():
         raise HTTPException(409, detail="this email is already a member")
 
+    # Resolve team keys against the workspace's actual teams — silently
+    # drop unknown values so a stale picker can't fail the request.
+    known_team_keys: list[str] = []
+    if body.team_keys:
+        valid = {
+            t.key
+            for t in db.query(Team).filter(Team.workspace_id == ws.id, Team.key.in_(body.team_keys)).all()
+        }
+        known_team_keys = [k for k in body.team_keys if k in valid]
+
+    import json as _json
+
     # Reuse pending invite if one exists.
     existing = (
         db.query(WorkspaceInvite)
@@ -3376,6 +3707,7 @@ def create_invite(
     if existing:
         existing.role = role
         existing.expires_at = datetime.now(timezone.utc) + timedelta(days=14)
+        existing.team_keys_json = _json.dumps(known_team_keys) if known_team_keys else None
         db.commit()
         db.refresh(existing)
         inv = existing
@@ -3389,6 +3721,7 @@ def create_invite(
             token=random_token(),
             invited_by_id=admin.id,
             expires_at=datetime.now(timezone.utc) + timedelta(days=14),
+            team_keys_json=_json.dumps(known_team_keys) if known_team_keys else None,
         )
         db.add(inv)
         db.commit()
@@ -3402,6 +3735,7 @@ def create_invite(
         "accept_url": _accept_url(inv.token),
         "expires_at": inv.expires_at,
         "created_at": inv.created_at,
+        "team_keys": known_team_keys,
     }
 
 

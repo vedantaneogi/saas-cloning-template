@@ -5,7 +5,7 @@ import { LoginForm } from "@/components/auth/login-form";
 export default function LoginPage() {
   return (
     <div className="rounded-xl bg-elevated p-6 shadow-popover">
-      <h1 className="text-title3 font-semibold text-text-primary">Sign in</h1>
+      <h1 className="text-title3 font-semibold tracking-tight text-text-primary">Sign in</h1>
       <p className="mt-1 text-small text-text-tertiary">Welcome back. Enter your account credentials.</p>
       {/* Suspense satisfies Next 15's useSearchParams() boundary requirement. */}
       <Suspense fallback={<div className="mt-5 h-40" />}>

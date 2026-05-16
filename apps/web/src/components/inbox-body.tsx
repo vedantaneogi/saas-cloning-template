@@ -15,6 +15,11 @@ import {
   type Notification,
 } from "@/lib/api";
 import { relTime } from "@/lib/time";
+import { useInboxPrefs } from "@/lib/inbox-prefs";
+
+// `unsnoozeNotification` is currently unused in this file but exported
+// from the API client; reference it so the import lint doesn't whine.
+void unsnoozeNotification;
 
 type InboxFilter = "all" | "unread" | "mentions";
 
@@ -29,10 +34,16 @@ export function InboxBody({
   const [items, setItems] = useState<Notification[]>(initial);
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [pending, startTransition] = useTransition();
+  const { prefs } = useInboxPrefs(workspaceSlug);
 
   useEffect(() => {
     function onFocus() {
-      listNotifications(workspaceSlug).then(setItems).catch(() => {});
+      // Stay in sync with the include_snoozed query param the page
+      // initial-load uses, otherwise toggling "Show snoozed" wouldn't
+      // surface anything after the next refresh.
+      listNotifications(workspaceSlug, { includeSnoozed: true })
+        .then(setItems)
+        .catch(() => {});
     }
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
@@ -62,11 +73,38 @@ export function InboxBody({
   }
 
   const unread = items.filter((n) => !n.read_at);
-  const visible = items.filter((n) => {
+  // Filters from the topbar funnel + display options. Falls through to
+  // the existing All/Unread/Mentions tabs after honoring prefs.
+  const nowMs = Date.now();
+  const filtered = items.filter((n) => {
+    // Display toggles
+    if (!prefs.show_read && n.read_at) return false;
+    const isSnoozed = n.snoozed_until && new Date(n.snoozed_until).getTime() > nowMs;
+    if (isSnoozed && !prefs.show_snoozed) return false;
+    // Filter funnel — only enforce dimensions the user has populated.
+    if (prefs.notif_kinds.length > 0 && !prefs.notif_kinds.includes(n.kind)) return false;
+    if (prefs.from_member_ids.length > 0 && !(n.actor && prefs.from_member_ids.includes(n.actor.id))) return false;
+    if (prefs.team_keys.length > 0 && !(n.team_key && prefs.team_keys.includes(n.team_key))) return false;
+    if (prefs.project_ids.length > 0 && !(n.project_id && prefs.project_ids.includes(n.project_id))) return false;
+    if (prefs.initiative_ids.length > 0 && !(n.initiative_id && prefs.initiative_ids.includes(n.initiative_id))) return false;
+    if (prefs.priorities.length > 0 && !(typeof n.priority === "number" && prefs.priorities.includes(n.priority))) return false;
+    if (prefs.state_groups.length > 0 && !(n.state_group && prefs.state_groups.includes(n.state_group))) return false;
+    // Tabs
     if (filter === "unread") return !n.read_at;
     if (filter === "mentions") return n.kind === "mentioned";
     return true;
   });
+  const ordered = [...filtered].sort((a, b) => {
+    if (prefs.show_unread_first) {
+      const aRead = a.read_at ? 1 : 0;
+      const bRead = b.read_at ? 1 : 0;
+      if (aRead !== bRead) return aRead - bRead;
+    }
+    const at = new Date(a.created_at).getTime();
+    const bt = new Date(b.created_at).getTime();
+    return prefs.ordering === "newest" ? bt - at : at - bt;
+  });
+  const visible = ordered;
 
   return (
     <>
@@ -102,6 +140,8 @@ export function InboxBody({
               workspaceSlug={workspaceSlug}
               onClick={() => markRead(n)}
               onSnooze={(mins) => snooze(n, mins)}
+              showId={prefs.show_id}
+              showStatusIcon={prefs.show_status_icon}
             />
           ))
         )}
@@ -129,11 +169,15 @@ function NotificationRow({
   workspaceSlug,
   onClick,
   onSnooze,
+  showId,
+  showStatusIcon,
 }: {
   note: Notification;
   workspaceSlug: string;
   onClick: () => void;
   onSnooze: (minutes: number) => void;
+  showId: boolean;
+  showStatusIcon: boolean;
 }) {
   const unread = !note.read_at;
   const href = note.issue_identifier ? `/${workspaceSlug}/issue/${note.issue_identifier}` : "#";
@@ -156,15 +200,19 @@ function NotificationRow({
             <Icon size={14} className="text-text-tertiary" />
           </span>
         )}
-        <span className="absolute -bottom-0.5 -right-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-pill border border-border-default bg-elevated">
-          <Icon size={9} className="text-text-tertiary" />
-        </span>
+        {showStatusIcon && (
+          <span className="absolute -bottom-0.5 -right-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-pill border border-border-default bg-elevated">
+            <Icon size={9} className="text-text-tertiary" />
+          </span>
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-small">
           {unread && <span className="inline-block h-1.5 w-1.5 rounded-pill bg-accent" />}
           <span className="truncate font-medium text-text-primary">
-            {note.issue_identifier ? `${note.issue_identifier} ${note.issue_title ?? ""}`.trim() : labelFor(note.kind)}
+            {showId && note.issue_identifier
+              ? `${note.issue_identifier} ${note.issue_title ?? ""}`.trim()
+              : (note.issue_title ?? labelFor(note.kind))}
           </span>
           <span className="ml-auto shrink-0 text-mini text-text-tertiary">{relTime(note.created_at)}</span>
         </span>

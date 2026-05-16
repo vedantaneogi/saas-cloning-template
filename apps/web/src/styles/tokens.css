@@ -108,6 +108,7 @@
   --fs-small: 0.875rem;      /* 14px — was 13px, matches Linear list/sidebar */
   --fs-default: 0.9375rem;   /* 15px — section titles, body */
   --fs-large: 1.125rem;      /* 18px */
+  --fs-title3: 1.25rem;      /* 20px — settings + sub-page headings */
   --fs-title2: 1.5rem;
   --fs-title1: 2.25rem;
 

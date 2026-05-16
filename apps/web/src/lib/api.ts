@@ -19,6 +19,10 @@ export interface Member {
   color: string;
   role?: MemberRole;
   email?: string | null;
+  // Populated only by the workspace members-list endpoint.
+  joined_at?: string | null;
+  last_active_at?: string | null;
+  team_keys?: string[];
 }
 
 export interface WorkflowState {
@@ -606,6 +610,53 @@ export function createProject(
   });
 }
 
+export function createTeam(
+  slug: string,
+  body: { key: string; name: string; icon_color?: string; cycles_enabled?: boolean; estimate_scale?: string }
+): Promise<Team> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/teams`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export interface TeamPreference {
+  team_key: string;
+  favorite: boolean;
+  sub_issue_added: boolean;
+  sub_issue_resolved: boolean;
+  sub_triage_added: boolean;
+}
+
+export function listTeamPreferences(slug: string): Promise<TeamPreference[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/team-preferences`, {
+    cache: "no-store",
+  });
+}
+
+export function patchTeamPreference(
+  slug: string,
+  teamKey: string,
+  body: Partial<Omit<TeamPreference, "team_key">>,
+): Promise<TeamPreference> {
+  return fetchJson(
+    `/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}/preferences`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function leaveTeam(slug: string, teamKey: string): Promise<void> {
+  await fetch(
+    `/api/workspaces/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamKey)}/membership`,
+    { method: "DELETE", credentials: "include" },
+  );
+}
+
 export function createMilestone(
   slug: string,
   projectSlug: string,
@@ -959,12 +1010,22 @@ export interface Notification {
   actor: Member | null;
   issue_identifier: string | null;
   issue_title: string | null;
+  // Filter-friendly metadata pulled from the linked issue.
+  team_key?: string | null;
+  project_id?: string | null;
+  initiative_id?: string | null;
+  priority?: number | null;
+  state_group?: string | null;
 }
 
-export function listNotifications(slug: string, opts: { unreadOnly?: boolean; memberId?: string } = {}): Promise<Notification[]> {
+export function listNotifications(
+  slug: string,
+  opts: { unreadOnly?: boolean; includeSnoozed?: boolean; memberId?: string } = {},
+): Promise<Notification[]> {
   const usp = new URLSearchParams();
   if (opts.memberId) usp.set("member_id", opts.memberId);
   if (opts.unreadOnly) usp.set("unread_only", "true");
+  if (opts.includeSnoozed) usp.set("include_snoozed", "true");
   const qs = usp.toString();
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/notifications${qs ? `?${qs}` : ""}`);
 }
@@ -1072,13 +1133,17 @@ export interface PendingInvite {
   accept_url: string;
   expires_at: string;
   created_at: string;
+  team_keys?: string[];
 }
 
 export function listInvites(slug: string): Promise<PendingInvite[]> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/invites`);
 }
 
-export function createInvite(slug: string, body: { email: string; role: MemberRole }): Promise<PendingInvite> {
+export function createInvite(
+  slug: string,
+  body: { email: string; role: MemberRole; team_keys?: string[] },
+): Promise<PendingInvite> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/invites`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

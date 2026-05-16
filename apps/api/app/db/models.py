@@ -169,6 +169,17 @@ class Member(Base):
     role: Mapped[MemberRole] = mapped_column(
         Enum(MemberRole, name="member_role"), default=MemberRole.member, nullable=False
     )
+    # Per-member sidebar customization. JSON string mapping item key →
+    # "always" | "badged" | "never". Empty / missing keys fall back to the
+    # client-side default (see lib/sidebar-prefs.ts). Stored as TEXT so we
+    # don't need a JSONB-vs-JSON branch between Postgres and SQLite.
+    sidebar_prefs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Touched by `get_current_member` on every authenticated request, so
+    # the Members page can render "Online" (within 5 min) or relative
+    # last-seen times. Null until the member makes their first request.
+    last_active_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="members")
     user: Mapped["User | None"] = relationship(back_populates="members")
@@ -194,6 +205,11 @@ class WorkspaceInvite(Base):
     invited_by_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # JSON array of team `key` values the invitee should auto-join when
+    # they accept (matches Linear's "Add to team" picker in the invite
+    # modal). Stored as TEXT for SQLite/Postgres portability. Empty/null
+    # means workspace-only invite — no team auto-join.
+    team_keys_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     workspace: Mapped["Workspace"] = relationship(back_populates="invites")
@@ -643,6 +659,39 @@ class Notification(Base):
     actor: Mapped["Member | None"] = relationship(foreign_keys=[actor_id])
     issue: Mapped["Issue | None"] = relationship()
     comment: Mapped["Comment | None"] = relationship()
+
+
+class TeamPreference(Base):
+    """Per-member preferences for a single team: favorite-pinning and the
+    three subscription topics that Linear surfaces in the team menu.
+
+    A user can favorite/subscribe to a team they aren't a member of, so this
+    is a separate table rather than a column on team_memberships. Each
+    member has at most one row per team (composite uniqueness).
+    """
+
+    __tablename__ = "team_preferences"
+    __table_args__ = (
+        UniqueConstraint("member_id", "team_id", name="uq_team_prefs_member_team"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    member_id: Mapped[str] = mapped_column(ForeignKey("members.id", ondelete="CASCADE"), nullable=False, index=True)
+    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
+    favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sub_issue_added: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sub_issue_resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sub_triage_added: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # User clicked "Leave team". The team is hidden from their sidebar /
+    # workspace fetch until they re-join. We track this here rather than
+    # deleting TeamMembership so the membership table stays the source of
+    # truth for explicit invites, and so re-joining is a single flag flip.
+    left: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    member: Mapped["Member"] = relationship()
+    team: Mapped["Team"] = relationship()
 
 
 class NotificationPreference(Base):

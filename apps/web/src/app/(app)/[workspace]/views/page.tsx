@@ -157,13 +157,10 @@ function EmptyState({ tab, workspace }: { tab: "issues" | "projects"; workspace:
             ? "Save filters across your projects. Open the projects index, set your filters, and save the configuration to revisit it later."
             : "Create custom views using filters to show only the issues you want to see. You can save, share, and favorite these views for easy access and faster team collaboration."}
         </p>
-        <p className="mt-3 inline-flex items-center gap-1 text-mini text-text-tertiary">
-          You can also save any existing view by clicking the
-          <Bookmark size={11} className="text-text-tertiary" />
-          icon or by pressing
-          <kbd className={KBD}>⌥</kbd>
-          <kbd className={KBD}>V</kbd>
-          .
+        <p className="mt-3 text-mini leading-relaxed text-text-tertiary">
+          You can also save any existing view by clicking the{" "}
+          <Bookmark size={11} className="-mt-0.5 inline align-middle text-text-tertiary" />{" "}
+          icon, or by pressing <kbd className={KBD}>⌥</kbd> <kbd className={KBD}>V</kbd>.
         </p>
         <div className="mt-5 flex items-center justify-center gap-2">
           <Link
