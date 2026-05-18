@@ -10,21 +10,34 @@ import {
   type TeamPreference,
 } from "@/lib/api";
 
-const ROWS: { key: keyof Pick<TeamPreference, "sub_issue_added" | "sub_issue_resolved" | "sub_triage_added">; label: string }[] = [
+type SubKey = "sub_issue_added" | "sub_issue_resolved" | "sub_triage_added";
+
+const ROWS: { key: SubKey; label: string }[] = [
   { key: "sub_issue_added", label: "An issue is added to the team" },
   { key: "sub_issue_resolved", label: "An issue is marked completed or canceled" },
   { key: "sub_triage_added", label: "An issue is added to the triage queue" },
 ];
 
+const EMPTY_PREF = (teamKey: string): TeamPreference => ({
+  team_key: teamKey,
+  favorite: false,
+  sub_issue_added: false,
+  sub_issue_resolved: false,
+  sub_triage_added: false,
+});
+
 /**
  * Bell icon in the team issues header. Click opens a popover that
  * toggles which team events should generate inbox notifications. The
- * three flags map directly onto the team_preferences columns:
- * sub_issue_added / sub_issue_resolved / sub_triage_added.
+ * three flags map directly onto the team_preferences columns
+ * (sub_issue_added / sub_issue_resolved / sub_triage_added) and the
+ * existing notifications service (services/notifications.py) fans out
+ * inbox entries to every member with the matching flag on.
  *
- * Slack notifications row is a placeholder "Connect" button — wiring
- * actual Slack integration is out of scope for this component but the
- * row matches Linear's layout so the popover looks right.
+ * The PATCH endpoint upserts the row when the caller has no preferences
+ * yet, so we treat the "no pref row exists" state as
+ * "all-flags-false defaults" — the user can flip a toggle directly and
+ * the server materializes the row on first save.
  */
 export function TeamNotificationBell({
   workspaceSlug,
@@ -34,26 +47,30 @@ export function TeamNotificationBell({
   teamKey: string;
 }) {
   const [pref, setPref] = useState<TeamPreference | null>(null);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState<SubKey | null>(null);
 
   useEffect(() => {
     listTeamPreferences(workspaceSlug)
       .then((rows) => {
-        setPref(rows.find((r) => r.team_key === teamKey) ?? null);
+        setPref(rows.find((r) => r.team_key === teamKey) ?? EMPTY_PREF(teamKey));
       })
-      .catch(() => {});
+      .catch(() => {
+        setPref(EMPTY_PREF(teamKey));
+      });
   }, [workspaceSlug, teamKey]);
 
-  async function toggle(key: typeof ROWS[number]["key"]) {
-    if (!pref) return;
-    const next = { ...pref, [key]: !pref[key] };
-    setPref(next);
+  async function toggle(key: SubKey) {
+    const current = pref ?? EMPTY_PREF(teamKey);
+    const nextValue = !current[key];
+    const optimistic = { ...current, [key]: nextValue } as TeamPreference;
+    setPref(optimistic);
     setSaving(key);
     try {
-      const saved = await patchTeamPreference(workspaceSlug, teamKey, { [key]: next[key] });
+      const saved = await patchTeamPreference(workspaceSlug, teamKey, { [key]: nextValue });
       setPref(saved);
-    } catch {
-      setPref(pref);
+    } catch (e) {
+      console.error("notification pref save failed", e);
+      setPref(current);
     } finally {
       setSaving(null);
     }
@@ -100,7 +117,7 @@ export function TeamNotificationBell({
                     <input
                       type="checkbox"
                       checked={on}
-                      disabled={!pref || busy}
+                      disabled={busy}
                       onChange={() => toggle(r.key)}
                       className="h-3.5 w-3.5 cursor-pointer accent-accent"
                     />
