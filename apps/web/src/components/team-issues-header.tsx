@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Bookmark, ChevronRight, Layers, Star } from "lucide-react";
 import clsx from "clsx";
-import { DisplayOptions } from "@/components/display-options";
-import { FilterTrigger } from "@/components/filter-bar";
 import { SaveViewButton } from "@/components/save-view-button";
 import { TeamCsvActions } from "@/components/team-csv-actions";
+import { TeamIssuesControls } from "@/components/team-issues-controls";
 import { TeamNotificationBell } from "@/components/team-notification-bell";
 import { useTeamFavorite } from "@/lib/team-prefs";
 import type { SavedView, Team } from "@/lib/api";
@@ -113,10 +112,9 @@ export function TeamIssuesHeader({
           </>
         )}
 
-        <span className="ml-auto flex items-center gap-1">
+        <span className="ml-auto flex items-center gap-2">
           <SaveViewButton workspaceSlug={workspace} teamKey={team.key} base={view} savedView={savedView} />
-          <FilterTrigger workspaceSlug={workspace} teamKey={team.key} />
-          <DisplayOptions />
+          <TeamIssuesControls workspaceSlug={workspace} teamKey={team.key} />
           <TeamCsvActions workspaceSlug={workspace} teamKey={team.key} />
         </span>
       </div>

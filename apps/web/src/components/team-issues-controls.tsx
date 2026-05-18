@@ -1,0 +1,702 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  AtSign,
+  BarChart3,
+  Bot,
+  Box,
+  Calendar,
+  ChevronRight,
+  Circle,
+  CornerUpRight,
+  FileText,
+  Filter,
+  LayoutGrid,
+  List as ListIcon,
+  Link as LinkIcon,
+  Lock,
+  PanelRight,
+  ScrollText,
+  SlidersHorizontal,
+  Sparkles,
+  Tag,
+  Target,
+  User as UserIcon,
+  Users,
+} from "lucide-react";
+import clsx from "clsx";
+import { Popover } from "@/components/popover";
+import {
+  listCycles,
+  listMembers,
+  listProjects,
+  listTeamLabels,
+  listTeamStates,
+  type Cycle,
+  type Label,
+  type Member,
+  type Project,
+  type WorkflowState,
+} from "@/lib/api";
+
+/**
+ * Three round-chip controls (Filter / Display / Panel) on the team
+ * issues page. Visual + interaction match `my-issues-controls.tsx` so
+ * the two surfaces feel consistent. Persistence is URL-driven (team
+ * pages are server-rendered) — selections land in `?priority=`,
+ * `?state=`, `?assignee=`, `?label=`, `?project=`, plus `?display=`,
+ * `?group=`, `?sort=` for the display menu.
+ *
+ * Rows that the team API can't express yet (AI filter, Agent, Creator,
+ * Cycle, Subscribers, etc.) render as decorative `disabled` rows the
+ * same way MyIssuesControls handles them — keeping the surface area
+ * faithful without faking working filters.
+ */
+export function TeamIssuesControls({
+  workspaceSlug,
+  teamKey,
+}: {
+  workspaceSlug: string;
+  teamKey: string;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+
+  const [members, setMembers] = useState<Member[]>([]);
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [states, setStates] = useState<WorkflowState[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [cycles, setCycles] = useState<Cycle[]>([]);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+    listMembers(workspaceSlug).then(setMembers).catch(() => {});
+    listTeamLabels(workspaceSlug, teamKey).then(setLabels).catch(() => {});
+    listTeamStates(workspaceSlug, teamKey).then(setStates).catch(() => {});
+    listProjects(workspaceSlug).then(setProjects).catch(() => {});
+    listCycles(workspaceSlug, teamKey).then(setCycles).catch(() => {});
+  }, [workspaceSlug, teamKey]);
+
+  function readList(key: string): string[] {
+    const v = params.get(key);
+    return v ? v.split(",").filter(Boolean) : [];
+  }
+
+  function readSingle(key: string, fallback = ""): string {
+    return params.get(key) ?? fallback;
+  }
+
+  function writeList(key: string, values: string[]) {
+    const sp = new URLSearchParams(params.toString());
+    if (values.length === 0) sp.delete(key);
+    else sp.set(key, values.join(","));
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  function writeSingle(key: string, value: string | null, defaultValue = "") {
+    const sp = new URLSearchParams(params.toString());
+    if (!value || value === defaultValue) sp.delete(key);
+    else sp.set(key, value);
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  function toggleListValue(key: string, value: string) {
+    const current = readList(key);
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    writeList(key, next);
+  }
+
+  function clearAllFilters() {
+    const sp = new URLSearchParams(params.toString());
+    ["priority", "label", "assignee", "state", "project", "search"].forEach((k) => sp.delete(k));
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  const activeCount =
+    readList("priority").length +
+    readList("label").length +
+    readList("assignee").length +
+    readList("state").length +
+    readList("project").length +
+    (readSingle("search").trim() ? 1 : 0);
+
+  const chipCls =
+    "relative flex h-7 w-7 items-center justify-center rounded-pill border border-border-subtle text-text-tertiary transition-colors hover:bg-row-hover hover:text-text-secondary";
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <Popover
+        align="end"
+        width={280}
+        trigger={({ toggle, open }) => (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label="Filter"
+            title="Filter"
+            className={clsx(chipCls, open && "border-border-strong bg-row-hover text-text-secondary")}
+          >
+            <Filter size={13} />
+            {hydrated && activeCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 inline-flex h-3 min-w-3 items-center justify-center rounded-pill bg-accent px-0.5 text-[9px] font-semibold text-white">
+                {activeCount}
+              </span>
+            )}
+          </button>
+        )}
+      >
+        {({ close }) => (
+          <FilterMenu
+            members={members}
+            labels={labels}
+            states={states}
+            projects={projects}
+            cycles={cycles}
+            readList={readList}
+            readSingle={readSingle}
+            writeList={writeList}
+            writeSingle={writeSingle}
+            toggleListValue={toggleListValue}
+            clearAllFilters={() => { clearAllFilters(); close(); }}
+            close={close}
+          />
+        )}
+      </Popover>
+
+      <Popover
+        align="end"
+        width={320}
+        surface="glass"
+        trigger={({ toggle, open }) => (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label="Display options"
+            title="Display options"
+            className={clsx(chipCls, open && "border-border-strong bg-row-hover text-text-secondary")}
+          >
+            <SlidersHorizontal size={13} />
+          </button>
+        )}
+      >
+        {() => (
+          <DisplayMenu
+            display={readSingle("display", "list")}
+            group={readSingle("group", "state")}
+            sort={readSingle("sort", "default")}
+            writeSingle={writeSingle}
+          />
+        )}
+      </Popover>
+
+      <button
+        type="button"
+        onClick={() => setPanelOpen((v) => !v)}
+        aria-label="Toggle insights panel"
+        aria-pressed={panelOpen}
+        title="Insights panel"
+        className={clsx(chipCls, panelOpen && "border-border-strong bg-row-hover text-text-secondary")}
+      >
+        <PanelRight size={13} />
+      </button>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Filter menu
+// ---------------------------------------------------------------------------
+
+const PRIORITY_OPTIONS = [
+  { value: "1", label: "Urgent" },
+  { value: "2", label: "High" },
+  { value: "3", label: "Medium" },
+  { value: "4", label: "Low" },
+  { value: "0", label: "No priority" },
+];
+
+function FilterMenu({
+  members,
+  labels,
+  states,
+  projects,
+  cycles,
+  readList,
+  readSingle,
+  writeList,
+  writeSingle,
+  toggleListValue,
+  clearAllFilters,
+  close,
+}: {
+  members: Member[];
+  labels: Label[];
+  states: WorkflowState[];
+  projects: Project[];
+  cycles: Cycle[];
+  readList: (key: string) => string[];
+  readSingle: (key: string, fallback?: string) => string;
+  writeList: (key: string, values: string[]) => void;
+  writeSingle: (key: string, value: string | null, defaultValue?: string) => void;
+  toggleListValue: (key: string, value: string) => void;
+  clearAllFilters: () => void;
+  close: () => void;
+}) {
+  const [search, setSearch] = useState("");
+
+  const rows: FilterRowDef[] = [
+    { key: "ai_filter", label: "AI filter", icon: <Sparkles size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    { key: "advanced_filter", label: "Advanced filter", icon: <Filter size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    {
+      key: "state",
+      label: "Status",
+      icon: <Circle size={13} />,
+      options: states.map((s) => ({ value: s.id, label: s.name, color: s.color })),
+      selected: readList("state"),
+      onToggle: (v) => toggleListValue("state", v),
+    },
+    {
+      key: "assignee",
+      label: "Assignee",
+      icon: <UserIcon size={13} />,
+      options: members.map((m) => ({ value: m.id, label: m.name, color: m.color })),
+      selected: readList("assignee"),
+      onToggle: (v) => toggleListValue("assignee", v),
+    },
+    { key: "agent", label: "Agent", icon: <Bot size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    { key: "creator", label: "Creator", icon: <AtSign size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    {
+      key: "priority",
+      label: "Priority",
+      icon: <BarChart3 size={13} />,
+      options: PRIORITY_OPTIONS,
+      selected: readList("priority"),
+      onToggle: (v) => toggleListValue("priority", v),
+    },
+    {
+      key: "label",
+      label: "Labels",
+      icon: <Tag size={13} />,
+      options: labels.map((l) => ({ value: l.id, label: l.name, color: l.color })),
+      selected: readList("label"),
+      onToggle: (v) => toggleListValue("label", v),
+    },
+    { key: "relations", label: "Relations", icon: <CornerUpRight size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    { key: "suggested_label", label: "Suggested label", icon: <Sparkles size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    { key: "date", label: "Dates", icon: <Calendar size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    {
+      key: "project",
+      label: "Project",
+      icon: <Box size={13} />,
+      options: projects.map((p) => ({ value: p.id, label: p.name, color: p.icon_color })),
+      selected: readList("project"),
+      onToggle: (v) => toggleListValue("project", v),
+    },
+    { key: "project_properties", label: "Project properties", icon: <Box size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    {
+      key: "cycle",
+      label: "Cycle",
+      icon: <Target size={13} />,
+      options: cycles.map((c) => ({ value: c.id, label: c.name })),
+      selected: readList("cycle"),
+      onToggle: (v) => toggleListValue("cycle", v),
+      disabled: cycles.length === 0,
+    },
+    { key: "added_to_cycle", label: "Added to cycle", icon: <Target size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    { key: "subscribers", label: "Subscribers", icon: <Users size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    { key: "auto_closed", label: "Auto-closed", icon: <Lock size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    {
+      key: "search",
+      label: "Content",
+      icon: <ScrollText size={13} />,
+      kind: "search",
+      searchValue: readSingle("search"),
+      onSearchChange: (v) => writeSingle("search", v || null),
+      options: [],
+      selected: readSingle("search").trim() ? [readSingle("search")] : [],
+      onToggle: () => undefined,
+    },
+    { key: "links", label: "Links", icon: <LinkIcon size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+    { key: "template", label: "Template", icon: <FileText size={13} />, disabled: true, options: [], selected: [], onToggle: () => undefined },
+  ];
+
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return rows;
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => r.label.toLowerCase().includes(q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, JSON.stringify(rows.map((r) => [r.key, r.selected.length]))]);
+
+  return (
+    <div className="py-1">
+      <div className="flex items-center justify-between px-2.5 pb-1 pt-0.5">
+        <input
+          autoFocus
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Add Filter..."
+          className="flex-1 bg-transparent text-small text-text-primary placeholder:text-text-quaternary focus:outline-none"
+        />
+        <span className="ml-2 rounded-sm bg-pill px-1 text-micro font-mono text-text-tertiary">F</span>
+      </div>
+      <hr className="my-1 border-border-subtle" />
+      {filteredRows.map((row) => (
+        <FilterRow key={row.key} row={row} />
+      ))}
+      {filteredRows.length === 0 && (
+        <div className="px-3 py-2 text-mini text-text-tertiary">No filters match.</div>
+      )}
+      <hr className="my-1 border-border-subtle" />
+      <button
+        type="button"
+        onClick={clearAllFilters}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
+      >
+        <span>Clear all filters</span>
+      </button>
+    </div>
+  );
+}
+
+interface FilterRowOption {
+  value: string;
+  label: string;
+  color?: string;
+}
+
+interface FilterRowDef {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  options: FilterRowOption[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  disabled?: boolean;
+  kind?: "list" | "search";
+  searchValue?: string;
+  onSearchChange?: (v: string) => void;
+}
+
+function FilterRow({ row }: { row: FilterRowDef }) {
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const subRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+    function recompute() {
+      const r = rowRef.current?.getBoundingClientRect();
+      const s = subRef.current;
+      if (!r || !s) return;
+      const sw = s.offsetWidth;
+      const sh = s.offsetHeight;
+      const gutter = 8;
+      let left = r.right + 6;
+      if (left + sw > window.innerWidth - gutter) {
+        left = Math.max(gutter, r.left - sw - 6);
+      }
+      let top = r.top - 4;
+      if (top + sh > window.innerHeight - gutter) {
+        top = Math.max(gutter, window.innerHeight - sh - gutter);
+      }
+      setPos({ top, left });
+    }
+    recompute();
+    window.addEventListener("scroll", recompute, true);
+    window.addEventListener("resize", recompute);
+    return () => {
+      window.removeEventListener("scroll", recompute, true);
+      window.removeEventListener("resize", recompute);
+    };
+  }, [open]);
+
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function scheduleClose() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  }
+  function cancelClose() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  }
+
+  const filteredOptions = useMemo(() => {
+    if (!search.trim()) return row.options;
+    const q = search.trim().toLowerCase();
+    return row.options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [search, row.options]);
+
+  if (row.disabled) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="flex w-full cursor-default items-center gap-2 px-2.5 py-1.5 text-left text-small text-text-secondary opacity-70"
+      >
+        <span className="text-text-tertiary">{row.icon}</span>
+        <span className="flex-1">{row.label}</span>
+        <ChevronRight size={11} className="text-text-tertiary" />
+      </button>
+    );
+  }
+
+  const kind = row.kind ?? "list";
+  let trailingHint: React.ReactNode = null;
+  if (kind === "list" && row.selected.length > 0) {
+    trailingHint = <span className="text-mini text-text-tertiary">{row.selected.length}</span>;
+  } else if (kind === "search" && (row.searchValue ?? "").trim().length > 0) {
+    trailingHint = <span className="inline-block h-1.5 w-1.5 rounded-pill bg-accent" />;
+  }
+
+  return (
+    <>
+      <button
+        ref={rowRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        onMouseEnter={() => { cancelClose(); setOpen(true); }}
+        onMouseLeave={scheduleClose}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
+      >
+        <span className="text-text-tertiary">{row.icon}</span>
+        <span className="flex-1">{row.label}</span>
+        {trailingHint}
+        <ChevronRight size={11} className="text-text-tertiary" />
+      </button>
+      {open && mounted && createPortal(
+        <div
+          ref={subRef}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          onMouseDown={(e) => e.stopPropagation()}
+          className={clsx(
+            "fixed z-[1210] w-[260px] overflow-hidden rounded-md bg-elevated shadow-popover",
+            pos == null && "invisible",
+          )}
+          style={{ top: pos?.top ?? 0, left: pos?.left ?? 0 }}
+        >
+          {kind === "list" && (
+            <>
+              <div className="px-2.5 py-1">
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter..."
+                  className="w-full bg-transparent py-1 text-small text-text-primary placeholder:text-text-quaternary focus:outline-none"
+                />
+              </div>
+              <hr className="border-border-subtle" />
+              <div className="max-h-72 overflow-y-auto py-1">
+                {filteredOptions.length === 0 && (
+                  <div className="px-3 py-2 text-mini text-text-tertiary">No matches.</div>
+                )}
+                {filteredOptions.map((opt) => {
+                  const checked = row.selected.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); row.onToggle(opt.value); }}
+                      className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
+                    >
+                      <span className={clsx(
+                        "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                        checked ? "border-accent bg-accent" : "border-border-strong bg-input",
+                      )}>
+                        {checked && <CheckSvg />}
+                      </span>
+                      {opt.color && (
+                        <span
+                          className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                          style={{ background: opt.color }}
+                        />
+                      )}
+                      <span className="flex-1 truncate">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {kind === "search" && (
+            <div className="px-2.5 py-2">
+              <input
+                autoFocus
+                value={row.searchValue ?? ""}
+                onChange={(e) => row.onSearchChange?.(e.target.value)}
+                placeholder="Search content..."
+                className="w-full rounded-md bg-input px-2 py-1.5 text-small text-text-primary placeholder:text-text-quaternary focus:outline-none"
+              />
+              <p className="px-1 pt-2 text-mini text-text-tertiary">
+                Matches issue title or description.
+              </p>
+            </div>
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+function CheckSvg() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+      <path d="M1.5 4.5L3.5 6.5L7.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Display menu
+// ---------------------------------------------------------------------------
+
+const GROUP_OPTIONS = [
+  { value: "state", label: "Status" },
+  { value: "priority", label: "Priority" },
+  { value: "assignee", label: "Assignee" },
+  { value: "project", label: "Project" },
+  { value: "label", label: "Label" },
+  { value: "none", label: "No grouping" },
+];
+
+const SORT_OPTIONS = [
+  { value: "default", label: "Default" },
+  { value: "priority", label: "Priority" },
+  { value: "updated", label: "Last updated" },
+  { value: "created", label: "Created date" },
+  { value: "due", label: "Due date" },
+];
+
+function DisplayMenu({
+  display,
+  group,
+  sort,
+  writeSingle,
+}: {
+  display: string;
+  group: string;
+  sort: string;
+  writeSingle: (key: string, value: string | null, defaultValue?: string) => void;
+}) {
+  return (
+    <div className="p-3">
+      <DisplayHeader>View</DisplayHeader>
+      <div className="mt-1 flex gap-1">
+        <ViewChip
+          active={display === "list"}
+          icon={<ListIcon size={12} />}
+          label="List"
+          onClick={() => writeSingle("display", "list", "list")}
+        />
+        <ViewChip
+          active={display === "board"}
+          icon={<LayoutGrid size={12} />}
+          label="Board"
+          onClick={() => writeSingle("display", "board", "list")}
+        />
+      </div>
+
+      <DisplayHeader className="mt-3">Grouping</DisplayHeader>
+      <RadioRow
+        value={group}
+        options={GROUP_OPTIONS}
+        onChange={(v) => writeSingle("group", v, "state")}
+      />
+
+      <DisplayHeader className="mt-3">Ordering</DisplayHeader>
+      <RadioRow
+        value={sort}
+        options={SORT_OPTIONS}
+        onChange={(v) => writeSingle("sort", v, "default")}
+      />
+    </div>
+  );
+}
+
+function DisplayHeader({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={clsx("text-mini text-text-tertiary", className)}>{children}</div>
+  );
+}
+
+function ViewChip({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-mini",
+        active
+          ? "border-border-strong bg-row-selected text-text-primary"
+          : "border-border-subtle bg-pill text-text-secondary hover:border-border-strong",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function RadioRow({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <ul className="mt-1 space-y-0.5">
+      {options.map((o) => (
+        <li key={o.value}>
+          <button
+            type="button"
+            onClick={() => onChange(o.value)}
+            className={clsx(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-small",
+              value === o.value ? "bg-row-selected text-text-primary" : "text-text-secondary hover:bg-row-hover",
+            )}
+          >
+            <span
+              className={clsx(
+                "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-pill border",
+                value === o.value ? "border-accent" : "border-border-strong",
+              )}
+            >
+              {value === o.value && <span className="h-1.5 w-1.5 rounded-pill bg-accent" />}
+            </span>
+            <span>{o.label}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
