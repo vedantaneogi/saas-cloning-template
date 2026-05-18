@@ -45,12 +45,22 @@ const HEALTH_LABELS: Record<HealthFilterValue, string> = {
 export function ProjectsToolbar({
   projects,
   workspace,
+  teamKey,
   members,
   teams,
   labels,
 }: {
   projects: Project[];
   workspace: string;
+  /**
+   * When provided, the toolbar is scoped to a single team:
+   *   - ProjectsViewsBar lists only views with team_key === teamKey
+   *   - Saved view edits/duplicates inherit team_key
+   *   - The standalone "group by initiative" shortcut is hidden, since
+   *     team-projects views rarely need it and Linear doesn't show it
+   *     on team scope.
+   */
+  teamKey?: string;
   members: Member[];
   teams: Team[];
   labels: Label[];
@@ -91,6 +101,7 @@ export function ProjectsToolbar({
         <div className="flex h-[40px] shrink-0 items-center gap-1 px-4 text-mini">
           <ProjectsViewsBar
             workspaceSlug={workspace}
+            teamKey={teamKey}
             onEnterCreate={() => {
               setEditingView(null);
               setCreatingView(true);
@@ -103,24 +114,26 @@ export function ProjectsToolbar({
             activeViewId={activeView?.id ?? null}
             onSelectView={selectView}
           />
-          <button
-            type="button"
-            onClick={() =>
-              update({
-                grouping: prefs.grouping === "initiative" ? "no_grouping" : "initiative",
-              })
-            }
-            className={clsx(
-              "ml-0.5 rounded-md p-1",
-              prefs.grouping === "initiative"
-                ? "bg-row-selected text-text-primary"
-                : "text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
-            )}
-            aria-label="Group by initiative"
-            title="Group by initiative"
-          >
-            <Layers size={13} />
-          </button>
+          {!teamKey && (
+            <button
+              type="button"
+              onClick={() =>
+                update({
+                  grouping: prefs.grouping === "initiative" ? "no_grouping" : "initiative",
+                })
+              }
+              className={clsx(
+                "ml-0.5 rounded-md p-1",
+                prefs.grouping === "initiative"
+                  ? "bg-row-selected text-text-primary"
+                  : "text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
+              )}
+              aria-label="Group by initiative"
+              title="Group by initiative"
+            >
+              <Layers size={13} />
+            </button>
+          )}
 
           <div className="ml-auto flex items-center gap-1">
             <ProjectsFilterPopover
@@ -195,6 +208,7 @@ export function ProjectsToolbar({
         {creatingView && (
           <ProjectsViewEditor
             workspaceSlug={workspace}
+            teamKey={teamKey}
             prefs={prefs}
             editing={editingView}
             onClose={() => {

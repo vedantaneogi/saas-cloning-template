@@ -23,6 +23,7 @@ import { useProjectsPrefs, type ProjectsPrefs } from "@/lib/projects-prefs";
  */
 export function ProjectsViewsBar({
   workspaceSlug,
+  teamKey,
   onEnterCreate,
   onEnterEdit,
   isCreating,
@@ -30,6 +31,13 @@ export function ProjectsViewsBar({
   onSelectView,
 }: {
   workspaceSlug: string;
+  /**
+   * When set, only views bound to this team (or scoped here) are
+   * surfaced; the bar also creates views with `team_key` pre-set.
+   * Workspace projects page leaves this undefined to list every
+   * project view.
+   */
+  teamKey?: string;
   onEnterCreate: () => void;
   onEnterEdit?: (v: SavedView) => void;
   isCreating: boolean;
@@ -40,20 +48,20 @@ export function ProjectsViewsBar({
 
   useEffect(() => {
     let cancelled = false;
-    listSavedViews(workspaceSlug, undefined, "projects")
+    listSavedViews(workspaceSlug, teamKey, "projects")
       .then((rows) => {
         if (!cancelled) setViews(rows);
       })
       .catch(() => {});
     function onChange() {
-      listSavedViews(workspaceSlug, undefined, "projects").then(setViews).catch(() => {});
+      listSavedViews(workspaceSlug, teamKey, "projects").then(setViews).catch(() => {});
     }
     window.addEventListener("projects-views:changed", onChange);
     return () => {
       cancelled = true;
       window.removeEventListener("projects-views:changed", onChange);
     };
-  }, [workspaceSlug]);
+  }, [workspaceSlug, teamKey]);
 
   async function toggleFavorite(v: SavedView) {
     try {
@@ -80,6 +88,7 @@ export function ProjectsViewsBar({
         scope: "projects",
         query: v.query,
         icon_color: v.icon_color,
+        team_key: teamKey ?? v.team_key ?? null,
       });
       window.dispatchEvent(new CustomEvent("projects-views:changed"));
     } catch (e) {
@@ -254,11 +263,13 @@ function ViewMenuItem({
  */
 export function ProjectsViewEditor({
   workspaceSlug,
+  teamKey,
   prefs,
   editing,
   onClose,
 }: {
   workspaceSlug: string;
+  teamKey?: string;
   prefs: ProjectsPrefs;
   editing?: SavedView | null;
   onClose: () => void;
@@ -283,6 +294,7 @@ export function ProjectsViewEditor({
             : prefs.view === "timeline"
               ? "#bc7cf0"
               : "#5e6ad2",
+        team_key: teamKey ?? editing?.team_key ?? null,
       };
       const saved = editing
         ? await patchSavedView(workspaceSlug, editing.id, body)

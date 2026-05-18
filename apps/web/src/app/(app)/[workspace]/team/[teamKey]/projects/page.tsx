@@ -50,6 +50,7 @@ export default async function TeamProjectsPage({
       <ProjectsToolbar
         projects={projects}
         workspace={workspace}
+        teamKey={teamKey}
         members={members}
         teams={ws.teams}
         labels={labels}
