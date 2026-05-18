@@ -1,34 +1,43 @@
 import { notFound } from "next/navigation";
-import { Box, LayoutGrid, SlidersHorizontal, Square } from "lucide-react";
-import { Topbar } from "@/components/topbar";
-import { ProjectsTable } from "@/components/projects-table";
 import { NewProjectButton } from "@/components/new-project-button";
-import { getWorkspace, listMembers, listProjects, NotFoundError } from "@/lib/api";
+import { ProjectsToolbar } from "@/components/projects-toolbar";
+import { TeamProjectsHeader } from "@/components/team-projects-header";
+import {
+  getWorkspace,
+  listMembers,
+  listProjects,
+  listWorkspaceLabels,
+  NotFoundError,
+} from "@/lib/api";
 
-export default async function TeamProjectsPage({ params }: { params: Promise<{ workspace: string; teamKey: string }> }) {
+export default async function TeamProjectsPage({
+  params,
+}: {
+  params: Promise<{ workspace: string; teamKey: string }>;
+}) {
   const { workspace, teamKey } = await params;
   let ws;
-  let team;
   try {
     ws = await getWorkspace(workspace);
-    team = ws.teams.find((t) => t.key === teamKey);
   } catch (e) {
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
-  if (!team || !ws) notFound();
+  const team = ws.teams.find((t) => t.key === teamKey);
+  if (!team) notFound();
 
-  const [all, members] = await Promise.all([
+  const [allProjects, members, labels] = await Promise.all([
     listProjects(workspace),
     listMembers(workspace).catch(() => []),
+    listWorkspaceLabels(workspace).catch(() => []),
   ]);
-  const filtered = all.filter((p) => (p.team_keys ?? []).includes(teamKey));
+  const projects = allProjects.filter((p) => (p.team_keys ?? []).includes(teamKey));
 
   return (
     <>
-      <Topbar
-        title="Projects"
-        icon={<Box size={15} />}
+      <TeamProjectsHeader
+        workspace={workspace}
+        team={team}
         trailing={
           <NewProjectButton
             workspaceSlug={workspace}
@@ -38,32 +47,13 @@ export default async function TeamProjectsPage({ params }: { params: Promise<{ w
           />
         }
       />
-
-      <div className="flex h-[40px] shrink-0 items-center gap-2 border-b border-border-subtle px-4 text-mini">
-        <button type="button" className="rounded-pill bg-row-selected px-2.5 py-1 text-text-primary">
-          {team.name}
-        </button>
-        <div className="ml-auto flex items-center gap-1">
-          <button type="button" className="rounded-md p-1 text-text-tertiary hover:bg-row-hover hover:text-text-secondary" aria-label="Filter" title="Filter">
-            <SlidersHorizontal size={13} />
-          </button>
-          <button type="button" className="rounded-md p-1 text-text-tertiary hover:bg-row-hover hover:text-text-secondary" aria-label="Display options" title="Display options">
-            <LayoutGrid size={13} />
-          </button>
-          <button type="button" className="rounded-md p-1 text-text-tertiary hover:bg-row-hover hover:text-text-secondary" aria-label="View toggle" title="View toggle">
-            <Square size={13} />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        <ProjectsTable
-          groups={[{ key: "all", label: team.name, projects: filtered }]}
-          workspace={workspace}
-          showGroupHeaders={false}
-          members={members}
-        />
-      </div>
+      <ProjectsToolbar
+        projects={projects}
+        workspace={workspace}
+        members={members}
+        teams={ws.teams}
+        labels={labels}
+      />
     </>
   );
 }
