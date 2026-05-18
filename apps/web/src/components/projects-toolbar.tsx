@@ -10,7 +10,6 @@ import { ProjectsFilterPopover } from "@/components/projects-filter-popover";
 import { ProjectsDisplayOptions } from "@/components/projects-display-options";
 import { ProjectsInsights } from "@/components/projects-insights";
 import { ProjectsViewsBar, ProjectsViewEditor, ProjectsViewToast } from "@/components/projects-views-bar";
-import type { SavedView } from "@/lib/api";
 import {
   useProjectsPrefs,
   type ProjectsPrefs,
