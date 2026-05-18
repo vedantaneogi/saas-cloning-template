@@ -1,13 +1,9 @@
 import { notFound } from "next/navigation";
-import { Bookmark, Layers } from "lucide-react";
-import { Topbar } from "@/components/topbar";
 import { IssueListBody } from "@/components/issue-list-body";
 import { BoardView } from "@/components/board-view";
-import { DisplayOptions } from "@/components/display-options";
-import { FilterBar, FilterTrigger } from "@/components/filter-bar";
-import { SaveViewButton } from "@/components/save-view-button";
-import { TeamCsvActions } from "@/components/team-csv-actions";
-import { getSavedView, listTeamIssues, NotFoundError, type Issue, type SavedView, type StateGroup } from "@/lib/api";
+import { FilterBar } from "@/components/filter-bar";
+import { TeamIssuesHeader } from "@/components/team-issues-header";
+import { getSavedView, getWorkspace, NotFoundError, type Issue, type SavedView, type StateGroup, type Team } from "@/lib/api";
 
 const VIEWS = {
   active: { label: "Active" },
@@ -49,47 +45,29 @@ export default async function TeamIssuesPage({
   };
 
   let issues: Issue[];
+  let team: Team | undefined;
   try {
-    issues = await listTeamIssuesWithParams(workspace, teamKey, buildFilters());
+    const [issuesRes, ws] = await Promise.all([
+      listTeamIssuesWithParams(workspace, teamKey, buildFilters()),
+      getWorkspace(workspace).catch(() => null),
+    ]);
+    issues = issuesRes;
+    team = ws?.teams.find((t) => t.key === teamKey);
   } catch (e) {
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
+  if (!team) notFound();
 
   const groups = groupIssues(issues, group);
 
-  const tabs = savedView
-    ? undefined
-    : [
-        { key: "all", label: "All issues", href: makeHref(`/${workspace}/team/${teamKey}/all`, sp) },
-        { key: "active", label: "Active", href: makeHref(`/${workspace}/team/${teamKey}/active`, sp) },
-        { key: "backlog", label: "Backlog", href: makeHref(`/${workspace}/team/${teamKey}/backlog`, sp) },
-      ];
-
-  const title = savedView ? savedView.name : "Issues";
-  const icon = savedView ? (
-    <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm" style={{ background: savedView.icon_color }}>
-      <Bookmark size={10} className="text-white/90" />
-    </span>
-  ) : (
-    <Layers size={15} />
-  );
-
   return (
     <>
-      <Topbar
-        title={title}
-        icon={icon}
-        tabs={tabs}
-        activeTab={savedView ? undefined : view}
-        trailing={
-          <>
-            <SaveViewButton workspaceSlug={workspace} teamKey={teamKey} base={view as "active" | "backlog" | "all"} savedView={savedView} />
-            <FilterTrigger workspaceSlug={workspace} teamKey={teamKey} />
-            <TeamCsvActions workspaceSlug={workspace} teamKey={teamKey} />
-          </>
-        }
-        filters={<DisplayOptions />}
+      <TeamIssuesHeader
+        workspace={workspace}
+        team={team}
+        view={view as "active" | "backlog" | "all"}
+        savedView={savedView}
       />
       <FilterBar workspaceSlug={workspace} teamKey={teamKey} />
       {display === "board" ? (
@@ -103,15 +81,6 @@ export default async function TeamIssuesPage({
       )}
     </>
   );
-}
-
-function makeHref(base: string, sp: SearchParams): string {
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(sp)) {
-    if (typeof v === "string") params.set(k, v);
-  }
-  const qs = params.toString();
-  return qs ? `${base}?${qs}` : base;
 }
 
 // Build the API call with extra params
