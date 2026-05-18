@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Bookmark, ChevronRight, Star } from "lucide-react";
+import { Bookmark, ChevronRight, Layers, Pencil, Star } from "lucide-react";
 import clsx from "clsx";
 import { SaveViewButton } from "@/components/save-view-button";
 import { TeamCsvActions } from "@/components/team-csv-actions";
@@ -31,11 +31,17 @@ export function TeamIssuesHeader({
   team,
   view,
   savedView,
+  creating,
 }: {
   workspace: string;
   team: Team;
   view: Base;
   savedView: SavedView | null;
+  /** When true the header is rendered above /team/<key>/view/new — the
+   *  pill row swaps in a "New view" indicator next to the base tabs
+   *  and the trailing chip cluster is hidden (the editor's own
+   *  Save/Cancel controls handle the action). */
+  creating?: boolean;
 }) {
   const sp = useSearchParams();
   const [favorited, toggleFavorite] = useTeamFavorite(workspace, team.key);
@@ -102,18 +108,30 @@ export function TeamIssuesHeader({
             <PillTab href={tabHref("all")} label="All issues" active={view === "all"} />
             <PillTab href={tabHref("active")} label="Active" active={view === "active"} />
             <PillTab href={tabHref("backlog")} label="Backlog" active={view === "backlog"} />
-            <TeamIssueViewsBar
-              workspaceSlug={workspace}
-              teamKey={team.key}
-              activeViewId={savedView?.id ?? null}
-            />
+            {creating ? (
+              <span className="flex h-7 items-center gap-1.5 rounded-full border border-border-strong bg-row-selected px-3 text-mini text-text-primary">
+                <Layers size={11} className="text-accent" />
+                <span>New view</span>
+                <Pencil size={10} className="text-text-tertiary" />
+              </span>
+            ) : (
+              <TeamIssueViewsBar
+                workspaceSlug={workspace}
+                teamKey={team.key}
+                activeViewId={savedView?.id ?? null}
+              />
+            )}
           </>
         )}
 
         <span className="ml-auto flex items-center gap-2">
-          <SaveViewButton workspaceSlug={workspace} teamKey={team.key} base={view} savedView={savedView} />
-          <TeamIssuesControls workspaceSlug={workspace} teamKey={team.key} />
-          <TeamCsvActions workspaceSlug={workspace} teamKey={team.key} />
+          {!creating && (
+            <>
+              <SaveViewButton workspaceSlug={workspace} teamKey={team.key} base={view} savedView={savedView} />
+              <TeamIssuesControls workspaceSlug={workspace} teamKey={team.key} />
+              <TeamCsvActions workspaceSlug={workspace} teamKey={team.key} />
+            </>
+          )}
         </span>
       </div>
     </>

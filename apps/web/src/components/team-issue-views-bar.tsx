@@ -174,7 +174,7 @@ export function TeamIssueViewsBar({
       ))}
 
       <Link
-        href={`/${workspaceSlug}/views/new?scope=issues&team=${encodeURIComponent(teamKey)}`}
+        href={`/${workspaceSlug}/team/${encodeURIComponent(teamKey)}/view/new`}
         aria-label="Create new view"
         title="Create new view"
         className="flex h-7 w-7 items-center justify-center rounded-full border border-border-subtle text-text-tertiary hover:bg-row-hover hover:text-text-secondary"

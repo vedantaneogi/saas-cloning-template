@@ -89,11 +89,15 @@ export function NewViewEditor({
 
   // Filter state. Kept minimal — Linear's full filter popover has dozens
   // of dimensions; the new-view editor in real Linear ships a subset
-  // (priority + status group + team) for the live preview.
+  // (priority + status group + team) for the live preview. When
+  // initialTeamKey is set, teamKeys is locked to that single team so
+  // the preview only ever shows that team's work (matching real
+  // Linear's /team/<key>/view/new flow).
   const [statusGroups, setStatusGroups] = useState<StateGroup[]>([]);
   const [priorities, setPriorities] = useState<number[]>([]);
-  const [teamKeys, setTeamKeys] = useState<string[]>([]);
+  const [teamKeys, setTeamKeys] = useState<string[]>(initialTeamKey ? [initialTeamKey] : []);
   const [grouping, setGrouping] = useState<"state" | "priority" | "assignee" | "team" | "none">("state");
+  const teamLocked = Boolean(initialTeamKey);
 
   // Project-scope filters
   const [projectStates, setProjectStates] = useState<ProjectState[]>([]);
@@ -197,7 +201,11 @@ export function NewViewEditor({
   }
 
   function cancel() {
-    router.push(`/${workspace}/views?tab=${scope}`);
+    if (initialTeamKey) {
+      router.push(`/${workspace}/team/${initialTeamKey}/${scope === "projects" ? "projects" : "all"}`);
+    } else {
+      router.push(`/${workspace}/views?tab=${scope}`);
+    }
   }
 
   return (
@@ -335,7 +343,7 @@ export function NewViewEditor({
                     priorities={priorities}
                     statusGroups={statusGroups}
                     teamKeys={teamKeys}
-                    teams={teams}
+                    teams={teamLocked ? [] : teams}
                     onPriorities={setPriorities}
                     onStatusGroups={setStatusGroups}
                     onTeamKeys={setTeamKeys}
