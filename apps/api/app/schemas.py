@@ -223,6 +223,7 @@ class ProjectOut(BaseModel):
     state: str
     priority: int = 0
     lead: MemberOut | None
+    creator: MemberOut | None = None
     start_date: datetime | None
     target_date: datetime | None
     issue_count: int = 0
@@ -231,9 +232,13 @@ class ProjectOut(BaseModel):
     initiative_name: str | None = None
     initiative_slug_id: str | None = None
     team_keys: list[str] = []
+    label_ids: list[str] = []
+    dependency_ids: list[str] = []
+    template_id: str | None = None
     health: str | None = None
     health_updated_at: datetime | None = None
     next_milestone: "NextMilestoneSummary | None" = None
+    created_at: datetime | None = None
 
 
 class NextMilestoneSummary(BaseModel):
@@ -274,9 +279,13 @@ class ProjectPatchIn(BaseModel):
     target_date: datetime | None = None
     start_date: datetime | None = None
     team_ids: list[str] | None = None
+    label_ids: list[str] | None = None
+    dependency_ids: list[str] | None = None
+    template_id: str | None = None
     clear_target_date: bool = False
     clear_lead: bool = False
     clear_initiative: bool = False
+    clear_template: bool = False
 
 
 # --- Initiatives --------------------------------------------------------
@@ -558,6 +567,8 @@ class SavedViewOut(BaseModel):
     name: str
     icon_color: str
     base: str
+    scope: str = "issues"
+    description: str | None = None
     query: str
     favorite: bool
     position: int
@@ -568,6 +579,8 @@ class SavedViewCreateIn(BaseModel):
     name: str
     icon_color: str = "#5e6ad2"
     base: str = "active"
+    scope: str = "issues"
+    description: str | None = None
     query: str = ""
     team_key: str | None = None
     favorite: bool = False
@@ -579,6 +592,7 @@ class SavedViewPatchIn(BaseModel):
     favorite: bool | None = None
     query: str | None = None
     base: str | None = None
+    description: str | None = None
 
 
 # --- Bulk issue operations ---------------------------------------------

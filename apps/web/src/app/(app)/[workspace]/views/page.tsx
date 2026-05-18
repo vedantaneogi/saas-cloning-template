@@ -1,35 +1,48 @@
 import Link from "next/link";
-import { Bookmark, Layers, Library, Plus, SlidersHorizontal, Star } from "lucide-react";
+import { Layers, Plus } from "lucide-react";
 import { Topbar } from "@/components/topbar";
-import { getWorkspace, listSavedViews, type SavedView, type Team } from "@/lib/api";
+import { ViewsDisplayOptions, ViewsTabPill } from "@/components/views-display-options";
+import { getMe, listSavedViews, type SavedView } from "@/lib/api";
 
-const KBD = "rounded-sm border border-border-subtle bg-pill px-1 py-0.5 font-mono text-micro text-text-tertiary";
+interface SavedViewWithMeta extends SavedView {
+  owner_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
 
 export default async function ViewsIndexPage({
   params,
   searchParams,
 }: {
   params: Promise<{ workspace: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; sort?: string; props?: string }>;
 }) {
   const { workspace } = await params;
   const sp = await searchParams;
-  const tab = sp.tab === "projects" ? "projects" : "issues";
+  const tab: "issues" | "projects" = sp.tab === "projects" ? "projects" : "issues";
+  const sort = (sp.sort as "name" | "created" | "updated") ?? "name";
+  const props = (sp.props ?? "owner").split(",").filter(Boolean);
 
-  const [views, ws] = await Promise.all([
-    listSavedViews(workspace),
-    getWorkspace(workspace).catch(() => null),
+  // Workspace-scoped views for the active tab.
+  const [views, me] = await Promise.all([
+    listSavedViews(workspace, undefined, tab).catch(() => [] as SavedView[]),
+    getMe().catch(() => null),
   ]);
-  const teams: Team[] = ws?.teams ?? [];
-  const teamByKey = new Map(teams.map((t) => [t.key, t]));
 
-  // Today every SavedView is an issue-view; project-views are a future kind.
-  const visible = tab === "issues" ? views : [];
-  const grouped = new Map<string, SavedView[]>();
-  for (const v of visible) {
-    const k = v.team_key || "_workspace";
-    if (!grouped.has(k)) grouped.set(k, []);
-    grouped.get(k)!.push(v);
+  // Owner data isn't surfaced by the list endpoint yet, so we treat every
+  // view as personal-to-me. When the backend grows owner_id this section
+  // splitter will partition correctly without further UI changes.
+  const myId = me?.user.id ?? null;
+  const withMeta = views as SavedViewWithMeta[];
+  const personal = withMeta.filter((v) => !v.owner_id || v.owner_id === myId);
+  const shared = withMeta.filter((v) => v.owner_id && v.owner_id !== myId);
+
+  function sorted(rows: SavedViewWithMeta[]): SavedViewWithMeta[] {
+    const arr = [...rows];
+    if (sort === "name") arr.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === "created") arr.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+    else if (sort === "updated") arr.sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+    return arr;
   }
 
   return (
@@ -39,146 +52,129 @@ export default async function ViewsIndexPage({
         icon={<Layers size={15} />}
         trailing={
           <Link
-            href={`/${workspace}/views/new`}
+            href={`/${workspace}/views/new?scope=${tab}`}
             className="flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
             aria-label="New view"
-            title="New view"
+            title="Create new view"
           >
             <Plus size={14} />
           </Link>
         }
       />
 
-      <div className="flex h-[40px] shrink-0 items-center gap-2 border-b border-border-subtle px-4">
-        <TabLink workspace={workspace} value="issues" active={tab === "issues"}>
+      <div className="flex h-[44px] shrink-0 items-center gap-2 px-4 pt-2">
+        <ViewsTabPill workspace={workspace} value="issues" active={tab === "issues"}>
           Issues
-        </TabLink>
-        <TabLink workspace={workspace} value="projects" active={tab === "projects"}>
+        </ViewsTabPill>
+        <ViewsTabPill workspace={workspace} value="projects" active={tab === "projects"}>
           Projects
-        </TabLink>
-        <button
-          type="button"
-          className="ml-auto rounded-md p-1 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
-          aria-label="Filter"
-          title="Filter"
-        >
-          <SlidersHorizontal size={13} />
-        </button>
+        </ViewsTabPill>
+        <div className="ml-auto">
+          <ViewsDisplayOptions workspace={workspace} tab={tab} sort={sort} props={props} />
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {visible.length === 0 ? (
-          <EmptyState tab={tab} workspace={workspace} />
-        ) : (
-          <div className="mx-auto max-w-[920px] p-6">
-            {[...grouped.entries()].map(([key, list]) => (
-              <section key={key} className="mb-8">
-                <header className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-wider text-text-tertiary">
-                  {key === "_workspace" ? (
-                    <span>Workspace views</span>
-                  ) : (
-                    <>
-                      <span
-                        className="inline-block h-2.5 w-2.5 rounded-sm"
-                        style={{ background: teamByKey.get(key)?.icon_color ?? "#5e6ad2" }}
-                      />
-                      <span>{teamByKey.get(key)?.name ?? key}</span>
-                      <span className="text-text-quaternary">{list.length}</span>
-                    </>
-                  )}
-                </header>
-                <ul className="divide-y divide-border-subtle overflow-hidden rounded-md border border-border-subtle">
-                  {list.map((v) => (
-                    <li key={v.id}>
-                      <Link
-                        href={`/${workspace}/view/${v.id}`}
-                        className="flex h-[44px] items-center gap-3 px-3 text-small hover:bg-row-hover"
-                      >
-                        <span
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-sm"
-                          style={{ background: v.icon_color }}
-                        >
-                          <Bookmark size={11} className="text-white/90" />
-                        </span>
-                        <span className="flex-1 truncate text-text-primary">{v.name}</span>
-                        <span className="text-mini text-text-tertiary capitalize">{v.base}</span>
-                        {v.favorite && <Star size={12} className="text-priority-medium" fill="currentColor" />}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
+        <div className="mx-auto max-w-[1100px] px-4 pb-8 pt-2">
+          <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-6 px-2 py-2 text-mini text-text-tertiary">
+            <span className="flex items-center gap-1">
+              Name
+              <span className="text-text-quaternary">↓</span>
+            </span>
+            {props.includes("created") && <span>Created</span>}
+            {props.includes("updated") && <span>Updated</span>}
+            {props.includes("owner") && <span className="text-right">Owner</span>}
           </div>
-        )}
+
+          <Section title="Personal views" subtitle="Only visible to you">
+            {sorted(personal).map((v) => (
+              <ViewRow key={v.id} v={v} workspace={workspace} props={props} ownerName={me?.user.name ?? null} />
+            ))}
+          </Section>
+
+          {shared.length > 0 && (
+            <Section title="Workspace views">
+              {sorted(shared).map((v) => (
+                <ViewRow key={v.id} v={v} workspace={workspace} props={props} ownerName={null} />
+              ))}
+            </Section>
+          )}
+
+          {personal.length === 0 && shared.length === 0 && (
+            <div className="px-4 py-12 text-center text-mini text-text-tertiary">
+              {tab === "projects" ? "No saved project views yet." : "No saved issue views yet."}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );
 }
 
-function TabLink({
-  workspace,
-  value,
-  active,
+function Section({
+  title,
+  subtitle,
   children,
 }: {
-  workspace: string;
-  value: "issues" | "projects";
-  active: boolean;
+  title: string;
+  subtitle?: string;
   children: React.ReactNode;
 }) {
   return (
-    <Link
-      href={`/${workspace}/views?tab=${value}`}
-      className={
-        "rounded-md px-2 py-1 text-small " +
-        (active
-          ? "bg-row-selected text-text-primary"
-          : "text-text-tertiary hover:bg-row-hover hover:text-text-secondary")
-      }
-      scroll={false}
-    >
-      {children}
-    </Link>
+    <section className="mb-4">
+      <header className="flex items-center gap-2 px-2 py-2 text-mini text-text-tertiary">
+        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-elevated text-[8px] text-text-tertiary">
+          ⋯
+        </span>
+        <span className="font-medium text-text-secondary">{title}</span>
+        {subtitle && <span className="text-text-quaternary">• {subtitle}</span>}
+      </header>
+      <ul>{children}</ul>
+    </section>
   );
 }
 
-function EmptyState({ tab, workspace }: { tab: "issues" | "projects"; workspace: string }) {
-  const isProjects = tab === "projects";
+function ViewRow({
+  v,
+  workspace,
+  props,
+  ownerName,
+}: {
+  v: SavedViewWithMeta;
+  workspace: string;
+  props: string[];
+  ownerName: string | null;
+}) {
   return (
-    <div className="flex h-full items-center justify-center px-6 py-12">
-      <div className="max-w-[440px] text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-md bg-elevated text-text-tertiary">
-          <Library size={34} />
-        </div>
-        <h2 className="text-default font-semibold text-text-primary">Views</h2>
-        <p className="mt-2 text-mini text-text-tertiary">
-          {isProjects
-            ? "Save filters across your projects. Open the projects index, set your filters, and save the configuration to revisit it later."
-            : "Create custom views using filters to show only the issues you want to see. You can save, share, and favorite these views for easy access and faster team collaboration."}
-        </p>
-        <p className="mt-3 text-mini leading-relaxed text-text-tertiary">
-          You can also save any existing view by clicking the{" "}
-          <Bookmark size={11} className="-mt-0.5 inline align-middle text-text-tertiary" />{" "}
-          icon, or by pressing <kbd className={KBD}>⌥</kbd> <kbd className={KBD}>V</kbd>.
-        </p>
-        <div className="mt-5 flex items-center justify-center gap-2">
-          <Link
-            href={`/${workspace}/views/new`}
-            className="rounded-md bg-accent px-3 py-1.5 text-small font-medium text-white shadow-button hover:opacity-90"
-          >
-            Create new view
-          </Link>
-          <a
-            href="https://linear.app/docs/views"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-md border border-border-subtle bg-elevated px-3 py-1.5 text-small text-text-secondary hover:bg-elevated-hover"
-          >
-            Documentation
-          </a>
-        </div>
-      </div>
-    </div>
+    <li>
+      <Link
+        href={`/${workspace}/view/${v.id}`}
+        className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-6 rounded-md px-2 py-2 text-small hover:bg-row-hover"
+      >
+        <span className="flex items-center gap-2">
+          <span style={{ color: v.icon_color }}>
+            <Layers size={14} />
+          </span>
+          <span className="truncate font-medium text-text-primary">{v.name}</span>
+          {v.description && (
+            <span className="truncate text-mini text-text-tertiary">{v.description}</span>
+          )}
+        </span>
+        {props.includes("created") && (
+          <span className="text-mini text-text-tertiary">{fmt(v.created_at)}</span>
+        )}
+        {props.includes("updated") && (
+          <span className="text-mini text-text-tertiary">{fmt(v.updated_at)}</span>
+        )}
+        {props.includes("owner") && (
+          <span className="text-mini text-text-tertiary">{ownerName ?? "—"}</span>
+        )}
+      </Link>
+    </li>
   );
+}
+
+function fmt(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

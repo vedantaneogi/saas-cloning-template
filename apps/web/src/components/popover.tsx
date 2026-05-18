@@ -46,6 +46,7 @@ export function Popover({
   placement,
   triggerWrapperClassName,
   surface = "default",
+  openOnHover = false,
 }: {
   trigger: (props: { open: boolean; toggle: () => void; close: () => void }) => ReactNode;
   children: (api: { close: () => void }) => ReactNode;
@@ -55,9 +56,11 @@ export function Popover({
    * Forces a placement direction. Without it, the popover auto-flips based on
    * available viewport space — which can be wrong when the trigger lives at
    * the bottom of a modal (plenty of viewport space below, but the popover
-   * appears disconnected outside the modal). Set "up" to anchor above.
+   * appears disconnected outside the modal). Set "up" to anchor above. Set
+   * "right" / "left" to anchor beside the trigger (used for nested
+   * cascading menus like the projects filter rows).
    */
-  placement?: "up" | "down";
+  placement?: "up" | "down" | "right" | "left";
   /**
    * Overrides the trigger wrapper's layout. Defaults to `relative inline-block`,
    * which is right for buttons/chips. Pass `relative block` (or similar) when
@@ -71,6 +74,13 @@ export function Popover({
    * frosted-glass surface Linear uses for display-option panels.
    */
   surface?: "default" | "glass";
+  /**
+   * Opens the popover when the cursor enters the trigger (or any portaled
+   * content) and closes it after a short delay once the cursor leaves
+   * both. Useful for toolbar buttons that should preview their menu on
+   * hover. Click still toggles. When unset (default), open is click-only.
+   */
+  openOnHover?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -133,17 +143,31 @@ export function Popover({
       const tr = t.getBoundingClientRect();
       const ph = p.offsetHeight;
       const pw = p.offsetWidth;
-      // auto-flip vertically unless caller pinned the placement
-      const spaceBelow = window.innerHeight - tr.bottom;
-      const spaceAbove = tr.top;
-      const drop =
-        placement ??
-        (spaceBelow < ph + 16 && spaceAbove > spaceBelow ? "up" : "down");
-
-      let top = drop === "down" ? tr.bottom + 4 : tr.top - ph - 4;
-      let left = align === "end" ? tr.right - pw : tr.left;
-      // keep inside the viewport with a small gutter
       const gutter = 8;
+      let top = 0;
+      let left = 0;
+      if (placement === "right" || placement === "left") {
+        // Side placement: align the top edge of the popover with the top
+        // of the trigger, then push right or left of it. Auto-flip if it
+        // would overflow.
+        let side = placement;
+        if (side === "right" && tr.right + pw + 4 > window.innerWidth - gutter && tr.left - pw - 4 > gutter) {
+          side = "left";
+        } else if (side === "left" && tr.left - pw - 4 < gutter && tr.right + pw + 4 < window.innerWidth - gutter) {
+          side = "right";
+        }
+        left = side === "right" ? tr.right + 4 : tr.left - pw - 4;
+        top = tr.top;
+      } else {
+        // Vertical placement (default).
+        const spaceBelow = window.innerHeight - tr.bottom;
+        const spaceAbove = tr.top;
+        const drop =
+          placement ??
+          (spaceBelow < ph + 16 && spaceAbove > spaceBelow ? "up" : "down");
+        top = drop === "down" ? tr.bottom + 4 : tr.top - ph - 4;
+        left = align === "end" ? tr.right - pw : tr.left;
+      }
       if (left < gutter) left = gutter;
       if (left + pw > window.innerWidth - gutter) {
         left = window.innerWidth - pw - gutter;
@@ -163,8 +187,33 @@ export function Popover({
     };
   }, [open, align, placement]);
 
+  // Hover-open: small delay before close so the cursor can travel from
+  // trigger → portaled content without the menu collapsing in the gap.
+  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function clearHoverTimer() {
+    if (hoverCloseTimer.current) {
+      clearTimeout(hoverCloseTimer.current);
+      hoverCloseTimer.current = null;
+    }
+  }
+  function scheduleHoverClose() {
+    clearHoverTimer();
+    hoverCloseTimer.current = setTimeout(() => setOpen(false), 160);
+  }
+  useEffect(() => () => clearHoverTimer(), []);
+
+  const hoverProps = openOnHover
+    ? {
+        onMouseEnter: () => { clearHoverTimer(); setOpen(true); },
+        onMouseLeave: scheduleHoverClose,
+      }
+    : {};
+
   return (
-    <div className={triggerWrapperClassName ?? "relative inline-block"}>
+    <div
+      className={triggerWrapperClassName ?? "relative inline-block"}
+      {...hoverProps}
+    >
       <div ref={triggerRef}>
         {trigger({ open, toggle: () => setOpen((o) => !o), close: () => setOpen(false) })}
       </div>
@@ -172,6 +221,8 @@ export function Popover({
         createPortal(
           <div
             ref={popRef}
+            onMouseEnter={openOnHover ? clearHoverTimer : undefined}
+            onMouseLeave={openOnHover ? scheduleHoverClose : undefined}
             className={clsx(
               // Linear's popovers lift off the page with shadow + bg only —
               // any literal 1px border ring reads as a bright outline against

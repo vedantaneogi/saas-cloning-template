@@ -169,15 +169,21 @@ export function MyIssuesBody({
   // the columns.) Columns the user explicitly hid stay out.
   const boardGroups = useMemo(() => {
     if (!isBoard) return [];
-    const hidden = new Set(prefs.hidden_status_groups);
-    return bucketByStatusName(sorted).filter((g) => !hidden.has(g.group));
-  }, [isBoard, sorted, prefs.hidden_status_groups]);
+    // Pass ALL buckets (including empty canonical groups) into BoardView; it
+    // handles auto-collapsing empties and explicit hides into the hidden rail.
+    return bucketByStatusName(sorted);
+  }, [isBoard, sorted]);
 
   function hideColumn(group: string) {
     const next = prefs.hidden_status_groups.includes(group)
       ? prefs.hidden_status_groups
       : [...prefs.hidden_status_groups, group];
     update({ hidden_status_groups: next });
+  }
+
+  function showColumn(group: string) {
+    if (!prefs.hidden_status_groups.includes(group)) return;
+    update({ hidden_status_groups: prefs.hidden_status_groups.filter((g) => g !== group) });
   }
 
   return (
@@ -191,7 +197,9 @@ export function MyIssuesBody({
           <BoardView
             groups={boardGroups}
             workspaceSlug={workspaceSlug}
+            hiddenGroups={prefs.hidden_status_groups}
             onHideColumn={(g) => hideColumn(g)}
+            onShowColumn={(g) => showColumn(g)}
           />
         ) : (
           <div className="flex-1 overflow-y-auto">
@@ -416,15 +424,35 @@ const STATE_GROUP_ORDER: Record<string, number> = {
   canceled: 4,
 };
 
+const CANONICAL_STATE_NAMES: Record<StateGroup, string> = {
+  backlog: "Backlog",
+  unstarted: "Todo",
+  started: "In Progress",
+  completed: "Done",
+  canceled: "Canceled",
+};
+
 /**
  * Group an issue list into board columns keyed by the issue's state
  * (name + group). Across teams there can be multiple state names for
  * the same group (e.g. "Todo" and "Open" both `unstarted`); we treat
  * each unique state name as its own column so cross-team work isn't
- * silently collapsed.
+ * silently collapsed. Always returns a column for each of the five
+ * canonical groups even if empty — BoardView auto-collapses zero-count
+ * columns into its hidden-columns rail.
  */
 function bucketByStatusName(issues: Issue[]): { name: string; group: StateGroup; issues: Issue[] }[] {
   const map = new Map<string, { name: string; group: StateGroup; issues: Issue[]; sort: number }>();
+  for (const g of Object.keys(CANONICAL_STATE_NAMES) as StateGroup[]) {
+    const name = CANONICAL_STATE_NAMES[g];
+    const key = `${STATE_GROUP_ORDER[g]}-${name}`;
+    map.set(key, {
+      name,
+      group: g,
+      issues: [],
+      sort: STATE_GROUP_ORDER[g] * 1000,
+    });
+  }
   for (const i of issues) {
     const key = `${STATE_GROUP_ORDER[i.state.group] ?? 9}-${i.state.name}`;
     if (!map.has(key)) {

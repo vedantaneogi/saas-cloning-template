@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_current_member, get_current_user, get_db, get_optional_user, get_workspace, require_role
+from app.api.deps import get_current_member, get_current_user, get_db, get_optional_current_member, get_optional_user, get_workspace, require_role
 from app.db.models import (
     Comment,
     CommentReaction,
@@ -342,6 +342,7 @@ def _project_dict(
         "state": p.state.value if hasattr(p.state, "value") else p.state,
         "priority": p.priority or 0,
         "lead": MemberOut.model_validate(p.lead) if p.lead else None,
+        "creator": MemberOut.model_validate(p.creator) if p.creator else None,
         "start_date": p.start_date,
         "target_date": p.target_date,
         "issue_count": counts[0],
@@ -350,9 +351,13 @@ def _project_dict(
         "initiative_name": p.initiative.name if p.initiative else None,
         "initiative_slug_id": p.initiative.slug_id if p.initiative else None,
         "team_keys": [t.key for t in (p.teams or [])] if hasattr(p, "teams") else [],
+        "label_ids": [l.id for l in (p.labels or [])] if hasattr(p, "labels") else [],
+        "dependency_ids": [d.id for d in (p.dependencies or [])] if hasattr(p, "dependencies") else [],
+        "template_id": p.template_id,
         "health": health,
         "health_updated_at": health_at,
         "next_milestone": next_milestone,
+        "created_at": p.created_at,
     }
 
 
@@ -528,9 +533,13 @@ def list_projects(
 ) -> list[dict]:
     q = db.query(Project).filter_by(workspace_id=ws.id).options(
         selectinload(Project.lead),
+        selectinload(Project.creator),
         selectinload(Project.initiative),
         selectinload(Project.milestones),
         selectinload(Project.updates),
+        selectinload(Project.teams),
+        selectinload(Project.labels),
+        selectinload(Project.dependencies),
     )
     if state:
         try:
@@ -558,6 +567,7 @@ def get_project(
         .filter((Project.slug_id == slug_id) | (Project.slug_id.like(f"%-{suffix}")))
         .options(
             selectinload(Project.lead),
+            selectinload(Project.creator),
             selectinload(Project.initiative),
             selectinload(Project.milestones),
             selectinload(Project.updates).selectinload(ProjectUpdateModel.author),
@@ -620,6 +630,7 @@ def list_project_issues(
 def create_project(
     body: ProjectCreateIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member | None = Depends(get_optional_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
@@ -642,6 +653,7 @@ def create_project(
         state=state,
         priority=priority,
         lead_id=body.lead_id,
+        creator_id=current_member.id if current_member else None,
         initiative_id=initiative_id,
         start_date=body.start_date,
         target_date=body.target_date,
@@ -701,6 +713,27 @@ def patch_project(
     if body.team_ids is not None:
         teams = db.query(Team).filter(Team.workspace_id == ws.id, Team.id.in_(body.team_ids)).all()
         p.teams = teams
+    if body.label_ids is not None:
+        labels = db.query(Label).filter(Label.id.in_(body.label_ids)).all()
+        # Only attach labels that belong to this workspace (either via team
+        # or directly). Issue label rows are scoped per team — for project
+        # labels we accept any label whose team is in this workspace.
+        ws_labels = [l for l in labels if l.team is None or l.team.workspace_id == ws.id]
+        p.labels = ws_labels
+    if body.dependency_ids is not None:
+        deps = db.query(Project).filter(
+            Project.workspace_id == ws.id,
+            Project.id.in_(body.dependency_ids),
+            Project.id != p.id,
+        ).all()
+        p.dependencies = deps
+    if body.clear_template:
+        p.template_id = None
+    elif body.template_id is not None:
+        tpl = db.query(Template).filter_by(id=body.template_id, workspace_id=ws.id).first()
+        if not tpl:
+            raise HTTPException(400, "template does not belong to workspace")
+        p.template_id = tpl.id
     db.commit()
     db.refresh(p)
     return _project_dict(p, db=db)
@@ -2832,6 +2865,8 @@ def _view_dict(v: SavedView) -> dict:
         "name": v.name,
         "icon_color": v.icon_color,
         "base": v.base,
+        "scope": v.scope,
+        "description": v.description,
         "query": v.query,
         "favorite": v.favorite,
         "position": v.position,
@@ -2842,6 +2877,7 @@ def _view_dict(v: SavedView) -> dict:
 @router.get("/workspaces/{slug}/views", response_model=list[SavedViewOut])
 def list_saved_views(
     team_key: str | None = Query(None),
+    scope: str | None = Query(None, description="filter to 'issues' or 'projects'"),
     ws: Workspace = Depends(get_workspace),
     db: Session = Depends(get_db),
 ) -> list[dict]:
@@ -2851,6 +2887,8 @@ def list_saved_views(
         if not team:
             raise HTTPException(404, f"team not found: {team_key}")
         q = q.filter(SavedView.team_id == team.id)
+    if scope:
+        q = q.filter(SavedView.scope == scope)
     views = q.order_by(SavedView.position, SavedView.created_at).all()
     return [_view_dict(v) for v in views]
 
@@ -2867,7 +2905,9 @@ def create_saved_view(
         if not team:
             raise HTTPException(404, f"team not found: {body.team_key}")
         team_id = team.id
-    if body.base not in {"active", "backlog", "all"}:
+    # Project-scoped views ignore base; issue-scoped views must use a known base.
+    scope = body.scope if body.scope in {"issues", "projects"} else "issues"
+    if scope == "issues" and body.base not in {"active", "backlog", "all"}:
         raise HTTPException(400, f"unknown base: {body.base}")
     position = db.query(SavedView).filter_by(workspace_id=ws.id, team_id=team_id).count()
     view = SavedView(
@@ -2875,7 +2915,9 @@ def create_saved_view(
         team_id=team_id,
         name=body.name.strip()[:120] or "Untitled view",
         icon_color=body.icon_color,
-        base=body.base,
+        base=body.base if scope == "issues" else "all",
+        scope=scope,
+        description=(body.description or None),
         query=body.query.lstrip("?"),
         favorite=body.favorite,
         position=position,
@@ -2904,6 +2946,8 @@ def patch_saved_view(
         v.favorite = body.favorite
     if body.query is not None:
         v.query = body.query.lstrip("?")
+    if body.description is not None:
+        v.description = body.description or None
     if body.base is not None:
         if body.base not in {"active", "backlog", "all"}:
             raise HTTPException(400, f"unknown base: {body.base}")

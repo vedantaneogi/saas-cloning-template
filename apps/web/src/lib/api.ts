@@ -175,6 +175,7 @@ export interface Project {
   state: ProjectState;
   priority: 0 | 1 | 2 | 3 | 4;
   lead: Member | null;
+  creator?: Member | null;
   start_date: string | null;
   target_date: string | null;
   issue_count: number;
@@ -183,9 +184,14 @@ export interface Project {
   initiative_name: string | null;
   initiative_slug_id: string | null;
   team_keys?: string[];
+  label_ids?: string[];
+  dependency_ids?: string[];
+  template_id?: string | null;
   health?: "onTrack" | "atRisk" | "offTrack" | null;
   health_updated_at?: string | null;
   next_milestone?: { id: string; name: string; target_date: string | null } | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ProjectDetail extends Project {
@@ -688,7 +694,7 @@ export function createMilestone(
 export function patchProject(
   slug: string,
   projectSlug: string,
-  body: Partial<{ name: string; description: string; state: ProjectState; priority: 0 | 1 | 2 | 3 | 4; icon_color: string; lead_id: string; initiative_id: string; target_date: string; clear_target_date: boolean; clear_lead: boolean; clear_initiative: boolean }>
+  body: Partial<{ name: string; description: string; state: ProjectState; priority: 0 | 1 | 2 | 3 | 4; icon_color: string; lead_id: string; initiative_id: string; start_date: string; target_date: string; team_ids: string[]; label_ids: string[]; dependency_ids: string[]; template_id: string; clear_target_date: boolean; clear_lead: boolean; clear_initiative: boolean; clear_template: boolean }>
 ): Promise<Project> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects/${encodeURIComponent(projectSlug)}`, {
     method: "PATCH",
@@ -916,15 +922,20 @@ export interface SavedView {
   name: string;
   icon_color: string;
   base: "active" | "backlog" | "all";
+  scope?: "issues" | "projects";
+  description?: string | null;
   query: string;
   favorite: boolean;
   position: number;
   team_key: string | null;
 }
 
-export function listSavedViews(slug: string, teamKey?: string): Promise<SavedView[]> {
-  const qs = teamKey ? `?team_key=${encodeURIComponent(teamKey)}` : "";
-  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/views${qs}`);
+export function listSavedViews(slug: string, teamKey?: string, scope?: "issues" | "projects"): Promise<SavedView[]> {
+  const params = new URLSearchParams();
+  if (teamKey) params.set("team_key", teamKey);
+  if (scope) params.set("scope", scope);
+  const qs = params.toString();
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/views${qs ? `?${qs}` : ""}`);
 }
 
 export function getSavedView(slug: string, viewId: string): Promise<SavedView> {
@@ -933,7 +944,7 @@ export function getSavedView(slug: string, viewId: string): Promise<SavedView> {
 
 export function createSavedView(
   slug: string,
-  body: { name: string; icon_color?: string; base?: string; query?: string; team_key?: string; favorite?: boolean }
+  body: { name: string; icon_color?: string; base?: string; scope?: "issues" | "projects"; description?: string; query?: string; team_key?: string; favorite?: boolean }
 ): Promise<SavedView> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/views`, {
     method: "POST",
@@ -945,7 +956,7 @@ export function createSavedView(
 export function patchSavedView(
   slug: string,
   viewId: string,
-  body: Partial<{ name: string; icon_color: string; favorite: boolean; query: string; base: string }>
+  body: Partial<{ name: string; icon_color: string; favorite: boolean; query: string; base: string; description: string }>
 ): Promise<SavedView> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/views/${encodeURIComponent(viewId)}`, {
     method: "PATCH",

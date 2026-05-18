@@ -7,14 +7,34 @@ import { Box, Calendar, Check, Diamond, X } from "lucide-react";
 import clsx from "clsx";
 import { Popover, PopoverList, PopoverItem } from "@/components/popover";
 import { PriorityIcon } from "@/components/icons";
+import { HealthBadgeInline, type HealthValue } from "@/components/health-icon";
 import { createProjectUpdate, patchProject } from "@/lib/api";
 import type { Member, Project, ProjectState, UpdateHealth } from "@/lib/api";
+import type { ProjectsPrefs } from "@/lib/projects-prefs";
 
 export type ProjectGroup = {
   key: string;
   label: string;
   projects: Project[];
 };
+
+// Default column visibility used when toolbar doesn't pass prefs (e.g.
+// the per-team projects page, which keeps its own simpler layout).
+const DEFAULT_VIS = {
+  show_priority: true,
+  show_status: true,
+  show_health: true,
+  show_lead: true,
+  show_target_date: true,
+  show_start_date: false,
+  show_issues: true,
+  show_teams: false,
+  show_members: false,
+  show_milestones: true,
+  show_created: false,
+  show_updated: false,
+  show_completed: false,
+} as const;
 
 const STATE_META: Record<ProjectState, { label: string; color: string; pct: number }> = {
   planned: { label: "Planned", color: "#6b6f76", pct: 0 },
@@ -39,25 +59,46 @@ export function ProjectsTable({
   workspace,
   showGroupHeaders,
   members,
+  prefs,
 }: {
   groups: ProjectGroup[];
   workspace: string;
   showGroupHeaders: boolean;
   members: Member[];
+  prefs?: ProjectsPrefs;
 }) {
   const hasAny = groups.some((g) => g.projects.length > 0);
   if (!hasAny) return null;
+  const vis = prefs ?? DEFAULT_VIS;
+  const colCount =
+    1 +
+    Number(vis.show_health ?? true) +
+    Number(vis.show_priority ?? true) +
+    Number(vis.show_lead ?? true) +
+    Number(vis.show_target_date ?? true) +
+    Number(vis.show_start_date ?? false) +
+    Number(vis.show_issues ?? true) +
+    Number(vis.show_status ?? true) +
+    Number(vis.show_teams ?? false) +
+    Number(vis.show_members ?? false) +
+    Number(vis.show_created ?? false) +
+    Number(vis.show_updated ?? false);
   return (
     <table className="w-full text-small">
       <thead>
         <tr className="text-mini font-normal text-text-tertiary">
           <th className="px-4 py-2.5 text-left font-normal">Name</th>
-          <th className="w-[150px] px-3 py-2.5 text-left font-normal">Health</th>
-          <th className="w-[80px] px-3 py-2.5 text-left font-normal">Priority</th>
-          <th className="w-[80px] px-3 py-2.5 text-left font-normal">Lead</th>
-          <th className="w-[120px] px-3 py-2.5 text-left font-normal">Target date</th>
-          <th className="w-[70px] px-3 py-2.5 text-left font-normal">Issues</th>
-          <th className="w-[140px] px-4 py-2.5 text-left font-normal">Status</th>
+          {vis.show_health && <th className="w-[150px] px-3 py-2.5 text-left font-normal">Health</th>}
+          {vis.show_priority && <th className="w-[80px] px-3 py-2.5 text-left font-normal">Priority</th>}
+          {vis.show_lead && <th className="w-[80px] px-3 py-2.5 text-left font-normal">Lead</th>}
+          {vis.show_start_date && <th className="w-[110px] px-3 py-2.5 text-left font-normal">Start date</th>}
+          {vis.show_target_date && <th className="w-[120px] px-3 py-2.5 text-left font-normal">Target date</th>}
+          {vis.show_teams && <th className="w-[120px] px-3 py-2.5 text-left font-normal">Teams</th>}
+          {vis.show_members && <th className="w-[120px] px-3 py-2.5 text-left font-normal">Members</th>}
+          {vis.show_issues && <th className="w-[70px] px-3 py-2.5 text-left font-normal">Issues</th>}
+          {vis.show_created && <th className="w-[110px] px-3 py-2.5 text-left font-normal">Created</th>}
+          {vis.show_updated && <th className="w-[110px] px-3 py-2.5 text-left font-normal">Updated</th>}
+          {vis.show_status && <th className="w-[140px] px-4 py-2.5 text-left font-normal">Status</th>}
         </tr>
       </thead>
       <tbody>
@@ -68,6 +109,8 @@ export function ProjectsTable({
             workspace={workspace}
             showHeader={showGroupHeaders}
             members={members}
+            vis={vis}
+            colCount={colCount}
           />
         ))}
       </tbody>
@@ -80,24 +123,28 @@ function ProjectGroupBlock({
   workspace,
   showHeader,
   members,
+  vis,
+  colCount,
 }: {
   group: ProjectGroup;
   workspace: string;
   showHeader: boolean;
   members: Member[];
+  vis: ProjectsPrefs | typeof DEFAULT_VIS;
+  colCount: number;
 }) {
   return (
     <>
       {showHeader && (
         <tr className="bg-elevated">
-          <td colSpan={7} className="px-4 py-2 text-mini text-text-tertiary">
+          <td colSpan={colCount} className="px-4 py-2 text-mini text-text-tertiary">
             <span className="font-medium text-text-secondary">{group.label || "—"}</span>{" "}
             <span>{group.projects.length}</span>
           </td>
         </tr>
       )}
       {group.projects.map((p) => (
-        <ProjectRow key={p.id} project={p} workspace={workspace} members={members} />
+        <ProjectRow key={p.id} project={p} workspace={workspace} members={members} vis={vis} />
       ))}
     </>
   );
@@ -107,10 +154,12 @@ function ProjectRow({
   project: p,
   workspace,
   members,
+  vis,
 }: {
   project: Project;
   workspace: string;
   members: Member[];
+  vis: ProjectsPrefs | typeof DEFAULT_VIS;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -134,7 +183,7 @@ function ProjectRow({
         <Link href={`/${workspace}/project/${p.slug_id}`} className="flex items-center gap-2">
           <ProjectGlyph color={p.icon_color} />
           <span className="font-medium text-text-primary">{p.name}</span>
-          {p.next_milestone && (
+          {vis.show_milestones && p.next_milestone && (
             <span className="ml-2 flex items-center gap-1 text-mini text-text-tertiary">
               <Diamond size={9} className="text-priority-medium" fill="currentColor" />
               <span className="text-text-secondary">{p.next_milestone.name}</span>
@@ -146,53 +195,95 @@ function ProjectRow({
         </Link>
       </td>
 
-      <CellTd>
-        <HealthPicker
-          health={p.health ?? null}
-          at={p.health_updated_at ?? null}
-          onChange={(h) =>
-            mutate(() =>
-              createProjectUpdate(workspace, p.slug_id, { body: "", health: h }),
-            )
-          }
-        />
-      </CellTd>
+      {vis.show_health && (
+        <CellTd>
+          <HealthPicker
+            health={p.health ?? null}
+            at={p.health_updated_at ?? null}
+            onChange={(h) =>
+              mutate(() =>
+                createProjectUpdate(workspace, p.slug_id, { body: "", health: h }),
+              )
+            }
+          />
+        </CellTd>
+      )}
 
-      <CellTd>
-        <PriorityPicker
-          value={p.priority ?? 0}
-          onChange={(pr) => mutate(() => patchProject(workspace, p.slug_id, { priority: pr }))}
-        />
-      </CellTd>
+      {vis.show_priority && (
+        <CellTd>
+          <PriorityPicker
+            value={p.priority ?? 0}
+            onChange={(pr) => mutate(() => patchProject(workspace, p.slug_id, { priority: pr }))}
+          />
+        </CellTd>
+      )}
 
-      <CellTd>
-        <LeadPicker
-          lead={p.lead}
-          members={members}
-          onSelect={(memberId) =>
-            mutate(() => patchProject(workspace, p.slug_id, { lead_id: memberId }))
-          }
-          onClear={() => mutate(() => patchProject(workspace, p.slug_id, { clear_lead: true }))}
-        />
-      </CellTd>
+      {vis.show_lead && (
+        <CellTd>
+          <LeadPicker
+            lead={p.lead}
+            members={members}
+            onSelect={(memberId) =>
+              mutate(() => patchProject(workspace, p.slug_id, { lead_id: memberId }))
+            }
+            onClear={() => mutate(() => patchProject(workspace, p.slug_id, { clear_lead: true }))}
+          />
+        </CellTd>
+      )}
 
-      <CellTd>
-        <DatePicker
-          value={p.target_date}
-          onSet={(iso) => mutate(() => patchProject(workspace, p.slug_id, { target_date: iso }))}
-          onClear={() => mutate(() => patchProject(workspace, p.slug_id, { clear_target_date: true }))}
-        />
-      </CellTd>
+      {vis.show_start_date && (
+        <CellTd className="text-text-tertiary text-mini">
+          {p.start_date ? fmtDate(p.start_date) : <span className="text-text-quaternary">—</span>}
+        </CellTd>
+      )}
 
-      <CellTd className="text-text-secondary">{p.issue_count}</CellTd>
+      {vis.show_target_date && (
+        <CellTd>
+          <DatePicker
+            value={p.target_date}
+            onSet={(iso) => mutate(() => patchProject(workspace, p.slug_id, { target_date: iso }))}
+            onClear={() => mutate(() => patchProject(workspace, p.slug_id, { clear_target_date: true }))}
+          />
+        </CellTd>
+      )}
 
-      <CellTd>
-        <StatePicker
-          state={p.state}
-          issuePct={issuePct}
-          onChange={(s) => mutate(() => patchProject(workspace, p.slug_id, { state: s }))}
-        />
-      </CellTd>
+      {vis.show_teams && (
+        <CellTd className="text-mini text-text-secondary">
+          {(p.team_keys ?? []).length > 0 ? (p.team_keys ?? []).join(", ") : (
+            <span className="text-text-quaternary">—</span>
+          )}
+        </CellTd>
+      )}
+
+      {vis.show_members && (
+        <CellTd className="text-mini text-text-secondary">
+          {p.lead?.name ?? <span className="text-text-quaternary">—</span>}
+        </CellTd>
+      )}
+
+      {vis.show_issues && <CellTd className="text-text-secondary">{p.issue_count}</CellTd>}
+
+      {vis.show_created && (
+        <CellTd className="text-mini text-text-tertiary">
+          {p.created_at ? fmtDate(p.created_at) : <span className="text-text-quaternary">—</span>}
+        </CellTd>
+      )}
+
+      {vis.show_updated && (
+        <CellTd className="text-mini text-text-tertiary">
+          {p.health_updated_at ? fmtDate(p.health_updated_at) : <span className="text-text-quaternary">—</span>}
+        </CellTd>
+      )}
+
+      {vis.show_status && (
+        <CellTd>
+          <StatePicker
+            state={p.state}
+            issuePct={issuePct}
+            onChange={(s) => mutate(() => patchProject(workspace, p.slug_id, { state: s }))}
+          />
+        </CellTd>
+      )}
     </tr>
   );
 }
@@ -259,59 +350,20 @@ function HealthPicker({
 }
 
 function HealthBadge({ health, at }: { health: string | null; at: string | null }) {
-  if (!health) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-text-tertiary">
-        <span className="inline-block h-2 w-2 rounded-pill border border-dashed border-border-strong" />
-        No updates
-      </span>
-    );
-  }
-  const tone =
-    health === "onTrack"
-      ? "text-status-done"
-      : health === "atRisk"
-        ? "text-priority-high"
-        : "text-priority-urgent";
-  const label = health === "onTrack" ? "On track" : health === "atRisk" ? "At risk" : "Off track";
   return (
-    <span className={"inline-flex items-center gap-1.5 " + tone}>
-      <HealthGlyph health={health} />
-      <span>{label}</span>
-      {at && <span className="text-text-tertiary">· {relTimeShort(at)}</span>}
-    </span>
+    <HealthBadgeInline
+      health={(health as HealthValue | null) ?? null}
+      at={at}
+    />
   );
 }
 
 function HealthDot({ health }: { health: UpdateHealth }) {
   const color =
-    health === "onTrack" ? "#22c55e" : health === "atRisk" ? "#d9b34c" : "#f2453d";
+    health === "onTrack" ? "#1ec27a" : health === "atRisk" ? "#f5b83d" : "#f2453d";
   return <span className="inline-block h-2 w-2 rounded-pill" style={{ background: color }} />;
 }
 
-function HealthGlyph({ health }: { health: string }) {
-  if (health === "onTrack") {
-    return (
-      <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-        <path d="M2 9 L5 6 L7 8 L10 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-  if (health === "atRisk") {
-    return (
-      <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-        <path d="M6 2 L11 10 L1 10 Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="M6 5 L6 7.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        <circle cx="6" cy="9" r="0.6" fill="currentColor" />
-      </svg>
-    );
-  }
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-      <path d="M2 4 L5 7 L7 5 L10 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 // --- Priority ---------------------------------------------------------------
 
@@ -622,12 +674,3 @@ function fmtDate(iso: string) {
   return `${month} ${ordinal(d.getDate())}`;
 }
 
-function relTimeShort(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const d = Math.floor(diff / 86400000);
-  if (d >= 1) return d + "d";
-  const h = Math.floor(diff / 3600000);
-  if (h >= 1) return h + "h";
-  const m = Math.max(1, Math.floor(diff / 60000));
-  return m + "m";
-}

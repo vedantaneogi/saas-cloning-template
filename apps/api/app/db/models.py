@@ -314,6 +314,22 @@ project_teams = Table(
 )
 
 
+project_labels = Table(
+    "project_labels",
+    Base.metadata,
+    Column("project_id", ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
+    Column("label_id", ForeignKey("labels.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+project_dependencies = Table(
+    "project_dependencies",
+    Base.metadata,
+    Column("project_id", ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
+    Column("dependency_id", ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Issue(Base):
     __tablename__ = "issues"
 
@@ -435,13 +451,16 @@ class Project(Base):
     state: Mapped[ProjectState] = mapped_column(Enum(ProjectState, name="project_state"), default=ProjectState.planned)
     priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     lead_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    creator_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
     initiative_id: Mapped[str | None] = mapped_column(ForeignKey("initiatives.id", ondelete="SET NULL"), nullable=True)
+    template_id: Mapped[str | None] = mapped_column(ForeignKey("templates.id", ondelete="SET NULL"), nullable=True)
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     target_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     workspace: Mapped["Workspace"] = relationship()
-    lead: Mapped["Member | None"] = relationship()
+    lead: Mapped["Member | None"] = relationship(foreign_keys=[lead_id])
+    creator: Mapped["Member | None"] = relationship(foreign_keys=[creator_id])
     initiative: Mapped["Initiative | None"] = relationship(back_populates="projects", foreign_keys=[initiative_id])
     issues: Mapped[list["Issue"]] = relationship(back_populates="project", foreign_keys="Issue.project_id")
     milestones: Mapped[list["ProjectMilestone"]] = relationship(
@@ -454,6 +473,14 @@ class Project(Base):
         back_populates="project", cascade="all, delete-orphan", order_by="ProjectResource.created_at"
     )
     teams: Mapped[list["Team"]] = relationship(secondary=project_teams)
+    labels: Mapped[list["Label"]] = relationship(secondary=project_labels)
+    dependencies: Mapped[list["Project"]] = relationship(
+        secondary=project_dependencies,
+        primaryjoin="Project.id == project_dependencies.c.project_id",
+        secondaryjoin="Project.id == project_dependencies.c.dependency_id",
+        backref="dependents",
+    )
+    template: Mapped["Template | None"] = relationship()
 
 
 class ProjectResource(Base):
@@ -729,9 +756,14 @@ class SavedView(Base):
     team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     icon_color: Mapped[str] = mapped_column(String(16), default="#5e6ad2")
-    # base view: active | backlog | all
+    # base view: active | backlog | all (issue-scope only)
     base: Mapped[str] = mapped_column(String(16), default="active")
-    # serialized query string (without leading '?')
+    # what this view applies to: "issues" | "projects"
+    scope: Mapped[str] = mapped_column(String(16), default="issues", server_default="issues")
+    # optional description shown under the view name in the saved-view rail
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # serialized query string (without leading '?'); for projects this is
+    # the JSON-encoded ProjectsPrefs blob.
     query: Mapped[str] = mapped_column(Text, default="")
     favorite: Mapped[bool] = mapped_column(Boolean, default=False)
     position: Mapped[int] = mapped_column(Integer, default=0)

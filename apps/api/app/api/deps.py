@@ -81,6 +81,19 @@ def get_current_member(
     return member
 
 
+def get_optional_current_member(
+    user: User | None = Depends(get_optional_user),
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> Member | None:
+    """Best-effort current member — never raises. Used by endpoints that
+    need to *attribute* an action to a user when one is present, but
+    shouldn't block the action when anonymous (e.g. demo flows)."""
+    if user is None:
+        return None
+    return db.query(Member).filter_by(workspace_id=ws.id, user_id=user.id).first()
+
+
 def require_role(*roles: MemberRole):
     """Dependency factory: require the current member to have one of `roles`."""
 

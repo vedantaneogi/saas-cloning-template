@@ -82,6 +82,18 @@ export function NewProjectButton({
       .catch(() => setTemplates([]));
   }, [open, workspaceSlug]);
 
+  // Allow other components (Board column "+", saved-views, etc.) to
+  // open this modal and optionally pre-select a starting state.
+  useEffect(() => {
+    function handler(e: Event) {
+      const ce = e as CustomEvent<{ state?: ProjectState } | undefined>;
+      if (ce.detail?.state) setState(ce.detail.state);
+      setOpen(true);
+    }
+    window.addEventListener("new-project:open", handler);
+    return () => window.removeEventListener("new-project:open", handler);
+  }, []);
+
   function reset() {
     setName(""); setSummary(""); setDescription("");
     setState("planned"); setPriority(0); setLeadId("");
