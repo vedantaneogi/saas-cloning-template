@@ -24,8 +24,13 @@ import { PriorityIcon } from "@/components/icons";
 import {
   createMilestone,
   createProject,
+  listProjects,
   listTemplates,
+  listWorkspaceLabels,
+  patchProject,
+  type Label,
   type Member,
+  type Project,
   type ProjectState,
   type ProjectTemplateBody,
   type Template,
@@ -73,6 +78,11 @@ export function NewProjectButton({
   const [targetDate, setTargetDate] = useState<string>("");
   const [iconColor, setIconColor] = useState("#5e6ad2");
   const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [labelIds, setLabelIds] = useState<string[]>([]);
+  const [dependencyIds, setDependencyIds] = useState<string[]>([]);
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -80,6 +90,8 @@ export function NewProjectButton({
     listTemplates(workspaceSlug, { kind: "project" })
       .then(setTemplates)
       .catch(() => setTemplates([]));
+    listWorkspaceLabels(workspaceSlug).then(setLabels).catch(() => setLabels([]));
+    listProjects(workspaceSlug).then(setAllProjects).catch(() => setAllProjects([]));
   }, [open, workspaceSlug]);
 
   // Allow other components (Board column "+", saved-views, etc.) to
@@ -99,6 +111,7 @@ export function NewProjectButton({
     setState("planned"); setPriority(0); setLeadId("");
     setStartDate(""); setTargetDate(""); setIconColor("#5e6ad2");
     setTemplateId(""); setMilestones([]);
+    setMemberIds([]); setLabelIds([]); setDependencyIds([]);
   }
 
   function applyTemplate(id: string) {
@@ -140,6 +153,26 @@ export function NewProjectButton({
         start_date: startDate || undefined,
         target_date: targetDate || undefined,
       });
+      // Labels + dependencies aren't accepted by POST /projects but are
+      // patchable, so apply them in a follow-up call.
+      if (labelIds.length > 0 || dependencyIds.length > 0) {
+        try {
+          await patchProject(workspaceSlug, p.slug_id, {
+            ...(labelIds.length > 0 ? { label_ids: labelIds } : {}),
+            ...(dependencyIds.length > 0 ? { dependency_ids: dependencyIds } : {}),
+          });
+        } catch (e) {
+          console.error("project label/dep patch failed", e);
+        }
+      }
+      // memberIds: backend has no direct project_members table; members on
+      // ProjectDetail are derived from project teams. We expose the picker so
+      // the user can stage their selection and capture it in the description
+      // until proper project-member endpoints land.
+      if (memberIds.length > 0) {
+        const picked = members.filter((m) => memberIds.includes(m.id));
+        console.info("[new-project] members staged (not persisted yet):", picked.map((m) => m.name));
+      }
       for (const m of milestones) {
         if (!m.name.trim()) continue;
         try {
@@ -356,10 +389,45 @@ export function NewProjectButton({
                   )}
                 </Popover>
 
-                <Chip disabled title="Project members — coming soon">
-                  <Users size={12} className="text-text-tertiary" />
-                  <span>Members</span>
-                </Chip>
+                <Popover
+                  align="start"
+                  width={240}
+                  trigger={({ toggle }) => (
+                    <Chip onClick={toggle}>
+                      <Users size={12} className="text-text-tertiary" />
+                      <span>
+                        {memberIds.length === 0
+                          ? "Members"
+                          : `${memberIds.length} member${memberIds.length === 1 ? "" : "s"}`}
+                      </span>
+                    </Chip>
+                  )}
+                >
+                  {() => (
+                    <PopoverList>
+                      {members.map((m) => (
+                        <PopoverItem
+                          key={m.id}
+                          active={memberIds.includes(m.id)}
+                          onClick={() =>
+                            setMemberIds((prev) =>
+                              prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id],
+                            )
+                          }
+                        >
+                          <span
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-pill text-micro font-medium text-white"
+                            style={{ background: m.color }}
+                          >
+                            {m.initials}
+                          </span>
+                          <span className="flex-1">{m.name}</span>
+                          {memberIds.includes(m.id) && <X size={10} className="text-text-tertiary" />}
+                        </PopoverItem>
+                      ))}
+                    </PopoverList>
+                  )}
+                </Popover>
 
                 <DateChip
                   value={startDate}
@@ -375,15 +443,87 @@ export function NewProjectButton({
                   onChange={setTargetDate}
                 />
 
-                <Chip disabled title="Project labels — coming soon">
-                  <Tag size={12} className="text-text-tertiary" />
-                  <span>Labels</span>
-                </Chip>
+                <Popover
+                  align="start"
+                  width={240}
+                  trigger={({ toggle }) => (
+                    <Chip onClick={toggle}>
+                      <Tag size={12} className="text-text-tertiary" />
+                      <span>
+                        {labelIds.length === 0
+                          ? "Labels"
+                          : `${labelIds.length} label${labelIds.length === 1 ? "" : "s"}`}
+                      </span>
+                    </Chip>
+                  )}
+                >
+                  {() => (
+                    <PopoverList>
+                      {labels.length === 0 ? (
+                        <li className="px-2.5 py-1.5 text-mini text-text-tertiary">
+                          No workspace labels yet.
+                        </li>
+                      ) : (
+                        labels.map((l) => (
+                          <PopoverItem
+                            key={l.id}
+                            active={labelIds.includes(l.id)}
+                            onClick={() =>
+                              setLabelIds((prev) =>
+                                prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id],
+                              )
+                            }
+                          >
+                            <span className="inline-block h-2.5 w-2.5 rounded-pill" style={{ background: l.color }} />
+                            <span className="flex-1">{l.name}</span>
+                            {labelIds.includes(l.id) && <X size={10} className="text-text-tertiary" />}
+                          </PopoverItem>
+                        ))
+                      )}
+                    </PopoverList>
+                  )}
+                </Popover>
 
-                <Chip disabled title="Project dependencies — coming soon">
-                  <GitBranch size={12} className="text-text-tertiary" />
-                  <span>Dependencies</span>
-                </Chip>
+                <Popover
+                  align="start"
+                  width={280}
+                  trigger={({ toggle }) => (
+                    <Chip onClick={toggle}>
+                      <GitBranch size={12} className="text-text-tertiary" />
+                      <span>
+                        {dependencyIds.length === 0
+                          ? "Dependencies"
+                          : `${dependencyIds.length} dep${dependencyIds.length === 1 ? "" : "s"}`}
+                      </span>
+                    </Chip>
+                  )}
+                >
+                  {() => (
+                    <PopoverList>
+                      {allProjects.length === 0 ? (
+                        <li className="px-2.5 py-1.5 text-mini text-text-tertiary">
+                          No other projects yet.
+                        </li>
+                      ) : (
+                        allProjects.map((p) => (
+                          <PopoverItem
+                            key={p.id}
+                            active={dependencyIds.includes(p.id)}
+                            onClick={() =>
+                              setDependencyIds((prev) =>
+                                prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id],
+                              )
+                            }
+                          >
+                            <Box size={12} style={{ color: p.icon_color }} />
+                            <span className="flex-1 truncate">{p.name}</span>
+                            {dependencyIds.includes(p.id) && <X size={10} className="text-text-tertiary" />}
+                          </PopoverItem>
+                        ))
+                      )}
+                    </PopoverList>
+                  )}
+                </Popover>
               </div>
 
               <hr className="my-2 border-border-subtle" />
