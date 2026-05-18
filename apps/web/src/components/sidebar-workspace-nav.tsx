@@ -5,6 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import {
   BarChart3,
+  Building2,
   Compass,
   FileText,
   Folders,
@@ -66,11 +67,11 @@ const ITEMS: Item[] = [
     isActive: (p) => p.endsWith("/documents") || p.includes("/document/"),
   },
   {
-    key: "customer_requests",
-    href: (s) => `/${s}/customer-requests`,
-    icon: <Users size={14} />,
-    label: "Customer requests",
-    isActive: (p) => p.endsWith("/customer-requests"),
+    key: "customers",
+    href: (s) => `/${s}/customers`,
+    icon: <Building2 size={14} />,
+    label: "Customers",
+    isActive: (p) => p.endsWith("/customers") || p.includes("/customer/"),
   },
   {
     key: "custom_charts",

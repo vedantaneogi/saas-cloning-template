@@ -24,10 +24,10 @@ const DEFAULTS: SidebarPrefs = {
   // Workspace section
   views: "always",
   projects: "always",
-  initiatives: "never",
+  initiatives: "always",
   roadmap: "never",
   documents: "never",
-  customer_requests: "never",
+  customers: "always",
   custom_charts: "never",
   teams: "never",
   members: "never",

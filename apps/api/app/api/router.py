@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -17,6 +18,7 @@ from app.api.deps import get_current_member, get_current_user, get_db, get_optio
 from app.db.models import (
     Comment,
     CommentReaction,
+    Customer,
     CustomerRequest,
     CustomerRequestStatus,
     Cycle,
@@ -69,6 +71,9 @@ from app.schemas import (
     CommentOut,
     ReactionGroupOut,
     ReactionToggleIn,
+    CustomerCreateIn,
+    CustomerOut,
+    CustomerPatchIn,
     CustomerRequestCreateIn,
     CustomerRequestLinkIn,
     CustomerRequestOut,
@@ -2659,12 +2664,14 @@ def list_cycle_issues(
 def _customer_request_dict(cr: CustomerRequest) -> dict:
     return {
         "id": cr.id,
+        "customer_id": cr.customer_id,
         "customer_name": cr.customer_name,
         "customer_email": cr.customer_email,
         "source": cr.source,
         "title": cr.title,
         "body": cr.body,
         "status": cr.status.value if hasattr(cr.status, "value") else cr.status,
+        "is_important": bool(cr.is_important),
         "issue_identifier": cr.issue.identifier if cr.issue else None,
         "issue_title": cr.issue.title if cr.issue else None,
         "created_at": cr.created_at,
@@ -2713,10 +2720,12 @@ def get_customer_request(
 def create_customer_request(
     body: CustomerRequestCreateIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     cr = CustomerRequest(
         workspace_id=ws.id,
+        customer_id=body.customer_id,
         customer_name=body.customer_name,
         customer_email=body.customer_email,
         source=body.source,
@@ -2724,6 +2733,48 @@ def create_customer_request(
         body=body.body,
     )
     db.add(cr)
+    db.flush()
+
+    # When a team_key is supplied the request also spawns a new Issue
+    # under that team (and project, if any) — matches the "this request
+    # will be added to <New issue Customer request from X>" selector on
+    # the customer detail page (image #26).
+    if body.team_key:
+        team = db.query(Team).filter_by(workspace_id=ws.id, key=body.team_key).first()
+        if not team:
+            raise HTTPException(404, f"team not found: {body.team_key}")
+        state = (
+            db.query(WorkflowState)
+            .filter_by(team_id=team.id)
+            .order_by(WorkflowState.position)
+            .first()
+        )
+        if not state:
+            raise HTTPException(400, "team has no workflow states; seed defaults first")
+        last_num = (
+            db.query(Issue)
+            .filter(Issue.team_id == team.id, Issue.identifier.startswith(f"{team.key}-"))
+            .count()
+        )
+        identifier = f"{team.key}-{last_num + 1}"
+        issue_title = body.title or f"Customer request from {body.customer_name}"
+        new_issue = Issue(
+            identifier=identifier,
+            team_id=team.id,
+            state_id=state.id,
+            creator_id=current_member.id,
+            project_id=body.project_id,
+            title=issue_title,
+            description=body.body,
+            priority=0,
+            is_triage=False,
+        )
+        db.add(new_issue)
+        db.flush()
+        notif.team_issue_added(db, issue=new_issue, actor_id=current_member.id)
+        cr.issue_id = new_issue.id
+        cr.status = CustomerRequestStatus.linked
+
     db.commit()
     db.refresh(cr)
     return _customer_request_dict(cr)
@@ -2757,6 +2808,8 @@ def patch_customer_request(
         cr.title = body.title
     if body.body is not None:
         cr.body = body.body
+    if body.is_important is not None:
+        cr.is_important = body.is_important
     db.commit()
     db.refresh(cr)
     return _customer_request_dict(cr)
@@ -2834,6 +2887,187 @@ def list_issue_customer_requests(
         .all()
     )
     return [_customer_request_dict(c) for c in items]
+
+
+# --- Customers ----------------------------------------------------------
+
+def _customer_dict(c: Customer, *, db: Session | None = None) -> dict:
+    request_count = 0
+    if db is not None:
+        request_count = (
+            db.query(CustomerRequest).filter_by(customer_id=c.id).count()
+        )
+    domains: list[str] = []
+    if c.domains:
+        try:
+            parsed = json.loads(c.domains)
+            if isinstance(parsed, list):
+                domains = [str(d) for d in parsed]
+        except (json.JSONDecodeError, TypeError):
+            domains = []
+    return {
+        "id": c.id,
+        "slug": c.slug,
+        "name": c.name,
+        "owner": c.owner,
+        "status": c.status,
+        "tier": c.tier,
+        "annual_revenue": c.annual_revenue,
+        "size": c.size,
+        "logo_url": c.logo_url,
+        "domains": domains,
+        "request_count": request_count,
+        "created_at": c.created_at,
+    }
+
+
+def _slugify_customer_name(name: str, suffix_id: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "customer"
+    return f"{base}-{suffix_id[:8]}"
+
+
+@router.get("/workspaces/{slug}/customers", response_model=list[CustomerOut])
+def list_customers(
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    items = (
+        db.query(Customer)
+        .filter_by(workspace_id=ws.id)
+        .options(selectinload(Customer.owner))
+        .order_by(Customer.created_at.desc())
+        .all()
+    )
+    return [_customer_dict(c, db=db) for c in items]
+
+
+def _find_customer(db: Session, ws: Workspace, slug_or_id: str) -> Customer | None:
+    return (
+        db.query(Customer)
+        .filter(Customer.workspace_id == ws.id)
+        .filter((Customer.slug == slug_or_id) | (Customer.id == slug_or_id))
+        .options(selectinload(Customer.owner))
+        .first()
+    )
+
+
+@router.get("/workspaces/{slug}/customers/{customer_slug}", response_model=CustomerOut)
+def get_customer(
+    customer_slug: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    c = _find_customer(db, ws, customer_slug)
+    if not c:
+        raise HTTPException(404, f"customer not found: {customer_slug}")
+    return _customer_dict(c, db=db)
+
+
+@router.post("/workspaces/{slug}/customers", response_model=CustomerOut)
+def create_customer(
+    body: CustomerCreateIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not body.name.strip():
+        raise HTTPException(400, "name is required")
+    if body.owner_id:
+        owner = db.query(Member).filter_by(id=body.owner_id).first()
+        if not owner:
+            raise HTTPException(400, f"owner not found: {body.owner_id}")
+    new_id = str(uuid.uuid4())
+    c = Customer(
+        id=new_id,
+        workspace_id=ws.id,
+        slug=_slugify_customer_name(body.name, new_id),
+        name=body.name.strip(),
+        owner_id=body.owner_id,
+        status=body.status or "active",
+        tier=body.tier,
+        annual_revenue=body.annual_revenue,
+        size=body.size,
+        logo_url=body.logo_url,
+        domains=json.dumps([d.strip() for d in body.domains if d.strip()]) if body.domains else None,
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return _customer_dict(c, db=db)
+
+
+@router.patch("/workspaces/{slug}/customers/{customer_slug}", response_model=CustomerOut)
+def patch_customer(
+    customer_slug: str,
+    body: CustomerPatchIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    c = _find_customer(db, ws, customer_slug)
+    if not c:
+        raise HTTPException(404, f"customer not found: {customer_slug}")
+    if body.name is not None and body.name.strip():
+        c.name = body.name.strip()
+    if body.clear_owner:
+        c.owner_id = None
+    elif body.owner_id is not None:
+        c.owner_id = body.owner_id
+    if body.status is not None:
+        c.status = body.status
+    if body.clear_tier:
+        c.tier = None
+    elif body.tier is not None:
+        c.tier = body.tier
+    if body.clear_annual_revenue:
+        c.annual_revenue = None
+    elif body.annual_revenue is not None:
+        c.annual_revenue = body.annual_revenue
+    if body.clear_size:
+        c.size = None
+    elif body.size is not None:
+        c.size = body.size
+    if body.clear_logo:
+        c.logo_url = None
+    elif body.logo_url is not None:
+        c.logo_url = body.logo_url
+    if body.domains is not None:
+        cleaned = [d.strip() for d in body.domains if d.strip()]
+        c.domains = json.dumps(cleaned) if cleaned else None
+    db.commit()
+    db.refresh(c)
+    return _customer_dict(c, db=db)
+
+
+@router.delete("/workspaces/{slug}/customers/{customer_slug}")
+def delete_customer(
+    customer_slug: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> dict:
+    c = _find_customer(db, ws, customer_slug)
+    if not c:
+        raise HTTPException(404, f"customer not found: {customer_slug}")
+    db.delete(c)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/workspaces/{slug}/customers/{customer_slug}/requests", response_model=list[CustomerRequestOut])
+def list_customer_scoped_requests(
+    customer_slug: str,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    c = _find_customer(db, ws, customer_slug)
+    if not c:
+        raise HTTPException(404, f"customer not found: {customer_slug}")
+    items = (
+        db.query(CustomerRequest)
+        .filter_by(workspace_id=ws.id, customer_id=c.id)
+        .options(selectinload(CustomerRequest.issue))
+        .order_by(CustomerRequest.created_at.desc())
+        .all()
+    )
+    return [_customer_request_dict(r) for r in items]
 
 
 # --- Documents ----------------------------------------------------------

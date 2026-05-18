@@ -534,6 +534,36 @@ class ProjectUpdate(Base):
     author: Mapped["Member | None"] = relationship()
 
 
+class Customer(Base):
+    """Workspace-scoped customer / organization. Holds the metadata
+    surfaced on /customers (logo, owner, status, tier, annual revenue,
+    seat count, domains) so requests can be grouped under a real entity
+    rather than free-text customer names."""
+
+    __tablename__ = "customers"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    tier: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    annual_revenue: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # JSON-encoded list of domain strings (e.g., ["acme.com", "acme.io"]).
+    domains: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    workspace: Mapped["Workspace"] = relationship()
+    owner: Mapped["Member | None"] = relationship()
+    requests: Mapped[list["CustomerRequest"]] = relationship(back_populates="customer")
+
+    __table_args__ = (UniqueConstraint("workspace_id", "slug", name="uq_customers_workspace_slug"),)
+
+
 class CustomerRequest(Base):
     """Inbound customer feedback (Zendesk ticket, Slack message, email, etc.)
     that may eventually be linked to one of our Issues."""
@@ -542,6 +572,7 @@ class CustomerRequest(Base):
 
     id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
     customer_name: Mapped[str] = mapped_column(String(255), nullable=False)
     customer_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(64), default="email")
@@ -552,11 +583,13 @@ class CustomerRequest(Base):
         default=CustomerRequestStatus.pending,
         nullable=False,
     )
+    is_important: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     issue_id: Mapped[str | None] = mapped_column(ForeignKey("issues.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     workspace: Mapped["Workspace"] = relationship()
+    customer: Mapped["Customer | None"] = relationship(back_populates="requests", foreign_keys=[customer_id])
     issue: Mapped["Issue | None"] = relationship()
 
 

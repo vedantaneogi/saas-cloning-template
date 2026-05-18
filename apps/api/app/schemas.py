@@ -443,12 +443,14 @@ class DocumentPatchIn(BaseModel):
 class CustomerRequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
+    customer_id: str | None = None
     customer_name: str
     customer_email: str | None
     source: str
     title: str
     body: str | None
     status: str
+    is_important: bool = False
     issue_identifier: str | None = None
     issue_title: str | None = None
     created_at: datetime
@@ -461,6 +463,13 @@ class CustomerRequestCreateIn(BaseModel):
     source: str = "email"
     title: str
     body: str | None = None
+    customer_id: str | None = None
+    # Optional: when set, the server creates a new Issue under this
+    # team (and project, if any) and links the request to it. Matches
+    # the "this request will be added to <new issue / existing project>"
+    # selector on the customer detail page.
+    team_key: str | None = None
+    project_id: str | None = None
 
 
 class CustomerRequestPatchIn(BaseModel):
@@ -469,10 +478,56 @@ class CustomerRequestPatchIn(BaseModel):
     customer_email: str | None = None
     title: str | None = None
     body: str | None = None
+    is_important: bool | None = None
 
 
 class CustomerRequestLinkIn(BaseModel):
     issue_identifier: str
+
+
+# --- Customers ----------------------------------------------------------
+
+class CustomerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    slug: str
+    name: str
+    owner: MemberOut | None = None
+    status: str
+    tier: str | None = None
+    annual_revenue: int | None = None
+    size: int | None = None
+    logo_url: str | None = None
+    domains: list[str] = []
+    request_count: int = 0
+    created_at: datetime
+
+
+class CustomerCreateIn(BaseModel):
+    name: str
+    owner_id: str | None = None
+    status: str = "active"
+    tier: str | None = None
+    annual_revenue: int | None = None
+    size: int | None = None
+    logo_url: str | None = None
+    domains: list[str] = []
+
+
+class CustomerPatchIn(BaseModel):
+    name: str | None = None
+    owner_id: str | None = None
+    clear_owner: bool = False
+    status: str | None = None
+    tier: str | None = None
+    clear_tier: bool = False
+    annual_revenue: int | None = None
+    clear_annual_revenue: bool = False
+    size: int | None = None
+    clear_size: bool = False
+    logo_url: str | None = None
+    clear_logo: bool = False
+    domains: list[str] | None = None
 
 
 # --- Settings (admin) ---------------------------------------------------

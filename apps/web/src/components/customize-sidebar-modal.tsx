@@ -27,7 +27,7 @@ const WORKSPACE: { key: string; label: string; icon: React.ReactNode }[] = [
   { key: "initiatives", label: "Initiatives", icon: <Compass size={13} className="text-text-tertiary" /> },
   { key: "roadmap", label: "Roadmap", icon: <MapIcon size={13} className="text-text-tertiary" /> },
   { key: "documents", label: "Documents", icon: <FileText size={13} className="text-text-tertiary" /> },
-  { key: "customer_requests", label: "Customer requests", icon: <Users size={13} className="text-text-tertiary" /> },
+  { key: "customers", label: "Customers", icon: <Users size={13} className="text-text-tertiary" /> },
   { key: "custom_charts", label: "Custom charts", icon: <BarChart3 size={13} className="text-text-tertiary" /> },
   { key: "teams", label: "Teams", icon: <Folders size={13} className="text-text-tertiary" /> },
   { key: "members", label: "Members", icon: <Users size={13} className="text-text-tertiary" /> },

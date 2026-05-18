@@ -757,16 +757,97 @@ export type CustomerRequestStatus = "pending" | "linked" | "resolved" | "cancele
 
 export interface CustomerRequest {
   id: string;
+  customer_id: string | null;
   customer_name: string;
   customer_email: string | null;
   source: string;
   title: string;
   body: string | null;
   status: CustomerRequestStatus;
+  is_important: boolean;
   issue_identifier: string | null;
   issue_title: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Customer {
+  id: string;
+  slug: string;
+  name: string;
+  owner: Member | null;
+  status: string;
+  tier: string | null;
+  annual_revenue: number | null;
+  size: number | null;
+  logo_url: string | null;
+  domains: string[];
+  request_count: number;
+  created_at: string;
+}
+
+export function listCustomers(slug: string): Promise<Customer[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customers`);
+}
+
+export function getCustomer(slug: string, customerSlug: string): Promise<Customer> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customers/${encodeURIComponent(customerSlug)}`);
+}
+
+export function createCustomer(
+  slug: string,
+  body: {
+    name: string;
+    owner_id?: string;
+    status?: string;
+    tier?: string;
+    annual_revenue?: number;
+    size?: number;
+    logo_url?: string;
+    domains?: string[];
+  },
+): Promise<Customer> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function patchCustomer(
+  slug: string,
+  customerSlug: string,
+  body: Partial<{
+    name: string;
+    owner_id: string;
+    clear_owner: boolean;
+    status: string;
+    tier: string;
+    clear_tier: boolean;
+    annual_revenue: number;
+    clear_annual_revenue: boolean;
+    size: number;
+    clear_size: boolean;
+    logo_url: string;
+    clear_logo: boolean;
+    domains: string[];
+  }>,
+): Promise<Customer> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customers/${encodeURIComponent(customerSlug)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteCustomer(slug: string, customerSlug: string): Promise<{ ok: boolean }> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customers/${encodeURIComponent(customerSlug)}`, {
+    method: "DELETE",
+  });
+}
+
+export function listCustomerScopedRequests(slug: string, customerSlug: string): Promise<CustomerRequest[]> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customers/${encodeURIComponent(customerSlug)}/requests`);
 }
 
 export function listCustomerRequests(slug: string, status?: CustomerRequestStatus): Promise<CustomerRequest[]> {
@@ -778,10 +859,30 @@ export function getCustomerRequest(slug: string, id: string): Promise<CustomerRe
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customer-requests/${encodeURIComponent(id)}`);
 }
 
+export function createCustomerRequest(
+  slug: string,
+  body: {
+    customer_name: string;
+    customer_email?: string;
+    source?: string;
+    title: string;
+    body?: string;
+    customer_id?: string;
+    team_key?: string;
+    project_id?: string;
+  },
+): Promise<CustomerRequest> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customer-requests`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function patchCustomerRequest(
   slug: string,
   id: string,
-  body: Partial<{ status: CustomerRequestStatus; customer_name: string; customer_email: string; title: string; body: string }>
+  body: Partial<{ status: CustomerRequestStatus; customer_name: string; customer_email: string; title: string; body: string; is_important: boolean }>
 ): Promise<CustomerRequest> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/customer-requests/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -883,6 +984,18 @@ export function getCycle(slug: string, cycleId: string): Promise<Cycle> {
 
 export function listCycleIssues(slug: string, cycleId: string): Promise<Issue[]> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/cycles/${encodeURIComponent(cycleId)}/issues`);
+}
+
+export function patchCycle(
+  slug: string,
+  cycleId: string,
+  body: Partial<{ name: string; description: string; starts_at: string; ends_at: string }>,
+): Promise<Cycle> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/cycles/${encodeURIComponent(cycleId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 // --- Triage -------------------------------------------------------------
