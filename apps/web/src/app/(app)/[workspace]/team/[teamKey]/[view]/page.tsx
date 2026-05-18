@@ -1,9 +1,20 @@
 import { notFound } from "next/navigation";
-import { IssueListBody } from "@/components/issue-list-body";
-import { BoardView } from "@/components/board-view";
 import { FilterBar } from "@/components/filter-bar";
+import { TeamIssuesBody } from "@/components/team-issues-body";
 import { TeamIssuesHeader } from "@/components/team-issues-header";
-import { getSavedView, getWorkspace, NotFoundError, type Issue, type SavedView, type StateGroup, type Team } from "@/lib/api";
+import {
+  getSavedView,
+  getWorkspace,
+  listProjects,
+  listTeamLabels,
+  NotFoundError,
+  type Issue,
+  type Label,
+  type Project,
+  type SavedView,
+  type StateGroup,
+  type Team,
+} from "@/lib/api";
 
 const VIEWS = {
   active: { label: "Active" },
@@ -46,13 +57,19 @@ export default async function TeamIssuesPage({
 
   let issues: Issue[];
   let team: Team | undefined;
+  let labels: Label[] = [];
+  let projects: Project[] = [];
   try {
-    const [issuesRes, ws] = await Promise.all([
+    const [issuesRes, ws, lbls, prjs] = await Promise.all([
       listTeamIssuesWithParams(workspace, teamKey, buildFilters()),
       getWorkspace(workspace).catch(() => null),
+      listTeamLabels(workspace, teamKey).catch(() => [] as Label[]),
+      listProjects(workspace).catch(() => [] as Project[]),
     ]);
     issues = issuesRes;
     team = ws?.teams.find((t) => t.key === teamKey);
+    labels = lbls;
+    projects = prjs;
   } catch (e) {
     if (e instanceof NotFoundError) notFound();
     throw e;
@@ -70,15 +87,15 @@ export default async function TeamIssuesPage({
         savedView={savedView}
       />
       <FilterBar workspaceSlug={workspace} teamKey={teamKey} />
-      {display === "board" ? (
-        <div className="flex-1 overflow-hidden">
-          <BoardView groups={groups} workspaceSlug={workspace} teamKey={teamKey} />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto">
-          <IssueListBody groups={groups} workspaceSlug={workspace} teamKey={teamKey} />
-        </div>
-      )}
+      <TeamIssuesBody
+        workspaceSlug={workspace}
+        teamKey={teamKey}
+        display={display === "board" ? "board" : "list"}
+        groups={groups}
+        issues={issues}
+        labels={labels}
+        projects={projects}
+      />
     </>
   );
 }

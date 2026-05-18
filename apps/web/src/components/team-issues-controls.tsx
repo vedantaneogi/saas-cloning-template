@@ -41,6 +41,15 @@ import {
   type Project,
   type WorkflowState,
 } from "@/lib/api";
+import {
+  resetTeamIssuesPrefs,
+  useTeamIssuesPrefs,
+  type CompletedWindow,
+  type TeamIssuesGrouping,
+  type TeamIssuesOrdering,
+  type TeamIssuesPrefs,
+} from "@/lib/team-issues-prefs";
+import { LayoutList, Layers as LayersIcon, ChevronDown } from "lucide-react";
 
 /**
  * Three round-chip controls (Filter / Display / Panel) on the team
@@ -71,8 +80,8 @@ export function TeamIssuesControls({
   const [states, setStates] = useState<WorkflowState[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [cycles, setCycles] = useState<Cycle[]>([]);
-  const [panelOpen, setPanelOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const { prefs, update: updatePrefs } = useTeamIssuesPrefs(workspaceSlug, teamKey);
 
   useEffect(() => {
     setHydrated(true);
@@ -174,7 +183,7 @@ export function TeamIssuesControls({
 
       <Popover
         align="end"
-        width={320}
+        width={360}
         surface="glass"
         trigger={({ toggle, open }) => (
           <button
@@ -185,26 +194,35 @@ export function TeamIssuesControls({
             className={clsx(chipCls, open && "border-border-strong bg-row-hover text-text-secondary")}
           >
             <SlidersHorizontal size={13} />
+            {prefs.insights_open && (
+              <span className="absolute -right-0.5 -top-0.5 inline-block h-1.5 w-1.5 rounded-pill bg-accent" />
+            )}
           </button>
         )}
       >
         {() => (
           <DisplayMenu
-            display={readSingle("display", "list")}
-            group={readSingle("group", "state")}
-            sort={readSingle("sort", "default")}
-            writeSingle={writeSingle}
+            prefs={prefs}
+            update={(patch) => {
+              updatePrefs(patch);
+              // Mirror server-relevant fields onto the URL so the
+              // server-rendered list applies them on next paint.
+              if (patch.view !== undefined) writeSingle("display", patch.view === "board" ? "board" : "list", "list");
+              if (patch.grouping !== undefined) writeSingle("group", patch.grouping === "state" ? null : patch.grouping, "state");
+              if (patch.ordering !== undefined) writeSingle("sort", patch.ordering === "manual" ? null : patch.ordering, "default");
+            }}
+            reset={() => resetTeamIssuesPrefs(workspaceSlug, teamKey)}
           />
         )}
       </Popover>
 
       <button
         type="button"
-        onClick={() => setPanelOpen((v) => !v)}
+        onClick={() => updatePrefs({ insights_open: !prefs.insights_open })}
         aria-label="Toggle insights panel"
-        aria-pressed={panelOpen}
+        aria-pressed={prefs.insights_open}
         title="Insights panel"
-        className={clsx(chipCls, panelOpen && "border-border-strong bg-row-hover text-text-secondary")}
+        className={clsx(chipCls, prefs.insights_open && "border-border-strong bg-row-hover text-text-secondary")}
       >
         <PanelRight size={13} />
       </button>
@@ -564,139 +582,301 @@ function CheckSvg() {
 }
 
 // ---------------------------------------------------------------------------
-// Display menu
+// Display menu — full visual parity with my-issues
 // ---------------------------------------------------------------------------
 
-const GROUP_OPTIONS = [
+const GROUPING_OPTIONS: { value: TeamIssuesGrouping; label: string }[] = [
   { value: "state", label: "Status" },
   { value: "priority", label: "Priority" },
   { value: "assignee", label: "Assignee" },
   { value: "project", label: "Project" },
-  { value: "label", label: "Label" },
-  { value: "none", label: "No grouping" },
+  { value: "label", label: "Labels" },
+  { value: "cycle", label: "Cycle" },
+  { value: "no_grouping", label: "No grouping" },
 ];
 
-const SORT_OPTIONS = [
-  { value: "default", label: "Default" },
+const ORDERING_OPTIONS: { value: TeamIssuesOrdering; label: string }[] = [
+  { value: "manual", label: "Manual" },
   { value: "priority", label: "Priority" },
-  { value: "updated", label: "Last updated" },
-  { value: "created", label: "Created date" },
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "updated", label: "Recently updated" },
   { value: "due", label: "Due date" },
 ];
 
+const COMPLETED_WINDOW_OPTIONS: { value: CompletedWindow; label: string }[] = [
+  { value: "day", label: "Past day" },
+  { value: "week", label: "Past week" },
+  { value: "month", label: "Past month" },
+  { value: "all", label: "All" },
+];
+
+interface DisplayPropMeta {
+  key: keyof TeamIssuesPrefs;
+  label: string;
+}
+
+const DISPLAY_PROPS: DisplayPropMeta[] = [
+  { key: "show_id", label: "ID" },
+  { key: "show_status", label: "Status" },
+  { key: "show_assignee", label: "Assignee" },
+  { key: "show_priority", label: "Priority" },
+  { key: "show_project", label: "Project" },
+  { key: "show_due_date", label: "Due date" },
+  { key: "show_milestone", label: "Milestone" },
+  { key: "show_cycle", label: "Cycle" },
+  { key: "show_labels", label: "Labels" },
+  { key: "show_links", label: "Links" },
+  { key: "show_time_in_status", label: "Time in status" },
+  { key: "show_created", label: "Created" },
+  { key: "show_updated", label: "Updated" },
+];
+
 function DisplayMenu({
-  display,
-  group,
-  sort,
-  writeSingle,
+  prefs,
+  update,
+  reset,
 }: {
-  display: string;
-  group: string;
-  sort: string;
-  writeSingle: (key: string, value: string | null, defaultValue?: string) => void;
+  prefs: TeamIssuesPrefs;
+  update: (patch: Partial<TeamIssuesPrefs>) => void;
+  reset: () => void;
 }) {
+  const isBoard = prefs.view === "board";
   return (
-    <div className="p-3">
-      <DisplayHeader>View</DisplayHeader>
-      <div className="mt-1 flex gap-1">
-        <ViewChip
-          active={display === "list"}
-          icon={<ListIcon size={12} />}
-          label="List"
-          onClick={() => writeSingle("display", "list", "list")}
-        />
-        <ViewChip
-          active={display === "board"}
-          icon={<LayoutGrid size={12} />}
-          label="Board"
-          onClick={() => writeSingle("display", "board", "list")}
+    <div className="px-2 py-2">
+      <div className="px-2 pb-3 pt-1">
+        <div className="flex items-center gap-1 rounded-md bg-input/60 p-1">
+          <ViewTab active={prefs.view === "list"} onClick={() => update({ view: "list" })}>
+            <LayoutList size={13} className="mr-2" /> List
+          </ViewTab>
+          <ViewTab active={prefs.view === "board"} onClick={() => update({ view: "board" })}>
+            <LayersIcon size={13} className="mr-2" /> Board
+          </ViewTab>
+        </div>
+      </div>
+
+      <div className="space-y-1 px-1 pb-2">
+        <PickerRow label={isBoard ? "Columns" : "Grouping"}>
+          <DropdownPicker
+            value={prefs.grouping}
+            options={GROUPING_OPTIONS}
+            onChange={(v) => update({ grouping: v })}
+          />
+        </PickerRow>
+        <PickerRow label={isBoard ? "Rows" : "Sub-grouping"}>
+          <DropdownPicker
+            value={prefs.sub_grouping}
+            options={GROUPING_OPTIONS}
+            onChange={(v) => update({ sub_grouping: v })}
+          />
+        </PickerRow>
+        <PickerRow label="Ordering">
+          <DropdownPicker
+            value={prefs.ordering}
+            options={ORDERING_OPTIONS}
+            onChange={(v) => update({ ordering: v })}
+          />
+        </PickerRow>
+        <Toggle
+          label="Order completed by recency"
+          value={prefs.order_completed_by_recency}
+          onChange={(v) => update({ order_completed_by_recency: v })}
         />
       </div>
 
-      <DisplayHeader className="mt-3">Grouping</DisplayHeader>
-      <RadioRow
-        value={group}
-        options={GROUP_OPTIONS}
-        onChange={(v) => writeSingle("group", v, "state")}
-      />
+      <hr className="mx-1 my-2 border-white/5" />
 
-      <DisplayHeader className="mt-3">Ordering</DisplayHeader>
-      <RadioRow
-        value={sort}
-        options={SORT_OPTIONS}
-        onChange={(v) => writeSingle("sort", v, "default")}
-      />
+      <div className="space-y-1 px-1 pb-2">
+        <PickerRow label="Completed issues">
+          <DropdownPicker
+            value={prefs.completed_window}
+            options={COMPLETED_WINDOW_OPTIONS}
+            onChange={(v) => update({ completed_window: v })}
+          />
+        </PickerRow>
+        <Toggle
+          label="Show sub-issues"
+          value={prefs.show_sub_issues}
+          onChange={(v) => update({ show_sub_issues: v })}
+        />
+      </div>
+
+      <hr className="mx-1 my-2 border-white/5" />
+
+      <div className="px-3 pb-2 pt-1 text-small font-semibold text-text-primary">
+        {isBoard ? "Board options" : "List options"}
+      </div>
+      {isBoard && (
+        <div className="px-1 pb-2">
+          <Toggle
+            label="Show empty columns"
+            value={prefs.show_empty_columns}
+            onChange={(v) => update({ show_empty_columns: v })}
+          />
+        </div>
+      )}
+      <div className="px-3 pb-2 text-small text-text-secondary">Display properties</div>
+      <div className="flex flex-wrap gap-2 px-3 pb-3 pt-1">
+        {DISPLAY_PROPS.map((p) => {
+          const active = Boolean(prefs[p.key]);
+          return (
+            <button
+              key={p.key as string}
+              type="button"
+              onClick={() => update({ [p.key]: !active } as Partial<TeamIssuesPrefs>)}
+              className={clsx(
+                "rounded-pill px-2.5 py-1 text-mini transition-colors",
+                active
+                  ? "bg-white/15 text-text-primary"
+                  : "bg-white/[0.04] text-text-tertiary hover:bg-white/10 hover:text-text-secondary",
+              )}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <hr className="mx-1 my-1 border-white/5" />
+
+      <div className="flex items-center justify-between px-3 py-2 text-mini">
+        <button
+          type="button"
+          onClick={reset}
+          className="rounded-md px-2 py-1 text-text-secondary hover:bg-white/5 hover:text-text-primary"
+        >
+          Reset
+        </button>
+        <button
+          type="button"
+          className="rounded-md px-2 py-1 text-accent hover:bg-accent/10"
+          title="Coming soon"
+        >
+          Set default for everyone
+        </button>
+      </div>
     </div>
   );
 }
 
-function DisplayHeader({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={clsx("text-mini text-text-tertiary", className)}>{children}</div>
-  );
-}
-
-function ViewChip({
+function ViewTab({
   active,
-  icon,
-  label,
   onClick,
+  children,
 }: {
   active: boolean;
-  icon: React.ReactNode;
-  label: string;
   onClick: () => void;
+  children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={clsx(
-        "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-mini",
+        "flex flex-1 items-center justify-center rounded-md px-3 py-2 text-small font-medium transition-colors",
         active
-          ? "border-border-strong bg-row-selected text-text-primary"
-          : "border-border-subtle bg-pill text-text-secondary hover:border-border-strong",
+          ? "bg-elevated text-text-primary shadow-button"
+          : "text-text-secondary hover:text-text-primary",
       )}
     >
-      {icon}
-      {label}
+      {children}
     </button>
   );
 }
 
-function RadioRow({
+function PickerRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between px-2 py-1.5">
+      <span className="text-small text-text-secondary">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function Toggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-small text-text-secondary hover:bg-white/5"
+    >
+      <span>{label}</span>
+      <span
+        className={clsx(
+          "relative inline-flex h-[16px] w-[28px] shrink-0 items-center rounded-pill transition-colors",
+          value ? "bg-accent" : "bg-white/15",
+        )}
+      >
+        <span
+          className={clsx(
+            "absolute h-[12px] w-[12px] rounded-pill bg-white shadow-sm transition-transform",
+            value ? "translate-x-[14px]" : "translate-x-[2px]",
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
+function DropdownPicker<T extends string>({
   value,
   options,
   onChange,
 }: {
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
 }) {
+  const current = options.find((o) => o.value === value)?.label ?? String(value);
   return (
-    <ul className="mt-1 space-y-0.5">
-      {options.map((o) => (
-        <li key={o.value}>
-          <button
-            type="button"
-            onClick={() => onChange(o.value)}
-            className={clsx(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-small",
-              value === o.value ? "bg-row-selected text-text-primary" : "text-text-secondary hover:bg-row-hover",
-            )}
-          >
-            <span
+    <Popover
+      align="end"
+      width={180}
+      trigger={({ toggle, open }) => (
+        <button
+          type="button"
+          onClick={toggle}
+          className={clsx(
+            "flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-1 text-mini text-text-secondary hover:bg-white/10 hover:text-text-primary",
+            open && "bg-white/10 text-text-primary",
+          )}
+        >
+          {current}
+          <ChevronDown size={11} className="text-text-tertiary" />
+        </button>
+      )}
+    >
+      {({ close }) => (
+        <div className="py-1">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); close(); }}
               className={clsx(
-                "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-pill border",
-                value === o.value ? "border-accent" : "border-border-strong",
+                "flex w-full items-center px-2.5 py-1.5 text-left text-small hover:bg-row-hover",
+                opt.value === value ? "text-text-primary" : "text-text-secondary",
               )}
             >
-              {value === o.value && <span className="h-1.5 w-1.5 rounded-pill bg-accent" />}
-            </span>
-            <span>{o.label}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </Popover>
   );
 }
