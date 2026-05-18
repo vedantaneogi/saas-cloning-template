@@ -1,11 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { Check, ChevronDown, Layers, Lock, Users } from "lucide-react";
-import { Popover } from "@/components/popover";
-import { createSavedView, type Team } from "@/lib/api";
+import {
+  AlertOctagon,
+  Check,
+  ChevronDown,
+  CircleDot,
+  Filter,
+  Layers,
+  Lock,
+  SlidersHorizontal,
+  Users,
+  X,
+} from "lucide-react";
+import { Avatar, StatusIcon } from "@/components/icons";
+import { IssueRow } from "@/components/issue-row";
+import { Popover, PopoverItem, PopoverList } from "@/components/popover";
+import {
+  createSavedView,
+  listWorkspaceIssues,
+  type Issue,
+  type StateGroup,
+  type Team,
+} from "@/lib/api";
 
 type Scope = "issues" | "projects";
 
@@ -14,16 +33,27 @@ type SaveDestination =
   | { kind: "workspace"; label: "Workspace" }
   | { kind: "team"; team: Team };
 
+interface GroupBucket {
+  name: string;
+  group: StateGroup;
+  position: number;
+  issues: Issue[];
+}
+
 /**
- * Inline editor for /views/new. Shows a name + description input plus a
- * "Save to" picker (Personal / Workspace / per-team) that controls where
- * the SavedView lands. Save POSTs a SavedView with empty filters — the
- * user can then open the view from /views and apply filters through the
- * normal funnel / display-options popovers.
+ * Full new-view editor that mirrors Linear's /views/<scope>/new screen.
+ * The header carries the breadcrumb + save controls; below that a tab
+ * sub-row picks scope and exposes the filter + display popovers; the
+ * body renders a live workspace-issues list with per-row checkboxes.
+ *
+ * On save, the selected issue ids are persisted as a `pinned=<csv>`
+ * param in the saved view's `query` string — when the view re-opens we
+ * pass that through to the workspace-issues endpoint, which restricts
+ * the list to exactly those issues.
  */
 export function NewViewEditor({
   workspace,
-  scope,
+  scope: initialScope,
   teams,
   workspaceName,
 }: {
@@ -33,28 +63,80 @@ export function NewViewEditor({
   workspaceName: string;
 }) {
   const router = useRouter();
-  const [name, setName] = useState(scope === "projects" ? "All projects" : "All issues");
+  const [scope, setScope] = useState<Scope>(initialScope);
+  const [name, setName] = useState(initialScope === "projects" ? "All projects" : "All issues");
   const [description, setDescription] = useState("");
   const [destination, setDestination] = useState<SaveDestination>({ kind: "personal", label: "Personal" });
   const [saving, setSaving] = useState(false);
+
+  // Filter state. Kept minimal — Linear's full filter popover has dozens
+  // of dimensions; the new-view editor in real Linear ships a subset
+  // (priority + status group + team) for the live preview.
+  const [statusGroups, setStatusGroups] = useState<StateGroup[]>([]);
+  const [priorities, setPriorities] = useState<number[]>([]);
+  const [teamKeys, setTeamKeys] = useState<string[]>([]);
+  const [grouping, setGrouping] = useState<"state" | "priority" | "assignee" | "team" | "none">("state");
+
+  // Live issue preview — refetches whenever the filter changes.
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (scope !== "issues") {
+      setIssues([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const params: Parameters<typeof listWorkspaceIssues>[1] = { view: "all" };
+    if (priorities.length > 0) params.priority = priorities.join(",");
+    if (teamKeys.length > 0) params.team = teamKeys.join(",");
+    listWorkspaceIssues(workspace, params)
+      .then((rows) => {
+        if (cancelled) return;
+        const filtered =
+          statusGroups.length > 0 ? rows.filter((r) => statusGroups.includes(r.state.group)) : rows;
+        setIssues(filtered);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace, scope, priorities, statusGroups, teamKeys]);
+
+  const groups = useMemo(() => groupIssues(issues, grouping), [issues, grouping]);
+
+  function toggleRow(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function save() {
     if (saving) return;
     setSaving(true);
     try {
+      // Pack the filter state into the query string the same way the
+      // /view/[viewId] reader expects (URL query params).
+      const sp = new URLSearchParams();
+      if (priorities.length > 0) sp.set("priority", priorities.join(","));
+      if (teamKeys.length > 0) sp.set("team", teamKeys.join(","));
+      if (selectedIds.size > 0) sp.set("pinned", [...selectedIds].join(","));
+
       const created = await createSavedView(workspace, {
         name: name.trim() || (scope === "projects" ? "All projects" : "All issues"),
         description: description.trim() || undefined,
         scope,
-        // Empty query — the view shows the base list. Save-from-filtered-page
-        // entry points pre-fill query via a different code path.
-        query: "",
+        query: sp.toString(),
         icon_color: destination.kind === "team" ? destination.team.icon_color : "#5e6ad2",
-        // Personal + Workspace destinations leave team_key null (visible to
-        // everyone with workspace access). A specific team binds the view
-        // to that team.
         team_key: destination.kind === "team" ? destination.team.key : null,
-        // owner_id is server-set: Personal -> caller's member.id, others null.
         personal: destination.kind === "personal",
       });
       window.dispatchEvent(new CustomEvent("projects-views:changed"));
@@ -71,120 +153,384 @@ export function NewViewEditor({
   }
 
   return (
-    <div className="border-b border-border-subtle px-6 py-4">
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/[0.04] text-text-tertiary">
-          <Layers size={14} />
-        </span>
-        <div className="flex-1">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") save();
-              if (e.key === "Escape") cancel();
-            }}
-            className="w-full bg-transparent text-default font-semibold text-text-primary placeholder:text-text-quaternary focus:outline-none"
-          />
-          <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description (optional)"
-            className="mt-1 w-full bg-transparent text-small text-text-secondary placeholder:text-text-quaternary focus:outline-none"
-          />
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="border-b border-border-subtle px-6 py-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/[0.04] text-text-tertiary">
+            <Layers size={14} />
+          </span>
+          <div className="flex-1">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") save();
+                if (e.key === "Escape") cancel();
+              }}
+              className="w-full bg-transparent text-default font-semibold text-text-primary placeholder:text-text-quaternary focus:outline-none"
+            />
+            <input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Description (optional)"
+              className="mt-1 w-full bg-transparent text-small text-text-secondary placeholder:text-text-quaternary focus:outline-none"
+            />
+          </div>
+          <div className="flex shrink-0 items-center gap-2 text-mini">
+            <span className="text-text-tertiary">Save to</span>
+            <Popover
+              align="end"
+              width={240}
+              surface="glass"
+              trigger={({ toggle, open }) => (
+                <button
+                  type="button"
+                  onClick={toggle}
+                  className={clsx(
+                    "inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-white/[0.03] px-2 py-1 text-text-secondary hover:bg-white/[0.06]",
+                    open && "bg-white/[0.06] text-text-primary",
+                  )}
+                >
+                  <DestinationIcon dest={destination} />
+                  <span>{destinationLabel(destination)}</span>
+                  <ChevronDown size={10} />
+                </button>
+              )}
+            >
+              {({ close }) => (
+                <div className="py-1">
+                  <DestRow
+                    active={destination.kind === "personal"}
+                    onClick={() => {
+                      setDestination({ kind: "personal", label: "Personal" });
+                      close();
+                    }}
+                    icon={<Lock size={12} className="text-text-tertiary" />}
+                    label="Personal"
+                  />
+                  <DestRow
+                    active={destination.kind === "workspace"}
+                    onClick={() => {
+                      setDestination({ kind: "workspace", label: "Workspace" });
+                      close();
+                    }}
+                    icon={<Users size={12} className="text-text-tertiary" />}
+                    label="Workspace"
+                  />
+                  {teams.length > 0 && (
+                    <>
+                      <div className="my-1 border-t border-border-subtle" />
+                      {teams.map((t) => (
+                        <DestRow
+                          key={t.key}
+                          active={destination.kind === "team" && destination.team.key === t.key}
+                          onClick={() => {
+                            setDestination({ kind: "team", team: t });
+                            close();
+                          }}
+                          icon={<span className="inline-block h-3 w-3 rounded-sm" style={{ background: t.icon_color }} />}
+                          label={t.name}
+                        />
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </Popover>
+            <button
+              type="button"
+              onClick={cancel}
+              className="rounded-md px-2 py-1 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="rounded-md bg-accent px-2.5 py-1 font-medium text-white hover:bg-accent/90 disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-mini">
-          <span className="text-text-tertiary">Save to</span>
+        <span className="hidden">{workspaceName}</span>
+      </div>
+
+      <div className="flex h-[44px] shrink-0 items-center gap-2 border-b border-border-subtle px-4">
+        <ScopeTab active={scope === "issues"} label="Issues" onClick={() => setScope("issues")} />
+        <ScopeTab active={scope === "projects"} label="Projects" onClick={() => setScope("projects")} />
+        <span className="ml-auto flex items-center gap-1">
           <Popover
             align="end"
-            width={240}
+            width={260}
             surface="glass"
             trigger={({ toggle, open }) => (
               <button
                 type="button"
                 onClick={toggle}
+                aria-label="Filter"
                 className={clsx(
-                  "inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-white/[0.03] px-2 py-1 text-text-secondary hover:bg-white/[0.06]",
-                  open && "bg-white/[0.06] text-text-primary",
+                  "flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
+                  open && "bg-row-hover text-text-secondary",
                 )}
               >
-                <DestinationIcon dest={destination} />
-                <span>{destinationLabel(destination)}</span>
-                <ChevronDown size={10} />
+                <Filter size={13} />
+              </button>
+            )}
+          >
+            {() => (
+              <FilterMenu
+                priorities={priorities}
+                statusGroups={statusGroups}
+                teamKeys={teamKeys}
+                teams={teams}
+                onPriorities={setPriorities}
+                onStatusGroups={setStatusGroups}
+                onTeamKeys={setTeamKeys}
+              />
+            )}
+          </Popover>
+          <Popover
+            align="end"
+            width={220}
+            surface="glass"
+            trigger={({ toggle, open }) => (
+              <button
+                type="button"
+                onClick={toggle}
+                aria-label="Display options"
+                className={clsx(
+                  "flex h-6 w-6 items-center justify-center rounded-md text-text-tertiary hover:bg-row-hover hover:text-text-secondary",
+                  open && "bg-row-hover text-text-secondary",
+                )}
+              >
+                <SlidersHorizontal size={13} />
               </button>
             )}
           >
             {({ close }) => (
-              <div className="py-1">
-                <DestRow
-                  active={destination.kind === "personal"}
-                  onClick={() => {
-                    setDestination({ kind: "personal", label: "Personal" });
-                    close();
-                  }}
-                  icon={<Lock size={12} className="text-text-tertiary" />}
-                  label="Personal"
-                />
-                <DestRow
-                  active={destination.kind === "workspace"}
-                  onClick={() => {
-                    setDestination({ kind: "workspace", label: "Workspace" });
-                    close();
-                  }}
-                  icon={<Users size={12} className="text-text-tertiary" />}
-                  label="Workspace"
-                />
-                {teams.length > 0 && (
-                  <>
-                    <div className="my-1 border-t border-border-subtle" />
-                    {teams.map((t) => (
-                      <DestRow
-                        key={t.key}
-                        active={destination.kind === "team" && destination.team.key === t.key}
-                        onClick={() => {
-                          setDestination({ kind: "team", team: t });
-                          close();
-                        }}
-                        icon={
-                          <span
-                            className="inline-block h-3 w-3 rounded-sm"
-                            style={{ background: t.icon_color }}
-                          />
-                        }
-                        label={t.name}
-                      />
-                    ))}
-                  </>
-                )}
+              <div className="p-2">
+                <div className="px-1 pb-1 text-mini text-text-tertiary">Grouping</div>
+                <PopoverList>
+                  {(["state", "priority", "assignee", "team", "none"] as const).map((g) => (
+                    <PopoverItem
+                      key={g}
+                      active={grouping === g}
+                      onClick={() => {
+                        setGrouping(g);
+                        close();
+                      }}
+                    >
+                      <span className="capitalize">{g === "none" ? "No grouping" : g}</span>
+                    </PopoverItem>
+                  ))}
+                </PopoverList>
               </div>
             )}
           </Popover>
-          <button
-            type="button"
-            onClick={cancel}
-            className="rounded-md px-2 py-1 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving}
-            className="rounded-md bg-accent px-2.5 py-1 font-medium text-white hover:bg-accent/90 disabled:opacity-60"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
+        </span>
       </div>
-      <p className="mt-3 pl-10 text-mini text-text-tertiary">
-        Filters are empty by default. After saving, open the view from{" "}
-        <span className="text-text-secondary">Views › {name}</span> and apply
-        filters with the funnel and display options to refine the list.
-        {/* Avoid an unused-prop warning until we wire workspaceName into the dest-row label. */}
-        <span className="hidden">{workspaceName}</span>
-      </p>
+
+      <div className="flex-1 overflow-y-auto pb-16">
+        {scope === "projects" ? (
+          <div className="px-4 py-12 text-center text-mini text-text-tertiary">
+            Project preview coming soon. Save to lock in the current filter as a project view; you can refine it from the /projects page.
+          </div>
+        ) : loading ? (
+          <div className="px-4 py-12 text-center text-mini text-text-tertiary">Loading issues…</div>
+        ) : groups.length === 0 ? (
+          <div className="px-4 py-12 text-center text-mini text-text-tertiary">No issues match this filter.</div>
+        ) : (
+          <div className="px-2 pt-2">
+            {groups.map((g) => (
+              <section key={g.name} className="mb-1">
+                <header className="flex h-[36px] items-center gap-2 px-2 text-mini">
+                  <ChevronDown size={11} className="text-text-tertiary" />
+                  <StatusIcon group={g.group} />
+                  <span className="font-medium text-text-primary">{g.name}</span>
+                  <span className="text-text-tertiary">{g.issues.length}</span>
+                  <button
+                    type="button"
+                    aria-label="Add to this group"
+                    className="ml-auto rounded-md p-0.5 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
+                  >
+                    +
+                  </button>
+                </header>
+                <ul>
+                  {g.issues.map((issue) => (
+                    <SelectableRow
+                      key={issue.id}
+                      issue={issue}
+                      workspace={workspace}
+                      selected={selectedIds.has(issue.id)}
+                      onToggle={() => toggleRow(issue.id)}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selectedIds.size > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-elevated/95 px-3 py-1.5 text-mini text-text-primary shadow-popover backdrop-blur-xl">
+            <span className="rounded-full bg-accent/20 px-2 py-0.5 text-accent">
+              {selectedIds.size} selected
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="rounded-md p-1 text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
+              aria-label="Clear selection"
+            >
+              <X size={12} />
+            </button>
+            <span className="text-text-tertiary">⌘</span>
+            <span className="text-text-secondary">Actions</span>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function SelectableRow({
+  issue,
+  workspace,
+  selected,
+  onToggle,
+}: {
+  issue: Issue;
+  workspace: string;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <li
+      className={clsx(
+        "group/issue flex items-center transition-colors",
+        selected && "bg-accent/[0.06]",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={selected ? "Unselect issue" : "Select issue"}
+        className={clsx(
+          "ml-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-all",
+          selected
+            ? "border-accent bg-accent text-white"
+            : "border-border-strong opacity-0 hover:border-text-tertiary group-hover/issue:opacity-100",
+        )}
+      >
+        {selected && <Check size={10} strokeWidth={3} />}
+      </button>
+      <div className="flex-1">
+        <IssueRow issue={issue} workspaceSlug={workspace} />
+      </div>
+    </li>
+  );
+}
+
+function FilterMenu({
+  priorities,
+  statusGroups,
+  teamKeys,
+  teams,
+  onPriorities,
+  onStatusGroups,
+  onTeamKeys,
+}: {
+  priorities: number[];
+  statusGroups: StateGroup[];
+  teamKeys: string[];
+  teams: Team[];
+  onPriorities: (p: number[]) => void;
+  onStatusGroups: (s: StateGroup[]) => void;
+  onTeamKeys: (k: string[]) => void;
+}) {
+  const PRIORITY_LABELS = ["No priority", "Urgent", "High", "Medium", "Low"];
+  const STATUS_GROUPS: { v: StateGroup; label: string }[] = [
+    { v: "backlog", label: "Backlog" },
+    { v: "unstarted", label: "Todo" },
+    { v: "started", label: "In progress" },
+    { v: "completed", label: "Done" },
+    { v: "canceled", label: "Canceled" },
+  ];
+
+  function togglePrio(p: number) {
+    onPriorities(priorities.includes(p) ? priorities.filter((x) => x !== p) : [...priorities, p]);
+  }
+  function toggleStatus(s: StateGroup) {
+    onStatusGroups(statusGroups.includes(s) ? statusGroups.filter((x) => x !== s) : [...statusGroups, s]);
+  }
+  function toggleTeam(k: string) {
+    onTeamKeys(teamKeys.includes(k) ? teamKeys.filter((x) => x !== k) : [...teamKeys, k]);
+  }
+
+  return (
+    <div className="p-2 text-small">
+      <Section label="Priority">
+        {PRIORITY_LABELS.map((label, p) => (
+          <PopoverItem key={p} active={priorities.includes(p)} onClick={() => togglePrio(p)}>
+            <AlertOctagon size={11} className="text-text-tertiary" />
+            <span>{label}</span>
+            {priorities.includes(p) && <span className="ml-auto text-text-tertiary">✓</span>}
+          </PopoverItem>
+        ))}
+      </Section>
+      <Section label="Status">
+        {STATUS_GROUPS.map((s) => (
+          <PopoverItem key={s.v} active={statusGroups.includes(s.v)} onClick={() => toggleStatus(s.v)}>
+            <CircleDot size={11} className="text-text-tertiary" />
+            <span>{s.label}</span>
+            {statusGroups.includes(s.v) && <span className="ml-auto text-text-tertiary">✓</span>}
+          </PopoverItem>
+        ))}
+      </Section>
+      {teams.length > 0 && (
+        <Section label="Team">
+          {teams.map((t) => (
+            <PopoverItem key={t.key} active={teamKeys.includes(t.key)} onClick={() => toggleTeam(t.key)}>
+              <span className="inline-block h-3 w-3 rounded-sm" style={{ background: t.icon_color }} />
+              <span>{t.name}</span>
+              {teamKeys.includes(t.key) && <span className="ml-auto text-text-tertiary">✓</span>}
+            </PopoverItem>
+          ))}
+        </Section>
+      )}
+    </div>
+  );
+}
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-1">
+      <div className="px-1 py-1 text-micro font-medium uppercase tracking-[0.04em] text-text-quaternary">{label}</div>
+      <PopoverList>{children}</PopoverList>
+    </div>
+  );
+}
+
+function ScopeTab({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        "rounded-full px-3 py-1 text-small font-medium transition-colors",
+        active
+          ? "bg-elevated text-text-primary ring-1 ring-white/[0.08]"
+          : "text-text-tertiary ring-1 ring-border-subtle hover:bg-row-hover hover:text-text-secondary",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -224,4 +570,52 @@ function DestinationIcon({ dest }: { dest: SaveDestination }) {
 function destinationLabel(dest: SaveDestination): string {
   if (dest.kind === "team") return dest.team.name;
   return dest.label;
+}
+
+function groupIssues(issues: Issue[], by: "state" | "priority" | "assignee" | "team" | "none"): GroupBucket[] {
+  if (by === "none") {
+    return issues.length
+      ? [{ name: "All issues", group: "started", position: 0, issues }]
+      : [];
+  }
+  if (by === "state") {
+    const map = new Map<string, GroupBucket>();
+    for (const i of issues) {
+      const key = i.state.name;
+      if (!map.has(key)) {
+        map.set(key, { name: i.state.name, group: i.state.group, position: i.state.position, issues: [] });
+      }
+      map.get(key)!.issues.push(i);
+    }
+    return [...map.values()].sort((a, b) => a.position - b.position);
+  }
+  if (by === "priority") {
+    const PRIORITY_LABELS = ["No priority", "Urgent", "High", "Medium", "Low"];
+    const map = new Map<number, Issue[]>();
+    for (const i of issues) {
+      if (!map.has(i.priority)) map.set(i.priority, []);
+      map.get(i.priority)!.push(i);
+    }
+    return [...map.entries()]
+      .sort((a, b) => (a[0] === 0 ? 1 : b[0] === 0 ? -1 : a[0] - b[0]))
+      .map(([p, list]) => ({ name: PRIORITY_LABELS[p], group: "started" as StateGroup, position: p, issues: list }));
+  }
+  if (by === "assignee") {
+    const map = new Map<string, GroupBucket>();
+    for (const i of issues) {
+      const k = i.assignee?.id ?? "_unassigned";
+      const n = i.assignee?.name ?? "Unassigned";
+      if (!map.has(k)) map.set(k, { name: n, group: "started" as StateGroup, position: 0, issues: [] });
+      map.get(k)!.issues.push(i);
+    }
+    return [...map.values()];
+  }
+  // team
+  const map = new Map<string, GroupBucket>();
+  for (const i of issues) {
+    const k = i.team.key;
+    if (!map.has(k)) map.set(k, { name: i.team.name, group: "started" as StateGroup, position: 0, issues: [] });
+    map.get(k)!.issues.push(i);
+  }
+  return [...map.values()];
 }

@@ -970,6 +970,37 @@ export function patchSavedView(
   });
 }
 
+/**
+ * Workspace-wide issue listing. Same filter knobs as listTeamIssues plus
+ * an optional `team` comma-separated keys parameter. Used by views that
+ * span multiple teams.
+ */
+export function listWorkspaceIssues(
+  slug: string,
+  params: {
+    view?: "active" | "backlog" | "all" | "archived";
+    priority?: string;
+    label?: string;
+    assignee?: string;
+    state?: string;
+    project?: string;
+    team?: string;
+    pinned?: string;
+    sort?: string;
+    archived?: boolean;
+  } = {},
+): Promise<Issue[]> {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    sp.set(k, String(v));
+  }
+  const qs = sp.toString();
+  return fetchJson(
+    `/api/workspaces/${encodeURIComponent(slug)}/issues${qs ? `?${qs}` : ""}`,
+  );
+}
+
 export function duplicateSavedView(slug: string, viewId: string, viewName: string): Promise<SavedView> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/views/${encodeURIComponent(viewId)}`).then(
     (v: SavedView) =>

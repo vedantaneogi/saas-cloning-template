@@ -515,6 +515,109 @@ def list_team_issues(
     return [_issue_dict(i, counts) for i in issues]
 
 
+@router.get("/workspaces/{slug}/issues", response_model=list[IssueOut])
+def list_workspace_issues(
+    view: str = Query("active"),
+    priority: str | None = Query(None),
+    label: str | None = Query(None),
+    assignee: str | None = Query(None),
+    state: str | None = Query(None),
+    project: str | None = Query(None),
+    team: str | None = Query(None, description="comma-separated team keys"),
+    pinned: str | None = Query(None, description="comma-separated issue ids — when set, the list is restricted to exactly those issues regardless of other filters"),
+    sort: str = Query("default"),
+    archived: bool = Query(False),
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Workspace-wide variant of the team-issues endpoint. Used by saved
+    views that span multiple teams (e.g. "All issues" on /views). Same
+    filter knobs as the team endpoint plus an optional `team=` for
+    scoping to a subset of teams without binding the view to one."""
+    if view == "active":
+        group_filter: tuple[StateGroup, ...] = (StateGroup.unstarted, StateGroup.started)
+    elif view == "backlog":
+        group_filter = (StateGroup.backlog,)
+    elif view == "all":
+        group_filter = tuple(StateGroup)
+    elif view == "archived":
+        group_filter = tuple(StateGroup)
+        archived = True
+    else:
+        raise HTTPException(400, f"unknown view: {view}")
+
+    q = (
+        db.query(Issue)
+        .join(Team, Issue.team_id == Team.id)
+        .join(WorkflowState, Issue.state_id == WorkflowState.id)
+        .filter(
+            Team.workspace_id == ws.id,
+            WorkflowState.group.in_(group_filter),
+            Issue.parent_id.is_(None),
+            Issue.is_triage.is_(False),
+            Issue.archived_at.is_(None) if not archived else Issue.archived_at.isnot(None),
+        )
+        .options(*_issue_query(db))
+    )
+
+    if pinned:
+        pinned_ids = [x for x in pinned.split(",") if x]
+        if pinned_ids:
+            q = q.filter(Issue.id.in_(pinned_ids))
+    else:
+        if team:
+            keys = [x for x in team.split(",") if x]
+            if keys:
+                q = q.filter(Team.key.in_(keys))
+        if priority:
+            vals = [int(x) for x in priority.split(",") if x.strip().isdigit()]
+            if vals:
+                q = q.filter(Issue.priority.in_(vals))
+        if assignee:
+            ids = [x for x in assignee.split(",") if x]
+            if "none" in ids:
+                others = [x for x in ids if x != "none"]
+                if others:
+                    q = q.filter((Issue.assignee_id.in_(others)) | (Issue.assignee_id.is_(None)))
+                else:
+                    q = q.filter(Issue.assignee_id.is_(None))
+            elif ids:
+                q = q.filter(Issue.assignee_id.in_(ids))
+        if label:
+            ids = [x for x in label.split(",") if x]
+            if ids:
+                q = q.filter(Issue.labels.any(Label.id.in_(ids)))
+        if state:
+            ids = [x for x in state.split(",") if x]
+            if ids:
+                q = q.filter(Issue.state_id.in_(ids))
+        if project:
+            ids = [x for x in project.split(",") if x]
+            if "none" in ids:
+                others = [x for x in ids if x != "none"]
+                if others:
+                    q = q.filter((Issue.project_id.in_(others)) | (Issue.project_id.is_(None)))
+                else:
+                    q = q.filter(Issue.project_id.is_(None))
+            elif ids:
+                q = q.filter(Issue.project_id.in_(ids))
+
+    if sort == "priority":
+        q = q.order_by(Issue.priority.asc(), Issue.created_at.desc())
+    elif sort == "updated":
+        q = q.order_by(Issue.updated_at.desc())
+    elif sort == "created":
+        q = q.order_by(Issue.created_at.desc())
+    elif sort == "due":
+        q = q.order_by(Issue.due_date.asc().nullslast(), Issue.priority.asc())
+    else:
+        q = q.order_by(WorkflowState.position, Issue.priority, Issue.created_at)
+
+    issues = q.all()
+    counts = _child_counts(db, [i.id for i in issues])
+    return [_issue_dict(i, counts) for i in issues]
+
+
 # --- Projects -----------------------------------------------------------
 
 import secrets
