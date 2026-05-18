@@ -410,6 +410,35 @@ function SectionHeader({
   );
 }
 
+/**
+ * Indented sub-nav row used under Cycles (Current / Upcoming). No
+ * icon, slightly narrower, mirrors Linear's two-level nav (see image
+ * #15 from the cycles spec).
+ */
+function CycleSubNav({
+  href,
+  label,
+  active,
+}: {
+  href: string;
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={clsx(
+        "ml-6 flex h-[26px] items-center rounded-md pl-2.5 pr-2 text-small leading-none transition-colors",
+        active
+          ? "font-medium text-text-primary"
+          : "text-text-tertiary hover:text-text-secondary",
+      )}
+    >
+      {label}
+    </Link>
+  );
+}
+
 function NavItem({
   href,
   icon,
@@ -513,16 +542,24 @@ function TeamGroup({
                 href={`${base}/cycles`}
                 icon={<Target size={13} />}
                 label="Cycles"
-                active={pathname === `${base}/cycles`}
+                active={
+                  pathname === `${base}/cycles` ||
+                  pathname.startsWith(`/${workspaceSlug}/cycle/`)
+                }
               />
-              {activeCycle && (
-                <NavItem
-                  href={`/${workspaceSlug}/cycle/${activeCycle.id}`}
-                  icon={<Target size={13} />}
-                  label={`Cycle ${activeCycle.number} (active)`}
-                  active={pathname === `/${workspaceSlug}/cycle/${activeCycle.id}`}
-                />
-              )}
+              <CycleSubNav
+                href={`${base}/cycles/current`}
+                label="Current"
+                active={
+                  pathname === `${base}/cycles/current` ||
+                  (activeCycle ? pathname === `/${workspaceSlug}/cycle/${activeCycle.id}` : false)
+                }
+              />
+              <CycleSubNav
+                href={`${base}/cycles/upcoming`}
+                label="Upcoming"
+                active={pathname === `${base}/cycles/upcoming`}
+              />
             </>
           )}
           <NavItem href={`${base}/projects`} icon={<Folders size={13} />} label="Projects" />
