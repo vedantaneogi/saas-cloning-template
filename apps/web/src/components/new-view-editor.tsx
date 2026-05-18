@@ -42,22 +42,23 @@ export function NewViewEditor({
     if (saving) return;
     setSaving(true);
     try {
-      await createSavedView(workspace, {
+      const created = await createSavedView(workspace, {
         name: name.trim() || (scope === "projects" ? "All projects" : "All issues"),
         description: description.trim() || undefined,
         scope,
-        // Empty query means "no extra filters" — the view shows the base list.
-        query: "{}",
+        // Empty query — the view shows the base list. Save-from-filtered-page
+        // entry points pre-fill query via a different code path.
+        query: "",
         icon_color: destination.kind === "team" ? destination.team.icon_color : "#5e6ad2",
-        // For team-scoped views, attach team_key. Personal + Workspace both
-        // sit at the workspace level (no team_key). Until the backend grows
-        // an `owner_id` column, "Personal" and "Workspace" are visually
-        // distinct but stored identically — the picker still controls the
-        // view's eventual visibility once that lands.
+        // Personal + Workspace destinations leave team_key null (visible to
+        // everyone with workspace access). A specific team binds the view
+        // to that team.
         team_key: destination.kind === "team" ? destination.team.key : null,
+        // owner_id is server-set: Personal -> caller's member.id, others null.
+        personal: destination.kind === "personal",
       });
       window.dispatchEvent(new CustomEvent("projects-views:changed"));
-      router.push(`/${workspace}/views?tab=${scope}`);
+      router.push(`/${workspace}/view/${created.id}`);
     } catch (e) {
       console.error("save view failed", e);
     } finally {

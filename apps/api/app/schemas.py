@@ -577,6 +577,10 @@ class SavedViewOut(BaseModel):
     favorite: bool
     position: int
     team_key: str | None = None
+    owner: MemberOut | None = None
+    owner_id: str | None = None
+    last_used_at: datetime | None = None
+    created_at: datetime | None = None
 
 
 class SavedViewCreateIn(BaseModel):
@@ -588,6 +592,10 @@ class SavedViewCreateIn(BaseModel):
     query: str = ""
     team_key: str | None = None
     favorite: bool = False
+    # When true, the new view is personal to the current member (owner_id
+    # set on the server). When false, it's workspace-shared. The frontend
+    # picker maps "Personal" -> personal=True, anything else -> False.
+    personal: bool = True
 
 
 class SavedViewPatchIn(BaseModel):
@@ -597,6 +605,9 @@ class SavedViewPatchIn(BaseModel):
     query: str | None = None
     base: str | None = None
     description: str | None = None
+    # Allow flipping between personal (owner_id = caller) and shared
+    # (owner_id null). Owners can also reassign by passing a new member id.
+    personal: bool | None = None
 
 
 # --- Bulk issue operations ---------------------------------------------

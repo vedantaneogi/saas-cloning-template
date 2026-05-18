@@ -6,15 +6,15 @@ import { ArrowUpDown, ChevronDown, SlidersHorizontal } from "lucide-react";
 import clsx from "clsx";
 import { Popover, PopoverItem, PopoverList } from "@/components/popover";
 
-const ORDERINGS: { value: "name" | "created" | "updated"; label: string }[] = [
+const ORDERINGS: { value: "name" | "created" | "last_used"; label: string }[] = [
   { value: "name", label: "Name" },
   { value: "created", label: "Created" },
-  { value: "updated", label: "Updated" },
+  { value: "last_used", label: "Last used" },
 ];
 
-const DISPLAY_PROPS: { value: "created" | "updated" | "owner"; label: string }[] = [
+const DISPLAY_PROPS: { value: "created" | "last_used" | "owner"; label: string }[] = [
   { value: "created", label: "Created" },
-  { value: "updated", label: "Updated" },
+  { value: "last_used", label: "Last used" },
   { value: "owner", label: "Owner" },
 ];
 
@@ -31,7 +31,7 @@ export function ViewsDisplayOptions({
 }: {
   workspace: string;
   tab: "issues" | "projects";
-  sort: "name" | "created" | "updated";
+  sort: "name" | "created" | "last_used";
   props: string[];
 }) {
   const router = useRouter();

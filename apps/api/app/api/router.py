@@ -2891,6 +2891,10 @@ def _view_dict(v: SavedView) -> dict:
         "favorite": v.favorite,
         "position": v.position,
         "team_key": v.team.key if v.team else None,
+        "owner": MemberOut.model_validate(v.owner).model_dump() if v.owner else None,
+        "owner_id": v.owner_id,
+        "last_used_at": v.last_used_at,
+        "created_at": v.created_at,
     }
 
 
@@ -2901,7 +2905,11 @@ def list_saved_views(
     ws: Workspace = Depends(get_workspace),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    q = db.query(SavedView).filter_by(workspace_id=ws.id).options(selectinload(SavedView.team))
+    q = (
+        db.query(SavedView)
+        .filter_by(workspace_id=ws.id)
+        .options(selectinload(SavedView.team), selectinload(SavedView.owner))
+    )
     if team_key:
         team = db.query(Team).filter_by(workspace_id=ws.id, key=team_key).first()
         if not team:
@@ -2917,6 +2925,7 @@ def list_saved_views(
 def create_saved_view(
     body: SavedViewCreateIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member | None = Depends(get_optional_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     team_id: str | None = None
@@ -2930,6 +2939,9 @@ def create_saved_view(
     if scope == "issues" and body.base not in {"active", "backlog", "all"}:
         raise HTTPException(400, f"unknown base: {body.base}")
     position = db.query(SavedView).filter_by(workspace_id=ws.id, team_id=team_id).count()
+    # Personal -> owned by the caller; not-personal (workspace / team
+    # scope from the picker) -> owner_id null = workspace-shared.
+    owner_id = current_member.id if (body.personal and current_member is not None) else None
     view = SavedView(
         workspace_id=ws.id,
         team_id=team_id,
@@ -2941,6 +2953,7 @@ def create_saved_view(
         query=body.query.lstrip("?"),
         favorite=body.favorite,
         position=position,
+        owner_id=owner_id,
     )
     db.add(view)
     db.commit()
@@ -2953,9 +2966,15 @@ def patch_saved_view(
     view_id: str,
     body: SavedViewPatchIn,
     ws: Workspace = Depends(get_workspace),
+    current_member: Member | None = Depends(get_optional_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
-    v = db.query(SavedView).filter_by(workspace_id=ws.id, id=view_id).first()
+    v = (
+        db.query(SavedView)
+        .filter_by(workspace_id=ws.id, id=view_id)
+        .options(selectinload(SavedView.team), selectinload(SavedView.owner))
+        .first()
+    )
     if not v:
         raise HTTPException(404, f"view not found: {view_id}")
     if body.name is not None:
@@ -2972,6 +2991,8 @@ def patch_saved_view(
         if body.base not in {"active", "backlog", "all"}:
             raise HTTPException(400, f"unknown base: {body.base}")
         v.base = body.base
+    if body.personal is not None:
+        v.owner_id = current_member.id if (body.personal and current_member is not None) else None
     db.commit()
     db.refresh(v)
     return _view_dict(v)
@@ -2999,11 +3020,17 @@ def get_saved_view(
     v = (
         db.query(SavedView)
         .filter_by(workspace_id=ws.id, id=view_id)
-        .options(selectinload(SavedView.team))
+        .options(selectinload(SavedView.team), selectinload(SavedView.owner))
         .first()
     )
     if not v:
         raise HTTPException(404, f"view not found: {view_id}")
+    # Bump last_used_at — drives the "Last used" column on /views and the
+    # recency sort. Use a transient flush so the response carries the
+    # fresh value, then commit at the end of the request.
+    v.last_used_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(v)
     return _view_dict(v)
 
 

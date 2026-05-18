@@ -1,14 +1,9 @@
 import Link from "next/link";
-import { Layers, Plus } from "lucide-react";
+import { Layers, Plus, Star } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { ViewsDisplayOptions, ViewsTabPill } from "@/components/views-display-options";
+import { ViewRow } from "@/components/view-row";
 import { getMe, listSavedViews, type SavedView } from "@/lib/api";
-
-interface SavedViewWithMeta extends SavedView {
-  owner_id?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
 
 export default async function ViewsIndexPage({
   params,
@@ -20,28 +15,29 @@ export default async function ViewsIndexPage({
   const { workspace } = await params;
   const sp = await searchParams;
   const tab: "issues" | "projects" = sp.tab === "projects" ? "projects" : "issues";
-  const sort = (sp.sort as "name" | "created" | "updated") ?? "name";
-  const props = (sp.props ?? "owner").split(",").filter(Boolean);
+  const sort = (sp.sort as "name" | "created" | "last_used") ?? "name";
+  const props = (sp.props ?? "owner,last_used").split(",").filter(Boolean);
 
-  // Workspace-scoped views for the active tab.
   const [views, me] = await Promise.all([
     listSavedViews(workspace, undefined, tab).catch(() => [] as SavedView[]),
     getMe().catch(() => null),
   ]);
 
-  // Owner data isn't surfaced by the list endpoint yet, so we treat every
-  // view as personal-to-me. When the backend grows owner_id this section
-  // splitter will partition correctly without further UI changes.
-  const myId = me?.user.id ?? null;
-  const withMeta = views as SavedViewWithMeta[];
-  const personal = withMeta.filter((v) => !v.owner_id || v.owner_id === myId);
-  const shared = withMeta.filter((v) => v.owner_id && v.owner_id !== myId);
+  // owner_id is set for personal views; null for workspace-shared. The
+  // signed-in member's id is what we compare against for "my views"
+  // vs "shared with me" sectioning. getMe returns the user, so map via
+  // workspace.members in a later iteration — for now we treat any view
+  // whose owner.user_id matches the current user as theirs.
+  const myUserId = me?.user.id ?? null;
+  const favorites = views.filter((v) => v.favorite);
+  const mine = views.filter((v) => !v.favorite && v.owner_id && (!myUserId || v.owner?.id !== undefined) && isMine(v, myUserId, me?.user.email ?? null));
+  const shared = views.filter((v) => !v.favorite && (!v.owner_id || !isMine(v, myUserId, me?.user.email ?? null)));
 
-  function sorted(rows: SavedViewWithMeta[]): SavedViewWithMeta[] {
+  function sorted(rows: SavedView[]): SavedView[] {
     const arr = [...rows];
     if (sort === "name") arr.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === "created") arr.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
-    else if (sort === "updated") arr.sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+    else if (sort === "last_used") arr.sort((a, b) => (b.last_used_at ?? "").localeCompare(a.last_used_at ?? ""));
     return arr;
   }
 
@@ -76,34 +72,34 @@ export default async function ViewsIndexPage({
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[1100px] px-4 pb-8 pt-2">
-          <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-6 px-2 py-2 text-mini text-text-tertiary">
-            <span className="flex items-center gap-1">
-              Name
-              <span className="text-text-quaternary">↓</span>
-            </span>
-            {props.includes("created") && <span>Created</span>}
-            {props.includes("updated") && <span>Updated</span>}
-            {props.includes("owner") && <span className="text-right">Owner</span>}
-          </div>
+          <HeaderRow props={props} sort={sort} />
 
-          <Section title="Personal views" subtitle="Only visible to you">
-            {sorted(personal).map((v) => (
-              <ViewRow key={v.id} v={v} workspace={workspace} props={props} ownerName={me?.user.name ?? null} />
-            ))}
-          </Section>
-
-          {shared.length > 0 && (
-            <Section title="Workspace views">
-              {sorted(shared).map((v) => (
-                <ViewRow key={v.id} v={v} workspace={workspace} props={props} ownerName={null} />
+          {favorites.length > 0 && (
+            <Section icon={<Star size={11} className="text-amber-400" fill="currentColor" />} title="Favorites">
+              {sorted(favorites).map((v) => (
+                <ViewRow key={v.id} view={v} workspace={workspace} props={props} />
               ))}
             </Section>
           )}
 
-          {personal.length === 0 && shared.length === 0 && (
-            <div className="px-4 py-12 text-center text-mini text-text-tertiary">
-              {tab === "projects" ? "No saved project views yet." : "No saved issue views yet."}
-            </div>
+          {mine.length > 0 && (
+            <Section title="My views" subtitle="Only visible to you">
+              {sorted(mine).map((v) => (
+                <ViewRow key={v.id} view={v} workspace={workspace} props={props} />
+              ))}
+            </Section>
+          )}
+
+          {shared.length > 0 && (
+            <Section title="Workspace views" subtitle="Shared with everyone">
+              {sorted(shared).map((v) => (
+                <ViewRow key={v.id} view={v} workspace={workspace} props={props} />
+              ))}
+            </Section>
+          )}
+
+          {views.length === 0 && (
+            <EmptyState workspace={workspace} tab={tab} />
           )}
         </div>
       </div>
@@ -111,70 +107,83 @@ export default async function ViewsIndexPage({
   );
 }
 
+function isMine(v: SavedView, myUserId: string | null, myEmail: string | null): boolean {
+  if (!v.owner_id) return false;
+  if (!v.owner) return false;
+  // We don't have user_id on the member payload yet, so fall back to
+  // email (workspace member emails are unique). When that's wired up,
+  // compare owner.user.id === myUserId directly.
+  if (myEmail && v.owner.email && v.owner.email === myEmail) return true;
+  if (myUserId && v.owner_id === myUserId) return true;
+  return false;
+}
+
+function HeaderRow({ props, sort }: { props: string[]; sort: string }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-4 px-2 pb-1 pt-1 text-mini text-text-tertiary">
+      <span className="flex items-center gap-1">
+        Name
+        {sort === "name" && <span className="text-text-quaternary">↓</span>}
+      </span>
+      {props.includes("created") && (
+        <span className="w-[80px] text-right">
+          Created {sort === "created" && <span className="text-text-quaternary">↓</span>}
+        </span>
+      )}
+      {props.includes("last_used") && (
+        <span className="w-[80px] text-right">
+          Last used {sort === "last_used" && <span className="text-text-quaternary">↓</span>}
+        </span>
+      )}
+      {props.includes("owner") && <span className="w-[24px] text-right">Owner</span>}
+      <span className="w-[60px]" aria-hidden />
+    </div>
+  );
+}
+
 function Section({
   title,
   subtitle,
+  icon,
   children,
 }: {
   title: string;
   subtitle?: string;
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="mb-4">
-      <header className="flex items-center gap-2 px-2 py-2 text-mini text-text-tertiary">
-        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-elevated text-[8px] text-text-tertiary">
-          ⋯
-        </span>
+      <header className="flex items-center gap-2 px-2 pb-1 pt-3 text-mini">
+        {icon ?? <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-elevated text-[8px] text-text-tertiary">·</span>}
         <span className="font-medium text-text-secondary">{title}</span>
-        {subtitle && <span className="text-text-quaternary">• {subtitle}</span>}
+        {subtitle && <span className="text-text-quaternary">· {subtitle}</span>}
       </header>
       <ul>{children}</ul>
     </section>
   );
 }
 
-function ViewRow({
-  v,
-  workspace,
-  props,
-  ownerName,
-}: {
-  v: SavedViewWithMeta;
-  workspace: string;
-  props: string[];
-  ownerName: string | null;
-}) {
+function EmptyState({ workspace, tab }: { workspace: string; tab: "issues" | "projects" }) {
   return (
-    <li>
+    <div className="mx-auto mt-12 max-w-[440px] rounded-lg border border-border-subtle bg-elevated/40 p-8 text-center">
+      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-elevated text-accent">
+        <Layers size={18} strokeWidth={1.75} />
+      </div>
+      <h2 className="text-default font-semibold text-text-primary">
+        No saved {tab === "projects" ? "project" : "issue"} views yet
+      </h2>
+      <p className="mt-1 text-mini text-text-tertiary">
+        Save your filtered list of {tab} as a view to come back to it anytime — yours
+        only or shared with the workspace.
+      </p>
       <Link
-        href={`/${workspace}/view/${v.id}`}
-        className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-6 rounded-md px-2 py-2 text-small hover:bg-row-hover"
+        href={`/${workspace}/views/new?scope=${tab}`}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-mini font-medium text-white hover:opacity-90"
       >
-        <span className="flex items-center gap-2">
-          <span style={{ color: v.icon_color }}>
-            <Layers size={14} />
-          </span>
-          <span className="truncate font-medium text-text-primary">{v.name}</span>
-          {v.description && (
-            <span className="truncate text-mini text-text-tertiary">{v.description}</span>
-          )}
-        </span>
-        {props.includes("created") && (
-          <span className="text-mini text-text-tertiary">{fmt(v.created_at)}</span>
-        )}
-        {props.includes("updated") && (
-          <span className="text-mini text-text-tertiary">{fmt(v.updated_at)}</span>
-        )}
-        {props.includes("owner") && (
-          <span className="text-mini text-text-tertiary">{ownerName ?? "—"}</span>
-        )}
+        <Plus size={12} />
+        New view
       </Link>
-    </li>
+    </div>
   );
-}
-
-function fmt(iso: string | null | undefined) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

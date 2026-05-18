@@ -929,6 +929,10 @@ export interface SavedView {
   favorite: boolean;
   position: number;
   team_key: string | null;
+  owner?: Member | null;
+  owner_id?: string | null;
+  last_used_at?: string | null;
+  created_at?: string | null;
 }
 
 export function listSavedViews(slug: string, teamKey?: string, scope?: "issues" | "projects"): Promise<SavedView[]> {
@@ -945,7 +949,7 @@ export function getSavedView(slug: string, viewId: string): Promise<SavedView> {
 
 export function createSavedView(
   slug: string,
-  body: { name: string; icon_color?: string; base?: string; scope?: "issues" | "projects"; description?: string; query?: string; team_key?: string; favorite?: boolean }
+  body: { name: string; icon_color?: string; base?: string; scope?: "issues" | "projects"; description?: string; query?: string; team_key?: string | null; favorite?: boolean; personal?: boolean }
 ): Promise<SavedView> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/views`, {
     method: "POST",
@@ -957,13 +961,29 @@ export function createSavedView(
 export function patchSavedView(
   slug: string,
   viewId: string,
-  body: Partial<{ name: string; icon_color: string; favorite: boolean; query: string; base: string; description: string }>
+  body: Partial<{ name: string; icon_color: string; favorite: boolean; query: string; base: string; description: string; personal: boolean }>
 ): Promise<SavedView> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/views/${encodeURIComponent(viewId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+export function duplicateSavedView(slug: string, viewId: string, viewName: string): Promise<SavedView> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/views/${encodeURIComponent(viewId)}`).then(
+    (v: SavedView) =>
+      createSavedView(slug, {
+        name: `${viewName} (copy)`,
+        icon_color: v.icon_color,
+        base: v.base,
+        scope: v.scope,
+        description: v.description ?? undefined,
+        query: v.query,
+        team_key: v.team_key ?? null,
+        personal: true,
+      }),
+  );
 }
 
 export async function deleteSavedView(slug: string, viewId: string): Promise<void> {

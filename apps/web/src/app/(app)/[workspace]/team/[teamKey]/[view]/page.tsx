@@ -84,7 +84,7 @@ export default async function TeamIssuesPage({
         activeTab={savedView ? undefined : view}
         trailing={
           <>
-            <SaveViewButton workspaceSlug={workspace} teamKey={teamKey} base={view as "active" | "backlog" | "all"} />
+            <SaveViewButton workspaceSlug={workspace} teamKey={teamKey} base={view as "active" | "backlog" | "all"} savedView={savedView} />
             <FilterTrigger workspaceSlug={workspace} teamKey={teamKey} />
             <TeamCsvActions workspaceSlug={workspace} teamKey={teamKey} />
           </>

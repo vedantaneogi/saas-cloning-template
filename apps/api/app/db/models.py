@@ -776,10 +776,18 @@ class SavedView(Base):
     query: Mapped[str] = mapped_column(Text, default="")
     favorite: Mapped[bool] = mapped_column(Boolean, default=False)
     position: Mapped[int] = mapped_column(Integer, default=0)
+    # When non-null, the view is personal to this member; when null, the
+    # view is workspace-shared. Distinct from team_id, which controls
+    # *which team* the view filters on.
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    # Bumped on every view-open call so /views can render a "Last used"
+    # column + sort by recency.
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     workspace: Mapped["Workspace"] = relationship()
     team: Mapped["Team | None"] = relationship()
+    owner: Mapped["Member | None"] = relationship()
 
 
 class TemplateKind(str, enum.Enum):
