@@ -330,6 +330,14 @@ project_dependencies = Table(
 )
 
 
+project_members = Table(
+    "project_members",
+    Base.metadata,
+    Column("project_id", ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
+    Column("member_id", ForeignKey("members.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Issue(Base):
     __tablename__ = "issues"
 
@@ -473,6 +481,7 @@ class Project(Base):
         back_populates="project", cascade="all, delete-orphan", order_by="ProjectResource.created_at"
     )
     teams: Mapped[list["Team"]] = relationship(secondary=project_teams)
+    members: Mapped[list["Member"]] = relationship(secondary=project_members)
     labels: Mapped[list["Label"]] = relationship(secondary=project_labels)
     dependencies: Mapped[list["Project"]] = relationship(
         secondary=project_dependencies,

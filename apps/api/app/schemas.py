@@ -232,6 +232,7 @@ class ProjectOut(BaseModel):
     initiative_name: str | None = None
     initiative_slug_id: str | None = None
     team_keys: list[str] = []
+    member_ids: list[str] = []
     label_ids: list[str] = []
     dependency_ids: list[str] = []
     template_id: str | None = None
@@ -266,6 +267,7 @@ class ProjectCreateIn(BaseModel):
     initiative_id: str | None = None
     target_date: datetime | None = None
     start_date: datetime | None = None
+    member_ids: list[str] | None = None
 
 
 class ProjectPatchIn(BaseModel):
@@ -279,9 +281,11 @@ class ProjectPatchIn(BaseModel):
     target_date: datetime | None = None
     start_date: datetime | None = None
     team_ids: list[str] | None = None
+    member_ids: list[str] | None = None
     label_ids: list[str] | None = None
     dependency_ids: list[str] | None = None
     template_id: str | None = None
+    clear_start_date: bool = False
     clear_target_date: bool = False
     clear_lead: bool = False
     clear_initiative: bool = False

@@ -178,7 +178,7 @@ function IssueView({ workspace, issue, customerRequests, members, teams }: { wor
           </div>
         </div>
 
-        <aside className="w-[280px] shrink-0 border-l border-border-subtle p-5 text-small">
+        <aside className="w-[290px] shrink-0 border-l border-border-subtle px-4 py-5 text-small">
           <IssueProperties workspaceSlug={workspace} issue={issue} />
 
           <RelationsPanel

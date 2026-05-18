@@ -23,13 +23,17 @@ import { PriorityIcon } from "@/components/icons";
 import { DatePicker } from "@/components/date-picker";
 import {
   getProject,
+  getWorkspace,
   listMembers,
+  listWorkspaceLabels,
   patchProject,
+  type Label,
   type Member,
   type Project,
   type ProjectDetail,
   type ProjectMilestone,
   type ProjectState,
+  type Team,
 } from "@/lib/api";
 
 const DAY_MS = 86_400_000;
@@ -796,6 +800,8 @@ function ProjectDetailPanel({
   const router = useRouter();
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [allLabels, setAllLabels] = useState<Label[]>([]);
+  const [allTeams, setAllTeams] = useState<Team[]>([]);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -814,9 +820,9 @@ function ProjectDetailPanel({
   }, [workspace, slug]);
 
   useEffect(() => {
-    listMembers(workspace)
-      .then(setMembers)
-      .catch(() => {});
+    listMembers(workspace).then(setMembers).catch(() => {});
+    listWorkspaceLabels(workspace).then(setAllLabels).catch(() => {});
+    getWorkspace(workspace).then((ws) => setAllTeams(ws?.teams ?? [])).catch(() => {});
   }, [workspace]);
 
   async function mutate(patch: Record<string, unknown>) {
@@ -1103,13 +1109,76 @@ function ProjectDetailPanel({
                 </Popover>
               </PropPickerRow>
 
-              <PropRow label="Members">
-                <span className="text-text-tertiary">
-                  {detail.members?.length ? `${detail.members.length} member(s)` : "Add members"}
-                </span>
-              </PropRow>
+              <PropPickerRow label="Members">
+                <Popover
+                  align="start"
+                  width={260}
+                  surface="glass"
+                  trigger={({ toggle, open }) => (
+                    <PropValueButton open={open} onClick={toggle}>
+                      {detail.members && detail.members.length > 0 ? (
+                        <span className="flex items-center gap-1">
+                          <span className="flex -space-x-1.5">
+                            {detail.members.slice(0, 3).map((m) => (
+                              <span
+                                key={m.id}
+                                className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-pill text-[9px] font-medium text-white ring-2 ring-elevated"
+                                style={{ background: m.color }}
+                              >
+                                {m.initials}
+                              </span>
+                            ))}
+                          </span>
+                          <span className="ml-2 text-text-primary">
+                            {detail.members.length} member{detail.members.length > 1 ? "s" : ""}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-text-tertiary">Add members</span>
+                      )}
+                    </PropValueButton>
+                  )}
+                >
+                  {() => (
+                    <PopoverList>
+                      {members.map((m) => {
+                        const checked = detail.members?.some((x) => x.id === m.id) ?? false;
+                        return (
+                          <PopoverItem
+                            key={m.id}
+                            active={checked}
+                            onClick={() => {
+                              const next = checked
+                                ? (detail.members ?? []).filter((x) => x.id !== m.id).map((x) => x.id)
+                                : [...((detail.members ?? []).map((x) => x.id)), m.id];
+                              mutate({ member_ids: next });
+                            }}
+                          >
+                            <span
+                              className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-pill text-[9px] font-medium text-white"
+                              style={{ background: m.color }}
+                            >
+                              {m.initials}
+                            </span>
+                            <span>{m.name}</span>
+                            {checked && <span className="ml-auto text-text-tertiary">✓</span>}
+                          </PopoverItem>
+                        );
+                      })}
+                    </PopoverList>
+                  )}
+                </Popover>
+              </PropPickerRow>
               <PropRow label="Issues">
-                <span className="text-text-primary">{detail.issue_count}</span>
+                <Link
+                  href={`/${workspace}/project/${slug}`}
+                  className="-mx-1 rounded-md px-1 py-0.5 text-text-primary hover:bg-row-hover"
+                >
+                  {detail.issue_count}
+                  {detail.completed_issue_count > 0 && (
+                    <span className="ml-1 text-text-tertiary">· {detail.completed_issue_count} done</span>
+                  )}
+                </Link>
               </PropRow>
               <PropPickerRow label="Dates">
                 <DatePicker
@@ -1130,11 +1199,117 @@ function ProjectDetailPanel({
                   placeholder="Target"
                 />
               </PropPickerRow>
-              {detail.team_keys?.length ? (
-                <PropRow label="Teams">
-                  <span className="text-text-primary">{detail.team_keys.join(", ")}</span>
-                </PropRow>
-              ) : null}
+              <PropPickerRow label="Teams">
+                <Popover
+                  align="start"
+                  width={240}
+                  surface="glass"
+                  trigger={({ toggle, open }) => (
+                    <PropValueButton open={open} onClick={toggle}>
+                      {detail.team_keys && detail.team_keys.length > 0 ? (
+                        <span className="text-text-primary">{detail.team_keys.join(", ")}</span>
+                      ) : (
+                        <span className="text-text-tertiary">No team</span>
+                      )}
+                    </PropValueButton>
+                  )}
+                >
+                  {() => (
+                    <PopoverList>
+                      {allTeams.map((t) => {
+                        const checked = detail.team_keys?.includes(t.key) ?? false;
+                        return (
+                          <PopoverItem
+                            key={t.id}
+                            active={checked}
+                            onClick={() => {
+                              const currentIds = (detail.teams ?? []).map((x) => x.id);
+                              const next = checked
+                                ? currentIds.filter((id) => id !== t.id)
+                                : [...currentIds, t.id];
+                              mutate({ team_ids: next });
+                            }}
+                          >
+                            <span
+                              className="inline-flex h-[16px] w-[16px] items-center justify-center rounded-sm text-[9px] font-medium text-white"
+                              style={{ background: t.icon_color }}
+                            >
+                              {t.key.slice(0, 1)}
+                            </span>
+                            <span>{t.name}</span>
+                            {checked && <span className="ml-auto text-text-tertiary">✓</span>}
+                          </PopoverItem>
+                        );
+                      })}
+                    </PopoverList>
+                  )}
+                </Popover>
+              </PropPickerRow>
+              <PropPickerRow label="Labels">
+                <Popover
+                  align="start"
+                  width={240}
+                  surface="glass"
+                  trigger={({ toggle, open }) => (
+                    <PropValueButton open={open} onClick={toggle}>
+                      {detail.label_ids && detail.label_ids.length > 0 ? (
+                        <span className="flex flex-wrap items-center gap-1">
+                          {allLabels
+                            .filter((l) => detail.label_ids?.includes(l.id))
+                            .slice(0, 3)
+                            .map((l) => (
+                              <span
+                                key={l.id}
+                                className="inline-flex items-center gap-1 rounded-pill bg-pill px-1.5 py-px text-mini text-text-secondary"
+                              >
+                                <span
+                                  className="inline-block h-[6px] w-[6px] rounded-full"
+                                  style={{ background: l.color }}
+                                />
+                                {l.name}
+                              </span>
+                            ))}
+                          {(detail.label_ids?.length ?? 0) > 3 && (
+                            <span className="text-mini text-text-tertiary">
+                              +{(detail.label_ids?.length ?? 0) - 3}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-text-tertiary">No labels</span>
+                      )}
+                    </PropValueButton>
+                  )}
+                >
+                  {() => (
+                    <PopoverList>
+                      {allLabels.map((l) => {
+                        const checked = detail.label_ids?.includes(l.id) ?? false;
+                        return (
+                          <PopoverItem
+                            key={l.id}
+                            active={checked}
+                            onClick={() => {
+                              const current = detail.label_ids ?? [];
+                              const next = checked
+                                ? current.filter((id) => id !== l.id)
+                                : [...current, l.id];
+                              mutate({ label_ids: next });
+                            }}
+                          >
+                            <span
+                              className="inline-block h-[10px] w-[10px] rounded-full"
+                              style={{ background: l.color }}
+                            />
+                            <span>{l.name}</span>
+                            {checked && <span className="ml-auto text-text-tertiary">✓</span>}
+                          </PopoverItem>
+                        );
+                      })}
+                    </PopoverList>
+                  )}
+                </Popover>
+              </PropPickerRow>
             </PanelSection>
 
             <PanelSection title="Milestones">

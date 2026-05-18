@@ -152,9 +152,8 @@ export function NewProjectButton({
         lead_id: leadId || undefined,
         start_date: startDate || undefined,
         target_date: targetDate || undefined,
+        member_ids: memberIds.length > 0 ? memberIds : undefined,
       });
-      // Labels + dependencies aren't accepted by POST /projects but are
-      // patchable, so apply them in a follow-up call.
       if (labelIds.length > 0 || dependencyIds.length > 0) {
         try {
           await patchProject(workspaceSlug, p.slug_id, {
@@ -164,14 +163,6 @@ export function NewProjectButton({
         } catch (e) {
           console.error("project label/dep patch failed", e);
         }
-      }
-      // memberIds: backend has no direct project_members table; members on
-      // ProjectDetail are derived from project teams. We expose the picker so
-      // the user can stage their selection and capture it in the description
-      // until proper project-member endpoints land.
-      if (memberIds.length > 0) {
-        const picked = members.filter((m) => memberIds.includes(m.id));
-        console.info("[new-project] members staged (not persisted yet):", picked.map((m) => m.name));
       }
       for (const m of milestones) {
         if (!m.name.trim()) continue;

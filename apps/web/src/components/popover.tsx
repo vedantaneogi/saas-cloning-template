@@ -276,7 +276,7 @@ export function PopoverItem({
         type="button"
         onClick={onClick}
         className={clsx(
-          "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover",
+          "flex h-[28px] w-full items-center gap-2 px-2.5 text-left text-small text-text-secondary hover:bg-row-hover",
           active && "bg-row-selected text-text-primary"
         )}
       >

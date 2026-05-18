@@ -113,7 +113,7 @@ export function IssueProperties({ workspaceSlug, issue }: { workspaceSlug: strin
 
   return (
     <>
-      <div className="mb-5 space-y-2">
+      <div className="mb-5 space-y-0.5">
         <Row label="Status">
           <Popover
             trigger={({ toggle }) => (
@@ -474,9 +474,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   const prop = label.toLowerCase().replace(/\s+/g, "-");
   return (
-    <div className="flex items-center text-small" data-issue-prop={prop}>
-      <span className="w-[72px] shrink-0 text-text-tertiary">{label}</span>
-      <span className="flex items-center text-text-secondary">{children}</span>
+    <div className="flex min-h-[26px] items-center text-small" data-issue-prop={prop}>
+      <span className="w-[88px] shrink-0 text-text-tertiary">{label}</span>
+      <span className="flex min-w-0 items-center text-text-secondary">{children}</span>
     </div>
   );
 }

@@ -137,3 +137,35 @@
     opacity: 1;
   }
 }
+
+/* Light-theme tweaks for surfaces that hard-code `white/N%` alpha overlays
+   (timeline bars, glass popovers, project detail panel). In light mode the
+   raw white tints disappear into the page; we re-tint to subtle near-black
+   so the glass effect still reads. Limited to the most-visible offenders. */
+[data-theme="light"] {
+  /* Glass surfaces use bg-white/[0.04..0.10] + border-white/10 — invert. */
+  .bg-white\/\[0\.04\],
+  .bg-white\/\[0\.06\],
+  .bg-white\/\[0\.08\],
+  .bg-white\/\[0\.10\],
+  .bg-white\/10 {
+    background-color: rgba(0, 0, 0, 0.04) !important;
+  }
+  .border-white\/\[0\.08\],
+  .border-white\/\[0\.10\],
+  .border-white\/\[0\.12\],
+  .border-white\/10 {
+    border-color: rgba(0, 0, 0, 0.08) !important;
+  }
+  .ring-white\/10,
+  .ring-white\/20 {
+    --tw-ring-color: rgba(0, 0, 0, 0.10) !important;
+  }
+  /* Hover overlays and selected rows used to be very subtle white; in light
+     mode the same opacity reads as black with the right hierarchy. */
+  .bg-black\/30,
+  .bg-black\/40,
+  .bg-black\/50 {
+    background-color: rgba(0, 0, 0, 0.20) !important;
+  }
+}

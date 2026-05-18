@@ -184,6 +184,7 @@ export interface Project {
   initiative_name: string | null;
   initiative_slug_id: string | null;
   team_keys?: string[];
+  member_ids?: string[];
   label_ids?: string[];
   dependency_ids?: string[];
   template_id?: string | null;
@@ -623,7 +624,7 @@ export function listProjectIssues(slug: string, projectSlug: string): Promise<Is
 
 export function createProject(
   slug: string,
-  body: { name: string; description?: string; state?: ProjectState; priority?: 0 | 1 | 2 | 3 | 4; icon_color?: string; lead_id?: string; start_date?: string; target_date?: string }
+  body: { name: string; description?: string; state?: ProjectState; priority?: 0 | 1 | 2 | 3 | 4; icon_color?: string; lead_id?: string; start_date?: string; target_date?: string; member_ids?: string[] }
 ): Promise<Project> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects`, {
     method: "POST",
@@ -694,7 +695,7 @@ export function createMilestone(
 export function patchProject(
   slug: string,
   projectSlug: string,
-  body: Partial<{ name: string; description: string; state: ProjectState; priority: 0 | 1 | 2 | 3 | 4; icon_color: string; lead_id: string; initiative_id: string; start_date: string; target_date: string; team_ids: string[]; label_ids: string[]; dependency_ids: string[]; template_id: string; clear_target_date: boolean; clear_lead: boolean; clear_initiative: boolean; clear_template: boolean }>
+  body: Partial<{ name: string; description: string; state: ProjectState; priority: 0 | 1 | 2 | 3 | 4; icon_color: string; lead_id: string; initiative_id: string; start_date: string; target_date: string; team_ids: string[]; member_ids: string[]; label_ids: string[]; dependency_ids: string[]; template_id: string; clear_start_date: boolean; clear_target_date: boolean; clear_lead: boolean; clear_initiative: boolean; clear_template: boolean }>
 ): Promise<Project> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects/${encodeURIComponent(projectSlug)}`, {
     method: "PATCH",

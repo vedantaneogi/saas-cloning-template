@@ -351,6 +351,7 @@ def _project_dict(
         "initiative_name": p.initiative.name if p.initiative else None,
         "initiative_slug_id": p.initiative.slug_id if p.initiative else None,
         "team_keys": [t.key for t in (p.teams or [])] if hasattr(p, "teams") else [],
+        "member_ids": [m.id for m in (p.members or [])] if hasattr(p, "members") else [],
         "label_ids": [l.id for l in (p.labels or [])] if hasattr(p, "labels") else [],
         "dependency_ids": [d.id for d in (p.dependencies or [])] if hasattr(p, "dependencies") else [],
         "template_id": p.template_id,
@@ -573,15 +574,19 @@ def get_project(
             selectinload(Project.updates).selectinload(ProjectUpdateModel.author),
             selectinload(Project.resources),
             selectinload(Project.teams),
+            selectinload(Project.members),
         )
         .first()
     )
     if not p:
         raise HTTPException(404, f"project not found: {slug_id}")
     base = _project_dict(p, db=db)
-    members: list[Member] = []
-    if p.lead:
-        members.append(p.lead)
+    # Explicit project members come from the project_members table; the
+    # lead is always implicitly a member even if not explicitly attached.
+    members_by_id: dict[str, Member] = {m.id: m for m in (p.members or [])}
+    if p.lead and p.lead.id not in members_by_id:
+        members_by_id[p.lead.id] = p.lead
+    members = list(members_by_id.values())
     base["milestones"] = [ProjectMilestoneOut.model_validate(m).model_dump() for m in p.milestones]
     base["updates"] = [
         {
@@ -659,6 +664,13 @@ def create_project(
         target_date=body.target_date,
     )
     db.add(project)
+    db.flush()
+    if body.member_ids:
+        members = db.query(Member).filter(
+            Member.workspace_id == ws.id,
+            Member.id.in_(body.member_ids),
+        ).all()
+        project.members = members
     db.commit()
     db.refresh(project)
     return _project_dict(project, db=db)
@@ -701,7 +713,9 @@ def patch_project(
         p.target_date = None
     elif body.target_date is not None:
         p.target_date = body.target_date
-    if body.start_date is not None:
+    if body.clear_start_date:
+        p.start_date = None
+    elif body.start_date is not None:
         p.start_date = body.start_date
     if body.clear_initiative:
         p.initiative_id = None
@@ -713,6 +727,12 @@ def patch_project(
     if body.team_ids is not None:
         teams = db.query(Team).filter(Team.workspace_id == ws.id, Team.id.in_(body.team_ids)).all()
         p.teams = teams
+    if body.member_ids is not None:
+        members = db.query(Member).filter(
+            Member.workspace_id == ws.id,
+            Member.id.in_(body.member_ids),
+        ).all()
+        p.members = members
     if body.label_ids is not None:
         labels = db.query(Label).filter(Label.id.in_(body.label_ids)).all()
         # Only attach labels that belong to this workspace (either via team

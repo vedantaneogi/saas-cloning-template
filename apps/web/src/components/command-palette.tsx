@@ -184,7 +184,7 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
       onClick={() => setOpen(false)}
     >
       <div
-        className="w-[640px] max-w-[90vw] overflow-hidden rounded-lg bg-elevated shadow-popover"
+        className="w-[640px] max-w-[90vw] overflow-hidden rounded-lg border border-white/[0.08] bg-elevated/95 shadow-popover backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-border-subtle px-3.5 py-2.5">
@@ -201,13 +201,13 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
           </kbd>
         </div>
 
-        <div className="max-h-[min(60vh,440px)] overflow-y-auto py-2">
+        <div className="max-h-[min(60vh,440px)] overflow-y-auto py-1">
           {groups.length === 0 && (
             <div className="px-3.5 py-6 text-center text-mini text-text-tertiary">No results</div>
           )}
           {groups.map((g) => (
-            <div key={g.title} className="mb-1">
-              <div className="px-3.5 pb-1 pt-2 text-micro font-medium uppercase tracking-wider text-text-tertiary">
+            <div key={g.title} className="mb-0.5">
+              <div className="px-3.5 pb-0.5 pt-1.5 text-micro font-medium uppercase tracking-[0.04em] text-text-quaternary">
                 {g.title}
               </div>
               {g.items.map((item) => {
@@ -219,7 +219,7 @@ export function CommandPalette({ workspaceSlug }: { workspaceSlug: string }) {
                     onMouseEnter={() => setSelected(idx)}
                     onClick={() => go(item)}
                     className={clsx(
-                      "flex w-full items-center gap-2.5 px-3.5 py-1.5 text-left text-small",
+                      "flex h-[30px] w-full items-center gap-2.5 px-3.5 text-left text-small",
                       selected === idx ? "bg-row-selected text-text-primary" : "text-text-secondary hover:bg-row-hover"
                     )}
                   >

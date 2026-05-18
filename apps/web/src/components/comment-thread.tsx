@@ -246,15 +246,15 @@ function CommentRow({
   }
 
   return (
-    <div className={depth > 0 ? "ml-9 mt-2" : "mt-5"}>
-      <div className="flex gap-3">
-        <Avatar initials={comment.author?.initials ?? "?"} color={comment.author?.color ?? "#5e6ad2"} size={depth > 0 ? 20 : 24} />
-        <div className="flex-1 rounded-md border border-border-subtle bg-elevated p-3">
+    <div className={depth > 0 ? "ml-8 mt-3" : "mt-5"}>
+      <div className="flex gap-2.5">
+        <Avatar initials={comment.author?.initials ?? "?"} color={comment.author?.color ?? "#5e6ad2"} size={depth > 0 ? 18 : 22} />
+        <div className="min-w-0 flex-1 pt-px">
           <header className="flex items-center gap-2 text-mini text-text-tertiary">
             <span className="text-small font-medium text-text-primary">{comment.author?.name ?? "Unknown"}</span>
             <span>{relTime(comment.created_at) || "now"}</span>
           </header>
-          <p className="mt-1 text-small text-text-secondary">
+          <p className="mt-0.5 whitespace-pre-wrap text-small leading-[1.55] text-text-secondary">
             {renderBody(comment.body, comment.mentions)}
           </p>
           <ReactionRow reactions={comment.reactions ?? []} onToggle={onToggleReaction} />
@@ -262,7 +262,7 @@ function CommentRow({
             <button
               type="button"
               onClick={() => setReplying((v) => !v)}
-              className="mt-2 flex items-center gap-1 text-mini text-text-tertiary hover:text-text-secondary"
+              className="mt-1.5 flex items-center gap-1 text-mini text-text-tertiary hover:text-text-secondary"
             >
               <Reply size={12} /> Reply
             </button>
@@ -282,7 +282,7 @@ function CommentRow({
       ))}
 
       {replying && (
-        <div className="ml-9 mt-2 rounded-md border border-border-subtle bg-elevated p-2">
+        <div className="ml-8 mt-2 rounded-md border border-border-subtle bg-elevated p-2">
           <MentionTextarea
             workspaceSlug={workspaceSlug}
             members={members}

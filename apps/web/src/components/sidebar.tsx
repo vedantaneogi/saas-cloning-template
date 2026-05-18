@@ -25,6 +25,8 @@ import {
   Check,
   LogOut,
   Repeat2,
+  Moon,
+  Sun,
 } from "lucide-react";
 import clsx from "clsx";
 import { Avatar } from "@/components/icons";
@@ -43,6 +45,23 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switchSubOpen, setSwitchSubOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    const stored = (typeof window !== "undefined" && window.localStorage.getItem("lc-theme")) as "dark" | "light" | null;
+    const initial = stored ?? "dark";
+    setTheme(initial);
+    document.documentElement.setAttribute("data-theme", initial);
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      window.localStorage.setItem("lc-theme", next);
+    } catch {}
+  }
 
   const [sectionOpen, setSectionOpen] = useState<Record<Sections, boolean>>({
     favorites: true,
@@ -183,6 +202,22 @@ export function Sidebar({ workspace, me }: { workspace: Workspace; me: Me }) {
                 </div>
               )}
             </div>
+
+            <hr className="my-1 border-border-subtle" />
+
+            <button
+              onClick={() => {
+                toggleTheme();
+              }}
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-small text-text-secondary hover:bg-row-hover"
+            >
+              {theme === "dark" ? (
+                <Sun size={13} className="text-text-tertiary" />
+              ) : (
+                <Moon size={13} className="text-text-tertiary" />
+              )}
+              <span className="flex-1">Switch to {theme === "dark" ? "light" : "dark"} theme</span>
+            </button>
 
             <hr className="my-1 border-border-subtle" />
 
