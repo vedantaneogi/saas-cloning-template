@@ -5,6 +5,7 @@ import { CircleUser } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { MyIssuesBody } from "@/components/my-issues-body";
 import { MyIssuesControls } from "@/components/my-issues-controls";
+import { MyIssuesPrefsApplier } from "@/components/my-issues-prefs-applier";
 import {
   getWorkspace,
   listMembers,
@@ -83,6 +84,7 @@ export default async function MyIssuesPage({ params }: { params: Promise<{ works
           <MyIssuesControls workspaceSlug={workspace} />
         </span>
       </div>
+      <MyIssuesPrefsApplier workspaceSlug={workspace} />
       <MyIssuesBody
         workspaceSlug={workspace}
         scope={scope}

@@ -152,6 +152,44 @@ function write(slug: string, prefs: MyIssuesPrefs) {
   window.dispatchEvent(new CustomEvent(EVENT));
 }
 
+/**
+ * Pack a prefs snapshot into a URL query string under the `mip` key. Used
+ * by Save-as-view from /my/[scope] — we round-trip the JSON because
+ * unrolling all 30+ fields as individual params would bloat the URL.
+ */
+export function serializeMyIssuesPrefs(prefs: Partial<MyIssuesPrefs>): string {
+  const sp = new URLSearchParams();
+  sp.set("mip", JSON.stringify(prefs));
+  return sp.toString();
+}
+
+/**
+ * Parse a query string back into a prefs patch. Returns null when no
+ * `mip` key exists or the JSON is malformed — callers should leave
+ * existing prefs untouched in that case.
+ */
+export function deserializeMyIssuesPrefs(query: string): Partial<MyIssuesPrefs> | null {
+  if (!query) return null;
+  try {
+    const sp = new URLSearchParams(query);
+    const raw = sp.get("mip");
+    if (!raw) return null;
+    return JSON.parse(raw) as Partial<MyIssuesPrefs>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Apply a prefs patch directly to localStorage + fire the change event so
+ * any mounted useMyIssuesPrefs hook re-renders. Used by the
+ * /view/[viewId] entry point on /my/ pages.
+ */
+export function applyMyIssuesPrefs(slug: string, patch: Partial<MyIssuesPrefs>): void {
+  const current = read(slug);
+  write(slug, { ...current, ...patch });
+}
+
 export function useMyIssuesPrefs(slug: string) {
   const [, setTick] = useState(0);
 

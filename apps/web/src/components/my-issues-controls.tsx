@@ -30,7 +30,9 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { Popover } from "@/components/popover";
+import { SaveMyIssuesViewButton } from "@/components/save-my-issues-view-button";
 import {
+  serializeMyIssuesPrefs,
   useMyIssuesPrefs,
   type CompletedWindow,
   type MyIssuesGrouping,
@@ -158,6 +160,12 @@ export function MyIssuesControls({ workspaceSlug }: { workspaceSlug: string }) {
         issue list). No popover; just flips a pref the MyIssuesBody
         reads to mount the side rail.
       */}
+      <SaveMyIssuesViewButton
+        workspaceSlug={workspaceSlug}
+        query={serializeMyIssuesPrefs(prefs)}
+        hasCustomization={activeFilterCount > 0}
+      />
+
       <button
         type="button"
         onClick={() => update({ insights_open: !prefs.insights_open })}
