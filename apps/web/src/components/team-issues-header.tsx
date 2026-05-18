@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Bookmark, ChevronRight, Layers, Star } from "lucide-react";
+import { Bookmark, ChevronRight, Star } from "lucide-react";
 import clsx from "clsx";
 import { SaveViewButton } from "@/components/save-view-button";
 import { TeamCsvActions } from "@/components/team-csv-actions";
+import { TeamIssueViewsBar } from "@/components/team-issue-views-bar";
 import { TeamIssuesControls } from "@/components/team-issues-controls";
 import { TeamNotificationBell } from "@/components/team-notification-bell";
 import { useTeamFavorite } from "@/lib/team-prefs";
@@ -101,14 +102,11 @@ export function TeamIssuesHeader({
             <PillTab href={tabHref("all")} label="All issues" active={view === "all"} />
             <PillTab href={tabHref("active")} label="Active" active={view === "active"} />
             <PillTab href={tabHref("backlog")} label="Backlog" active={view === "backlog"} />
-            <Link
-              href={`/${workspace}/views?tab=issues`}
-              aria-label="Saved views"
-              title="Saved views"
-              className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-border-subtle text-text-tertiary hover:bg-row-hover hover:text-text-secondary"
-            >
-              <Layers size={12} strokeWidth={1.75} />
-            </Link>
+            <TeamIssueViewsBar
+              workspaceSlug={workspace}
+              teamKey={team.key}
+              activeViewId={savedView?.id ?? null}
+            />
           </>
         )}
 

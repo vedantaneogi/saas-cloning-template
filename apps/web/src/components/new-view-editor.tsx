@@ -61,17 +61,30 @@ export function NewViewEditor({
   scope: initialScope,
   teams,
   workspaceName,
+  initialTeamKey,
 }: {
   workspace: string;
   scope: Scope;
   teams: Team[];
   workspaceName: string;
+  /** When set, the editor binds the new view to this team (destination
+   *  picker prefills + save sets team_key). Used when launching the
+   *  editor from /team/<key>/all or /team/<key>/projects via the
+   *  "Create new view" button. */
+  initialTeamKey?: string;
 }) {
   const router = useRouter();
   const [scope, setScope] = useState<Scope>(initialScope);
   const [name, setName] = useState(initialScope === "projects" ? "All projects" : "All issues");
   const [description, setDescription] = useState("");
-  const [destination, setDestination] = useState<SaveDestination>({ kind: "personal", label: "Personal" });
+  const initialDestination: SaveDestination = (() => {
+    if (initialTeamKey) {
+      const t = teams.find((x) => x.key === initialTeamKey);
+      if (t) return { kind: "team", team: t };
+    }
+    return { kind: "personal", label: "Personal" };
+  })();
+  const [destination, setDestination] = useState<SaveDestination>(initialDestination);
   const [saving, setSaving] = useState(false);
 
   // Filter state. Kept minimal — Linear's full filter popover has dozens
