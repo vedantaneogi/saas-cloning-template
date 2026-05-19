@@ -218,8 +218,17 @@ export interface Initiative {
   completed_project_count: number;
 }
 
+export interface InitiativeUpdate {
+  id: string;
+  body: string;
+  health: UpdateHealth;
+  author: Member | null;
+  created_at: string;
+}
+
 export interface InitiativeDetail extends Initiative {
   projects: Project[];
+  updates: InitiativeUpdate[];
 }
 
 async function ssrCookieHeader(): Promise<string | null> {
@@ -624,7 +633,7 @@ export function listProjectIssues(slug: string, projectSlug: string): Promise<Is
 
 export function createProject(
   slug: string,
-  body: { name: string; description?: string; state?: ProjectState; priority?: 0 | 1 | 2 | 3 | 4; icon_color?: string; lead_id?: string; start_date?: string; target_date?: string; member_ids?: string[] }
+  body: { name: string; description?: string; state?: ProjectState; priority?: 0 | 1 | 2 | 3 | 4; icon_color?: string; lead_id?: string; initiative_id?: string; start_date?: string; target_date?: string; member_ids?: string[] }
 ): Promise<Project> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/projects`, {
     method: "POST",
@@ -938,6 +947,18 @@ export function patchInitiative(
 ): Promise<Initiative> {
   return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/initiatives/${encodeURIComponent(initiativeSlug)}`, {
     method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function createInitiativeUpdate(
+  slug: string,
+  initiativeSlug: string,
+  body: { body: string; health: UpdateHealth },
+): Promise<InitiativeUpdate> {
+  return fetchJson(`/api/workspaces/${encodeURIComponent(slug)}/initiatives/${encodeURIComponent(initiativeSlug)}/updates`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

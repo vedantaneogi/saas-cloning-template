@@ -445,6 +445,27 @@ class Initiative(Base):
     workspace: Mapped["Workspace"] = relationship()
     owner: Mapped["Member | None"] = relationship()
     projects: Mapped[list["Project"]] = relationship(back_populates="initiative", foreign_keys="Project.initiative_id")
+    updates: Mapped[list["InitiativeUpdate"]] = relationship(
+        back_populates="initiative",
+        cascade="all, delete-orphan",
+        order_by="InitiativeUpdate.created_at.desc()",
+    )
+
+
+class InitiativeUpdate(Base):
+    """Status update posted against an initiative (mirrors ProjectUpdate)."""
+
+    __tablename__ = "initiative_updates"
+
+    id: Mapped[str] = mapped_column(UUID(), primary_key=True, default=_uuid)
+    initiative_id: Mapped[str] = mapped_column(ForeignKey("initiatives.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_id: Mapped[str | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    health: Mapped[UpdateHealth] = mapped_column(Enum(UpdateHealth, name="update_health"), default=UpdateHealth.onTrack)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    initiative: Mapped["Initiative"] = relationship(back_populates="updates")
+    author: Mapped["Member | None"] = relationship()
 
 
 class Project(Base):

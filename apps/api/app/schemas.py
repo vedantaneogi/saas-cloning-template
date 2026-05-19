@@ -308,8 +308,23 @@ class InitiativeOut(BaseModel):
     completed_project_count: int = 0
 
 
+class InitiativeUpdateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    body: str
+    health: str
+    author: "MemberOut | None"
+    created_at: datetime
+
+
 class InitiativeDetailOut(InitiativeOut):
     projects: list[ProjectOut] = []
+    updates: list[InitiativeUpdateOut] = []
+
+
+class InitiativeUpdateCreateIn(BaseModel):
+    body: str = ""
+    health: str = "onTrack"
 
 
 class InitiativeCreateIn(BaseModel):

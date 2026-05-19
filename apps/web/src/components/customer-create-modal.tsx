@@ -72,7 +72,7 @@ export function CustomerCreateModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40"
       onClick={onClose}
     >
       <div
@@ -115,9 +115,10 @@ export function CustomerCreateModal({
                 value={status}
                 onChange={setStatus}
                 options={[
-                  { value: "active", label: "Active", color: "#22c55e" },
-                  { value: "prospect", label: "Prospect", color: "#a855f7" },
-                  { value: "churned", label: "Churned", color: "#71717a" },
+                  { value: "active", label: "Active", color: "#5e6ad2" },
+                  { value: "prospect", label: "Prospect", color: "#4cb782" },
+                  { value: "churned", label: "Churned", color: "#eb5757" },
+                  { value: "lost", label: "Lost", color: "#f2994a" },
                 ]}
                 renderValue={(opt) => (
                   <span className="flex items-center gap-2">
@@ -134,13 +135,7 @@ export function CustomerCreateModal({
               <SelectButton
                 value={tier ?? ""}
                 onChange={(v) => setTier(v || null)}
-                options={[
-                  { value: "", label: "No tier" },
-                  { value: "free", label: "Free" },
-                  { value: "pro", label: "Pro" },
-                  { value: "business", label: "Business" },
-                  { value: "enterprise", label: "Enterprise" },
-                ]}
+                options={[{ value: "", label: "No tier" }]}
                 renderValue={(opt) => <span>{opt?.label ?? "No tier"}</span>}
               />
             </Field>
@@ -148,14 +143,14 @@ export function CustomerCreateModal({
 
           <Row>
             <Field label="Annual revenue">
-              <div className="flex items-center rounded-md border border-border-strong bg-app focus-within:ring-1 focus-within:ring-accent">
-                <span className="px-2 text-mini text-text-tertiary">$</span>
+              <div className="flex items-center rounded-md border border-border-strong bg-app px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-accent">
+                <span className="mr-1.5 text-small text-text-tertiary">$</span>
                 <input
                   type="number"
                   min={0}
                   value={annualRevenue}
                   onChange={(e) => setAnnualRevenue(e.target.value)}
-                  className="w-full bg-transparent py-1.5 pr-2 text-small text-text-primary focus:outline-none"
+                  className="w-full bg-transparent text-small text-text-primary focus:outline-none"
                 />
               </div>
             </Field>
@@ -308,6 +303,7 @@ function SelectButton({
     <Popover
       align="start"
       width={220}
+      triggerWrapperClassName="relative block"
       trigger={({ toggle, open }) => (
         <button
           type="button"
@@ -362,6 +358,7 @@ function OwnerSelect({
     <Popover
       align="start"
       width={260}
+      triggerWrapperClassName="relative block"
       trigger={({ toggle, open }) => (
         <button
           type="button"

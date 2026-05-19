@@ -74,6 +74,7 @@ export function NewProjectButton({
   const [state, setState] = useState<ProjectState>("planned");
   const [priority, setPriority] = useState<0 | 1 | 2 | 3 | 4>(0);
   const [leadId, setLeadId] = useState<string>("");
+  const [initiativeId, setInitiativeId] = useState<string>("");
   const [startDate, setStartDate] = useState<string>("");
   const [targetDate, setTargetDate] = useState<string>("");
   const [iconColor, setIconColor] = useState("#5e6ad2");
@@ -98,8 +99,9 @@ export function NewProjectButton({
   // open this modal and optionally pre-select a starting state.
   useEffect(() => {
     function handler(e: Event) {
-      const ce = e as CustomEvent<{ state?: ProjectState } | undefined>;
+      const ce = e as CustomEvent<{ state?: ProjectState; initiativeId?: string } | undefined>;
       if (ce.detail?.state) setState(ce.detail.state);
+      if (ce.detail?.initiativeId) setInitiativeId(ce.detail.initiativeId);
       setOpen(true);
     }
     window.addEventListener("new-project:open", handler);
@@ -112,6 +114,7 @@ export function NewProjectButton({
     setStartDate(""); setTargetDate(""); setIconColor("#5e6ad2");
     setTemplateId(""); setMilestones([]);
     setMemberIds([]); setLabelIds([]); setDependencyIds([]);
+    setInitiativeId("");
   }
 
   function applyTemplate(id: string) {
@@ -150,6 +153,7 @@ export function NewProjectButton({
         priority,
         icon_color: iconColor,
         lead_id: leadId || undefined,
+        initiative_id: initiativeId || undefined,
         start_date: startDate || undefined,
         target_date: targetDate || undefined,
         member_ids: memberIds.length > 0 ? memberIds : undefined,

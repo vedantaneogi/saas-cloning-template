@@ -28,6 +28,7 @@ from app.db.models import (
     EstimateScale,
     Initiative,
     InitiativeStatus,
+    InitiativeUpdate as InitiativeUpdateModel,
     IntegrationKind,
     WorkspaceIntegration,
     Issue,
@@ -105,6 +106,8 @@ from app.schemas import (
     InitiativeDetailOut,
     InitiativeOut,
     InitiativePatchIn,
+    InitiativeUpdateCreateIn,
+    InitiativeUpdateOut,
     IssueBulkIn,
     IssueBulkOut,
     IssueCreateIn,
@@ -2384,6 +2387,26 @@ def _initiative_dict(i: Initiative, *, db: Session | None = None, with_projects:
     }
     if with_projects:
         out["projects"] = projects_out
+        if db is not None:
+            updates = (
+                db.query(InitiativeUpdateModel)
+                .filter(InitiativeUpdateModel.initiative_id == i.id)
+                .options(selectinload(InitiativeUpdateModel.author))
+                .order_by(InitiativeUpdateModel.created_at.desc())
+                .all()
+            )
+            out["updates"] = [
+                {
+                    "id": u.id,
+                    "body": u.body,
+                    "health": u.health.value if hasattr(u.health, "value") else u.health,
+                    "author": MemberOut.model_validate(u.author) if u.author else None,
+                    "created_at": u.created_at,
+                }
+                for u in updates
+            ]
+        else:
+            out["updates"] = []
     return out
 
 
@@ -2483,6 +2506,42 @@ def patch_initiative(
     db.commit()
     db.refresh(ini)
     return _initiative_dict(ini, db=db)
+
+
+@router.post(
+    "/workspaces/{slug}/initiatives/{slug_id}/updates",
+    response_model=InitiativeUpdateOut,
+)
+def create_initiative_update(
+    slug_id: str,
+    body: InitiativeUpdateCreateIn,
+    ws: Workspace = Depends(get_workspace),
+    db: Session = Depends(get_db),
+    me: Member = Depends(get_current_member),
+) -> dict:
+    ini = _find_initiative(db, ws, slug_id)
+    if not ini:
+        raise HTTPException(404, f"initiative not found: {slug_id}")
+    try:
+        health = UpdateHealth(body.health)
+    except ValueError:
+        raise HTTPException(400, f"unknown health: {body.health}")
+    u = InitiativeUpdateModel(
+        initiative_id=ini.id,
+        author_id=me.id if me else None,
+        body=body.body or "",
+        health=health,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return {
+        "id": u.id,
+        "body": u.body,
+        "health": u.health.value if hasattr(u.health, "value") else u.health,
+        "author": MemberOut.model_validate(u.author) if u.author else None,
+        "created_at": u.created_at,
+    }
 
 
 # --- Cycles -------------------------------------------------------------

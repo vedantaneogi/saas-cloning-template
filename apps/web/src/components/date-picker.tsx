@@ -90,6 +90,24 @@ export function DatePicker({
   );
 }
 
+/**
+ * Calendar grid extracted so other chip-style pickers can reuse the same
+ * month view inside their own Popover without dragging in DatePicker's
+ * built-in trigger styling. `value` and `onPick` mirror the input contract
+ * — empty string clears.
+ */
+export function MonthCalendar({
+  value,
+  onPick,
+}: {
+  value: string;
+  onPick: (iso: string) => void;
+}) {
+  const initialMonth = value ? new Date(value + "T00:00:00") : new Date();
+  const [view, setView] = useState<Date>(startOfMonth(initialMonth));
+  return <Calendar2 view={view} setView={setView} selected={value} onPick={onPick} />;
+}
+
 function Calendar2({
   view,
   setView,
