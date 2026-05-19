@@ -14,6 +14,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = 'v4k0l6h2i655'
@@ -23,10 +24,24 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # update_health enum already exists from c9a7ba46a2b0_initial (project_updates).
-    # Re-declare it with create_type=False so the column references the existing
-    # type without alembic trying to CREATE TYPE a second time on Postgres.
-    health_enum = sa.Enum('onTrack', 'atRisk', 'offTrack', name='update_health', create_type=False)
+    # The update_health enum was created by the initial project_updates
+    # migration. Reuse it: on Postgres we reference the existing type via
+    # postgresql.ENUM(create_type=False) so alembic does not emit a second
+    # CREATE TYPE; on SQLite the enum maps to TEXT and behaves as a plain
+    # string.
+    dialect = op.get_bind().dialect.name
+    if dialect == "postgresql":
+        health_enum = postgresql.ENUM(
+            "onTrack", "atRisk", "offTrack",
+            name="update_health",
+            create_type=False,
+        )
+    else:
+        health_enum = sa.Enum(
+            "onTrack", "atRisk", "offTrack",
+            name="update_health",
+            create_type=False,
+        )
     op.create_table(
         'initiative_updates',
         sa.Column('id', sa.String(length=36), primary_key=True),
