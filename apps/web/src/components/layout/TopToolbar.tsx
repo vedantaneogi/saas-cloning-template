@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
-  Search, Bell, HelpCircle, Check, X, UserPlus, Settings, ArrowLeft, SlidersHorizontal, ChevronDown,
+  Bell, HelpCircle, Check, X, UserPlus, Settings, ArrowLeft, Filter,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { useMailStore } from '@/store/mail'
@@ -12,16 +12,49 @@ import { Avatar } from '@/components/ui/Avatar'
 import { cn, formatMessageDate } from '@/lib/utils'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { messages, auth, contacts } from '@/lib/api'
+import { APP_ICON_MAP } from './AppIcons'
+
+// Render one of the Fluent app icons by name (lookup into the generated map).
+function AppIcon({ name, size = 28 }: { name: string; size?: number }) {
+  const spec = APP_ICON_MAP[name]
+  if (!spec) return <span style={{ fontSize: size }}>📦</span>
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={spec.viewBox}
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: spec.inner }}
+    />
+  )
+}
 
 // ─── Waffle Icon (Microsoft 365 app launcher) ──────────────────────────────
+// The real Outlook launcher button uses a plain monochrome 3×3 grid of
+// dots in white-on-blue — NOT the colored 4-tile Microsoft brand logo.
+// Senior flagged that mismatch ("keep this not the Microsoft logo with blue
+// color and white dots"), so the trigger here matches the Fluent
+// `GridDots` glyph instead of the brand square.
 function WaffleIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      {[0, 6.5, 13].map((y) =>
-        [0, 6.5, 13].map((x) => (
-          <rect key={`${x}-${y}`} x={x} y={y} width="4.5" height="4.5" rx="0.8" fill="white" opacity="0.9" />
-        ))
-      )}
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+      {[3, 10, 17].map((cy) => [3, 10, 17].map((cx) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.4" />
+      )))}
+    </svg>
+  )
+}
+
+// ─── Outlook-style search glyph ────────────────────────────────────────────
+// Outlook's search icon is a slightly thicker magnifying glass than the
+// lucide default. Stroked with currentColor so it inherits the surrounding
+// text color (gray when idle, blue on focus).
+function OutlookSearchIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M13.5 13.5L17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   )
 }
@@ -401,24 +434,37 @@ export function TopToolbar() {
             </button>
 
             {showAppLauncher && (
-              <div className="absolute left-0 top-11 z-50 w-72 bg-white rounded-lg shadow-outlook-lg border border-[#EDEBE9] animate-fade-in">
+              <div className="absolute left-0 top-11 z-50 w-[420px] bg-white rounded-lg shadow-outlook-lg border border-[#EDEBE9] animate-fade-in">
                 <div className="px-4 pt-4 pb-2">
                   <h3 className="text-sm font-semibold text-[#323130]">Microsoft 365</h3>
                 </div>
-                <div className="grid grid-cols-3 gap-1 px-3 pb-3">
+                {/* 4-col grid so all 17 apps fit in the same panel without
+                    a scrollbar (senior asked to remove the scrollbar and
+                    widen the popover). */}
+                <div className="grid grid-cols-4 gap-1 px-3 pb-3">
                   {[
-                    { name: 'Outlook', icon: '📧', color: '#0078D4', href: '/mail/inbox' },
-                    { name: 'Calendar', icon: '📅', color: '#0078D4', href: '/calendar/month' },
-                    { name: 'People', icon: '👥', color: '#0078D4', href: '/contacts' },
-                    { name: 'To Do', icon: '✅', color: '#107C10', href: '/tasks' },
-                    { name: 'Word', icon: '📝', color: '#185ABD', href: '#' },
-                    { name: 'Excel', icon: '📊', color: '#107C41', href: '#' },
-                    { name: 'PowerPoint', icon: '📙', color: '#C43E1C', href: '#' },
-                    { name: 'OneDrive', icon: '☁️', color: '#0078D4', href: '#' },
-                    { name: 'Teams', icon: '💬', color: '#6264A7', href: '#' },
-                    { name: 'OneNote', icon: '📓', color: '#7719AA', href: '#' },
-                    { name: 'SharePoint', icon: '🏢', color: '#038387', href: '#' },
-                    { name: 'Groups', icon: '👨‍👩‍👧‍👦', color: '#0078D4', href: '/groups' },
+                    // Each entry maps a label to the Fluent SVG (by name in
+                    // APP_ICON_MAP) + an in-app route when we have one. Apps
+                    // without an in-app surface (Word/Excel/etc.) just close
+                    // the popover. The icon name must match a key from the
+                    // generated AppIcons module.
+                    { name: 'Microsoft 365 Copilot', href: '#' },
+                    { name: 'Outlook', href: '/mail/inbox' },
+                    { name: 'OneDrive', href: '#' },
+                    { name: 'Word', href: '#' },
+                    { name: 'Excel', href: '#' },
+                    { name: 'PowerPoint', href: '#' },
+                    { name: 'OneNote', href: '#' },
+                    { name: 'SharePoint', href: '#' },
+                    { name: 'Teams', href: '#' },
+                    { name: 'Engage', href: '#' },
+                    { name: 'Loop', href: '#' },
+                    { name: 'Visio', href: '#' },
+                    { name: 'Viva', href: '#' },
+                    { name: 'Forms', href: '#' },
+                    { name: 'Clipchamp', href: '#' },
+                    { name: 'To Do', href: '/tasks' },
+                    { name: 'Learning', href: '#' },
                   ].map((app) => (
                     <button
                       key={app.name}
@@ -428,8 +474,8 @@ export function TopToolbar() {
                       }}
                       className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg hover:bg-[#F3F2F1] transition-colors"
                     >
-                      <span className="text-2xl leading-none">{app.icon}</span>
-                      <span className="text-[11px] text-[#323130] leading-tight">{app.name}</span>
+                      <AppIcon name={app.name} size={28} />
+                      <span className="text-[11px] text-[#323130] leading-tight text-center">{app.name}</span>
                     </button>
                   ))}
                 </div>
@@ -453,9 +499,19 @@ export function TopToolbar() {
           </button>
         </div>
 
-        {/* Search — Outlook style with All folders + filter icon */}
-        <div className="flex-1 flex justify-start">
-          <div className="relative w-full max-w-2xl" ref={searchDropdownRef}>
+        {/* Search — left-anchored next to the Outlook label (matches the
+            real client per searchopen.png). Narrow when idle, expands to a
+            wide band on focus while keeping its left edge fixed; the
+            remaining flex space sits to its right so it grows toward the
+            center without nudging the navbar items. */}
+        <div className="flex-1 flex justify-start min-w-0">
+          <div
+            className={cn(
+              'relative transition-[width] duration-150 ease-out',
+              searchFocused ? 'w-[min(880px,100%)]' : 'w-[480px]'
+            )}
+            ref={searchDropdownRef}
+          >
             <form onSubmit={handleSearch} role="search">
               <div className="flex items-center bg-white rounded border border-transparent focus-within:border-[#0078D4] transition-colors">
                 {/* All folders dropdown */}
@@ -484,11 +540,17 @@ export function TopToolbar() {
                 {/* Search input */}
                 <div className="flex-1 relative">
                   {!searchFocused && (
-                    <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#605E5C]" />
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#605E5C]">
+                      <OutlookSearchIcon size={14} />
+                    </span>
                   )}
+                  {/* type="text" (not "search") — the search type renders a
+                      duplicate browser-native clear "×" alongside our own,
+                      which the senior flagged. Using text gives us a single
+                      consistent clear button styled to match Outlook. */}
                   <input
                     ref={searchInputRef}
-                    type="search"
+                    type="text"
                     value={search}
                     onChange={(e) => handleSearchChange(e.target.value)}
                     onFocus={() => setSearchFocused(true)}
@@ -509,13 +571,45 @@ export function TopToolbar() {
                       <X size={14} />
                     </button>
                   )}
-                  <button type="button"
-                    onClick={() => setShowSearchFilters((v) => !v)}
-                    className={cn('p-1 rounded transition-colors', showSearchFilters ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:text-[#323130]')}>
-                    <SlidersHorizontal size={14} />
-                  </button>
-                  <button type="submit" className="p-1 text-[#605E5C] hover:text-[#0078D4] rounded">
-                    <Search size={14} />
+                  {/* Filter funnel only renders when the search bar is
+                      focused — keeps the idle bar clean (just placeholder +
+                      magnifier), matching Outlook. */}
+                  {searchFocused && (
+                    <button type="button"
+                      aria-label="Search filters"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setShowSearchFilters((v) => !v)}
+                      className={cn('p-1 rounded transition-colors', showSearchFilters ? 'text-[#0078D4] bg-[#EBF3FB]' : 'text-[#605E5C] hover:text-[#323130]')}>
+                      <Filter size={14} />
+                    </button>
+                  )}
+                  {/* Magnifier button is fully functional now — clicking it
+                      runs the same search-page navigation as pressing Enter
+                      so the icon isn't decorative. With an empty query +
+                      filter panel open, it kicks off the filter-only
+                      advanced search. */}
+                  <button
+                    type="button"
+                    aria-label="Run search"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      const q = search.trim()
+                      if (!q && showSearchFilters) {
+                        handleAdvancedSearch()
+                        return
+                      }
+                      if (q) {
+                        addRecentSearch(q)
+                        setSearchQuery(q)
+                        router.push(`/mail/search?q=${encodeURIComponent(q)}`)
+                        setSearchFocused(false)
+                      } else {
+                        searchInputRef.current?.focus()
+                      }
+                    }}
+                    className="p-1 text-[#605E5C] hover:text-[#0078D4] rounded"
+                  >
+                    <OutlookSearchIcon size={14} />
                   </button>
                 </div>
               </div>

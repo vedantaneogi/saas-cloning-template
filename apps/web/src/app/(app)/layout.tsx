@@ -94,9 +94,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (hydrated && !token) return null
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden bg-[#0F6CBD]">
       <TopToolbar />
-      <div className="flex flex-1 overflow-hidden">
+      {/* Senior wants the tab/file row attached to the blue navbar (no top
+          gap). Only the ribbon below gets the floating card treatment —
+          that lives inside RibbonTabs. */}
+      <div className="flex flex-1 overflow-hidden mx-1 mb-1 rounded-t bg-white">
         <AppSidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <RibbonTabs />

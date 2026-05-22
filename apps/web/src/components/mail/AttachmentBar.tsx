@@ -562,3 +562,105 @@ export function AttachmentBar({ attachments }: AttachmentBarProps) {
     </div>
   )
 }
+
+/**
+ * Standalone preview modal — same render path as AttachmentItem's modal,
+ * usable from anywhere in the app (e.g. the search results Files tab).
+ * Fetches the attachment blob via the same authenticated download URL,
+ * picks the right preview component by content_type/filename, and falls
+ * back to a "Download to view" tile when the format isn't supported
+ * (matches the in-app preview rule: pdf / image / pptx / docx / xlsx /
+ * csv / txt).
+ */
+export function AttachmentPreviewModal({ attachment, onClose }: { attachment: Attachment; onClose: () => void }) {
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || '/api/v1'
+  const downloadPath = `${apiBase}/messages/${attachment.message_id}/attachments/${attachment.id}/download`
+  const token = useAuthStore((s) => s.token)
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let createdUrl: string | null = null
+    ;(async () => {
+      try {
+        const res = await fetch(downloadPath, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const blob = await res.blob()
+        if (cancelled) return
+        createdUrl = URL.createObjectURL(blob)
+        setBlobUrl(createdUrl)
+      } catch { /* swallow — modal shows the download fallback */ }
+    })()
+    return () => {
+      cancelled = true
+      if (createdUrl) URL.revokeObjectURL(createdUrl)
+    }
+  }, [downloadPath, token])
+
+  const handleDownload = () => {
+    if (!blobUrl) return
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = attachment.filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  const icon = fileIcon(attachment.content_type, attachment.filename)
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-white rounded-lg shadow-outlook-lg w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#EDEBE9] bg-[#FAF9F8]">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base">{icon}</span>
+            <span className="text-sm font-medium text-[#323130] truncate">{attachment.filename}</span>
+            <span className="text-xs text-[#605E5C]">({formatFileSize(attachment.size_bytes)})</span>
+          </div>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <button onClick={handleDownload} disabled={!blobUrl} className="text-xs text-[#0078D4] hover:underline flex items-center gap-1 disabled:opacity-40">
+              <Download size={12} /> Download
+            </button>
+            <button onClick={onClose} className="text-[#605E5C] hover:text-[#323130] p-1 rounded hover:bg-[#EDEBE9]">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto bg-[#FAF9F8]">
+          {!blobUrl ? (
+            <div className="flex items-center justify-center h-[60vh]">
+              <p className="text-sm text-[#605E5C] animate-pulse">Loading preview…</p>
+            </div>
+          ) : attachment.content_type.startsWith('image/') ? (
+            <div className="flex items-center justify-center p-4 h-full">
+              <img src={blobUrl} alt={attachment.filename} className="max-w-full max-h-[70vh] object-contain rounded" />
+            </div>
+          ) : attachment.content_type === 'application/pdf' ? (
+            <iframe src={blobUrl} className="w-full h-[75vh] border-0" title={attachment.filename} />
+          ) : isExcelFile(attachment.content_type, attachment.filename) ? (
+            <ExcelPreview blobUrl={blobUrl} filename={attachment.filename} />
+          ) : isWordFile(attachment.content_type, attachment.filename) ? (
+            <WordPreview blobUrl={blobUrl} filename={attachment.filename} />
+          ) : isPptxFile(attachment.content_type, attachment.filename) ? (
+            <PptxPreview blobUrl={blobUrl} filename={attachment.filename} />
+          ) : isTextFile(attachment.content_type, attachment.filename) ? (
+            <FileTextPreview blobUrl={blobUrl} filename={attachment.filename} />
+          ) : (
+            <div className="text-center py-16">
+              <span className="text-5xl mb-4 block">{icon}</span>
+              <p className="text-sm font-medium text-[#323130] mb-1">{attachment.filename}</p>
+              <p className="text-xs text-[#605E5C] mb-4">{formatFileSize(attachment.size_bytes)} — {attachment.content_type}</p>
+              <button onClick={handleDownload} className="text-sm text-[#0078D4] hover:underline flex items-center gap-1 mx-auto">
+                <Download size={13} /> Download to view
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

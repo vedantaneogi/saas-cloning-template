@@ -127,6 +127,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
   // Register compose callbacks so ribbon can control attach, signature, importance, discard
   const setOnAttach = useEditorStore((s) => s.setOnAttach)
   const setOnDiscard = useEditorStore((s) => s.setOnDiscard)
+  const setOnSaveAndClose = useEditorStore((s) => s.setOnSaveAndClose)
   const setStoreImportance = useEditorStore((s) => s.setImportance)
   const setStoreSensitivity = useEditorStore((s) => s.setSensitivity)
   const setStoreEncryptMode = useEditorStore((s) => s.setEncryptMode)
@@ -250,6 +251,12 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     onSuccess: ({ draft, scheduled }) => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['folders'] })
+      // When the sent message is a reply, the backend back-fills the
+      // parent's conversation_id (so the original in Inbox now belongs to
+      // a thread). The inbox row will only render as a thread once the
+      // conversation list / per-conv queries refresh, so kick those too.
+      queryClient.invalidateQueries({ queryKey: ['conversations-list'] })
+      queryClient.invalidateQueries({ queryKey: ['conversation'] })
       if (scheduled) {
         showNotification('Message scheduled')
         // Park the user in the Scheduled folder so they can find / edit /
@@ -343,6 +350,21 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject, bodyHtml, to])
+
+  // Register a save-and-close hook so navigation (e.g. clicking another
+  // message in the list while a compose is open inline) doesn't trap the
+  // user. We close the composer immediately for instant UX and fire-and-
+  // forget the draft save in the background so they don't lose work.
+  useEffect(() => {
+    if (!inline) return
+    setOnSaveAndClose(() => {
+      const hasRealContent = subject || to.length > 0 || (bodyHtml && !bodyHtml.match(/^(<br\/?>|\s|<!-- sig -->.*)*$/))
+      if (hasRealContent) sendMutation.mutate({ draft: true })
+      onClose()
+    })
+    return () => setOnSaveAndClose(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inline, subject, bodyHtml, to])
 
   // Outlook-style labels (screenshots 1+2). Internal values stay
   // normal/personal/private/confidential to keep the API contract.

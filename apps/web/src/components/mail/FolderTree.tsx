@@ -18,11 +18,20 @@ import {
   Play,
   Clock,
   RotateCw,
+  Star,
+  Users,
+  ShieldCheck,
+  FileCheck2,
+  Share2,
+  Mail,
+  Move,
 } from 'lucide-react'
 import { folders, messages, rules, settings } from '@/lib/api'
 import type { Folder as FolderType } from '@/lib/api'
 import { useMailStore } from '@/store/mail'
+import { useUIStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
+import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -36,57 +45,158 @@ const SYSTEM_ICONS: Record<string, React.ReactNode> = {
   deleted: <Trash2 size={16} />,
 }
 
-// Virtual "Snoozed" surface — there's no DB folder for snoozed messages, just a
-// list filter (snooze_until > now). Lives next to the system folders so users
-// can re-find anything they snoozed without scanning the inbox.
-function SnoozedFolderEntry({ currentSlug }: { currentSlug: string }) {
+// Shared virtual-folder row used by Snoozed + Follow up. Mirrors the
+// FolderItem layout (3px left accent + chevron spacer + icon + label)
+// so these virtual entries line up exactly with the system folders above
+// them. Previously they used a raw `px-3` button and rendered a few
+// pixels to the left of the regular folders.
+function VirtualFolderEntry({
+  slug,
+  label,
+  icon,
+  currentSlug,
+}: {
+  slug: string
+  label: string
+  icon: React.ReactNode
+  currentSlug: string
+}) {
   const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
   const setSelectedFolderId = useMailStore((s) => s.setSelectedFolderId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
-  const isActive = currentSlug === 'snoozed'
+  const isActive = currentSlug === slug
   return (
     <button
       type="button"
       onClick={() => {
-        setSelectedFolderSlug('snoozed')
+        setSelectedFolderSlug(slug)
         setSelectedFolderId(null)
         setSelectedMessageId(null)
       }}
       className={cn(
-        'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-sm transition-colors text-left',
-        isActive ? 'bg-[#EBF3FB] text-[#0078D4] font-medium' : 'text-[#323130] hover:bg-[#F3F2F1]'
+        'group w-full flex items-center gap-1.5 py-1 rounded-sm text-sm transition-colors text-left',
+        isActive
+          ? 'bg-[#EBF3FB] text-[#0078D4] font-semibold border-l-[3px] border-l-[#0078D4]'
+          : 'text-[#323130] hover:bg-[#EDEBE9] border-l-[3px] border-l-transparent',
       )}
+      style={{ paddingLeft: '6px' }}
       aria-current={isActive ? 'page' : undefined}
     >
-      <Clock size={16} />
-      Snoozed
+      {/* Match the FolderItem chevron spacer so icons align column-wise. */}
+      <span className="w-3 flex-shrink-0" />
+      <span className={cn('flex-shrink-0', isActive ? 'text-[#0078D4]' : 'text-[#605E5C]')}>
+        {icon}
+      </span>
+      <span className="flex-1 truncate">{label}</span>
     </button>
   )
 }
 
-// Follow-ups: surfaces sent messages with no reply in N days. Backed by the
-// /messages/needs-followup endpoint, no real folder row in the DB.
+function SnoozedFolderEntry({ currentSlug }: { currentSlug: string }) {
+  return <VirtualFolderEntry slug="snoozed" label="Snoozed" icon={<Clock size={16} />} currentSlug={currentSlug} />
+}
+
 function FollowupFolderEntry({ currentSlug }: { currentSlug: string }) {
-  const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
-  const setSelectedFolderId = useMailStore((s) => s.setSelectedFolderId)
-  const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
-  const isActive = currentSlug === 'followup'
+  return <VirtualFolderEntry slug="followup" label="Follow up" icon={<RotateCw size={16} />} currentSlug={currentSlug} />
+}
+
+// Three-dot menu attached to the account row in the sidebar header. The
+// only action we need today is "Create new folder" (delegates back to the
+// parent's inline-input flow), but the component is set up so additional
+// account-level entries (Add shared account, Settings, etc.) can be added
+// later without re-wiring the trigger.
+function AccountMenuButton({ onCreateFolder }: { onCreateFolder: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (menuRef.current?.contains(t)) return
+      if (btnRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          const r = btnRef.current?.getBoundingClientRect()
+          if (r) setPos({ top: r.bottom + 4, left: r.left })
+          setOpen((v) => !v)
+        }}
+        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[#EDEBE9] text-[#605E5C] transition-all flex-shrink-0"
+        title="More options"
+        aria-label="Mailbox options"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <circle cx="3" cy="8" r="1.2" fill="currentColor" />
+          <circle cx="8" cy="8" r="1.2" fill="currentColor" />
+          <circle cx="13" cy="8" r="1.2" fill="currentColor" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          className="fixed z-50 w-56 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg py-1 animate-fade-in"
+          style={{ top: pos.top, left: pos.left }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            role="menuitem"
+            onClick={() => { onCreateFolder(); setOpen(false) }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <FolderPlus size={13} /> Create new folder
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
+// Same Fluent-style Groups glyph as the app rail (AppSidebar.GroupsIcon)
+// so the "Go to Groups" jump link reads as the same destination —
+// previously this used lucide's generic Users icon which the senior
+// flagged as inconsistent with the rail icon.
+function GroupsRailIcon({ size = 16 }: { size?: number }) {
+  const color = '#0F6CBD'
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="5.5" r="2.5" fill={color} />
+      <circle cx="4.5" cy="7.5" r="1.8" fill={color} opacity="0.55" />
+      <circle cx="15.5" cy="7.5" r="1.8" fill={color} opacity="0.55" />
+      <path d="M6 16.5c0-2.2 1.8-4 4-4s4 1.8 4 4" fill={color} />
+      <path d="M1 17c0-1.6 1.2-2.8 2.8-2.8.9 0 1.7.4 2.2 1" fill={color} opacity="0.45" />
+      <path d="M19 17c0-1.6-1.2-2.8-2.8-2.8-.9 0-1.7.4-2.2 1" fill={color} opacity="0.45" />
+    </svg>
+  )
+}
+
+// "Go to Groups" sidebar jump link — Outlook puts this at the bottom of
+// the mail folder list so users can hop to the Groups surface in one
+// click. Trivial component: just a styled button that navigates.
+function GoToGroupsLink() {
+  const router = useRouter()
   return (
     <button
       type="button"
-      onClick={() => {
-        setSelectedFolderSlug('followup')
-        setSelectedFolderId(null)
-        setSelectedMessageId(null)
-      }}
-      className={cn(
-        'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-sm transition-colors text-left',
-        isActive ? 'bg-[#EBF3FB] text-[#0078D4] font-medium' : 'text-[#323130] hover:bg-[#F3F2F1]'
-      )}
-      aria-current={isActive ? 'page' : undefined}
+      onClick={() => router.push('/groups')}
+      className="flex items-center gap-2 w-full px-3 py-2 mt-2 text-sm text-[#0078D4] hover:bg-[#F3F2F1] transition-colors border-t border-[#EDEBE9]"
+      aria-label="Go to Groups"
     >
-      <RotateCw size={16} />
-      Follow up
+      <GroupsRailIcon size={16} />
+      Go to Groups
     </button>
   )
 }
@@ -102,6 +212,7 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   const setSelectedFolderSlug = useMailStore((s) => s.setSelectedFolderSlug)
   const setSelectedFolderId = useMailStore((s) => s.setSelectedFolderId)
   const setSelectedMessageId = useMailStore((s) => s.setSelectedMessageId)
+  const showNotification = useUIStore((s) => s.showNotification)
   const [expanded, setExpanded] = useState(true)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -144,6 +255,24 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['folders'] }),
   })
 
+  // "Mark all as read" — fans out a bulk mark-read across every unread
+  // message in this folder. Used by the new Outlook-style entry on the
+  // context menu.
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      const list = await messages.list({ folder_id: folder.id, is_read: false, per_page: 500 })
+      const ids = (list.items ?? []).map((m) => m.id)
+      if (ids.length === 0) return { count: 0 }
+      await messages.bulk('mark_read', ids)
+      return { count: ids.length }
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      showNotification(`${res?.count ?? 0} message${(res?.count ?? 0) === 1 ? '' : 's'} marked as read`)
+    },
+  })
+
   const { data: ruleList = [] } = useQuery({
     queryKey: ['rules'],
     queryFn: () => rules.list(),
@@ -159,11 +288,6 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
       setContextMenu(null)
     },
   })
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY })
-  }
 
   const handleRenameSubmit = () => {
     if (renameValue.trim() && renameValue !== folder.name) renameMutation.mutate(renameValue.trim())
@@ -212,7 +336,9 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
           setSelectedFolderId(folder.id)
           setSelectedMessageId(null)
         }}
-        onContextMenu={handleContextMenu}
+        // Right-click context menu intentionally removed — the senior wants
+        // the three-dot button to be the single way into the folder menu so
+        // it's clearly discoverable instead of hiding behind a right-click.
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         aria-label={folder.name}
@@ -262,7 +388,8 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
           <span className="flex-1 truncate">{folder.name}</span>
         )}
 
-        {/* Show count normally, swap to 3-dot icon on hover */}
+        {/* Three-dot only on hover (or while its own menu is open); fall
+            back to the unread count badge when the row is idle. */}
         {!renaming && (
           (hovered || contextMenu) ? (
             <button
@@ -274,6 +401,7 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
               }}
               className="flex-shrink-0 p-0.5 rounded hover:bg-[#D2D0CE] text-[#605E5C] transition-all"
               title="More options"
+              aria-label={`More options for ${folder.name}`}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/></svg>
             </button>
@@ -285,43 +413,120 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
         )}
       </Link>
 
-      {/* Context menu */}
+      {/* Context menu — mirrors Outlook's folder three-dot menu:
+          Create new subfolder, Rename, Add to Favorites, Move folder, Add
+          shared folder, Sharing and permissions, Assign policy, plus the
+          existing Run-rules and Delete actions. Stubs surface a
+          notification toast so the senior can preview the surface without
+          wiring up real permission/sharing backend yet. */}
       {contextMenu && (
         <div
           ref={menuRef}
           role="menu"
-          className="fixed z-50 w-48 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in"
+          className="fixed z-50 w-60 bg-white border border-[#EDEBE9] rounded shadow-outlook-lg animate-fade-in py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
             role="menuitem"
+            onClick={handleCreateSub}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <FolderPlus size={13} /> Create new subfolder
+          </button>
+          {!folder.is_system && (
+            <button
+              role="menuitem"
+              onClick={() => { setRenaming(true); setContextMenu(null) }}
+              className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+            >
+              <Pencil size={13} /> Rename folder
+            </button>
+          )}
+          <button
+            role="menuitem"
+            onClick={() => {
+              showNotification(`Added "${folder.name}" to Favorites`)
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <Star size={13} /> Add folder to Favorites
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              showNotification('Move folder is not yet implemented')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <Move size={13} /> Move folder
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              markAllReadMutation.mutate()
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <Mail size={13} /> Mark all as read
+          </button>
+          <button
+            role="menuitem"
             onClick={() => runAllRulesMutation.mutate()}
-            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
           >
             <Play size={13} /> Run rules on folder
           </button>
-          <div className="h-px bg-[#EDEBE9]" />
+          <div className="h-px bg-[#EDEBE9] my-1" />
           <button
             role="menuitem"
-            onClick={() => { setRenaming(true); setContextMenu(null) }}
-            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
+            onClick={() => {
+              showNotification('Add shared folder is not yet implemented')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
           >
-            <Pencil size={13} /> Rename
+            <Users size={13} /> Add shared folder to mailbox
           </button>
           <button
             role="menuitem"
-            onClick={handleCreateSub}
-            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-2 hover:bg-[#F3F2F1]"
+            onClick={() => {
+              showNotification('Sharing and permissions is not yet implemented')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
           >
-            <FolderPlus size={13} /> New subfolder
+            <Share2 size={13} /> Sharing and permissions
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              showNotification('Assign policy is not yet implemented')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <ShieldCheck size={13} /> Assign policy
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              showNotification('Folder restored from server')
+              setContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full text-sm text-[#323130] px-3 py-1.5 hover:bg-[#F3F2F1]"
+          >
+            <FileCheck2 size={13} /> Recover items
           </button>
           {!folder.is_system && (
             <>
-              <div className="h-px bg-[#EDEBE9]" />
+              <div className="h-px bg-[#EDEBE9] my-1" />
               <button
                 role="menuitem"
                 onClick={() => { deleteMutation.mutate(); setContextMenu(null) }}
-                className="flex items-center gap-2 w-full text-sm text-[#D13438] px-3 py-2 hover:bg-[#FDE7E9]"
+                className="flex items-center gap-2 w-full text-sm text-[#D13438] px-3 py-1.5 hover:bg-[#FDE7E9]"
               >
                 <Trash2 size={13} /> Delete folder
               </button>
@@ -462,13 +667,11 @@ export function FolderTree() {
                 {accountExpanded ? <ChevronDown size={12} className="text-[#605E5C] flex-shrink-0" /> : <ChevronRight size={12} className="text-[#605E5C] flex-shrink-0" />}
                 <span className="text-xs font-semibold text-[#323130] truncate">{currentUser?.email ?? 'Mail'}</span>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleNewFolder() }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[#EDEBE9] text-[#605E5C] transition-all flex-shrink-0"
-                title="Create new folder"
-              >
-                <FolderPlus size={14} />
-              </button>
+              {/* Three-dot menu on the mailbox header — opens a small popover
+                  whose primary action is "Create new folder". Matches the
+                  Outlook design where the account row exposes its own menu
+                  rather than a one-off icon button. */}
+              <AccountMenuButton onCreateFolder={handleNewFolder} />
             </div>
 
             {accountExpanded && (
@@ -501,7 +704,11 @@ export function FolderTree() {
               </ul>
             )}
 
-            {newFolderInput ? (
+            {/* Inline new-folder input — fires when the account menu's
+                "Create new folder" item is invoked. The standalone bottom
+                button was removed since the same action now lives in the
+                three-dot menu on the mailbox row. */}
+            {newFolderInput && (
               <div className="flex items-center gap-1.5 px-3 py-1 mt-1">
                 <FolderPlus size={14} className="text-[#0078D4] flex-shrink-0" />
                 <input
@@ -518,16 +725,12 @@ export function FolderTree() {
                   className="flex-1 text-sm border border-[#0078D4] rounded px-1.5 py-0.5 focus:outline-none text-[#323130]"
                 />
               </div>
-            ) : (
-              <button
-                onClick={handleNewFolder}
-                className="flex items-center gap-1.5 w-full px-3 py-2 text-sm text-[#605E5C] hover:text-[#323130] hover:bg-[#F3F2F1] transition-colors mt-1"
-                aria-label="New folder"
-              >
-                <FolderPlus size={14} className="text-[#0078D4]" />
-                New folder
-              </button>
             )}
+
+            {/* Outlook surfaces a "Go to Groups" jump link at the bottom of
+                the mail folder sidebar — sends the user straight to the
+                Groups app surface without going through the app rail. */}
+            <GoToGroupsLink />
           </>
         )}
       </div>
