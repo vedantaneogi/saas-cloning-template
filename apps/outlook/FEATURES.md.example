@@ -1,0 +1,42 @@
+# Features — [App Name] Clone
+
+> Output of Step 1 (Feature Research). Replace this template with your findings.
+
+## Summary
+
+- **Target app:** [App Name]
+- **Total features cataloged:** [number]
+- **Tier 1 (full build):** [number] features
+- **Tier 2 (UI stubs):** [number] features
+
+## Tier 1 — Full Implementation
+
+| # | Feature | Page types | Tools | DB Tables |
+|---|---|---|---|---|
+| 1 | **[Feature Name]** | List, Detail, Create | `search_x`, `get_x`, `create_x`, `update_x` | `x_table` |
+| 2 | ... | ... | ... | ... |
+
+## Tier 2 — UI Stubs (read-only, seeded data)
+
+| # | Feature | Page type | Notes |
+|---|---|---|---|
+| 13 | **[Feature Name]** | List view | Read-only, no mutation tools |
+| 14 | ... | ... | ... |
+
+## Design Tokens
+
+Extracted via Claude Computer Use from the real app:
+
+- **Sidebar background:** `#______`
+- **Topbar background:** `#______`
+- **Primary action color:** `#______`
+- **Font family:** `________`
+- **Body text size:** `____rem`
+- **Border radius:** `____px`
+
+## Navigation Structure
+
+Sidebar items in order:
+1. [Item] → /path
+2. [Item] → /path
+3. ...

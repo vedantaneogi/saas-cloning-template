@@ -1,0 +1,25 @@
+[project]
+name = "outlook-clone"
+version = "0.0.0"
+requires-python = ">=3.13"
+dependencies = [
+    "uvicorn",
+    "fastapi",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "psycopg2-binary",
+    "alembic",
+    "pydantic",
+    "pydantic-settings",
+    "passlib[bcrypt]",
+    "python-multipart",
+    "python-jose[cryptography]",
+    "requests",
+    "python-dotenv",
+    "structlog",
+    "python-docx",
+    "openpyxl",
+    "reportlab",
+    "python-pptx",
+    "pillow",
+]

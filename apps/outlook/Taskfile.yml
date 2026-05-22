@@ -1,0 +1,136 @@
+version: '3'
+
+# Note: `dotenv:` at the Taskfile level isn't allowed in included Taskfiles
+# (go-task limitation). playwright.config.ts loads `.env` itself; per-app
+# scripts/start.sh sources it directly.
+
+vars:
+  APP_PORT: '8045'
+  DB_PORT: '5445'
+  VITE_PORT: '3045'
+
+tasks:
+  export-deps:
+    desc: "Export Python deps from the workspace lockfile (for docker pip install)"
+    dir: ../..
+    cmds:
+      - uv export --frozen --package outlook-clone --no-dev --no-hashes --no-emit-project --no-emit-workspace -o apps/outlook/.requirements.lock
+
+  up:
+    desc: "One-shot: build frontend, start stack (postgres + clone-app + optional caddy), seed DB. Reachable at https://outlook.clone.test/ and http://localhost:8045/."
+    cmds:
+      - task: export-deps
+      - pnpm --dir ../.. --filter @clone-apps/outlook-frontend run build
+      # init.sql is COPYed into the postgres image; docker layer caching can
+      # silently keep an old copy after we edit it. Force a fresh layer so
+      # schema changes always reach the container.
+      - docker compose -f docker-compose.dev.yml build postgres
+      - ./scripts/start.sh
+      - task: seed
+
+  up-no-tls:
+    desc: "Same as `task up` but without the caddy/HTTPS sidecar. Reachable only at http://localhost:8045/."
+    cmds:
+      - task: export-deps
+      - pnpm --dir ../.. --filter @clone-apps/outlook-frontend run build
+      - docker compose -f docker-compose.dev.yml build postgres
+      - ./scripts/start.sh --without-https
+      - task: seed
+
+  down:
+    desc: "Stop containers and remove volumes"
+    cmds:
+      - docker compose -f docker-compose.dev.yml down -v
+
+  seed:
+    desc: "Build and run the seed container (uses --profile seed)"
+    cmds:
+      - docker compose -f docker-compose.dev.yml --profile seed build seed
+      - docker compose -f docker-compose.dev.yml --profile seed run --rm seed
+
+  build:
+    desc: "Build images without starting containers"
+    cmds:
+      - docker compose -f docker-compose.dev.yml build
+
+  clean:
+    desc: "Tear down volumes, remove local images, and clear frontend build artifacts"
+    cmds:
+      - docker compose -f docker-compose.dev.yml down -v --rmi local
+      - rm -rf app/frontend/node_modules app/frontend/dist
+
+  test:
+    desc: "Run unit tests then e2e tests"
+    deps: [test-unit, test-e2e]
+
+  test-unit:
+    desc: "Run pytest unit tests"
+    dir: app
+    cmds:
+      - uv run pytest tests/test_tools.py -v
+
+  test-e2e:
+    desc: "Run Playwright e2e tests (TS). Prereq: `task outlook:up && task outlook:seed`"
+    dir: app/frontend
+    cmds:
+      - pnpm exec playwright test
+
+  test-e2e-install:
+    desc: "Install the Playwright Chromium browser binary (one-time per machine)"
+    dir: app/frontend
+    cmds:
+      - pnpm exec playwright install --with-deps chromium
+
+  test-e2e-ui:
+    desc: "Run Playwright in interactive UI mode (best for authoring specs)"
+    dir: app/frontend
+    cmds:
+      - pnpm exec playwright test --ui
+
+  test-e2e-report:
+    desc: "Open the HTML report from the most recent e2e run"
+    dir: app/frontend
+    cmds:
+      - pnpm exec playwright show-report
+
+  lint:
+    desc: "Run ruff on backend and ESLint on frontend (non-blocking)"
+    cmds:
+      - cd app && uv run ruff check . || true
+      - cd app/frontend && pnpm run lint || true
+
+  validate:
+    desc: "Run the project validation script"
+    cmds:
+      - ./scripts/validate.sh
+
+  dev-backend:
+    desc: "Run uvicorn locally against the docker postgres (host port)"
+    env:
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:{{.DB_PORT}}/cloneapp"
+    cmds:
+      - uvicorn app.server:app --port {{.APP_PORT}} --reload
+
+  dev-frontend:
+    desc: "Run the Vite frontend with hot reload"
+    dir: app/frontend
+    cmds:
+      - pnpm run dev
+
+  desktop-dev:
+    desc: "Run the Electron dev shell against the local Vite server (hot reload). task up must be running for /api + /step."
+    dir: app/frontend
+    cmds:
+      - pnpm run electron:dev
+
+  desktop-start:
+    desc: "Launch the Electron app pointed at the running outlook docker server (task up first)"
+    dir: app/frontend
+    cmds:
+      - pnpm run electron:start
+
+  desktop:
+    desc: "Package the Electron desktop app (.dmg / .exe / .AppImage). The packaged app loads http://localhost:{{.APP_PORT}} at runtime — task up must be running."
+    dir: app/frontend
+    cmds:
+      - pnpm run electron:build

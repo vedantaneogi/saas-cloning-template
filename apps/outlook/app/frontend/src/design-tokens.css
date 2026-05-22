@@ -1,0 +1,108 @@
+/* Outlook Fluent design tokens.
+ *
+ * Theme switching is driven by `data-theme` on the <html> element.
+ * Components reference these CSS custom properties via Tailwind 4
+ * `theme()` directives in `src/index.css`.
+ */
+
+:root {
+  /* ── Typography (Outlook system stack) ── */
+  --font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  --font-size-xs: 0.6875rem;   /* 11px */
+  --font-size-sm: 0.75rem;     /* 12px */
+  --font-size-base: 0.875rem;  /* 14px */
+  --font-size-lg: 1rem;        /* 16px */
+  --font-size-xl: 1.25rem;     /* 20px */
+  --font-size-2xl: 1.5rem;     /* 24px */
+
+  --line-height-condensed: 1.25;
+  --line-height-default: 1.45;
+
+  /* ── Geometry ── */
+  --border-radius: 4px;
+  --border-radius-pill: 9999px;
+  --sidebar-width: 40px;        /* app rail */
+  --folder-tree-width: 220px;
+  --topbar-height: 48px;
+  --ribbon-tabs-height: 32px;
+  --ribbon-toolbar-height: 44px;
+
+  /* ── Surfaces ── */
+  --topbar-bg: #0F6CBD;          /* Outlook accent blue */
+  --topbar-fg: #FFFFFF;
+  --rail-bg: #F3F2F1;            /* left app rail */
+  --content-bg: #FFFFFF;
+  --canvas-subtle: #FAF9F8;
+  --hover-surface: #EDEBE9;
+  --active-surface: #EBF3FB;     /* selected row tint */
+  --ribbon-tray-bg: #EAF1F8;     /* floating ribbon tinted card */
+  --ribbon-tray-border: #D6E4F2;
+
+  /* ── Text ── */
+  --text-primary: #323130;
+  --text-secondary: #605E5C;
+  --text-muted: #8A8886;
+  --text-disabled: #A19F9D;
+  --text-on-emphasis: #FFFFFF;
+  --text-accent: #0078D4;
+
+  /* ── Border / divider ── */
+  --border-default: #EDEBE9;
+  --border-strong: #D2D0CE;
+  --border-focus: #0078D4;
+
+  /* ── Status / semantic ── */
+  --accent-primary: #0078D4;
+  --accent-primary-hover: #106EBE;
+  --accent-primary-pressed: #005A9E;
+  --accent-link: #0078D4;
+  --danger: #D13438;
+  --danger-bg: #FDE7E9;
+  --warning: #C19C00;
+  --warning-bg: #FFF4CE;
+  --success: #107C10;
+  --success-bg: #DFF6DD;
+  --info: #0078D4;
+  --info-bg: #EBF3FB;
+
+  /* ── Categories (seeded palette — matches /api/v1/categories) ── */
+  --category-blue: #0078D4;
+  --category-green: #107C10;
+  --category-orange: #FF8C00;
+  --category-red: #D13438;
+  --category-yellow: #FFB900;
+
+  /* ── Sensitivity labels ── */
+  --sensitivity-public: #0078D4;
+  --sensitivity-general: var(--text-secondary);
+  --sensitivity-confidential: #8B5CF6;
+  --sensitivity-highly-confidential: #D13438;
+
+  /* ── Shadow ── */
+  --shadow-color: rgba(0, 0, 0, 0.12);
+  --shadow-outlook:
+    0 1.6px 3.6px 0 rgba(0, 0, 0, 0.13),
+    0 0.3px 0.9px 0 rgba(0, 0, 0, 0.11);
+  --shadow-outlook-lg:
+    0 6.4px 14.4px 0 rgba(0, 0, 0, 0.13),
+    0 1.2px 3.6px 0 rgba(0, 0, 0, 0.10);
+  --shadow-ribbon-tray: 0 2px 8px rgba(15, 108, 189, 0.10);
+}
+
+/* Dark mode overrides for when `data-theme="dark"` is set on <html>. */
+[data-theme="dark"] {
+  --content-bg: #1F1F1F;
+  --canvas-subtle: #2A2A2A;
+  --hover-surface: #2E2E2E;
+  --active-surface: #1F3247;
+  --rail-bg: #1F1F1F;
+  --text-primary: #FFFFFF;
+  --text-secondary: #C8C6C4;
+  --text-muted: #8A8886;
+  --border-default: #3B3A39;
+  --border-strong: #4F4D4C;
+}
