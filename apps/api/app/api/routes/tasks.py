@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.task import Task
+from app.models.task import Task, TaskList as TaskListModel
 from app.models.user import User
 from app.rl.state import rl_state
 from app.schemas.task import TaskCreate, TaskOut, TaskUpdate
@@ -34,6 +34,31 @@ async def _get_task_or_404(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.U
             detail={"error": {"code": "not_found", "message": "Task not found"}},
         )
     return t
+
+
+async def _validate_user_list(
+    db: AsyncSession, list_id: uuid.UUID, user_id: uuid.UUID
+) -> TaskListModel:
+    """§2 — fetch a TaskList and assert it belongs to the calling user.
+
+    Mirrors `_validate_user_folder` in messages.py. `create_task` and
+    `update_task` both accept `list_id` from the request body; without
+    this check a user can write into (or move tasks into) another
+    tenant's list. Returns 404 on tenant mismatch so the response shape
+    can't be used to enumerate list ownership.
+    """
+    result = await db.execute(
+        select(TaskListModel).where(
+            TaskListModel.id == list_id, TaskListModel.user_id == user_id
+        )
+    )
+    tl = result.scalar_one_or_none()
+    if not tl:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "list_not_found", "message": "Task list not found"}},
+        )
+    return tl
 
 
 @router.get("", response_model=TaskList)
@@ -87,6 +112,8 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if body.list_id is not None:
+        await _validate_user_list(db, body.list_id, current_user.id)
     now = rl_state.clock.now()
     task = Task(
         id=uuid.uuid4(),
@@ -131,6 +158,7 @@ async def update_task(
     if body.importance is not None:
         task.importance = body.importance
     if body.list_id is not None:
+        await _validate_user_list(db, body.list_id, current_user.id)
         task.list_id = body.list_id
     if body.sort_order is not None:
         task.sort_order = body.sort_order
