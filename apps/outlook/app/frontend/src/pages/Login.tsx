@@ -1,91 +1,123 @@
-import { useState, FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { useRouter } from '@/lib/next-compat'
+import { auth } from '@/lib/api'
+import { useAuthStore } from '@/store/auth'
+import { useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 
-/**
- * Outlook clone — sign-in page (Phase 1 scaffold).
- *
- * Real port from `apps/web/src/app/sign-in/page.tsx` lands in Phase 3.
- * For now this is a working two-field login that hits the legacy FastAPI
- * `/api/v1/auth/login` endpoint and stores the access token in
- * localStorage matching the existing auth store shape.
- */
+const schema = z.object({
+  email: z.string().email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+})
+
+type FormValues = z.infer<typeof schema>
+
 export function Login() {
-  const navigate = useNavigate()
-  const [email, setEmail] = useState('frank.miller@acmecorp.com')
-  const [password, setPassword] = useState('password123')
-  const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
+  const router = useRouter()
+  const login = useAuthStore((s) => s.login)
+  const queryClient = useQueryClient()
+  const [serverError, setServerError] = useState<string | null>(null)
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setError(null)
-    setPending(true)
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+  })
+
+  const onSubmit = async (data: FormValues) => {
+    setServerError(null)
     try {
-      const res = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      if (!res.ok) {
-        const body = await res.text()
-        throw new Error(`Login failed: HTTP ${res.status} — ${body}`)
-      }
-      const data = (await res.json()) as { access_token: string; user: unknown }
-      localStorage.setItem(
-        'outlook_auth',
-        JSON.stringify({ token: data.access_token, currentUser: data.user, accounts: [] }),
-      )
-      navigate('/mail/inbox', { replace: true })
+      const res = await auth.login(data.email, data.password)
+      queryClient.clear()
+      login(res.access_token, res.user)
+      router.push('/mail/inbox')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed')
-    } finally {
-      setPending(false)
+      setServerError(err instanceof Error ? err.message : 'Sign-in failed')
     }
   }
 
   return (
-    <div data-testid="login-page" className="min-h-screen flex items-center justify-center bg-[var(--canvas-subtle)] p-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm bg-[var(--content-bg)] border border-[var(--border-default)] rounded-md shadow-outlook p-6 space-y-4"
-      >
-        <h1 className="text-xl font-semibold text-[var(--text-primary)]">Sign in to Outlook</h1>
-        <label className="block">
-          <span className="text-xs font-medium text-[var(--text-secondary)]">Email</span>
-          <input
-            data-testid="login-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="mt-1 w-full border border-[var(--border-strong)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--border-focus)]"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-[var(--text-secondary)]">Password</span>
-          <input
-            data-testid="login-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="mt-1 w-full border border-[var(--border-strong)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--border-focus)]"
-          />
-        </label>
-        {error && (
-          <p data-testid="login-error" className="text-sm text-[var(--danger)]">
-            {error}
-          </p>
-        )}
-        <button
-          data-testid="login-submit"
-          type="submit"
-          disabled={pending}
-          className="w-full bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
-        >
-          {pending ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
+    <div
+      data-testid="login-page"
+      className="min-h-screen flex items-center justify-center bg-[#FAF9F8] p-4"
+    >
+      <div className="w-full max-w-sm bg-white shadow-outlook rounded p-8">
+        <div className="flex items-center gap-2 mb-8">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect width="24" height="24" rx="4" fill="#0078D4" />
+            <path d="M4 8h10v8H4z" fill="white" opacity="0.9" />
+            <path d="M13 6l7 3v6l-7 3V6z" fill="white" opacity="0.7" />
+          </svg>
+          <span className="text-xl font-semibold text-[#323130]">Outlook</span>
+        </div>
+
+        <h1 className="text-2xl font-light text-[#323130] mb-1">Sign in</h1>
+        <p className="text-sm text-[#605E5C] mb-6">to continue to Outlook</p>
+
+        <form onSubmit={handleSubmit(onSubmit)} noValidate aria-label="Sign in form">
+          <div className="mb-4">
+            <label htmlFor="email" className="block text-sm font-medium text-[#323130] mb-1">
+              Email address
+            </label>
+            <input
+              id="email"
+              data-testid="login-email"
+              type="email"
+              autoComplete="email"
+              aria-label="Email address"
+              aria-describedby={errors.email ? 'email-error' : undefined}
+              className="w-full border border-[#EDEBE9] rounded px-3 py-2 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:border-[#0078D4] transition-colors"
+              {...register('email')}
+            />
+            {errors.email && (
+              <p id="email-error" role="alert" className="mt-1 text-xs text-[#D13438]">
+                {errors.email.message}
+              </p>
+            )}
+          </div>
+
+          <div className="mb-6">
+            <label htmlFor="password" className="block text-sm font-medium text-[#323130] mb-1">
+              Password
+            </label>
+            <input
+              id="password"
+              data-testid="login-password"
+              type="password"
+              autoComplete="current-password"
+              aria-label="Password"
+              aria-describedby={errors.password ? 'password-error' : undefined}
+              className="w-full border border-[#EDEBE9] rounded px-3 py-2 text-sm text-[#323130] focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:border-[#0078D4] transition-colors"
+              {...register('password')}
+            />
+            {errors.password && (
+              <p id="password-error" role="alert" className="mt-1 text-xs text-[#D13438]">
+                {errors.password.message}
+              </p>
+            )}
+          </div>
+
+          {serverError && (
+            <div data-testid="login-error" role="alert" className="mb-4 p-3 bg-[#FDE7E9] text-[#D13438] text-sm rounded">
+              {serverError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            data-testid="login-submit"
+            disabled={isSubmitting}
+            aria-label="Sign in"
+            className="w-full bg-[#0078D4] hover:bg-[#106EBE] active:bg-[#005A9E] disabled:opacity-50 text-white text-sm font-medium py-2 px-4 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-[#0078D4] focus:ring-offset-2"
+          >
+            {isSubmitting ? 'Signing in...' : 'Sign in'}
+          </button>
+        </form>
+      </div>
     </div>
   )
 }

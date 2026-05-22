@@ -1,0 +1,276 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FAF9F8;
+    --bg-tertiary: #F3F2F1;
+    --bg-hover: #EDEBE9;
+    --bg-selected: #EBF3FB;
+    --text-primary: #323130;
+    --text-secondary: #605E5C;
+    --text-disabled: #A19F9D;
+    --border-primary: #EDEBE9;
+    --border-dark: #D2D0CE;
+    --accent: #0078D4;
+    --accent-hover: #106EBE;
+    --shadow-color: rgba(0,0,0,0.15);
+  }
+
+  .dark {
+    --bg-primary: #1f1f1f;
+    --bg-secondary: #2d2d2d;
+    --bg-tertiary: #333333;
+    --bg-hover: #3d3d3d;
+    --bg-selected: #0e3a5c;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --text-disabled: #6a6a6a;
+    --border-primary: #3d3d3d;
+    --border-dark: #4a4a4a;
+    --accent: #4da3e0;
+    --accent-hover: #3b8dcc;
+    --shadow-color: rgba(0,0,0,0.4);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto',
+      'Helvetica Neue', sans-serif;
+    font-size: 14px;
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Dark mode overrides for hardcoded Outlook hex colors */
+  .dark {
+    color-scheme: dark;
+  }
+
+  /* Background overrides */
+  .dark .bg-white { background-color: var(--bg-primary) !important; }
+  .dark .bg-\[\#FFFFFF\] { background-color: var(--bg-primary) !important; }
+  .dark .bg-\[\#FAF9F8\] { background-color: var(--bg-secondary) !important; }
+  .dark .bg-\[\#F3F2F1\] { background-color: var(--bg-tertiary) !important; }
+  .dark .bg-\[\#EDEBE9\] { background-color: var(--bg-hover) !important; }
+  .dark .bg-\[\#EBF3FB\] { background-color: var(--bg-selected) !important; }
+  .dark .hover\:bg-\[\#F3F2F1\]:hover { background-color: var(--bg-hover) !important; }
+  .dark .hover\:bg-\[\#EDEBE9\]:hover { background-color: var(--bg-hover) !important; }
+
+  /* Text overrides */
+  .dark .text-\[\#323130\] { color: var(--text-primary) !important; }
+  .dark .text-\[\#605E5C\] { color: var(--text-secondary) !important; }
+  .dark .text-\[\#A19F9D\] { color: var(--text-disabled) !important; }
+  .dark .text-\[\#0078D4\] { color: var(--accent) !important; }
+
+  /* Border overrides */
+  .dark .border-\[\#EDEBE9\] { border-color: var(--border-primary) !important; }
+  .dark .border-\[\#D2D0CE\] { border-color: var(--border-dark) !important; }
+
+  /* Input and form overrides */
+  .dark input, .dark textarea, .dark select {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border-dark);
+  }
+  .dark input::placeholder, .dark textarea::placeholder {
+    color: var(--text-disabled);
+  }
+
+  /* Shadow overrides */
+  .dark .shadow-outlook { box-shadow: 0 2px 8px var(--shadow-color) !important; }
+  .dark .shadow-outlook-lg { box-shadow: 0 4px 16px var(--shadow-color) !important; }
+}
+
+@layer components {
+  .outlook-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #d2d0ce transparent;
+  }
+
+  .outlook-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .outlook-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .outlook-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #d2d0ce;
+    border-radius: 3px;
+  }
+
+  .outlook-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #a19f9d;
+  }
+
+  /* Ribbon toolbars scroll horizontally but the visible scrollbar is
+     hidden — Outlook scrolls the ribbon silently with the wheel/drag and
+     the senior asked us to drop the chunky default scrollbar. */
+  .ribbon-scroll {
+    scrollbar-width: none;
+  }
+  .ribbon-scroll::-webkit-scrollbar {
+    height: 0;
+    width: 0;
+  }
+
+  .tiptap-editor .ProseMirror {
+    outline: none;
+    min-height: 200px;
+    padding: 12px;
+  }
+
+  .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+    color: #a19f9d;
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .tiptap-editor .ProseMirror a {
+    color: #0078D4;
+    text-decoration: underline;
+  }
+
+  .tiptap-editor .ProseMirror ul {
+    padding-left: 1.5rem;
+    list-style-type: disc;
+  }
+
+  .tiptap-editor .ProseMirror ol {
+    padding-left: 1.5rem;
+    list-style-type: decimal;
+  }
+
+  .tiptap-editor .ProseMirror li {
+    display: list-item;
+  }
+
+  .tiptap-editor .ProseMirror li p {
+    margin: 0;
+  }
+
+  /* Resizable images in editor */
+  .tiptap-editor .ProseMirror img {
+    max-width: 100%;
+    height: auto;
+    cursor: pointer;
+    resize: both;
+    overflow: hidden;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    transition: border-color 0.15s;
+  }
+
+  .tiptap-editor .ProseMirror img:hover,
+  .tiptap-editor .ProseMirror img.ProseMirror-selectednode {
+    border-color: #0078D4;
+  }
+
+  .tiptap-editor .ProseMirror img.ProseMirror-selectednode {
+    outline: none;
+  }
+
+  .tiptap-editor .ProseMirror blockquote {
+    border-left: 3px solid #EDEBE9;
+    padding-left: 1rem;
+    color: #605E5C;
+  }
+
+  /* Dark mode scrollbar */
+  .dark .outlook-scrollbar {
+    scrollbar-color: #555 transparent;
+  }
+  .dark .outlook-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #555;
+  }
+  .dark .outlook-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #777;
+  }
+
+  /* Dark mode tiptap */
+  .dark .tiptap-editor .ProseMirror {
+    color: var(--text-primary);
+  }
+  .dark .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+    color: var(--text-disabled);
+  }
+  .dark .tiptap-editor .ProseMirror blockquote {
+    border-left-color: var(--border-primary);
+    color: var(--text-secondary);
+  }
+
+  /* Dark mode prose (reading pane) */
+  .dark .prose { color: var(--text-primary); }
+  .dark .prose a { color: var(--accent); }
+  .dark .prose strong { color: var(--text-primary); }
+  .dark .prose h1, .dark .prose h2, .dark .prose h3, .dark .prose h4 { color: var(--text-primary); }
+
+  /* Excel preview — render xlsx HTML output as a tight Outlook-style grid */
+  .excel-preview-table table { border-collapse: collapse; min-width: 100%; }
+  .excel-preview-table td, .excel-preview-table th {
+    border: 1px solid var(--border-primary);
+    padding: 4px 8px;
+    white-space: nowrap;
+    background: var(--bg-primary);
+    font-weight: normal;
+    text-align: left;
+  }
+  .excel-preview-table tr:first-child td,
+  .excel-preview-table th { background: var(--bg-tertiary); font-weight: 600; }
+
+  /* Word preview (mammoth output) */
+  .prose-outlook { line-height: 1.55; }
+  .prose-outlook h1 { font-size: 1.5rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+  .prose-outlook h2 { font-size: 1.25rem; font-weight: 600; margin: 0.9rem 0 0.4rem; }
+  .prose-outlook h3 { font-size: 1.1rem; font-weight: 600; margin: 0.8rem 0 0.3rem; }
+  .prose-outlook p { margin: 0.5rem 0; }
+  .prose-outlook ul, .prose-outlook ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+  .prose-outlook ul { list-style: disc; }
+  .prose-outlook ol { list-style: decimal; }
+  .prose-outlook table { border-collapse: collapse; margin: 0.6rem 0; }
+  .prose-outlook td, .prose-outlook th { border: 1px solid var(--border-primary); padding: 4px 8px; }
+  .prose-outlook a { color: var(--accent); text-decoration: underline; }
+
+  /* Scheduling Assistant — diagonal hatch fills for busy/tentative blocks
+     in the availability grid. Outlook draws these as repeating stripes
+     over the row background. */
+  .sa-hatch-busy {
+    background-color: rgba(177, 70, 194, 0.22);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(177, 70, 194, 0.7) 0,
+      rgba(177, 70, 194, 0.7) 2px,
+      transparent 2px,
+      transparent 6px
+    );
+  }
+  .sa-hatch-tentative {
+    background-color: rgba(91, 141, 239, 0.18);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(91, 141, 239, 0.7) 0,
+      rgba(91, 141, 239, 0.7) 2px,
+      transparent 2px,
+      transparent 6px
+    );
+  }
+}
