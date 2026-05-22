@@ -25,6 +25,13 @@ services:
       # universal acceptance criteria. Set in the calling shell (or .env)
       # to a fresh secret in non-dev environments.
       RL_RESET_TOKEN: "${RL_RESET_TOKEN:-dev-only-do-not-ship-to-prod}"
+      # SECRET_KEY pinned to a stable dev value so JWTs (and the
+      # `outlook_session` cookie they back) survive `task down`/`up`
+      # cycles. Without this, the per-process random fallback would
+      # invalidate every existing session on each container restart.
+      # The greptile P1 fix demands that prod NEVER use the default —
+      # set SECRET_KEY in the deploy environment to a 64-byte secret.
+      SECRET_KEY: "${SECRET_KEY:-dev-only-secret-key-do-not-ship-to-prod-replace-via-env}"
     ports:
       - "${APP_PORT:-8045}:8030"
     networks:
