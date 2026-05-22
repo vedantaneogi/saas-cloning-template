@@ -358,13 +358,22 @@ async def public_calendar(
     detail: str = "availability",
     db: AsyncSession = Depends(get_db),
 ):
-    """Public calendar endpoint — no auth required. Returns events for a shared calendar."""
+    """Public-by-UUID calendar endpoint — no auth required, but the
+    target calendar MUST be flagged `is_shared`. Otherwise anyone who has
+    seen a `calendar_id` in an authenticated `EventOut` response (e.g.
+    every meeting invite recipient) can read the organizer's full event
+    list. The token-protected sibling (`GET /public/{token}`) is the
+    preferred public path; this `/pub/{id}` route stays for legacy
+    free/busy lookups.
+    """
     from app.models.calendar import Event
     from app.schemas.calendar import EventOut
 
     result = await db.execute(select(Calendar).where(Calendar.id == calendar_id))
     cal = result.scalar_one_or_none()
-    if not cal:
+    if not cal or not getattr(cal, "is_shared", False):
+        # Single 404 for both "missing" and "not shared" so the response
+        # can't be used to enumerate calendar IDs.
         raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "Calendar not found"}})
 
     events_result = await db.execute(
