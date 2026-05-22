@@ -19,13 +19,22 @@ single place reviewers look up the named-operation surface.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from fastapi import HTTPException, Request, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from app.main import app  # re-export the configured FastAPI instance
+
+# Path to the built Vite SPA inside the container. The Taskfile's `build`
+# step runs `pnpm --filter @clone-apps/outlook-frontend run build` on the
+# host before `docker compose up`, and Dockerfile.app's `COPY app/` then
+# bakes the resulting dist/ into the image at /app/app/frontend/dist.
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 # ─── TOOLS registry ──────────────────────────────────────────────────────
 # Mirrors the REST surface mounted by `app.main`. Each tool maps a name +
@@ -234,3 +243,30 @@ async def step(body: _StepBody, request: Request) -> Response:
         media_type="application/json",
         status_code=200 if not result.get("is_error") else 200,  # observation surfaces error as is_error=true
     )
+
+
+# ─── SPA serving — must be registered AFTER every API route ─────────────
+#
+# Mirrors apps/github/app/server.py:7020. `/assets/*` serves the
+# hashed Vite chunks; every other unmatched path falls back to
+# index.html so React Router can handle client-side routing
+# (deep-linking to /mail/inbox, /calendar/month, etc.).
+#
+# Guarded by isdir() so pytest in-process imports don't crash when
+# the frontend hasn't been built (test runs use TestClient and skip
+# the SPA entirely).
+if os.path.isdir(FRONTEND_DIR):
+    app.mount(
+        "/assets",
+        StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")),
+        name="static-assets",
+    )
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(request: Request, full_path: str):
+        # Concrete files (favicon.ico, vite.svg, etc.) — return as-is.
+        file_path = os.path.join(FRONTEND_DIR, full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        # Everything else → SPA shell. React Router takes over.
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
