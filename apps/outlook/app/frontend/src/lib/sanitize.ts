@@ -21,17 +21,27 @@ const ALLOWED_TAGS = [
   'tr', 'u', 'ul',
 ]
 
-const ALLOWED_ATTR = ['href', 'src', 'alt', 'title', 'class', 'style', 'colspan', 'rowspan']
+const ALLOWED_ATTR = [
+  // Generic
+  'href', 'src', 'alt', 'title', 'class', 'style', 'target', 'rel',
+  // Table layout (older HTML emails + mammoth DOCX/RTF output)
+  'colspan', 'rowspan', 'width', 'height', 'border', 'align', 'valign',
+  'bgcolor', 'cellpadding', 'cellspacing',
+]
 
 export function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return ''
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
-    // Force every <a> to open in a new tab + decouple opener so a phishing
-    // body can't reach back through window.opener.
-    ADD_ATTR: ['target', 'rel'],
-    // Reject every `javascript:` / `data:` / `vbscript:` URL.
+    // TipTap mention spans render as `<span data-type="mention"
+    // data-id="alice@acme.com">@Alice</span>`. The backend reads these
+    // to auto-Cc the mentioned user; the reading-pane click handler
+    // reads them to open the contact card. Keep the data-attrs through
+    // sanitization so both flows survive.
+    ADD_DATA_URI_TAGS: [],
+    ALLOW_DATA_ATTR: true,
+    // Reject every `javascript:` / `data:` / `vbscript:` URL on hrefs/srcs.
     ALLOWED_URI_REGEXP: /^(?:https?|mailto|cid|tel|sms):/i,
   })
 }
