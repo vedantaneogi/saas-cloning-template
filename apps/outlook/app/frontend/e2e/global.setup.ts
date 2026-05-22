@@ -56,7 +56,35 @@ setup('pre-generate storage state for seed users', async () => {
           `Confirm \`task outlook:seed\` was run after the last \`task outlook:up\`.`,
       )
     }
-    await ctx.storageState({ path: storageStatePath(user) })
+    // Parse the body for the Bearer token + user object. AppShell still
+    // checks `useAuthStore.token` (hydrated from the `auth-storage` zustand
+    // localStorage entry) to decide whether to render or redirect to
+    // /sign-in. The cookie alone isn't enough during the transition —
+    // need to seed localStorage too.
+    const body = (await res.json()) as {
+      access_token: string
+      user: { id: string; email: string; display_name: string; role: string; avatar_url: string | null }
+    }
+    const baseState = await ctx.storageState()
+    const stateWithLocalStorage = {
+      cookies: baseState.cookies,
+      origins: [
+        {
+          origin: BASE_URL,
+          localStorage: [
+            { name: 'auth_token', value: body.access_token },
+            {
+              name: 'auth-storage',
+              value: JSON.stringify({
+                state: { token: body.access_token, user: body.user },
+                version: 0,
+              }),
+            },
+          ],
+        },
+      ],
+    }
+    fs.writeFileSync(storageStatePath(user), JSON.stringify(stateWithLocalStorage, null, 2))
     await ctx.dispose()
   }
 })

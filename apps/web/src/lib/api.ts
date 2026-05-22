@@ -32,8 +32,11 @@ async function request<T>(
   })
 
   if (!res.ok) {
-    // On 401, clear stale auth and redirect to sign-in
-    if (res.status === 401 && typeof window !== 'undefined') {
+    // On 401, clear stale auth and redirect to sign-in — EXCEPT when
+    // the failing call IS /auth/login (wrong-credentials response that
+    // the form needs to see to render `login-error`).
+    const isLoginAttempt = path.includes('/auth/login')
+    if (res.status === 401 && typeof window !== 'undefined' && !isLoginAttempt) {
       localStorage.removeItem('auth_token')
       localStorage.removeItem('auth-storage')
       window.location.href = '/sign-in'
