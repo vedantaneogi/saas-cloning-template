@@ -11,6 +11,7 @@ import type { Group, Contact } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { useUIStore, draftFromReply } from '@/store/ui'
 import { cn } from '@/lib/utils'
+import { sanitizeHtml } from '@/lib/sanitize'
 import { format, isSameDay } from 'date-fns'
 import { ComposeModal } from '@/components/mail/ComposeModal'
 import { EventModal } from '@/components/calendar/EventModal'
@@ -391,7 +392,7 @@ function EmailTab({
             {selected.body_html ? (
               <div
                 className="prose prose-sm max-w-none text-[#323130]"
-                dangerouslySetInnerHTML={{ __html: selected.body_html }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(selected.body_html) }}
               />
             ) : (
               <p className="text-sm text-[#323130] whitespace-pre-wrap">{selected.body_text}</p>

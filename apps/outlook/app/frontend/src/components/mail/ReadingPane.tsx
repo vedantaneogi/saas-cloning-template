@@ -225,6 +225,7 @@ import { EmailLink } from './EmailLink'
 import { SpinnerOverlay } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { cn, formatOutlookDate, trimQuotedReply } from '@/lib/utils'
+import { sanitizeHtml } from '@/lib/sanitize'
 import {
   Reply,
   ReplyAll,
@@ -529,7 +530,7 @@ export function ReadingPane() {
                   <div
                     className="px-4 pb-3 pt-2 ml-[52px] text-sm text-[#323130] prose prose-sm max-w-none"
                     dangerouslySetInnerHTML={{
-                      __html: trimQuotedReply(msg.body_html ?? msg.body_text?.replace(/\n/g, '<br/>') ?? '')
+                      __html: sanitizeHtml(trimQuotedReply(msg.body_html ?? msg.body_text?.replace(/\n/g, '<br/>') ?? ''))
                     }}
                   />
 

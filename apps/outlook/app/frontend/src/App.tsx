@@ -1,7 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { Login } from './pages/Login'
-import { SignUp } from './pages/SignUp'
 import { Mail } from './pages/Mail'
 import { MailSearch } from './pages/MailSearch'
 import { Calendar } from './pages/Calendar'
@@ -18,7 +17,6 @@ import { PublicCalendar } from './pages/PublicCalendar'
  *
  *   /                        → /mail/inbox  (default)
  *   /sign-in                 → Login
- *   /sign-up                 → SignUp
  *   /mail/:folder            → Mail surface (inbox / drafts / sent / etc.)
  *   /mail/search             → Search results
  *   /calendar                → Calendar (month default)
@@ -35,7 +33,10 @@ export default function App() {
     <Routes>
       {/* Public auth routes */}
       <Route path="/sign-in" element={<Login />} />
-      <Route path="/sign-up" element={<SignUp />} />
+      {/* /sign-up removed: the clone is seeded with a fixed set of users
+          (frank/alice/bob/david @ acmecorp.com). There's no plausible
+          end-user signup flow, and the backend doesn't expose
+          /api/v1/auth/signup either. greptile P1 #13. */}
       <Route path="/calendar/public/:token" element={<PublicCalendar />} />
 
       {/* Authenticated routes — share AppShell (top bar + sidebar + ribbon) */}

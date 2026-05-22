@@ -274,9 +274,20 @@ def _format_event_when(ev: Event) -> str:
 
 
 def _build_invite_html(ev: Event, organizer: User, updated: bool) -> str:
-    when = _format_event_when(ev)
-    where = ev.location or "—"
-    desc = ev.description or ""
+    # §2 — every user-controlled field gets HTML-escaped before
+    # interpolation. ev.title / ev.location / ev.description /
+    # organizer.display_name are all reflected into a message body
+    # that another user's reading pane renders via
+    # dangerouslySetInnerHTML, so an unescaped `<img onerror=…>` here
+    # becomes stored XSS in their inbox.
+    from html import escape as _esc
+
+    when = _esc(_format_event_when(ev))
+    where = _esc(ev.location or "—")
+    desc = _esc(ev.description or "")
+    title = _esc(ev.title or "")
+    organizer_name = _esc(organizer.display_name or "")
+    organizer_email = _esc(organizer.email or "")
     label = "Updated invitation" if updated else "You're invited"
     desc_block = (
         f"<p style='margin-top:12px;font-size:13px;color:#323130;'>{desc}</p>" if desc else ""
@@ -284,11 +295,11 @@ def _build_invite_html(ev: Event, organizer: User, updated: bool) -> str:
     return (
         f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
         f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>{label}</p>"
-        f"<h2 style='margin:0 0 12px 0;font-size:18px;'>{ev.title}</h2>"
+        f"<h2 style='margin:0 0 12px 0;font-size:18px;'>{title}</h2>"
         f"<table style='font-size:13px;line-height:1.5;'>"
         f"<tr><td style='color:#605E5C;padding-right:8px;'>When</td><td>{when}</td></tr>"
         f"<tr><td style='color:#605E5C;padding-right:8px;'>Where</td><td>{where}</td></tr>"
-        f"<tr><td style='color:#605E5C;padding-right:8px;'>Organizer</td><td>{organizer.display_name} &lt;{organizer.email}&gt;</td></tr>"
+        f"<tr><td style='color:#605E5C;padding-right:8px;'>Organizer</td><td>{organizer_name} &lt;{organizer_email}&gt;</td></tr>"
         f"</table>"
         f"{desc_block}"
         f"<p style='margin-top:16px;font-size:12px;color:#605E5C;'>Use the buttons above to respond.</p>"

@@ -62,6 +62,30 @@ async def _get_folder_by_slug(db: AsyncSession, slug: str, user_id: uuid.UUID) -
     return result.scalar_one_or_none()
 
 
+async def _validate_user_folder(
+    db: AsyncSession, folder_id: uuid.UUID, user_id: uuid.UUID
+) -> Folder:
+    """§2 — fetch a folder and assert it belongs to the calling user.
+
+    Every endpoint that accepts `folder_id` from the request body must run
+    this check before assigning it to a message; otherwise a malicious
+    user can target another tenant's folder UUID (IDOR — flagged by
+    greptile P1 on PATCH /messages, POST /messages, POST /move).
+    Raises 404 (NOT 403) so the response shape can't be used to enumerate
+    folder ownership.
+    """
+    result = await db.execute(
+        select(Folder).where(Folder.id == folder_id, Folder.user_id == user_id)
+    )
+    folder = result.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "folder_not_found", "message": "Folder not found"}},
+        )
+    return folder
+
+
 _SUBJECT_PREFIX_RE = re.compile(r"^(re|fw|fwd)\s*:\s*", re.IGNORECASE)
 
 
@@ -911,6 +935,7 @@ async def create_message(
         body.scheduled_send_at and body.scheduled_send_at > now and not body.is_draft
     )
     if body.folder_id:
+        await _validate_user_folder(db, body.folder_id, current_user.id)
         folder_id = body.folder_id
     elif is_scheduled_send:
         # Park in the Scheduled folder so the user can find / edit / cancel
@@ -1139,6 +1164,7 @@ async def update_message(
     old_is_read = msg.is_read
 
     if body.folder_id is not None:
+        await _validate_user_folder(db, body.folder_id, current_user.id)
         msg.folder_id = body.folder_id
     if body.is_read is not None:
         msg.is_read = body.is_read
@@ -1357,6 +1383,7 @@ async def move_message(
     current_user: User = Depends(get_current_user),
 ):
     msg = await _get_message_or_404(db, message_id, current_user.id)
+    await _validate_user_folder(db, body.folder_id, current_user.id)
     old_folder_id = msg.folder_id
     msg.folder_id = body.folder_id
     msg.updated_at = rl_state.clock.now()
@@ -1473,6 +1500,7 @@ async def copy_message(
 ):
     """Copy message to another folder (duplicate, not move)."""
     msg = await _get_message_or_404(db, message_id, current_user.id)
+    await _validate_user_folder(db, body.folder_id, current_user.id)
     now = rl_state.clock.now()
     copy = Message(
         id=uuid.uuid4(),

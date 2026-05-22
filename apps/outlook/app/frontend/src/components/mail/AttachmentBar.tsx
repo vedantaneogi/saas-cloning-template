@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Paperclip, Download, Eye, ChevronDown, Copy, Globe, Monitor, Cloud } from 'lucide-react'
 import type { Attachment } from '@/lib/api'
 import { formatFileSize } from '@/lib/utils'
+import { sanitizeHtml } from '@/lib/sanitize'
 import { useAuthStore } from '@/store/auth'
 import { useUIStore } from '@/store/ui'
 
@@ -274,7 +275,7 @@ function WordPreview({ blobUrl, filename }: { blobUrl: string; filename: string 
         ) : html === null ? (
           <p className="text-[#605E5C]">Rendering document…</p>
         ) : (
-          <div className="prose-outlook" dangerouslySetInnerHTML={{ __html: html }} />
+          <div className="prose-outlook" dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />
         )}
       </div>
     </div>

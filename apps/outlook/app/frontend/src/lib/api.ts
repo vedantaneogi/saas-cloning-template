@@ -32,9 +32,13 @@ async function request<T>(
   })
 
   if (!res.ok) {
-    // On 401, clear stale auth and redirect to sign-in — EXCEPT when
-    // the failing call IS /auth/login (wrong-credentials response that
-    // the form needs to see to render `login-error`).
+    // On 401, clear stale auth and redirect to sign-in.
+    // EXCEPT when the failing call IS the login endpoint — a 401 there
+    // is the normal "wrong credentials" response and the caller must
+    // see the error to render it (e.g. the sign-in form's
+    // `login-error` testid). Without this carve-out we'd bounce the
+    // user back to the page they already are on and the error UI
+    // would never render.
     const isLoginAttempt = path.includes('/auth/login')
     if (res.status === 401 && typeof window !== 'undefined' && !isLoginAttempt) {
       localStorage.removeItem('auth_token')

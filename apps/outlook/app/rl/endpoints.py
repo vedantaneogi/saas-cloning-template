@@ -178,7 +178,7 @@ async def ready():
     return {"status": "ready", "seed_version": rl_state.seed_version}
 
 
-@router.post("/seed")
+@router.post("/seed", dependencies=[Depends(require_reset_token)])
 async def seed(request: Request):
     """
     Load seed JSON. Validates schema, loads all entities into DB.
@@ -266,7 +266,7 @@ async def reset():
     return {"status": "reset"}
 
 
-@router.get("/snapshot")
+@router.get("/snapshot", dependencies=[Depends(require_reset_token)])
 async def snapshot(db: AsyncSession = Depends(get_db)):
     db_state = await _dump_db_state(db)
     snap = rl_state.build_snapshot(db_state)
@@ -326,7 +326,7 @@ async def get_clock():
     return {"time": rl_state.clock.to_iso()}
 
 
-@router.post("/clock/advance")
+@router.post("/clock/advance", dependencies=[Depends(require_reset_token)])
 async def advance_clock(body: AdvanceClockRequest):
     try:
         rl_state.clock.advance(body.duration)
@@ -339,13 +339,13 @@ async def advance_clock(body: AdvanceClockRequest):
     return {"time": rl_state.clock.to_iso()}
 
 
-@router.get("/events")
+@router.get("/events", dependencies=[Depends(require_reset_token)])
 async def get_events(cursor: Optional[str] = None, limit: int = 100):
     events, next_cursor = rl_state.event_log.since(cursor, limit)
     return {"events": events, "next_cursor": next_cursor}
 
 
-@router.post("/verify")
+@router.post("/verify", dependencies=[Depends(require_reset_token)])
 async def verify(body: VerifyRequest, db: AsyncSession = Depends(get_db)):
     """Evaluate a predicate against current DB state."""
     db_state = await _dump_db_state(db)

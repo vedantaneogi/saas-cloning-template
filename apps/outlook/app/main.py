@@ -229,9 +229,17 @@ app.add_middleware(ChaosMiddleware)
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
+    # §2 — never echo the raw exception message to the client. Stack
+    # frames, file paths, SQL fragments, and secrets routinely leak
+    # through `str(exc)`. Log the full detail server-side; return a
+    # generic envelope to the caller.
+    import logging
+    logging.getLogger("app").exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
+    )
     return JSONResponse(
         status_code=500,
-        content={"error": {"code": "internal_error", "message": str(exc)}},
+        content={"error": {"code": "internal_error", "message": "Internal server error"}},
     )
 
 
