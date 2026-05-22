@@ -24,6 +24,11 @@ async function request<T>(
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers,
+    // §2 — session cookie auth. credentials:'include' makes the browser
+    // send the outlook_session cookie. The Bearer header above stays as
+    // a transitional fallback so the legacy localStorage flow keeps
+    // working until apps/web is retired.
+    credentials: 'include',
   })
 
   if (!res.ok) {
@@ -573,6 +578,7 @@ export const messages = {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,
+      credentials: 'include',
     }).then(async (res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json() as Promise<Attachment>

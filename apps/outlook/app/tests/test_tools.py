@@ -134,3 +134,43 @@ def test_rl_reset_rejected_without_token_header(client) -> None:
         assert res.status_code == 403
     finally:
         os.environ.pop("RL_RESET_TOKEN", None)
+
+
+# ─── §2 cookie auth — Set-Cookie on login, no-op on logout ──────────────
+
+
+def test_auth_logout_clears_cookie(client) -> None:
+    """§2 — POST /auth/logout MUST clear the session cookie. Endpoint is
+    idempotent so the frontend can call it defensively without an
+    existing session."""
+    res = client.post("/api/v1/auth/logout")
+    assert res.status_code == 200
+    # Set-Cookie with Max-Age=0 (or expires in the past) clears it. httpx
+    # records Set-Cookie headers on the response object.
+    set_cookies = res.headers.get_list("set-cookie") if hasattr(res.headers, "get_list") else [
+        v for k, v in res.headers.items() if k.lower() == "set-cookie"
+    ]
+    assert any("outlook_session" in c for c in set_cookies), (
+        f"expected outlook_session Set-Cookie clear header, got: {set_cookies}"
+    )
+
+
+def test_auth_login_responds_with_session_cookie_envelope(server_module) -> None:
+    """§2 — verify the auth router uses the cookie envelope (Response param
+    is wired). We don't drive a real login here because the user table is
+    empty in the in-process TestClient; instead we assert the route's
+    declared dependencies include the cookie helper and the schema.
+    """
+    import inspect
+    from app.api.routes.auth import login as login_route, logout as logout_route, _set_session_cookie
+
+    # _set_session_cookie sets httpOnly=True per §2.
+    src = inspect.getsource(_set_session_cookie)
+    assert "httponly=True" in src.replace(" ", "").lower() or "httponly=true" in src.replace(" ", "").lower()
+    assert "samesite=\"lax\"" in src or "samesite='lax'" in src
+
+    # login + logout both accept Response so they can set/clear the cookie.
+    sig = inspect.signature(login_route)
+    assert "response" in sig.parameters
+    sig = inspect.signature(logout_route)
+    assert "response" in sig.parameters

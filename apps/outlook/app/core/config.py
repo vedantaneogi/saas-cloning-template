@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production-use-a-long-random-string-here"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    # §2 — httpOnly session cookie. Set to True in prod (HTTPS-only origin)
+    # so the browser refuses to send the cookie over plain HTTP.
+    COOKIE_SECURE: bool = False
 
     # Email (Resend)
     RESEND_API_KEY: str = ""
