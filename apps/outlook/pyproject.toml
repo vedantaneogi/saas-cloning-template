@@ -22,4 +22,7 @@ dependencies = [
     "reportlab",
     "python-pptx",
     "pillow",
+    # fastapi.TestClient + httpx are used by app/server.py's call_tool
+    # dispatcher (in-process tool routing) and by app/tests/test_tools.py.
+    "httpx",
 ]
