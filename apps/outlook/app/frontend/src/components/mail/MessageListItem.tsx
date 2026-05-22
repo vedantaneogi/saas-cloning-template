@@ -322,6 +322,7 @@ export function MessageListItem({ message, conversationCount, onToggleThread, th
   return (
     <div
       role="listitem"
+      data-testid={`message-row-${message.id}`}
       aria-selected={isSelected}
       aria-label={`${senderName}: ${message.subject}`}
       draggable

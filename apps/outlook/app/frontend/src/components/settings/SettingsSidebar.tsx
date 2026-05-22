@@ -72,9 +72,9 @@ export function SettingsSidebar() {
         {filtered.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
           return (
-            <li key={item.id}>
+            <li key={item.id} data-testid={`settings-tab-${item.id}`}>
               <Link
-                href={item.href}
+                to={item.href}
                 aria-label={item.label}
                 aria-current={isActive ? 'page' : undefined}
                 className={cn(

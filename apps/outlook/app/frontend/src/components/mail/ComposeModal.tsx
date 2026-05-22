@@ -670,6 +670,7 @@ export function ComposeModal({ open, onClose, inline = false }: ComposeModalProp
           <div className="flex items-center flex-shrink-0">
             <button
               type="button"
+              data-testid="compose-send"
               onClick={handleSubmit(() => handleSend())}
               disabled={sendMutation.isPending}
               className="flex items-center gap-2 bg-[#0078D4] hover:bg-[#106EBE] disabled:opacity-50 text-white text-sm font-semibold pl-3 pr-3 h-8 rounded-l transition-colors"

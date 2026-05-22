@@ -319,9 +319,9 @@ function FolderItem({ folder, children = [], level = 0, currentSlug }: FolderIte
   }
 
   return (
-    <li>
+    <li data-testid={`folder-row-${slug}`}>
       <Link
-        href={`/mail/${slug}`}
+        to={`/mail/${slug}`}
         className={cn(
           'group flex items-center gap-1.5 py-1 rounded-sm cursor-pointer select-none text-sm transition-colors no-underline relative',
           isActive

@@ -276,6 +276,7 @@ export function MessageList() {
           <div className="flex items-center" role="tablist" aria-label="Inbox tabs">
             <button
               role="tab"
+              data-testid="inbox-tab-focused"
               aria-selected={focusedTab === 'focused'}
               onClick={() => setFocusedTab('focused')}
               className={cn(
@@ -289,6 +290,7 @@ export function MessageList() {
             </button>
             <button
               role="tab"
+              data-testid="inbox-tab-other"
               aria-selected={focusedTab === 'other'}
               onClick={() => setFocusedTab('other')}
               className={cn(

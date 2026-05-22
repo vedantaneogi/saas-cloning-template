@@ -12,18 +12,21 @@ export class MailPage extends BasePage {
 
   /** Inbox tab toggle — Focused vs Other. */
   focusedTab() {
-    return this.page.getByRole('tab', { name: 'Focused' })
+    return this.page.getByTestId('inbox-tab-focused')
   }
   otherTab() {
-    return this.page.getByRole('tab', { name: 'Other' })
+    return this.page.getByTestId('inbox-tab-other')
   }
 
-  /** First message row in the list (use for spec sanity checks). */
+  /** First message row in the list. Testid is `message-row-<id>` so the
+   *  selector matches any row regardless of which mailbox is loaded. */
   firstMessage() {
-    return this.page
-      .locator('[aria-label="Message list"]')
-      .getByRole('button')
-      .first()
+    return this.page.locator('[data-testid^="message-row-"]').first()
+  }
+
+  /** Folder row in the sidebar by slug. */
+  folderRow(slug: string) {
+    return this.page.getByTestId(`folder-row-${slug}`)
   }
 
   /** Selected message subject in the reading pane header. */

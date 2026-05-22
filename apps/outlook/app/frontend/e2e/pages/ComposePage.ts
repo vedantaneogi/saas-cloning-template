@@ -25,7 +25,7 @@ export class ComposePage {
   }
 
   send() {
-    return this.page.getByRole('button', { name: /^Send$/ }).first()
+    return this.page.getByTestId('compose-send')
   }
 
   discard() {
