@@ -1,6 +1,6 @@
 
 import { useState } from 'react'
-import Link from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { usePathname } from '@/lib/next-compat'
 import { cn } from '@/lib/utils'
 import {

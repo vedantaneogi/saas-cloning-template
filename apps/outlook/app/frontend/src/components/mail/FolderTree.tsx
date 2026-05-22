@@ -1,7 +1,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from '@/lib/next-compat'
-import Link from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   Inbox,
   Send,
