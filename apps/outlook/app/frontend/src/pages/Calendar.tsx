@@ -157,7 +157,7 @@ export function Calendar() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden" aria-label="CalendarModule" data-automation-id="CalendarModule">
+    <div data-testid="calendar-page" className="h-full flex overflow-hidden" aria-label="CalendarModule" data-automation-id="CalendarModule">
       {/* Left sidebar */}
       <CalendarSidebar selectedDate={currentDate} onDateSelect={setCurrentDate} />
 

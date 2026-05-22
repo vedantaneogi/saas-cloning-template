@@ -15,7 +15,7 @@ export function Contacts() {
   const [editContact, setEditContact] = useState<Contact | null>(null)
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div data-testid="contacts-page" className="h-full flex overflow-hidden">
       {/* Left: Contact list (40%) */}
       <div className="w-[340px] flex-shrink-0 flex flex-col border-r border-[#EDEBE9]">
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#EDEBE9] bg-white">

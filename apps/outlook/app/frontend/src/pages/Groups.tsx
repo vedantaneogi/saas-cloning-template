@@ -870,7 +870,7 @@ export function Groups() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden bg-white" aria-label="Groups">
+    <div data-testid="groups-page" className="h-full flex overflow-hidden bg-white" aria-label="Groups">
       {/* Toolbar — context-sensitive per active tab */}
       <div className="w-full flex flex-col overflow-hidden">
         <Toolbar

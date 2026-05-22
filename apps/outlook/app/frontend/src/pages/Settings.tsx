@@ -37,7 +37,7 @@ export function Settings() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div data-testid="settings-page" className="h-full flex overflow-hidden">
       <SettingsSidebar />
       <main className="flex-1 overflow-y-auto outlook-scrollbar bg-white" aria-label="Settings panel">
         {renderSection()}

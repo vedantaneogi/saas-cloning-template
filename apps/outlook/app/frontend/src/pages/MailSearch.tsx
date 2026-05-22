@@ -291,6 +291,7 @@ function SearchResults() {
 
 export function MailSearch() {
   return (
+    <div data-testid="search-page" className="h-full">
     <PanelGroup direction="horizontal" className="h-full">
       <Panel defaultSize={18} minSize={12} maxSize={30}>
         <div className="h-full overflow-hidden"><FolderTree /></div>
@@ -306,5 +307,6 @@ export function MailSearch() {
         <div className="h-full overflow-hidden"><ReadingPane /></div>
       </Panel>
     </PanelGroup>
+    </div>
   )
 }

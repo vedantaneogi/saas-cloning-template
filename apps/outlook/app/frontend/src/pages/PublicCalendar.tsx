@@ -138,7 +138,7 @@ export function PublicCalendar() {
     blocks.filter((b) => isSameDay(b.start, day))
 
   return (
-    <div className="min-h-screen bg-[#FAF9F8]">
+    <div data-testid="public-calendar-page" className="min-h-screen bg-[#FAF9F8]">
       {/* Hero header — show the owner's name (e.g. "Frank Miller") so the
           public viewer immediately knows whose calendar they're looking at. */}
       <header className="bg-gradient-to-r from-[#0078D4] to-[#106EBE] text-white">

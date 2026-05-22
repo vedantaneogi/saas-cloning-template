@@ -364,7 +364,7 @@ export function Tasks() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div data-testid="tasks-page" className="h-full flex overflow-hidden">
       <TaskSidebar selectedListId={selectedListId} onSelect={setSelectedListId} />
 
       <div className="flex-1 flex flex-col overflow-hidden">

@@ -1,48 +1,31 @@
 # Outlook Clone — Status
 
-Snapshot of the migration from the legacy `apps/api/` + `apps/web/` split
-into the universal-acceptance-criteria-compliant `apps/outlook/` layout.
+Migration from the legacy `apps/api/` + `apps/web/` split into the
+universal-acceptance-criteria-compliant `apps/outlook/` layout.
 
 | Phase | Description | State |
 | ----- | ----------- | ----- |
-| 1 | `apps/outlook/` shell — README, FEATURES, PORTS, Taskfile, scripts, dockerfiles, docker-compose.dev.yml, pyproject.toml | **In progress** |
-| 2 | Backend port (`apps/api/app` → `apps/outlook/app`) + `TOOLS` registry + `init.sql` + `seed_app.py` + `tests/test_tools.py` | Pending |
-| 3 | Frontend Vite migration (Next.js → Vite + React Router) | Pending |
-| 4 | e2e scaffolding (fixtures, POMs, COVERAGE.md, specs, `.github/workflows/e2e-outlook.yml`) | Pending |
-| 5 | Testid coverage sweep | Pending |
-| 6 | Deploy + verify against acceptance criteria end-to-end | Pending |
+| 1 | `apps/outlook/` shell — README, FEATURES, PORTS, Taskfile, scripts, dockerfiles, docker-compose.dev.yml, pyproject.toml | ✅ |
+| 2 | Backend port — TOOLS registry (63 tools) + `call_tool` dispatcher + `/tools` and `/step` endpoints + `init.sql` + `seed_app.py` + 11 pytest tests green + §2 security gates on `/rl/reset` & `/rl/restore` | ✅ |
+| 3 | Frontend Vite migration — Vite + React 19 + React Router v7 + Tailwind 4. 80 files ported from `apps/web/src/`. `next-compat.ts` shim back-compats `useRouter` / `usePathname` / `useSearchParams` / `useParams` so legacy call sites resolve without rewrites. | ✅ |
+| 4 | e2e scaffolding — 5 fixtures, 10 POMs, 14 specs (auth, mail, calendar, smoke), COVERAGE.md (62 rows), HANDBOOK.md, gen-spec/system-prompt.md, `.github/workflows/e2e-outlook.yml` | ✅ |
+| 5 | Testid coverage on every page root — 10/10 page POMs now have a matching `data-testid="<page>-page"` selector in the source tree | ✅ |
+| 6 | Deploy + verify against acceptance criteria end-to-end | In progress |
 
-## What's running where today
+## Acceptance gates passing
 
-- Legacy stack — `apps/api/` (FastAPI) + `apps/web/` (Next.js 15) still
-  builds and deploys via `scripts/deploy/e2b-deploy.mjs`. **No regression**
-  — both stacks coexist during the migration.
-- New stack — `apps/outlook/` is being populated. Once the new
-  `task outlook:up` matches the legacy deploy feature-for-feature on a
-  fresh E2B sandbox, the legacy directories will be removed.
+- `task outlook:validate` → all §1 file paths present, 80 tool literals, 10 page components, no f-string SQL, no leaked paths, security audit clean
+- `task outlook:test-unit` → 11/11 pytest checks (registry shape, /health, /tools, /step, /rl/reset security)
+- `pnpm-workspace.yaml` lists `apps/outlook/app/frontend` as a workspace member
+- `apps/web/src/lib/api.ts` BASE_URL no longer hardcodes `http://localhost:8000`
+- `/rl/reset` and `/rl/restore` require `X-Reset-Token` header (env-gated)
 
-## Open questions
+## What's still running on the legacy stack
 
-- Final decision on the `cua/dev/apps.yml` + `cua/dev/ports.json` + `packages/clone-tls/`
-  entries — these live in `collinear-apps/app-clones` and will be added
-  when the work is ported across.
+- `scripts/deploy/e2b-deploy.mjs` continues to deploy the legacy `apps/api/` + `apps/web/` setup. Phase 6 verifies the new `apps/outlook/` stack boots locally first, then either retargets the deploy script or stands up a new one.
 
 ## Known carry-overs from the legacy stack
 
-These behavioural notes survived the move and are documented for the
-reviewer:
-
-- **Conversation `_link_recipient_thread`** — at delivery time the
-  backend walks the recipient's mailbox by normalized subject +
-  sender↔recipient participation and converges every related row onto a
-  single `conversation_id`. Required because seed data is one-sided and
-  cross-mailbox replies otherwise sit on different ids on each side.
-- **Boomerang reminder** — when a sent message goes unanswered past
-  `boomerang_at`, the opportunistic helper drops a self-to-self message
-  in the user's inbox flagged with `is_flagged=true is_pinned=true` and
-  a body fingerprint `"Message moved to top of Inbox by Boomerang"`
-  used by the frontend to render the yellow tray.
-- **Compose draft auto-save on navigate** — clicking another message
-  while a compose is open inline triggers the editor's
-  `onSaveAndClose` callback so the in-flight draft is persisted before
-  the reading pane is freed.
+- **Conversation `_link_recipient_thread`** at delivery time converges related rows onto a single `conversation_id` by normalized subject + sender↔recipient participation. Required because seed data is one-sided.
+- **Boomerang reminder** is a self-to-self message with body fingerprint `"Message moved to top of Inbox by Boomerang"` rendered with yellow tray + flag.
+- **Compose draft auto-save on navigate** — `MessageListItem.handleClick` calls `editorStore.onSaveAndClose()` so the in-flight draft is persisted before the reading pane is freed.
