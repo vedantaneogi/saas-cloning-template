@@ -29,6 +29,41 @@ const ALLOWED_ATTR = [
   'bgcolor', 'cellpadding', 'cellspacing',
 ]
 
+// CSS patterns that can fetch external resources or execute code from
+// inside an inline `style` attribute. DOMPurify's ALLOWED_URI_REGEXP
+// only filters explicit URI attrs (href/src) — the browser's CSS parser
+// happily resolves `background-image: url(https://attacker/track)`
+// without DOMPurify intervening, which turns every received email into
+// a potential tracking pixel + read-receipt + IP leak. Strip them.
+//
+// Covered:
+//   - url(...)            tracking pixels via background-image/content/list-style
+//   - expression(...)     legacy IE script-via-CSS (effectively dead but cheap to strip)
+//   - @import             pulls in remote stylesheets
+//   - behavior:           legacy IE binding
+//   - -moz-binding:       legacy Firefox XBL binding
+//   - javascript:         can land in CSS via odd properties
+const DANGEROUS_CSS = [
+  /url\s*\([^)]*\)/gi,
+  /expression\s*\([^)]*\)/gi,
+  /@import\b[^;]*;?/gi,
+  /behavior\s*:[^;]*;?/gi,
+  /-moz-binding\s*:[^;]*;?/gi,
+  /javascript\s*:/gi,
+]
+
+function stripDangerousCss(value: string): string {
+  let out = value
+  for (const pat of DANGEROUS_CSS) out = out.replace(pat, '')
+  return out
+}
+
+DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
+  if (data.attrName === 'style' && typeof data.attrValue === 'string') {
+    data.attrValue = stripDangerousCss(data.attrValue)
+  }
+})
+
 export function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return ''
   return DOMPurify.sanitize(html, {
