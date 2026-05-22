@@ -33,11 +33,12 @@ from app.schemas.seed import SeedPayload
 router = APIRouter(tags=["RL Environment"])
 
 
-# §2 security gate: state-mutating RL endpoints (/reset, /restore) wipe
-# the database. Per the universal acceptance criteria they must not be
-# callable without authentication. Gated behind RL_RESET_TOKEN env var:
-# unset env var rejects every call; set env var requires X-Reset-Token
-# header to match.
+# §2: state-mutating RL endpoints (`/reset`, `/restore`) wipe the database.
+# Per the universal acceptance criteria they must not be callable
+# without authentication. We gate them behind a shared secret read from
+# the `RL_RESET_TOKEN` environment variable. When the env var is unset,
+# every call is rejected — protecting deploys that didn't opt into the
+# RL harness from accidental wipes.
 def require_reset_token(
     x_reset_token: str | None = Header(default=None, alias="X-Reset-Token"),
 ) -> None:
@@ -45,12 +46,26 @@ def require_reset_token(
     if not expected:
         raise HTTPException(
             status_code=403,
-            detail={"error": {"code": "rl_reset_disabled", "message": "RL state-mutating endpoints are disabled. Set RL_RESET_TOKEN in the server environment and pass X-Reset-Token to call this endpoint."}},
+            detail={
+                "error": {
+                    "code": "rl_reset_disabled",
+                    "message": (
+                        "RL state-mutating endpoints are disabled. Set "
+                        "RL_RESET_TOKEN in the server environment and "
+                        "pass X-Reset-Token to call this endpoint."
+                    ),
+                }
+            },
         )
     if not x_reset_token or not secrets.compare_digest(x_reset_token, expected):
         raise HTTPException(
             status_code=403,
-            detail={"error": {"code": "rl_reset_forbidden", "message": "Invalid or missing X-Reset-Token header."}},
+            detail={
+                "error": {
+                    "code": "rl_reset_forbidden",
+                    "message": "Invalid or missing X-Reset-Token header.",
+                }
+            },
         )
 
 

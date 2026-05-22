@@ -1,4 +1,7 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'
+// §2 of the universal acceptance criteria forbids hardcoded localhost in
+// shipped code. Default is a relative path so dev (Next.js proxy / Vite
+// proxy) and prod (Caddy / E2B sandbox) both work without overriding.
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1'
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null
