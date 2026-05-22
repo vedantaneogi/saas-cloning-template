@@ -9,11 +9,7 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 
-# Cookie-first auth per §2 of the universal acceptance criteria
-# ("Sessions go in cookies, period."). The Bearer scheme remains as a
-# fallback so external test harnesses + the legacy frontend bootstrap
-# (still on apps/web during the migration) keep working until the
-# Phase-3 Vite app fully takes over. New code paths use the cookie.
+# §2 — cookie-first auth. Bearer remains as a transitional fallback.
 SESSION_COOKIE_NAME = "outlook_session"
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -31,13 +27,20 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    # Prefer the httpOnly session cookie. Fall back to Bearer for the
-    # transitional window — drops once apps/web is removed in Phase 6.
+    # Prefer the Authorization Bearer header when present. The
+    # frontend's multi-account switcher (TopToolbar avatar menu) stashes
+    # one token per logged-in user in localStorage and attaches whichever
+    # is currently selected on every request. If we read the cookie
+    # first, the cookie's static "last login" wins and switching accounts
+    # in the UI silently uses the wrong user server-side. Bearer-first
+    # lets the explicit per-request override drive auth; the httpOnly
+    # cookie still backstops single-account browser sessions that never
+    # touch the multi-account UI.
     token: Optional[str] = None
-    if session_token:
-        token = session_token
-    elif credentials:
+    if credentials:
         token = credentials.credentials
+    elif session_token:
+        token = session_token
 
     if not token:
         raise _401("Authentication required", code="missing_token")

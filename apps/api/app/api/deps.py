@@ -27,11 +27,20 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    # Prefer the Authorization Bearer header when present. The
+    # frontend's multi-account switcher (TopToolbar avatar menu) stashes
+    # one token per logged-in user in localStorage and attaches whichever
+    # is currently selected on every request. If we read the cookie
+    # first, the cookie's static "last login" wins and switching accounts
+    # in the UI silently uses the wrong user server-side. Bearer-first
+    # lets the explicit per-request override drive auth; the httpOnly
+    # cookie still backstops single-account browser sessions that never
+    # touch the multi-account UI.
     token: Optional[str] = None
-    if session_token:
-        token = session_token
-    elif credentials:
+    if credentials:
         token = credentials.credentials
+    elif session_token:
+        token = session_token
 
     if not token:
         raise _401("Authentication required", code="missing_token")
