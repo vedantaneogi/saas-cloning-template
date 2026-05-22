@@ -1,4 +1,7 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'
+// §2 of the universal acceptance criteria forbids hardcoded localhost in
+// shipped code. Default is a relative path so dev (Next.js proxy / Vite
+// proxy) and prod (Caddy / E2B sandbox) both work without overriding.
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1'
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null
@@ -21,6 +24,11 @@ async function request<T>(
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers,
+    // §2 — session cookie auth. credentials:'include' makes the browser
+    // send the outlook_session cookie on every request. The Bearer
+    // header above stays during the transition so we don't break sessions
+    // that landed before this change shipped.
+    credentials: 'include',
   })
 
   if (!res.ok) {
@@ -570,6 +578,7 @@ export const messages = {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,
+      credentials: 'include',
     }).then(async (res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json() as Promise<Attachment>

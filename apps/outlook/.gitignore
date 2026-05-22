@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+node_modules/
+app/frontend/dist/
+app/frontend/.npmrc
+
+# Playwright e2e outputs (regenerated on every run)
+app/frontend/playwright-report/
+app/frontend/playwright-results.json
+app/frontend/test-results/
+app/frontend/e2e/.auth/
+
+.env
+.env.local
+
+*.db
+*.sqlite
+
+# Generated python deps lockfile used by Dockerfile.app
+.requirements.lock

@@ -5,9 +5,11 @@ Mounted directly on the FastAPI app (no /api/v1 prefix).
 from __future__ import annotations
 
 import copy
+import os
+import secrets
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -29,6 +31,27 @@ from app.rl.state import rl_state
 from app.schemas.seed import SeedPayload
 
 router = APIRouter(tags=["RL Environment"])
+
+
+# §2 security gate: state-mutating RL endpoints (/reset, /restore) wipe
+# the database. Per the universal acceptance criteria they must not be
+# callable without authentication. Gated behind RL_RESET_TOKEN env var:
+# unset env var rejects every call; set env var requires X-Reset-Token
+# header to match.
+def require_reset_token(
+    x_reset_token: str | None = Header(default=None, alias="X-Reset-Token"),
+) -> None:
+    expected = os.environ.get("RL_RESET_TOKEN")
+    if not expected:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": {"code": "rl_reset_disabled", "message": "RL state-mutating endpoints are disabled. Set RL_RESET_TOKEN in the server environment and pass X-Reset-Token to call this endpoint."}},
+        )
+    if not x_reset_token or not secrets.compare_digest(x_reset_token, expected):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": {"code": "rl_reset_forbidden", "message": "Invalid or missing X-Reset-Token header."}},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +221,7 @@ async def seed_error():
     return {"error": err}
 
 
-@router.post("/reset")
+@router.post("/reset", dependencies=[Depends(require_reset_token)])
 async def reset():
     """Reset to last-seeded state."""
     snapshot = rl_state.get_seed_snapshot()
@@ -236,7 +259,7 @@ async def snapshot(db: AsyncSession = Depends(get_db)):
     return snap
 
 
-@router.post("/restore")
+@router.post("/restore", dependencies=[Depends(require_reset_token)])
 async def restore(request: Request):
     """
     Load a snapshot JSON as produced by GET /snapshot.

@@ -1,0 +1,98 @@
+name: e2e (outlook)
+
+# Mirrors apps/github/.github/workflows/e2e-github.yml from the
+# collinear-apps reference. Boots the full docker stack via `task
+# outlook:up`, seeds, runs Playwright, tears down. Triggered only when
+# Outlook-relevant paths change so the matrix stays cheap.
+
+on:
+  push:
+    branches: [main, outlook-clone, outlook-clone-shubham-fixes]
+    paths:
+      - 'apps/outlook/**'
+      - '.github/workflows/e2e-outlook.yml'
+  pull_request:
+    paths:
+      - 'apps/outlook/**'
+      - '.github/workflows/e2e-outlook.yml'
+
+concurrency:
+  group: e2e-outlook-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            **/pyproject.toml
+
+      - name: Setup Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install deps (frozen)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --filter @clone-apps/outlook-frontend exec playwright install --with-deps chromium
+
+      - name: "Start outlook docker stack (one-shot: build + start + seed)"
+        run: |
+          cd apps/outlook
+          task up-no-tls
+
+      - name: Run e2e tests
+        run: |
+          cd apps/outlook
+          task test-e2e
+
+      - name: Tear down docker stack
+        if: always()
+        run: |
+          cd apps/outlook
+          task down
+
+      - name: Upload Playwright HTML report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-outlook
+          path: apps/outlook/app/frontend/playwright-report/
+          retention-days: 14
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-outlook
+          path: apps/outlook/app/frontend/test-results/
+          retention-days: 14

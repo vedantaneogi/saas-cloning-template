@@ -1,0 +1,57 @@
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cloneapp
+    ports:
+      - "${DB_PORT:-5445}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  clone-app:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.app
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/cloneapp"
+      # Public POST /rl/reset is gated by this token — see §2 of the
+      # universal acceptance criteria. Set in the calling shell (or .env)
+      # to a fresh secret in non-dev environments.
+      RL_RESET_TOKEN: "${RL_RESET_TOKEN:-dev-only-do-not-ship-to-prod}"
+    ports:
+      - "${APP_PORT:-8045}:8030"
+    networks:
+      default: {}
+      # Join the shared `clone-tls` network when the gateway is up so the
+      # shared Caddy can reverse-proxy https://outlook.clone.test →
+      # outlook-clone-app:8030.
+      clone-tls:
+        aliases:
+          - outlook-clone-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  seed:
+    profiles: ["seed"]
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.seed
+    environment:
+      TOOL_SERVER_URL: "http://clone-app:8030"
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/cloneapp"
+    depends_on:
+      clone-app:
+        condition: service_healthy
+
+networks:
+  clone-tls:
+    external: true
+    name: clone-tls
