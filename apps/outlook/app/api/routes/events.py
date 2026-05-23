@@ -769,6 +769,23 @@ async def create_event(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # §2 — calendar_id comes from the request body. Same ownership
+    # check as both branches of update_event: a user can only plant
+    # events on their OWN calendars. Without this, an authenticated
+    # user could write events into another tenant's calendar. 404 on
+    # mismatch so the response can't enumerate calendar IDs.
+    if body.calendar_id is not None:
+        cal_check = await db.execute(
+            select(Calendar).where(
+                Calendar.id == body.calendar_id,
+                Calendar.user_id == current_user.id,
+            )
+        )
+        if not cal_check.scalar_one_or_none():
+            raise HTTPException(
+                status_code=404,
+                detail={"error": {"code": "calendar_not_found", "message": "Calendar not found"}},
+            )
     now = rl_state.clock.now()
     ev = Event(
         id=uuid.uuid4(),

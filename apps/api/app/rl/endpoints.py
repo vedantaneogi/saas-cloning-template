@@ -12,7 +12,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal, get_db
@@ -274,12 +274,73 @@ async def snapshot(db: AsyncSession = Depends(get_db)):
     return snap
 
 
+# Tables to wipe + reinsert in /restore. Order matters for FKs:
+# wipe in REVERSED order, insert in this order. Mirrors the dump order
+# in `_dump_db_state` exactly so a snapshot built by GET /snapshot
+# round-trips through POST /restore.
+_RESTORE_TABLES: list[tuple[type, str]] = [
+    (User, "users"),
+    (Folder, "folders"),
+    (Category, "categories"),
+    (Conversation, "conversations"),
+    (Contact, "contacts"),
+    (Calendar, "calendars"),
+    (Message, "messages"),
+    (Attachment, "attachments"),
+    (Event, "events"),
+    (EventAttendee, "event_attendees"),
+    (TaskList, "task_lists"),
+    (Task, "tasks"),
+    (Rule, "rules"),
+    (Signature, "signatures"),
+]
+
+
+def _coerce_row(model_cls: type, row: dict[str, Any]) -> dict[str, Any]:
+    """Reverse `_dump_db_state.row_to_dict`: UUID strings → UUID,
+    ISO datetime/date strings → datetime/date. asyncpg refuses ISO
+    strings for TIMESTAMPTZ / UUID columns, so we coerce per the live
+    SQLAlchemy column type."""
+    import uuid as _uuid
+    from datetime import date as _date, datetime as _dt
+
+    out: dict[str, Any] = {}
+    for col in model_cls.__table__.columns:
+        if col.name not in row:
+            continue
+        val = row[col.name]
+        if val is None:
+            out[col.name] = None
+            continue
+        tname = type(col.type).__name__.upper()
+        if "UUID" in tname and isinstance(val, str):
+            try:
+                out[col.name] = _uuid.UUID(val)
+            except ValueError:
+                out[col.name] = val
+        elif ("DATETIME" in tname or "TIMESTAMP" in tname) and isinstance(val, str):
+            try:
+                out[col.name] = _dt.fromisoformat(val.replace("Z", "+00:00"))
+            except ValueError:
+                out[col.name] = val
+        elif tname == "DATE" and isinstance(val, str):
+            try:
+                out[col.name] = _date.fromisoformat(val)
+            except ValueError:
+                out[col.name] = val
+        else:
+            out[col.name] = val
+    return out
+
+
 @router.post("/restore", dependencies=[Depends(require_reset_token)])
 async def restore(request: Request):
     """
     Load a snapshot JSON as produced by GET /snapshot.
-    Re-seeds the database from the embedded seed payload if available,
-    otherwise restores from entities directly.
+    Wipes every table the snapshot covers and re-inserts the rows from
+    `entities`, then restores in-memory state (clock, feature flags,
+    permission profile, active user). The canonical snapshot → mutate
+    → restore cycle now round-trips DB state, not just in-memory state.
     """
     try:
         raw = await request.json()
@@ -289,14 +350,34 @@ async def restore(request: Request):
             detail={"error": {"code": "invalid_json", "message": str(exc)}},
         )
 
-    # If snapshot contains the original seed, use that for a clean restore
     if "entities" not in raw:
         raise HTTPException(
             status_code=400,
             detail={"error": {"code": "invalid_snapshot", "message": "Snapshot must contain 'entities' key"}},
         )
 
-    # Restore clock
+    entities = raw.get("entities") or {}
+
+    # ── Database restore ─────────────────────────────────────────────
+    # Wipe every table the snapshot covers in REVERSED FK order, then
+    # bulk-insert the entities back in forward order. All in a single
+    # transaction so a malformed entities payload leaves the DB
+    # untouched (no half-applied restore).
+    inserted_counts: dict[str, int] = {}
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            for model, _ in reversed(_RESTORE_TABLES):
+                await session.execute(delete(model))
+            for model, key in _RESTORE_TABLES:
+                rows = entities.get(key) or []
+                if not rows:
+                    inserted_counts[key] = 0
+                    continue
+                coerced = [_coerce_row(model, r) for r in rows]
+                await session.execute(model.__table__.insert(), coerced)
+                inserted_counts[key] = len(coerced)
+
+    # ── In-memory state restore ──────────────────────────────────────
     if "clock" in raw and raw["clock"]:
         from datetime import datetime, timezone
         try:
@@ -317,8 +398,11 @@ async def restore(request: Request):
     seed_ver = raw.get("seed_version", "rl-env/v1")
     rl_state.set_ready(seed_ver)
 
-    rl_state.event_log.append("restored", {"snapshot_id": raw.get("snapshot_id")})
-    return {"status": "restored"}
+    rl_state.event_log.append(
+        "restored",
+        {"snapshot_id": raw.get("snapshot_id"), "entity_counts": inserted_counts},
+    )
+    return {"status": "restored", "entity_counts": inserted_counts}
 
 
 @router.get("/clock")
