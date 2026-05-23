@@ -78,9 +78,14 @@ TOOLS: list[dict[str, Any]] = [
     {"name": "get_conversation", "method": "GET", "path": "/api/v1/conversations/{conversation_id}", "body_keys": [], "description": "Get a conversation thread (all messages the user can see in it).", "input_schema": {"conversation_id": "uuid"}},
 
     # ─── Attachments ──────────────────────────────────────────────────
+    {"name": "list_attachments", "method": "GET", "path": "/api/v1/messages/{message_id}/attachments", "body_keys": [], "description": "List attachments on a message.", "input_schema": {"message_id": "uuid"}},
     {"name": "upload_attachment", "method": "POST", "path": "/api/v1/messages/{message_id}/attachments", "body_keys": [], "description": "Attach a file to a message (multipart upload).", "input_schema": {"message_id": "uuid", "file": "upload"}, "mutates_state": True},
-    {"name": "download_attachment", "method": "GET", "path": "/api/v1/attachments/{attachment_id}", "body_keys": [], "description": "Download an attachment by id.", "input_schema": {"attachment_id": "uuid"}},
-    {"name": "delete_attachment", "method": "DELETE", "path": "/api/v1/attachments/{attachment_id}", "body_keys": [], "description": "Remove an attachment from its message.", "input_schema": {"attachment_id": "uuid"}, "mutates_state": True},
+    {"name": "download_attachment", "method": "GET", "path": "/api/v1/messages/{message_id}/attachments/{attachment_id}/download", "body_keys": [], "description": "Download an attachment by id (scoped to the parent message).", "input_schema": {"message_id": "uuid", "attachment_id": "uuid"}},
+    # `delete_attachment` removed — there is no DELETE
+    # /api/v1/attachments/{id} route mounted (attachments are pruned
+    # when their parent message is soft-deleted, not by direct call).
+    # Advertising a tool whose path 404s is the same broken-contract
+    # bug as the previously-removed `signup` entry.
 
     # ─── Rules / Quick steps / Categories ─────────────────────────────
     {"name": "list_rules", "method": "GET", "path": "/api/v1/rules", "body_keys": [], "description": "List the user's inbox rules.", "input_schema": {}},
@@ -95,12 +100,15 @@ TOOLS: list[dict[str, Any]] = [
     # ─── Signatures / OOF / DLP ───────────────────────────────────────
     {"name": "list_signatures", "method": "GET", "path": "/api/v1/signatures", "body_keys": [], "description": "List the user's saved signatures.", "input_schema": {}},
     {"name": "create_signature", "method": "POST", "path": "/api/v1/signatures", "body_keys": ["name", "body_html", "is_default_new", "is_default_reply"], "description": "Create a signature.", "input_schema": {"name": "str", "body_html": "str", "is_default_new": "bool"}, "mutates_state": True},
-    {"name": "set_oof", "method": "PUT", "path": "/api/v1/settings", "body_keys": ["out_of_office_enabled", "out_of_office_start", "out_of_office_end", "internal_message", "external_message"], "description": "Enable / disable out-of-office auto-reply.", "input_schema": {"enabled": "bool", "internal_message": "str", "external_message": "str"}, "mutates_state": True},
+    {"name": "set_oof", "method": "PATCH", "path": "/api/v1/settings/oof", "body_keys": ["out_of_office_enabled", "out_of_office_start", "out_of_office_end", "internal_message", "external_message"], "description": "Enable / disable out-of-office auto-reply.", "input_schema": {"enabled": "bool", "internal_message": "str", "external_message": "str"}, "mutates_state": True},
     {"name": "evaluate_dlp", "method": "POST", "path": "/api/v1/dlp/evaluate", "body_keys": ["to", "cc", "bcc", "subject", "body", "attachments", "sensitivity_label"], "description": "Run the DLP engine over a candidate message body + recipients.", "input_schema": {"to": "list", "subject": "str", "body": "str", "attachments": "list", "sensitivity_label": "str"}},
 
     # ─── Search ───────────────────────────────────────────────────────
     {"name": "search_messages", "method": "GET", "path": "/api/v1/messages/search", "body_keys": [], "description": "Full-text + filter search across messages.", "input_schema": {"q": "str", "from": "str", "subject": "str", "date_from": "date", "date_to": "date", "has_attachment": "bool", "read_status": "str"}},
-    {"name": "search_files", "method": "GET", "path": "/api/v1/attachments/search", "body_keys": [], "description": "Search across attachments.", "input_schema": {"q": "str"}},
+    # `search_files` removed — no GET /api/v1/attachments/search route
+    # is mounted. Cross-attachment search is currently surfaced via
+    # `search_messages?has_attachment=true` (the existing tool). When a
+    # dedicated /attachments/search endpoint ships, re-add the tool then.
     {"name": "search_people", "method": "GET", "path": "/api/v1/contacts", "body_keys": [], "description": "Search contacts and seeded users.", "input_schema": {"q": "str"}},
 
     # ─── Calendar ─────────────────────────────────────────────────────
@@ -109,7 +117,7 @@ TOOLS: list[dict[str, Any]] = [
     {"name": "create_event", "method": "POST", "path": "/api/v1/events", "body_keys": ["title", "start_at", "end_at", "all_day", "location", "body", "attendees", "recurrence_rule"], "description": "Create a calendar event.", "input_schema": {"title": "str", "start": "datetime", "end": "datetime", "attendees": "list", "location": "str", "recurrence_rule": "str|null"}, "mutates_state": True},
     {"name": "update_event", "method": "PATCH", "path": "/api/v1/events/{event_id}", "body_keys": ["title", "start_at", "end_at", "all_day", "location", "body", "attendees", "recurrence_rule"], "description": "Update an existing event.", "input_schema": {"event_id": "uuid", "patch": "dict"}, "mutates_state": True},
     {"name": "delete_event", "method": "DELETE", "path": "/api/v1/events/{event_id}", "body_keys": [], "description": "Delete an event.", "input_schema": {"event_id": "uuid"}, "mutates_state": True},
-    {"name": "get_availability", "method": "POST", "path": "/api/v1/events/availability", "body_keys": ["emails", "from", "to"], "description": "Get per-attendee free/busy in a window.", "input_schema": {"emails": "list", "from": "datetime", "to": "datetime"}},
+    {"name": "get_availability", "method": "GET", "path": "/api/v1/events/availability", "body_keys": [], "description": "Get per-attendee free/busy in a window. Query params: attendee_emails (CSV), start, end.", "input_schema": {"attendee_emails": "str", "start": "datetime", "end": "datetime"}},
     {"name": "list_rooms", "method": "GET", "path": "/api/v1/rooms", "body_keys": [], "description": "List meeting rooms.", "input_schema": {}},
     {"name": "create_room", "method": "POST", "path": "/api/v1/rooms", "body_keys": ["name", "capacity", "location"], "description": "Register a new meeting room.", "input_schema": {"name": "str", "capacity": "int", "location": "str"}, "mutates_state": True},
 
@@ -130,12 +138,15 @@ TOOLS: list[dict[str, Any]] = [
 
     # ─── Groups ───────────────────────────────────────────────────────
     {"name": "list_groups", "method": "GET", "path": "/api/v1/groups", "body_keys": [], "description": "List groups the user is a member of.", "input_schema": {}},
-    {"name": "get_group", "method": "GET", "path": "/api/v1/groups/{group_id}", "body_keys": [], "description": "Get a group by id or slug.", "input_schema": {"group_id": "uuid|str"}},
+    # `get_group` removed — there is no GET /api/v1/groups/{group_id}
+    # route. The frontend fetches the full list via GET /groups and
+    # filters client-side; `list_group_members` covers the
+    # member-of-a-group case. Re-add when a single-group fetch ships.
     {"name": "list_group_members", "method": "GET", "path": "/api/v1/groups/{group_id}/members", "body_keys": [], "description": "List members of a group.", "input_schema": {"group_id": "uuid"}},
 
     # ─── Settings ─────────────────────────────────────────────────────
     {"name": "get_settings", "method": "GET", "path": "/api/v1/settings", "body_keys": [], "description": "Get the user's preferences (reading pane, density, conversations).", "input_schema": {}},
-    {"name": "update_settings", "method": "PUT", "path": "/api/v1/settings", "body_keys": ["mail", "calendar", "general"], "description": "Update the user's preferences.", "input_schema": {"patch": "dict"}, "mutates_state": True},
+    {"name": "update_settings", "method": "PATCH", "path": "/api/v1/settings", "body_keys": ["mail", "calendar", "general", "reading_pane_position", "density", "focused_inbox_enabled", "conversation_view_enabled"], "description": "Update the user's preferences.", "input_schema": {"patch": "dict"}, "mutates_state": True},
     {"name": "get_quota", "method": "GET", "path": "/api/v1/settings/quota", "body_keys": [], "description": "Get mailbox quota usage.", "input_schema": {}},
 ]
 
