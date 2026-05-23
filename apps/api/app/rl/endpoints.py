@@ -33,11 +33,12 @@ from app.schemas.seed import SeedPayload
 router = APIRouter(tags=["RL Environment"])
 
 
-# §2 security gate: state-mutating RL endpoints (/reset, /restore) wipe
-# the database. Per the universal acceptance criteria they must not be
-# callable without authentication. Gated behind RL_RESET_TOKEN env var:
-# unset env var rejects every call; set env var requires X-Reset-Token
-# header to match.
+# §2: state-mutating RL endpoints (`/reset`, `/restore`) wipe the database.
+# Per the universal acceptance criteria they must not be callable
+# without authentication. We gate them behind a shared secret read from
+# the `RL_RESET_TOKEN` environment variable. When the env var is unset,
+# every call is rejected — protecting deploys that didn't opt into the
+# RL harness from accidental wipes.
 def require_reset_token(
     x_reset_token: str | None = Header(default=None, alias="X-Reset-Token"),
 ) -> None:
@@ -45,12 +46,26 @@ def require_reset_token(
     if not expected:
         raise HTTPException(
             status_code=403,
-            detail={"error": {"code": "rl_reset_disabled", "message": "RL state-mutating endpoints are disabled. Set RL_RESET_TOKEN in the server environment and pass X-Reset-Token to call this endpoint."}},
+            detail={
+                "error": {
+                    "code": "rl_reset_disabled",
+                    "message": (
+                        "RL state-mutating endpoints are disabled. Set "
+                        "RL_RESET_TOKEN in the server environment and "
+                        "pass X-Reset-Token to call this endpoint."
+                    ),
+                }
+            },
         )
     if not x_reset_token or not secrets.compare_digest(x_reset_token, expected):
         raise HTTPException(
             status_code=403,
-            detail={"error": {"code": "rl_reset_forbidden", "message": "Invalid or missing X-Reset-Token header."}},
+            detail={
+                "error": {
+                    "code": "rl_reset_forbidden",
+                    "message": "Invalid or missing X-Reset-Token header.",
+                }
+            },
         )
 
 
@@ -134,7 +149,7 @@ async def health():
 # ---------------------------------------------------------------------------
 
 
-@router.get("/screenshot")
+@router.get("/screenshot", dependencies=[Depends(require_reset_token)])
 async def screenshot():
     """
     Screenshot stub for vision-based RL agents.
@@ -163,7 +178,7 @@ async def ready():
     return {"status": "ready", "seed_version": rl_state.seed_version}
 
 
-@router.post("/seed")
+@router.post("/seed", dependencies=[Depends(require_reset_token)])
 async def seed(request: Request):
     """
     Load seed JSON. Validates schema, loads all entities into DB.
@@ -215,7 +230,7 @@ async def seed(request: Request):
     return {"status": "seeded", "entity_counts": entity_counts}
 
 
-@router.get("/seed/error")
+@router.get("/seed/error", dependencies=[Depends(require_reset_token)])
 async def seed_error():
     err = rl_state.get_seed_error()
     return {"error": err}
@@ -251,7 +266,7 @@ async def reset():
     return {"status": "reset"}
 
 
-@router.get("/snapshot")
+@router.get("/snapshot", dependencies=[Depends(require_reset_token)])
 async def snapshot(db: AsyncSession = Depends(get_db)):
     db_state = await _dump_db_state(db)
     snap = rl_state.build_snapshot(db_state)
@@ -311,7 +326,7 @@ async def get_clock():
     return {"time": rl_state.clock.to_iso()}
 
 
-@router.post("/clock/advance")
+@router.post("/clock/advance", dependencies=[Depends(require_reset_token)])
 async def advance_clock(body: AdvanceClockRequest):
     try:
         rl_state.clock.advance(body.duration)
@@ -324,13 +339,13 @@ async def advance_clock(body: AdvanceClockRequest):
     return {"time": rl_state.clock.to_iso()}
 
 
-@router.get("/events")
+@router.get("/events", dependencies=[Depends(require_reset_token)])
 async def get_events(cursor: Optional[str] = None, limit: int = 100):
     events, next_cursor = rl_state.event_log.since(cursor, limit)
     return {"events": events, "next_cursor": next_cursor}
 
 
-@router.post("/verify")
+@router.post("/verify", dependencies=[Depends(require_reset_token)])
 async def verify(body: VerifyRequest, db: AsyncSession = Depends(get_db)):
     """Evaluate a predicate against current DB state."""
     db_state = await _dump_db_state(db)
@@ -350,13 +365,13 @@ async def verify(body: VerifyRequest, db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/episode/start")
+@router.post("/episode/start", dependencies=[Depends(require_reset_token)])
 async def episode_start():
     rl_state.event_log.append("episode_start", {})
     return {"status": "ok"}
 
 
-@router.post("/episode/end")
+@router.post("/episode/end", dependencies=[Depends(require_reset_token)])
 async def episode_end():
     rl_state.event_log.append("episode_end", {})
     return {"status": "ok"}
@@ -417,7 +432,7 @@ def _deep_diff(before: Any, after: Any, path: str = "") -> list[dict[str, Any]]:
     return diffs
 
 
-@router.post("/snapshot/diff")
+@router.post("/snapshot/diff", dependencies=[Depends(require_reset_token)])
 async def snapshot_diff(body: SnapshotDiffRequest):
     """Return a structured diff between two snapshot objects."""
     before_entities = body.before.get("entities", body.before)
@@ -440,7 +455,7 @@ class RewardCheckpointRequest(BaseModel):
     data: dict[str, Any] = {}
 
 
-@router.post("/reward/checkpoint", status_code=201)
+@router.post("/reward/checkpoint", status_code=201, dependencies=[Depends(require_reset_token)])
 async def reward_checkpoint(body: RewardCheckpointRequest):
     rl_state.add_reward_checkpoint(body.name, body.score, body.data)
     rl_state.event_log.append("reward_checkpoint", {
@@ -451,7 +466,7 @@ async def reward_checkpoint(body: RewardCheckpointRequest):
     return {"status": "recorded", "name": body.name, "score": body.score}
 
 
-@router.get("/reward/checkpoints")
+@router.get("/reward/checkpoints", dependencies=[Depends(require_reset_token)])
 async def list_reward_checkpoints():
     return {"checkpoints": rl_state._reward_checkpoints}
 
@@ -480,14 +495,14 @@ class ChaosPermissionsRequest(BaseModel):
     profile: dict[str, Any]
 
 
-@router.post("/chaos/latency")
+@router.post("/chaos/latency", dependencies=[Depends(require_reset_token)])
 async def chaos_latency(body: ChaosLatencyRequest):
     rl_state.set_chaos_latency(body.ms, body.enabled)
     rl_state.event_log.append("chaos_latency", {"ms": body.ms, "enabled": body.enabled})
     return {"status": "ok", "ms": body.ms, "enabled": body.enabled}
 
 
-@router.post("/chaos/errors")
+@router.post("/chaos/errors", dependencies=[Depends(require_reset_token)])
 async def chaos_errors(body: ChaosErrorRequest):
     rl_state.set_chaos_errors(body.rate, body.status_code, body.enabled)
     rl_state.event_log.append("chaos_errors", {
@@ -496,21 +511,21 @@ async def chaos_errors(body: ChaosErrorRequest):
     return {"status": "ok", "rate": body.rate, "status_code": body.status_code, "enabled": body.enabled}
 
 
-@router.post("/chaos/stale")
+@router.post("/chaos/stale", dependencies=[Depends(require_reset_token)])
 async def chaos_stale(body: ChaosStaleRequest):
     rl_state.set_chaos_stale(body.enabled)
     rl_state.event_log.append("chaos_stale", {"enabled": body.enabled})
     return {"status": "ok", "enabled": body.enabled}
 
 
-@router.post("/chaos/permissions")
+@router.post("/chaos/permissions", dependencies=[Depends(require_reset_token)])
 async def chaos_permissions(body: ChaosPermissionsRequest):
     rl_state.set_permission_profile(body.profile)
     rl_state.event_log.append("chaos_permissions", {"profile": body.profile})
     return {"status": "ok", "profile": body.profile}
 
 
-@router.get("/chaos")
+@router.get("/chaos", dependencies=[Depends(require_reset_token)])
 async def chaos_status():
     """Return current chaos configuration."""
     return {

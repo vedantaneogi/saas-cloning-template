@@ -149,7 +149,7 @@ async def health():
 # ---------------------------------------------------------------------------
 
 
-@router.get("/screenshot")
+@router.get("/screenshot", dependencies=[Depends(require_reset_token)])
 async def screenshot():
     """
     Screenshot stub for vision-based RL agents.
@@ -230,7 +230,7 @@ async def seed(request: Request):
     return {"status": "seeded", "entity_counts": entity_counts}
 
 
-@router.get("/seed/error")
+@router.get("/seed/error", dependencies=[Depends(require_reset_token)])
 async def seed_error():
     err = rl_state.get_seed_error()
     return {"error": err}
@@ -365,13 +365,13 @@ async def verify(body: VerifyRequest, db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/episode/start")
+@router.post("/episode/start", dependencies=[Depends(require_reset_token)])
 async def episode_start():
     rl_state.event_log.append("episode_start", {})
     return {"status": "ok"}
 
 
-@router.post("/episode/end")
+@router.post("/episode/end", dependencies=[Depends(require_reset_token)])
 async def episode_end():
     rl_state.event_log.append("episode_end", {})
     return {"status": "ok"}
@@ -432,7 +432,7 @@ def _deep_diff(before: Any, after: Any, path: str = "") -> list[dict[str, Any]]:
     return diffs
 
 
-@router.post("/snapshot/diff")
+@router.post("/snapshot/diff", dependencies=[Depends(require_reset_token)])
 async def snapshot_diff(body: SnapshotDiffRequest):
     """Return a structured diff between two snapshot objects."""
     before_entities = body.before.get("entities", body.before)
@@ -455,7 +455,7 @@ class RewardCheckpointRequest(BaseModel):
     data: dict[str, Any] = {}
 
 
-@router.post("/reward/checkpoint", status_code=201)
+@router.post("/reward/checkpoint", status_code=201, dependencies=[Depends(require_reset_token)])
 async def reward_checkpoint(body: RewardCheckpointRequest):
     rl_state.add_reward_checkpoint(body.name, body.score, body.data)
     rl_state.event_log.append("reward_checkpoint", {
@@ -466,7 +466,7 @@ async def reward_checkpoint(body: RewardCheckpointRequest):
     return {"status": "recorded", "name": body.name, "score": body.score}
 
 
-@router.get("/reward/checkpoints")
+@router.get("/reward/checkpoints", dependencies=[Depends(require_reset_token)])
 async def list_reward_checkpoints():
     return {"checkpoints": rl_state._reward_checkpoints}
 
@@ -495,14 +495,14 @@ class ChaosPermissionsRequest(BaseModel):
     profile: dict[str, Any]
 
 
-@router.post("/chaos/latency")
+@router.post("/chaos/latency", dependencies=[Depends(require_reset_token)])
 async def chaos_latency(body: ChaosLatencyRequest):
     rl_state.set_chaos_latency(body.ms, body.enabled)
     rl_state.event_log.append("chaos_latency", {"ms": body.ms, "enabled": body.enabled})
     return {"status": "ok", "ms": body.ms, "enabled": body.enabled}
 
 
-@router.post("/chaos/errors")
+@router.post("/chaos/errors", dependencies=[Depends(require_reset_token)])
 async def chaos_errors(body: ChaosErrorRequest):
     rl_state.set_chaos_errors(body.rate, body.status_code, body.enabled)
     rl_state.event_log.append("chaos_errors", {
@@ -511,21 +511,21 @@ async def chaos_errors(body: ChaosErrorRequest):
     return {"status": "ok", "rate": body.rate, "status_code": body.status_code, "enabled": body.enabled}
 
 
-@router.post("/chaos/stale")
+@router.post("/chaos/stale", dependencies=[Depends(require_reset_token)])
 async def chaos_stale(body: ChaosStaleRequest):
     rl_state.set_chaos_stale(body.enabled)
     rl_state.event_log.append("chaos_stale", {"enabled": body.enabled})
     return {"status": "ok", "enabled": body.enabled}
 
 
-@router.post("/chaos/permissions")
+@router.post("/chaos/permissions", dependencies=[Depends(require_reset_token)])
 async def chaos_permissions(body: ChaosPermissionsRequest):
     rl_state.set_permission_profile(body.profile)
     rl_state.event_log.append("chaos_permissions", {"profile": body.profile})
     return {"status": "ok", "profile": body.profile}
 
 
-@router.get("/chaos")
+@router.get("/chaos", dependencies=[Depends(require_reset_token)])
 async def chaos_status():
     """Return current chaos configuration."""
     return {

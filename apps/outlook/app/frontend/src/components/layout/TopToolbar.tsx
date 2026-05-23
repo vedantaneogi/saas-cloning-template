@@ -24,6 +24,11 @@ function AppIcon({ name, size = 28 }: { name: string; size?: number }) {
       viewBox={spec.viewBox}
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
+      // Safe: `spec.inner` is sourced from APP_ICON_MAP, a developer-
+      // controlled static map of Fluent SVG fragments. The `name`
+      // argument is the only user-controlled value; it selects a
+      // key, never reaches the rendered string. No sanitization
+      // needed — DOMPurify would strip the SVG namespace attrs we want.
       dangerouslySetInnerHTML={{ __html: spec.inner }}
     />
   )

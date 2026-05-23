@@ -1165,7 +1165,11 @@ async def create_message(
                 cc_addresses=[],
                 bcc_addresses=[],
                 subject=f"Automatic reply: {body.subject or '(no subject)'}",
-                body_html=f"<p>{oof_body}</p>",
+                # §2 — oof_body is the sender's OOF reply text, set in their
+                # own settings. It lands in another user's dangerouslySetInnerHTML
+                # reading pane, so escape before wrapping in <p>. The DOMPurify
+                # second line is still in place client-side.
+                body_html=f"<p>{__import__('html').escape(oof_body)}</p>",
                 is_read=False,
                 is_draft=False,
                 sent_at=now,

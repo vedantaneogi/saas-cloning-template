@@ -374,24 +374,33 @@ async def _notify_organizer_response(
     if not inbox:
         return
 
+    # §2 — every user-controlled field reaches the recipient's
+    # dangerouslySetInnerHTML, so escape before interpolation. Same
+    # rationale as _build_invite_html.
+    from html import escape as _esc
+
     now = rl_state.clock.now()
-    when = _format_event_when(ev)
+    when_safe = _esc(_format_event_when(ev))
+    when = _format_event_when(ev)  # plain for body_text
+    title_safe = _esc(ev.title or "")
+    responder_safe = _esc(responder.display_name or "")
     if proposal:
         try:
             ps = datetime.fromisoformat(str(proposal["start_time"]).replace("Z", "+00:00"))
             pe = datetime.fromisoformat(str(proposal["end_time"]).replace("Z", "+00:00"))
-            proposed_when = f"{ps.strftime('%a, %b %d, %Y %I:%M %p')} – {pe.strftime('%I:%M %p')}"
+            proposed_when_raw = f"{ps.strftime('%a, %b %d, %Y %I:%M %p')} – {pe.strftime('%I:%M %p')}"
         except Exception:
-            proposed_when = f"{proposal.get('start_time', '')} – {proposal.get('end_time', '')}"
+            proposed_when_raw = f"{proposal.get('start_time', '')} – {proposal.get('end_time', '')}"
+        proposed_when_safe = _esc(proposed_when_raw)
         subject = f"New time proposed: {ev.title}"
-        body_text = f"{responder.display_name} proposed a new time for '{ev.title}'.\n\nProposed: {proposed_when}\nOriginal: {when}"
+        body_text = f"{responder.display_name} proposed a new time for '{ev.title}'.\n\nProposed: {proposed_when_raw}\nOriginal: {when}"
         body_html = (
             f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
             f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>New time proposed</p>"
-            f"<p style='margin:0 0 12px 0;font-size:14px;'><strong>{responder.display_name}</strong> proposed a new time for <strong>{ev.title}</strong>.</p>"
+            f"<p style='margin:0 0 12px 0;font-size:14px;'><strong>{responder_safe}</strong> proposed a new time for <strong>{title_safe}</strong>.</p>"
             f"<table style='font-size:13px;line-height:1.5;'>"
-            f"<tr><td style='color:#605E5C;padding-right:8px;'>Proposed</td><td>{proposed_when}</td></tr>"
-            f"<tr><td style='color:#605E5C;padding-right:8px;'>Original</td><td>{when}</td></tr>"
+            f"<tr><td style='color:#605E5C;padding-right:8px;'>Proposed</td><td>{proposed_when_safe}</td></tr>"
+            f"<tr><td style='color:#605E5C;padding-right:8px;'>Original</td><td>{when_safe}</td></tr>"
             f"</table></div>"
         )
     else:
@@ -402,8 +411,8 @@ async def _notify_organizer_response(
         body_html = (
             f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#323130;'>"
             f"<p style='margin:0 0 8px 0;color:#605E5C;font-size:12px;'>RSVP update</p>"
-            f"<p style='margin:0 0 12px 0;font-size:14px;'><strong>{responder.display_name}</strong> {verb.lower()} the invitation to <strong>{ev.title}</strong>.</p>"
-            f"<p style='font-size:13px;color:#605E5C;'>When: {when}</p></div>"
+            f"<p style='margin:0 0 12px 0;font-size:14px;'><strong>{responder_safe}</strong> {verb.lower()} the invitation to <strong>{title_safe}</strong>.</p>"
+            f"<p style='font-size:13px;color:#605E5C;'>When: {when_safe}</p></div>"
         )
 
     msg = Message(
