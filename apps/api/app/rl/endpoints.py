@@ -16,12 +16,15 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal, get_db
-from app.models.calendar import Calendar, Event, EventAttendee
+from app.models.calendar import Calendar, Event, EventAttendee, EventCategory
 from app.models.category import Category
 from app.models.contact import Contact
 from app.models.conversation import Conversation
+from app.models.delegate import CalendarDelegate
 from app.models.folder import Folder
-from app.models.message import Attachment, Message
+from app.models.group import Group, GroupMember
+from app.models.message import Attachment, Message, MessageCategory
+from app.models.quick_step import QuickStep
 from app.models.rule import Rule
 from app.models.signature import Signature
 from app.models.task import Task, TaskList
@@ -123,14 +126,27 @@ async def _dump_db_state(session: AsyncSession) -> dict[str, Any]:
         "conversations": await fetch_all(Conversation),
         "messages": await fetch_all(Message),
         "attachments": await fetch_all(Attachment),
+        # Junction tables — cascade-deleted on parent wipe during restore,
+        # so they MUST be in the dump or category/event-category state
+        # silently vanishes across snapshot → restore.
+        "message_categories": await fetch_all(MessageCategory),
         "contacts": await fetch_all(Contact),
         "calendars": await fetch_all(Calendar),
         "events": await fetch_all(Event),
         "event_attendees": await fetch_all(EventAttendee),
+        "event_categories": await fetch_all(EventCategory),
+        "calendar_delegates": await fetch_all(CalendarDelegate),
         "task_lists": await fetch_all(TaskList),
         "tasks": await fetch_all(Task),
         "rules": await fetch_all(Rule),
         "signatures": await fetch_all(Signature),
+        "quick_steps": await fetch_all(QuickStep),
+        # Tenant-wide tables (no user_id FK on Group itself). Without
+        # them in the snapshot/restore pair, mid-episode group mutations
+        # leak across `POST /reset` cycles and silently redirect message
+        # delivery via `_deliver_to_recipients`.
+        "groups": await fetch_all(Group),
+        "group_members": await fetch_all(GroupMember),
     }
 
 
@@ -279,20 +295,27 @@ async def snapshot(db: AsyncSession = Depends(get_db)):
 # in `_dump_db_state` exactly so a snapshot built by GET /snapshot
 # round-trips through POST /restore.
 _RESTORE_TABLES: list[tuple[type, str]] = [
+    # Parents first (forward order = INSERT order; reversed = wipe order).
     (User, "users"),
     (Folder, "folders"),
     (Category, "categories"),
     (Conversation, "conversations"),
     (Contact, "contacts"),
     (Calendar, "calendars"),
+    (Group, "groups"),
     (Message, "messages"),
     (Attachment, "attachments"),
+    (MessageCategory, "message_categories"),
     (Event, "events"),
     (EventAttendee, "event_attendees"),
+    (EventCategory, "event_categories"),
+    (CalendarDelegate, "calendar_delegates"),
     (TaskList, "task_lists"),
     (Task, "tasks"),
     (Rule, "rules"),
     (Signature, "signatures"),
+    (QuickStep, "quick_steps"),
+    (GroupMember, "group_members"),
 ]
 
 

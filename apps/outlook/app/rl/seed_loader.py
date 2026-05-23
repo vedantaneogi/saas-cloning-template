@@ -13,12 +13,15 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
-from app.models.calendar import Calendar, Event, EventAttendee
+from app.models.calendar import Calendar, Event, EventAttendee, EventCategory
 from app.models.category import Category
 from app.models.contact import Contact
 from app.models.conversation import Conversation
+from app.models.delegate import CalendarDelegate
 from app.models.folder import Folder
+from app.models.group import Group, GroupMember
 from app.models.message import Attachment, Message, MessageCategory
+from app.models.quick_step import QuickStep
 from app.models.rule import Rule
 from app.models.signature import Signature
 from app.models.task import Task, TaskList
@@ -71,11 +74,29 @@ def _uuid(value: Optional[str]) -> uuid.UUID:
 
 
 async def clear_user_data(session: AsyncSession, user_id: uuid.UUID) -> None:
-    """Delete all owned data for a user (cascade should handle most FKs)."""
-    # Order matters due to FK constraints not always having cascade
+    """Delete all owned data for a user. Order matters because not every FK
+    has ON DELETE CASCADE wired up.
+
+    Previously this missed: QuickStep, CalendarDelegate, GroupMember,
+    EventCategory. Without those, RL `POST /reset` left stale group
+    memberships, quick-steps, and delegate grants in place across
+    episodes — and the `_deliver_to_recipients` group fan-out in
+    messages.py reads the live groups table, so a stale group could
+    silently redirect message delivery in the next episode and corrupt
+    reward signals. Groups themselves (no user_id) are wiped tenant-
+    wide at the top of `load_seed`.
+    """
+    # Join-table rows first (they reference parent rows we're about to
+    # delete; some have CASCADE, but spelling it out makes the order
+    # explicit and survives schema changes).
     await session.execute(delete(MessageCategory).where(
         MessageCategory.message_id.in_(
             select(Message.id).where(Message.user_id == user_id)
+        )
+    ))
+    await session.execute(delete(EventCategory).where(
+        EventCategory.event_id.in_(
+            select(Event.id).where(Event.user_id == user_id)
         )
     ))
     await session.execute(delete(Attachment).where(
@@ -91,14 +112,35 @@ async def clear_user_data(session: AsyncSession, user_id: uuid.UUID) -> None:
         )
     ))
     await session.execute(delete(Event).where(Event.user_id == user_id))
+    # CalendarDelegate has two FKs to users (owner + delegate). Wipe
+    # any grant where the user appears on either side.
+    await session.execute(delete(CalendarDelegate).where(
+        (CalendarDelegate.owner_user_id == user_id)
+        | (CalendarDelegate.delegate_user_id == user_id)
+    ))
     await session.execute(delete(Calendar).where(Calendar.user_id == user_id))
     await session.execute(delete(Task).where(Task.user_id == user_id))
     await session.execute(delete(TaskList).where(TaskList.user_id == user_id))
     await session.execute(delete(Rule).where(Rule.user_id == user_id))
+    await session.execute(delete(QuickStep).where(QuickStep.user_id == user_id))
     await session.execute(delete(Signature).where(Signature.user_id == user_id))
     await session.execute(delete(Category).where(Category.user_id == user_id))
     await session.execute(delete(Contact).where(Contact.user_id == user_id))
+    # GroupMember rows for this user — Group rows themselves are tenant-
+    # wide and cleared once at the top of load_seed.
+    await session.execute(delete(GroupMember).where(GroupMember.user_id == user_id))
     await session.execute(delete(Folder).where(Folder.user_id == user_id))
+
+
+async def clear_tenant_data(session: AsyncSession) -> None:
+    """Tables without a user_id FK that still need to be wiped at the
+    start of every /reset. Groups (tenant-wide in Outlook) and their
+    members live here — leaving them would let stale groups from
+    episode N silently redirect message delivery in episode N+1 via
+    `_deliver_to_recipients`'s group fan-out.
+    """
+    await session.execute(delete(GroupMember))
+    await session.execute(delete(Group))
 
 
 async def load_seed(session: AsyncSession, payload: SeedPayload) -> dict[str, int]:
@@ -108,6 +150,14 @@ async def load_seed(session: AsyncSession, payload: SeedPayload) -> dict[str, in
     """
     # Seed the global PRNG for determinism — same rng_seed → same random outputs
     random.seed(payload.rng_seed)
+
+    # Wipe tenant-wide tables ONCE up front. clear_user_data only knows
+    # how to delete rows scoped to a single user_id; groups + group
+    # members are tenant-wide (no user_id FK on Group itself) and
+    # would otherwise survive across RL /reset cycles, silently fanning
+    # out messages in the next episode via the
+    # `_deliver_to_recipients` group expansion in messages.py.
+    await clear_tenant_data(session)
 
     app = payload.app_data
     world = payload.world
