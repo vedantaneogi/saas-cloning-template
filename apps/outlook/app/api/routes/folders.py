@@ -120,6 +120,10 @@ async def update_folder(
     if body.sort_order is not None:
         folder.sort_order = body.sort_order
     if body.parent_id is not None:
+        # §2 — parent folder must belong to the same user. Without this
+        # an authenticated user could reparent their folder under another
+        # tenant's UUID and leak hierarchy structure.
+        await _get_folder_or_404(db, body.parent_id, current_user.id)
         folder.parent_id = body.parent_id
 
     folder.updated_at = rl_state.clock.now()

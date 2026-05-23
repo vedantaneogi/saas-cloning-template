@@ -62,6 +62,54 @@ async def _get_folder_by_slug(db: AsyncSession, slug: str, user_id: uuid.UUID) -
     return result.scalar_one_or_none()
 
 
+async def _validate_user_category(
+    db: AsyncSession, category_id: uuid.UUID, user_id: uuid.UUID
+) -> Category:
+    """§2 — fetch a Category and assert it belongs to the calling user.
+
+    Mirrors `_validate_user_folder`. Without this check, the PATCH
+    /messages and bulk "categorize" handlers would `INSERT INTO
+    message_categories` rows that point at another tenant's Category
+    UUID. The subsequent `_load_message_categories` JOIN doesn't filter
+    on `Category.user_id`, so the foreign category name + color would
+    leak into the response (cross-tenant metadata exfil).
+    """
+    result = await db.execute(
+        select(Category).where(Category.id == category_id, Category.user_id == user_id)
+    )
+    cat = result.scalar_one_or_none()
+    if not cat:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "category_not_found", "message": "Category not found"}},
+        )
+    return cat
+
+
+async def _validate_user_folder(
+    db: AsyncSession, folder_id: uuid.UUID, user_id: uuid.UUID
+) -> Folder:
+    """§2 — fetch a folder and assert it belongs to the calling user.
+
+    Every endpoint that accepts `folder_id` from the request body must run
+    this check before assigning it to a message; otherwise a malicious
+    user can target another tenant's folder UUID (IDOR — flagged by
+    greptile P1 on PATCH /messages, POST /messages, POST /move).
+    Raises 404 (NOT 403) so the response shape can't be used to enumerate
+    folder ownership.
+    """
+    result = await db.execute(
+        select(Folder).where(Folder.id == folder_id, Folder.user_id == user_id)
+    )
+    folder = result.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "folder_not_found", "message": "Folder not found"}},
+        )
+    return folder
+
+
 _SUBJECT_PREFIX_RE = re.compile(r"^(re|fw|fwd)\s*:\s*", re.IGNORECASE)
 
 
@@ -911,6 +959,7 @@ async def create_message(
         body.scheduled_send_at and body.scheduled_send_at > now and not body.is_draft
     )
     if body.folder_id:
+        await _validate_user_folder(db, body.folder_id, current_user.id)
         folder_id = body.folder_id
     elif is_scheduled_send:
         # Park in the Scheduled folder so the user can find / edit / cancel
@@ -1139,6 +1188,7 @@ async def update_message(
     old_is_read = msg.is_read
 
     if body.folder_id is not None:
+        await _validate_user_folder(db, body.folder_id, current_user.id)
         msg.folder_id = body.folder_id
     if body.is_read is not None:
         msg.is_read = body.is_read
@@ -1172,8 +1222,12 @@ async def update_message(
 
     msg.updated_at = now
 
-    # Handle categories
+    # Handle categories — validate every category_id belongs to the
+    # caller BEFORE wiping the existing links, so a bad UUID in the
+    # payload doesn't leave the message with no categories.
     if body.category_ids is not None:
+        for cat_id in body.category_ids:
+            await _validate_user_category(db, cat_id, current_user.id)
         await db.execute(
             MessageCategory.__table__.delete().where(MessageCategory.message_id == msg.id)
         )
@@ -1357,6 +1411,7 @@ async def move_message(
     current_user: User = Depends(get_current_user),
 ):
     msg = await _get_message_or_404(db, message_id, current_user.id)
+    await _validate_user_folder(db, body.folder_id, current_user.id)
     old_folder_id = msg.folder_id
     msg.folder_id = body.folder_id
     msg.updated_at = rl_state.clock.now()
@@ -1473,6 +1528,7 @@ async def copy_message(
 ):
     """Copy message to another folder (duplicate, not move)."""
     msg = await _get_message_or_404(db, message_id, current_user.id)
+    await _validate_user_folder(db, body.folder_id, current_user.id)
     now = rl_state.clock.now()
     copy = Message(
         id=uuid.uuid4(),
@@ -1543,14 +1599,19 @@ async def bulk_action(
         elif body.action == "move":
             folder_id = (body.params or {}).get("folder_id")
             if folder_id:
-                msg.folder_id = uuid.UUID(str(folder_id))
+                target_folder = uuid.UUID(str(folder_id))
+                await _validate_user_folder(db, target_folder, current_user.id)
+                msg.folder_id = target_folder
         elif body.action == "categorize":
             cat_ids = (body.params or {}).get("category_ids", [])
+            cat_uuids = [uuid.UUID(str(c)) for c in cat_ids]
+            for cu in cat_uuids:
+                await _validate_user_category(db, cu, current_user.id)
             await db.execute(
                 MessageCategory.__table__.delete().where(MessageCategory.message_id == msg.id)
             )
-            for cat_id in cat_ids:
-                db.add(MessageCategory(message_id=msg.id, category_id=uuid.UUID(str(cat_id))))
+            for cu in cat_uuids:
+                db.add(MessageCategory(message_id=msg.id, category_id=cu))
 
         msg.updated_at = now
         await db.flush()
@@ -1714,7 +1775,12 @@ async def sweep_move_all(
         Message.user_id == current_user.id,
         Message.from_address.ilike(body.sender_email),
     )
+    # §2 — both source + target folder must belong to the caller.
+    # Without this, the user could sweep their own messages into another
+    # tenant's folder UUID and lose them server-side.
+    await _validate_user_folder(db, body.target_folder_id, current_user.id)
     if body.source_folder_id:
+        await _validate_user_folder(db, body.source_folder_id, current_user.id)
         q = q.where(Message.folder_id == body.source_folder_id)
 
     result = await db.execute(q)

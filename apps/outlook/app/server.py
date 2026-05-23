@@ -47,7 +47,10 @@ FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 TOOLS: list[dict[str, Any]] = [
     # ─── Auth ─────────────────────────────────────────────────────────
-    {"name": "signup", "method": "POST", "path": "/api/v1/auth/signup", "body_keys": ["email", "password", "display_name"], "description": "Create a new user account.", "input_schema": {"email": "str", "password": "str", "display_name": "str"}},
+    # `signup` is intentionally absent — the backend exposes only login /
+    # logout / me. The clone is seeded with a fixed set of users and has
+    # no end-user account-creation flow (matches the SignUp page removal
+    # in greptile P1 #13).
     {"name": "login", "method": "POST", "path": "/api/v1/auth/login", "body_keys": ["email", "password"], "description": "Log in with email + password.", "input_schema": {"email": "str", "password": "str"}},
     {"name": "logout", "method": "POST", "path": "/api/v1/auth/logout", "body_keys": [], "description": "Log out the current session.", "input_schema": {}},
     {"name": "get_me", "method": "GET", "path": "/api/v1/auth/me", "body_keys": [], "description": "Get the current authenticated user.", "input_schema": {}},

@@ -920,6 +920,20 @@ async def update_event(
 
     # scope=series or no scope: update the parent (existing behaviour)
     if body.calendar_id is not None:
+        # §2 — moving an event to a calendar requires that calendar to
+        # belong to the same user. Without this check the user could
+        # plant their event under another tenant's calendar UUID.
+        cal_check = await db.execute(
+            select(Calendar).where(
+                Calendar.id == body.calendar_id,
+                Calendar.user_id == current_user.id,
+            )
+        )
+        if not cal_check.scalar_one_or_none():
+            raise HTTPException(
+                status_code=404,
+                detail={"error": {"code": "calendar_not_found", "message": "Calendar not found"}},
+            )
         ev.calendar_id = body.calendar_id
     if body.title is not None:
         ev.title = body.title

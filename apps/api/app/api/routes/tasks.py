@@ -114,6 +114,9 @@ async def create_task(
 ):
     if body.list_id is not None:
         await _validate_user_list(db, body.list_id, current_user.id)
+    if body.parent_task_id is not None:
+        # §2 — same-user parent only.
+        await _get_task_or_404(db, body.parent_task_id, current_user.id)
     now = rl_state.clock.now()
     task = Task(
         id=uuid.uuid4(),
@@ -163,6 +166,11 @@ async def update_task(
     if body.sort_order is not None:
         task.sort_order = body.sort_order
     if "parent_task_id" in body.model_fields_set:
+        # §2 — parent must belong to the same user (otherwise a user
+        # could chain their task off another tenant's task UUID and
+        # leak its existence/title via the subtask listing).
+        if body.parent_task_id is not None:
+            await _get_task_or_404(db, body.parent_task_id, current_user.id)
         task.parent_task_id = body.parent_task_id
     if "recurrence_rule" in body.model_fields_set:
         task.recurrence_rule = body.recurrence_rule
