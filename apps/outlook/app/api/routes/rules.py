@@ -173,6 +173,7 @@ async def _apply_rule_to_message(db: AsyncSession, rule: Rule, msg: Message, use
             msg.sensitivity = level
         elif action_type in ("set_category", "categorize"):
             # Tag with category if provided. Tolerates either category_id or list.
+            from app.models.category import Category  # local import to avoid cycles
             from app.models.message import MessageCategory  # local import to avoid cycles
             cat_ids = params.get("category_ids") or (
                 [params["category_id"]] if params.get("category_id") else []
@@ -181,6 +182,25 @@ async def _apply_rule_to_message(db: AsyncSession, rule: Rule, msg: Message, use
                 try:
                     cuid = uuid.UUID(str(cid))
                 except (ValueError, AttributeError):
+                    continue
+                # §2 — the category UUID lives in the rule's stored
+                # action params, which the rule's owner controls. Reject
+                # any UUID that doesn't point at a category owned by the
+                # same user. Without this check a user could create a
+                # rule like `{"type":"set_category","params":{
+                # "category_id":"<other-tenant-uuid>"}}` and every
+                # matching message would get linked to the foreign
+                # category — and subsequent message-list responses would
+                # leak that category's name + color through the
+                # _load_message_categories JOIN. Silently skip foreign
+                # UUIDs rather than 500, so other (valid) categories in
+                # the same rule still apply.
+                owns_result = await db.execute(
+                    select(Category.id).where(
+                        Category.id == cuid, Category.user_id == user_id
+                    )
+                )
+                if not owns_result.scalar_one_or_none():
                     continue
                 # Avoid duplicate insert
                 exists = await db.execute(
