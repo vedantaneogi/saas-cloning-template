@@ -89,8 +89,17 @@ async def list_tasks(
     total_result = await db.execute(select(func.count()).select_from(Task).where(*filters))
     total = total_result.scalar() or 0
 
+    # §2 — see messages.py for rationale. Allowlist sortable columns so
+    # `?sort=__table__:asc` can't crash the endpoint with a 500.
+    _SORTABLE_TASK_FIELDS = {
+        "created_at", "updated_at", "due_date", "reminder_at",
+        "title", "importance", "sort_order",
+        "is_completed", "completed_at",
+    }
     sort_field, sort_dir = (sort.split(":") + ["desc"])[:2]
-    sort_col = getattr(Task, sort_field, Task.created_at)
+    if sort_field not in _SORTABLE_TASK_FIELDS:
+        sort_field = "created_at"
+    sort_col = getattr(Task, sort_field)
     order = desc(sort_col) if sort_dir == "desc" else sort_col
 
     result = await db.execute(select(Task).where(*filters).order_by(order).limit(limit + 1))

@@ -180,8 +180,16 @@ async def list_folder_messages(
     total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))
     total = total_result.scalar() or 0
 
+    # §2 — allowlist sortable columns; same rationale as messages.py.
+    _SORTABLE_MESSAGE_FIELDS = {
+        "received_at", "sent_at", "created_at", "updated_at",
+        "subject", "from_address", "from_name", "importance",
+        "is_read", "is_flagged", "is_pinned",
+    }
     sort_field, sort_dir = (sort.split(":") + ["desc"])[:2]
-    sort_col = getattr(Message, sort_field, Message.received_at)
+    if sort_field not in _SORTABLE_MESSAGE_FIELDS:
+        sort_field = "received_at"
+    sort_col = getattr(Message, sort_field)
     order = desc(sort_col) if sort_dir == "desc" else sort_col
 
     result = await db.execute(

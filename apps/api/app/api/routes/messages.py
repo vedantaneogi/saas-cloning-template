@@ -683,8 +683,20 @@ async def list_messages(
 
     # Build sort. Pinned messages always float to the top regardless of secondary sort —
     # mirrors Outlook's "Pin to top" behaviour.
+    # §2 — `sort` is a user-supplied query string. `getattr(Message,
+    # sort_field, default)` would happily return non-column attributes
+    # like `__table__` / `__mapper__` / `metadata`, which SQLAlchemy
+    # then refuses with an ArgumentError when passed to order_by(),
+    # producing an authenticated 500. Allowlist column names explicitly.
+    _SORTABLE_MESSAGE_FIELDS = {
+        "received_at", "sent_at", "created_at", "updated_at",
+        "subject", "from_address", "from_name", "importance",
+        "is_read", "is_flagged", "is_pinned",
+    }
     sort_field, sort_dir = (sort.split(":") + ["desc"])[:2]
-    sort_col = getattr(Message, sort_field, Message.received_at)
+    if sort_field not in _SORTABLE_MESSAGE_FIELDS:
+        sort_field = "received_at"
+    sort_col = getattr(Message, sort_field)
     order = desc(sort_col) if sort_dir == "desc" else sort_col
 
     total_result = await db.execute(select(func.count()).select_from(Message).where(*filters))

@@ -176,8 +176,17 @@ async def list_contacts(
     total_result = await db.execute(select(func.count()).select_from(Contact).where(*filters))
     total = total_result.scalar() or 0
 
+    # §2 — see messages.py for rationale. Allowlist sortable columns so
+    # `?sort=__table__:asc` can't crash the endpoint with a 500.
+    _SORTABLE_CONTACT_FIELDS = {
+        "display_name", "first_name", "last_name", "email",
+        "company", "job_title", "created_at", "updated_at",
+        "is_favorite",
+    }
     sort_field, sort_dir = (sort.split(":") + ["asc"])[:2]
-    sort_col = getattr(Contact, sort_field, Contact.display_name)
+    if sort_field not in _SORTABLE_CONTACT_FIELDS:
+        sort_field = "display_name"
+    sort_col = getattr(Contact, sort_field)
     order = desc(sort_col) if sort_dir == "desc" else sort_col
 
     result = await db.execute(
