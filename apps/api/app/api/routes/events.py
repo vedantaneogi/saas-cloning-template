@@ -883,6 +883,23 @@ async def update_event(
 
     # scope=single: add occurrence to exceptions on parent, create override row
     if scope == "single" and occurrence_start is not None and ev.is_recurring:
+        # §2 — same ownership check as the series-update branch below.
+        # Without this, a malicious user could pass another tenant's
+        # calendar UUID with ?scope=single and the occurrence override
+        # would be written into the foreign calendar.
+        if body.calendar_id is not None:
+            cal_check = await db.execute(
+                select(Calendar).where(
+                    Calendar.id == body.calendar_id,
+                    Calendar.user_id == current_user.id,
+                )
+            )
+            if not cal_check.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=404,
+                    detail={"error": {"code": "calendar_not_found", "message": "Calendar not found"}},
+                )
+
         rule = dict(ev.recurrence_rule or {})
         exceptions = list(rule.get("exceptions") or [])
         occ_iso = occurrence_start.isoformat()
