@@ -1,39 +1,49 @@
-/* Linear design tokens. Extracted from captured tokens.json files and
-   given semantic names. LCH values are Linear's native color space. */
+/* Design tokens — aligned to DESIGN.md (Linear's marketing canvas spec).
+   The product UI inherits the marketing canvas's surface ladder, hairline
+   borders, ink scale, and lavender accent so the app reads as one
+   continuous brand surface with the public-facing site.
+
+   Reference: DESIGN.md at repo root. */
 
 :root,
 [data-theme="dark"] {
-  /* surfaces */
-  --bg-app: lch(4.52% 0.3 272);              /* main app background */
-  --bg-sidebar: #090909;                      /* sidebar surface */
-  --bg-elevated: lch(8% 0.3 272);             /* cards, popovers */
-  --bg-elevated-hover: lch(11% 0.4 272);
-  --bg-row-hover: #ffffff0a;                  /* hover on list rows */
+  /* ---- surfaces (DESIGN.md canvas + 4-step surface ladder) ---- */
+  --bg-app: #010102;                          /* canvas — deepest dark */
+  --bg-sidebar: #090909;                      /* slight lift over canvas */
+  --bg-elevated: #0f1011;                     /* surface-1 — cards, popovers */
+  --bg-elevated-hover: #141516;               /* surface-2 — hovered/featured cards */
+  --bg-surface-3: #18191a;                    /* surface-3 — sub-nav, dropdown menus */
+  --bg-surface-4: #191a1b;                    /* surface-4 — deepest lifted surface */
+  --bg-row-hover: #ffffff0a;
   --bg-row-selected: #ffffff14;
-  --bg-input: lch(7% 0.3 272);
+  --bg-input: #0f1011;                        /* surface-1 — input fields */
   --bg-pill: #ffffff0d;
   --bg-tag: #ffffff14;
 
-  /* borders — `default` is tuned to merge with --bg-app so popovers
-     read as edged by the shadow rather than glowing with a brighter
-     border ring (the old LCH 8.84% value was lighter than --bg-elevated
-     and lit up as a bright "white" line against the dark page). */
-  --border-default: #0b0c10;
-  --border-subtle: #ffffff14;
-  --border-strong: #ffffff26;
+  /* ---- borders (DESIGN.md hairline scale) ---- */
+  --border-default: #23252a;                  /* hairline — 1px borders on cards */
+  --border-subtle: #1a1c20;                   /* one step darker for nested dividers */
+  --border-strong: #34343a;                   /* hairline-strong — input focus rings */
+  --border-tertiary: #3e3e44;                 /* hairline-tertiary — nested surfaces */
 
-  /* text */
-  --text-primary: lch(98% 1 272 / 1);
-  --text-secondary: lch(90.35% 1.15 272 / 1);
-  --text-tertiary: lch(61.399% 1.15 272 / 1);
-  --text-quaternary: lch(36.308% 1.15 272 / 1);
+  /* ---- text (DESIGN.md ink scale) ---- */
+  --text-primary: #f7f8f8;                    /* ink */
+  --text-secondary: #d0d6e0;                  /* ink-muted */
+  --text-tertiary: #8a8f98;                   /* ink-subtle */
+  --text-quaternary: #62666d;                 /* ink-tertiary */
 
-  /* accents */
-  --accent: #5e6ad2;
-  --accent-hover: #7077e8;
+  /* ---- accents (DESIGN.md lavender-blue) ---- */
+  --accent: #5e6ad2;                          /* primary */
+  --accent-hover: #828fff;                    /* primary-hover */
+  --accent-focus: #5e69d1;                    /* primary-focus — focus ring tint */
   --accent-soft: #5e6ad21f;
+  --brand-secure: #7a7fad;                    /* muted lavender-gray */
 
-  /* status (Linear's workflow state colors) */
+  /* ---- semantic ---- */
+  --semantic-success: #27a644;                /* the only semantic color on marketing */
+  --semantic-overlay: rgba(0, 0, 0, 0.6);
+
+  /* ---- status (Linear's workflow state colors — product UI palette) ---- */
   --status-backlog: #95a2b3;
   --status-todo: #e2e2e2;
   --status-in-progress: #f2c94c;
@@ -41,14 +51,14 @@
   --status-done: #5e6ad2;
   --status-canceled: #95a2b3;
 
-  /* priority */
+  /* ---- priority (product UI palette) ---- */
   --priority-urgent: #f2453d;
   --priority-high: #ef7e3a;
   --priority-medium: #d9b34c;
   --priority-low: #95a2b3;
   --priority-none: #6b6f76;
 
-  /* labels (semantic colors) */
+  /* ---- labels (product UI palette) ---- */
   --label-bug: #eb5757;
   --label-feature: #5e6ad2;
   --label-improvement: #26b5ce;
@@ -60,18 +70,22 @@
   --label-infra: #9b9b9b;
   --label-api: #bc7cf0;
 
-  /* shadows — popover now compensates for the darker border by
-     adding a slightly deeper drop + a 1px inner highlight that traces
-     the top edge, matching Linear's elevated popovers. */
+  /* ---- shadows ---- */
+  /* Subtle white edge highlight on the top edge of lifted panels — gives
+     the dark surface a faint "pixel rendered" feel (DESIGN.md). */
   --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   --shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 [data-theme="light"] {
-  --bg-app: #fbfbfb;
-  --bg-sidebar: #f5f5f5;
+  /* DESIGN.md does not ship a light theme. We retain a tuned product-UI
+     light mode here using inverse surface tokens from DESIGN.md as anchors. */
+  --bg-app: #ffffff;                          /* inverse-canvas */
+  --bg-sidebar: #f5f6f6;                      /* inverse-surface-1 */
   --bg-elevated: #ffffff;
-  --bg-elevated-hover: #f3f3f3;
+  --bg-elevated-hover: #f6f7f7;               /* inverse-surface-2 */
+  --bg-surface-3: #f0f1f2;
+  --bg-surface-4: #ebecee;
   --bg-row-hover: #00000008;
   --bg-row-selected: #0000000f;
   --bg-input: #ffffff;
@@ -81,8 +95,9 @@
   --border-default: #e8e8ea;
   --border-subtle: #ededee;
   --border-strong: #d0d0d4;
+  --border-tertiary: #c0c0c4;
 
-  --text-primary: #18181b;
+  --text-primary: #000000;                    /* inverse-ink */
   --text-secondary: #3e3e44;
   --text-tertiary: #6b6f76;
   --text-quaternary: #95a2b3;
@@ -94,21 +109,38 @@
   /* invariant tokens */
   --sidebar-width: 244px;
 
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  /* DESIGN.md radius scale. Existing sm/md/lg keep their values so legacy
+     usages stay stable; xl and xxl extend the scale for surface panels and
+     product screenshot cards per DESIGN.md. */
+  --radius-xs: 4px;
+  --radius-sm: 4px;                           /* DESIGN.xs alias */
+  --radius-md: 6px;                           /* DESIGN.sm alias */
+  --radius-lg: 8px;                           /* DESIGN.md alias */
+  --radius-xl: 12px;                          /* DESIGN.lg — pricing/feature cards */
+  --radius-xxl: 16px;                         /* DESIGN.xl — product screenshot panels */
   --radius-pill: 9999px;
+
+  /* DESIGN.md spacing scale (4px base). Exposed as CSS vars so non-Tailwind
+     contexts (e.g. raw style attributes) can reach them. */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-xxl: 48px;
+  --space-section: 96px;
 
   /* typography */
   --font-default: "Inter", "InterVariable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   --fs-micro: 0.6875rem;     /* 11px */
-  --fs-mini: 0.8125rem;      /* 13px — was 12px */
-  --fs-small: 0.875rem;      /* 14px — was 13px, matches Linear list/sidebar */
+  --fs-mini: 0.8125rem;      /* 13px */
+  --fs-small: 0.875rem;      /* 14px — Linear list/sidebar */
   --fs-default: 0.9375rem;   /* 15px — section titles, body */
   --fs-large: 1.125rem;      /* 18px */
-  --fs-title3: 1.25rem;      /* 20px — settings + sub-page headings */
+  --fs-title3: 1.25rem;      /* 20px */
   --fs-title2: 1.5rem;
   --fs-title1: 2.25rem;
 

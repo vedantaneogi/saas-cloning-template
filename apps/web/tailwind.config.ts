@@ -10,6 +10,8 @@ const config: Config = {
         sidebar: "var(--bg-sidebar)",
         elevated: "var(--bg-elevated)",
         "elevated-hover": "var(--bg-elevated-hover)",
+        "surface-3": "var(--bg-surface-3)",
+        "surface-4": "var(--bg-surface-4)",
         "row-hover": "var(--bg-row-hover)",
         "row-selected": "var(--bg-row-selected)",
         input: "var(--bg-input)",
@@ -19,6 +21,7 @@ const config: Config = {
           DEFAULT: "var(--border-default)",
           subtle: "var(--border-subtle)",
           strong: "var(--border-strong)",
+          tertiary: "var(--border-tertiary)",
         },
         text: {
           primary: "var(--text-primary)",
@@ -29,7 +32,14 @@ const config: Config = {
         accent: {
           DEFAULT: "var(--accent)",
           hover: "var(--accent-hover)",
+          focus: "var(--accent-focus)",
           soft: "var(--accent-soft)",
+        },
+        brand: {
+          secure: "var(--brand-secure)",
+        },
+        semantic: {
+          success: "var(--semantic-success)",
         },
         status: {
           backlog: "var(--status-backlog)",
@@ -68,9 +78,12 @@ const config: Config = {
         bold: "var(--fw-bold)",
       },
       borderRadius: {
+        xs: "var(--radius-xs)",
         sm: "var(--radius-sm)",
         md: "var(--radius-md)",
         lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
+        xxl: "var(--radius-xxl)",
         pill: "var(--radius-pill)",
       },
       spacing: {
